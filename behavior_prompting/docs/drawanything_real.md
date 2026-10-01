@@ -1,0 +1,55 @@
+# DrawAnything-Real
+
+## Hardware
+CAD files for the whiteboard drawing end-effector are in [assets/whiteboard_drawing_hardware/](../assets/whiteboard_drawing_hardware/):
+- [umi_pen_end_effector/](../assets/whiteboard_drawing_hardware/umi_pen_end_effector/) — pen-holding end-effector mounted on the robot for the whiteboard drawing task
+- [pen_to_spring_adapter/](../assets/whiteboard_drawing_hardware/pen_to_spring_adapter/) — adapter connecting the marker to a spring, which provides passive compliance along the pen axis when drawing on the whiteboard. The spring is the same one used in the original [UMI gripper build](https://docs.google.com/document/d/1TPYwV9sNVPAi0ZlAupDMkXZ4CA1hsZx7YDMSmcEy6EU/edit?tab=t.0), and the marker is a standard Expo marker.
+
+Each part is provided in several formats: Autodesk Fusion source (`.f3d`/`.f3z`), Autodesk Inventor (`.ipt`), 3D-printable `.3mf`, and mesh (`.obj` + `.mtl`).
+
+## Setup
+Single arm whiteboard drawing experiments. Dataset is on [Hugging Face](https://huggingface.co/datasets/austinpatel/iphumi_drawinganything_real).
+```bash
+hf download austinpatel/iphumi_drawinganything_real --repo-type=dataset --local-dir ./iphumi_drawinganything_real
+```
+
+Dataset contents:
+- `drawanything_real_raw_data.zip` — raw iPhUMI data for training (940 human demonstrations; full-resolution 1920x1440 @ 60 fps main camera plus ultrawide camera and pose metadata)
+- `drawanything_real_replay_buffer.zarr.zip` — training dataset (contains both the human-collected and procedurally generated demonstrations)
+- `drawanything_real_raw_data_evaluation_prompts.zip` — raw iPhUMI data for evaluation ("unseen" prompts of known tasks)
+
+## Processing Raw Data
+If you would like to process the raw iPhUMI data yourself, use the `link_shared_iphumi_data.py` script from the iPhUMI repo (see the documentation in that repo for how to use this script). As with the laundry folding release, depth is not included in the raw iPhUMI data.
+
+Note that the raw data covers only the human-collected demonstrations. The remaining 4,872 episodes in `drawanything_real_replay_buffer.zarr.zip` were procedurally generated on the robot and recorded directly at 224x224, so no higher-resolution raw data exists for them.
+
+## Pretrained Checkpoints
+
+Checkpoints are on [Hugging Face](https://huggingface.co/austinpatel/iphumi_drawanything_real).
+```bash
+hf download austinpatel/iphumi_drawanything_real --repo-type=model --local-dir ./iphumi_drawanything_real_models
+```
+- `drawanything_real_behavior_prompting_policy.ckpt` — behavior prompting policy checkpoint
+- `drawanything_real_goal_image_policy.ckpt` — goal image conditioned policy checkpoint
+
+> [!WARNING]
+> These are not in-the-wild data/checkpoints, so it's likely they will not work when deployed in your environment.
+
+## Goal Image Setup
+For goal image conditioned policies, [set_goal_image_whiteboard_task.py](../behavior_prompting/train_network/scripts/umi/set_goal_image_whiteboard_task.py) uses SAM (Segment Anything Model) to detect red reference dots in each demonstration and set the goal image frame index in the replay buffer:
+```bash
+cd behavior_prompting/train_network/scripts/umi
+python set_goal_image_whiteboard_task.py -i PATH/TO/replay_buffer.zarr
+```
+
+## Unreleased Components
+
+> [!NOTE]
+> Two components used in our pipeline are not publicly released as they are built using older robot deployment scripts: the procedural demonstration generation scripts (which replay DrawAnything-Sim trajectories on the real robot to collect real training data) and the automatic drawing evaluation using Chamfer distance scoring. Reach out if you need either of these.
+
+## Training
+Modify the single arm training command from [this doc](iphumi.md).
+
+Modifier configs: [modifiers/umi/whiteboard_drawing/](../behavior_prompting/train_network/config/modifiers/umi/whiteboard_drawing/)
+- [task_goal_image.yaml](../behavior_prompting/train_network/config/modifiers/umi/whiteboard_drawing/task_goal_image.yaml) - goal image conditioning
+- [task_dunetp.yaml](../behavior_prompting/train_network/config/modifiers/umi/whiteboard_drawing/task_dunetp.yaml) - behavior prompting policy
