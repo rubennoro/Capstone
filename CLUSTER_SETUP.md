@@ -91,6 +91,12 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
 - At 25 minutes, conda had solved and verified the env and was on "Executing transaction". The pip step (torch, mujoco, robomimic, local `-e` installs) comes after that.
 - Log: `~/CapstoneProject/logs/bp_env_10838595.out`.
 
+- **The job failed after about 35 minutes.** Conda finished, but pip stopped with `ERROR: deps/icrt is not a valid editable requirement`.
+  - Cause: upstream, `deps/icrt`, `deps/LIBERO` and `deps/real-env` are **git submodules**. Removing `behavior_prompting/.git` to vendor it into this monorepo left them as empty folders.
+  - Fix (commit `d0298b9`): vendored all three at the commits upstream pins (listed in the commit message) and deleted `behavior_prompting/.gitmodules`.
+  - Gotcha: the `data` rule in `behavior_prompting/.gitignore` silently ignored 3 source files (`icrt/data/{dataset,utils}.py`, `libero/configs/data/default.yaml`), so they had to be force-added with `git add -f`.
+  - The failed build left a partial `bp` env, so the rebuild has to run `conda env remove -n bp -y` first.
+
 ### 7. Read the training code and made the decisions it calls for
 - **No resume support** (details in step D). This has to be sorted out before a run that's longer than 8 hours.
 - **Logging: wandb fully offline** (details in "Logging plan" below).
@@ -216,4 +222,5 @@ The raw data in `data/raw/2026-10-01/` has to go through the iPhUMI pipeline, wh
 ## Gotchas learned so far
 - **Don't run heavy commands on the login node**: big rsyncs, `conda env create` and even `conda env list` get killed. Use `xfer.discovery.neu.edu` for transfers and Slurm (`sbatch` / `srun`) for everything else.
 - **`data/` is gitignored**, so it never arrives with `git clone` and always has to be copied separately.
+- **When vendoring a repo, check `.gitmodules`.** Submodules arrive as empty folders. Also run `git ls-files --others --ignored --exclude-standard <dir>` to catch code that our ignore rules drop.
 - **Plan for the 8-hour GPU job limit**: training has to be able to resume from checkpoints.
