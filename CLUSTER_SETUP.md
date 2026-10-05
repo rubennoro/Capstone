@@ -35,7 +35,8 @@ Sources: `behavior_prompting/docs/iphumi.md`, `behavior_prompting/docs/laundry_f
     --config-name=umi_policy_dunetp \
     task.dataset.dataset_path=datasets/umi/iphumi_example_zarr_datasets/replay_buffer_test-data-042926-single.zarr \
     exp_name="example_data_single_arm_bp" \
-    group_tag="initial_experiments"
+    group_tag="initial_experiments" \
+    logging.mode=offline
   ```
   Per-experiment overrides go in a modifiers file (e.g. `+modifiers/umi/laundry_folding=task_dunetp`)
   rather than editing base configs.
@@ -85,11 +86,38 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
   Prefer **H200 (141 GB)**, because some A100s are only 40 GB. With the 8-hour limit, the full 140-epoch run will probably take several jobs that resume from checkpoints.
 - Not yet created: the `bp` env (no conda env exists yet) and the HF example dataset (not downloaded yet).
 
+### 6. Submitted the `bp` env build (job `10838595`)
+- Submitted with the sbatch script in step A below. It's running on node `c0613` in the `short` partition.
+- At 25 minutes, conda had solved and verified the env and was on "Executing transaction". The pip step (torch, mujoco, robomimic, local `-e` installs) comes after that.
+- Log: `~/CapstoneProject/logs/bp_env_10838595.out`.
+
+### 7. Read the training code and made the decisions it calls for
+- **No resume support** (details in step D). This has to be sorted out before a run that's longer than 8 hours.
+- **Logging: wandb fully offline** (details in "Logging plan" below).
+
+---
+
+## Logging plan (decided: wandb fully offline, no account)
+- Add **`logging.mode=offline`** to every train command, so no `wandb login` or account is needed.
+- What gets saved:
+  - **Checkpoints:** `train_network/runs/<date>/<time>_<exp_name>_.../checkpoints/*.ckpt`. These are saved whether or not wandb is used.
+  - **wandb offline run:** `wandb/offline-run-<timestamp>-<id>/`. It's probably under `train_network/wandb/`, because the code doesn't set a wandb `dir` and Hydra 1.2 doesn't change the working directory. **Confirm the exact path during the smoke test.**
+    - Metrics go into a binary `run-<id>.wandb` file.
+    - The config and the attention-visualization images are normal files under `files/` (images in `files/media/`).
+  - **Slurm log:** the printed loss per epoch, readable as plain text.
+- **To do: write `scripts/wandb_offline_to_csv.py`.** It should read the `.wandb` file with wandb's own Python reader (no account), write the logged metrics to a **CSV**, and save **loss-curve PNGs** (train loss, val loss, action MSE). Write and test it against a real offline run from the smoke test, using `wandb==0.27.2` from the `bp` env.
+- To view results on the laptop, copy the run folders back through the transfer node:
+  ```bash
+  rsync -a noroian.r@xfer.discovery.neu.edu:~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/ ./runs/
+  ```
+  Do the same for the `wandb/` folder.
+- Optional later: `wandb sync <offline-run-dir>` uploads a run to wandb.ai if we ever make an account.
+
 ---
 
 ## Remaining work
 
-### A. Build the `bp` conda env (next step, not yet submitted)
+### A. Build the `bp` conda env (submitted as job `10838595`; running)
 Submit as a CPU batch job so it survives disconnects:
 ```bash
 ssh noroian.r@login.explorer.northeastern.edu 'mkdir -p ~/CapstoneProject/logs && cat > ~/CapstoneProject/build_env.sbatch <<"EOF"
@@ -133,15 +161,25 @@ python unzip_zarr.py -i ../train_network/datasets/umi/iphumi_example_zarr_datase
    conda activate bp
    python -c "import torch; print(torch.cuda.is_available())"
    ```
-3. Run the training command from the summary above with `--num_processes=1`. Check that it starts, the loss goes down, and it doesn't run out of memory.
-4. Things to decide during the smoke test:
-   - **Logging:** `wandb` is installed. Either run `wandb login` once, or set `WANDB_MODE=offline`.
+3. Run the training command from the summary above with `--num_processes=1` and **`logging.mode=offline`**. Check that it starts, the loss goes down, and it doesn't run out of memory.
+4. Things to measure or check during the smoke test:
+   - **Time per epoch**, including the attention-visualization "rollout" that runs every 10 epochs (`rollout_every: 10`). This decides the strategy for the 8-hour limit in step D.
+   - Peak GPU memory, from `nvidia-smi`.
+   - Where the offline wandb folder is created. Then test `scripts/wandb_offline_to_csv.py` on it.
    - **`dataloader.num_workers=8`** should match the CPUs requested.
 
 ### D. Full training run as an `sbatch` job
 - Partition `gpu`, `--gres=gpu:h200:1` (or more GPUs together with a matching `--num_processes`), `--time=08:00:00`.
-- Before relying on this, check how `train.py` / the workspace **resumes from a checkpoint** (look for a resume flag or `checkpoint` options in `config/policy_base.yaml`). The full run will need several 8-hour jobs.
-- Output and checkpoints go under `train_network/` (check the hydra output dir). Move them to `/scratch` if home space gets tight.
+- **Resume: checked. Training cannot resume from a checkpoint.**
+  - `logging.resume` is only a wandb option. `train.py` → `TrainPolicyWorkspace.run()` always starts at epoch 0 with a fresh optimizer and LR scheduler, and it never calls `load_checkpoint`. Only `rollout_policy_workspace.py` loads checkpoints.
+  - With `umi_policy_base` (`save_last_ckpt: False`), the only mid-run saves are `train_loss` top-k checkpoints every 10 epochs (`save_train_loss_ckpt_every: 10`). Those store the **EMA weights** as `model`, and the LR scheduler state isn't saved at all.
+  - Each launch creates a new `runs/...` folder.
+- **Strategy for the 8-hour limit, chosen from the smoke test's time per epoch:**
+  1. If 140 epochs fit in about 7.5 h on 1 GPU, submit a single job.
+  2. If not, use more GPUs: `--gres=gpu:h200:N` with `--num_processes=N`. The code scales the LR by the number of processes automatically.
+  3. If not, reduce `training.num_epochs`.
+  4. As a last resort, patch in resume support: save a `latest` checkpoint with the raw model, EMA, optimizer, scheduler and epoch, and reload it on restart.
+- Output and checkpoints go under `train_network/runs/` (the hydra `run.dir`). Move them to `/scratch` if home space gets tight.
 - Use `scripts/slim_checkpoint.py` to remove optimizer state before sharing or deploying a checkpoint.
 
 ### E. Process our custom data into a training dataset
