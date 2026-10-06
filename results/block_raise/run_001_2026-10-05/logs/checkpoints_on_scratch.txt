@@ -1,0 +1,4 @@
+total 6235680
+drwxr-xr-x 2 noroian.r users       4096 Oct  6 04:17 .
+drwxr-xr-x 2 noroian.r users       4096 Oct  5 23:28 ..
+-rw-r--r-- 1 noroian.r users 6385335796 Oct  6 01:15 epoch=0050-val_action_mse_error_all=0.0001481.ckpt

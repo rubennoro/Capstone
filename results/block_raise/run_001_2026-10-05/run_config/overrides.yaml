@@ -1,0 +1,7 @@
+- task.dataset.dataset_path=/home/noroian.r/CapstoneProject/Capstone/iPhUMI/python_package/iphumi/demonstration_processing/tmp_sessions/firstreal-single/replay_buffer_firstreal-single.zarr.zip
+- task.dataset.cache_dir=/tmp/noroian.r/zarr_cache
+- exp_name=block_raise_bp_v1
+- group_tag=block_raise
+- logging.mode=offline
+- checkpoint.topk.k=1
+- checkpoint.save_train_loss_ckpt_every=null

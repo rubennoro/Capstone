@@ -1,0 +1,30 @@
+{
+  "run": "run_001_2026-10-05",
+  "task": "block_raise",
+  "dataset": "firstreal-single",
+  "mode": "full",
+  "status": "ok",
+  "note": "First full run (block_raise_bp_v1), 140 epochs. Copied from the old train_full.sbatch output (~/CapstoneProject/results/block_raise_bp_v1/).",
+  "job_id": "10851655",
+  "packaged": "2026-10-06T04:17:44",
+  "num_epochs_configured": 140,
+  "gpu_peak_gb": 34.1,
+  "epochs_completed": 140,
+  "steps": 72520,
+  "steps_per_epoch": 518,
+  "iterations_per_second": 4.68,
+  "minutes_per_epoch": 2.11,
+  "training_minutes": 295.1,
+  "final": {
+    "train_loss_epoch_average": 0.010460886566694754,
+    "val_loss": 0.022796642035245895,
+    "val/action_mse_error/all": 0.00017380215285811573,
+    "train/action_mse_error/all": 9.943018085323274e-06
+  },
+  "best_checkpoint": {
+    "epoch": 50,
+    "metric": "val_action_mse_error_all",
+    "value": 0.0001481,
+    "file": "best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt"
+  }
+}
