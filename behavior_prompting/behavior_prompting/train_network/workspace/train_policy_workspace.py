@@ -496,6 +496,15 @@ class TrainPolicyWorkspace(BaseWorkspace):
                 step_log.update(runner_log)
                 self.num_rollout_completed += 1
 
+                # Capstone: the runner overwrites vis/*.mp4 at every rollout; keep a copy per epoch
+                vis_dir = os.path.join(self.output_dir, 'vis')
+                if accelerator.is_main_process and os.path.isdir(vis_dir):
+                    epoch_vis_dir = os.path.join(vis_dir, f'epoch_{self.epoch:04d}')
+                    os.makedirs(epoch_vis_dir, exist_ok=True)
+                    for video_name in os.listdir(vis_dir):
+                        if video_name.endswith('.mp4'):
+                            shutil.copy2(os.path.join(vis_dir, video_name), epoch_vis_dir)
+
             # ========= action MSE error for this epoch (non-distributed manner) ==========
             # compute action MSE error on both training and validation datasets (and for each task if multi-task training)
             def compute_action_mse(category, task, pred_action, gt_action):

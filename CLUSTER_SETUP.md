@@ -122,11 +122,12 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
   - The per-epoch attention videos are all copies of the final epoch: the runner overwrites `vis/`, and offline wandb only copies media when the run ends.
 - `scripts/wandb_offline_to_csv.py` turns an offline run into `history.csv` / `epochs.csv` and loss, action-MSE, lr/grad-norm and GPU-memory PNGs. It needs `wandb==0.27.2`, pandas and matplotlib, all available in the `bp` env.
 
-> **NEXT SESSION, START HERE: the full training run (step D).**
-> 1. Delete the smoke-run checkpoints (30 GB): `rm ~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/*.ckpt`
-> 2. Get `scripts/cluster/train_full.sbatch` onto the cluster: `git pull --ff-only` in the cluster clone, through `xfer.discovery.neu.edu`, or `scp`.
-> 3. Submit it: `sbatch train_full.sbatch <the firstreal-single .zarr.zip> block_raise_bp_v1`. The run dir goes to `/scratch/noroian.r/bp_runs/`. Expect about 5.2 h.
-> 4. Afterwards, there's nothing to do on the cluster. The job keeps **only the best checkpoint** (`topk.k=1`, no train-loss checkpoints, `latest.ckpt` deleted) and packages everything into **`~/CapstoneProject/results/<exp_name>/`**: plots and CSVs, videos, config, logs, and a slimmed best checkpoint. Copy it to the laptop with `rsync -a noroian.r@xfer.discovery.neu.edu:CapstoneProject/results/<exp_name>/ ~/Capstone/results/<exp_name>/`.
+- **Full run submitted:** job `10851655` (`block_raise_bp_v1`, 140 epochs, 1 H200), using the old `train_full.sbatch`. Its results get packaged into `~/CapstoneProject/results/block_raise_bp_v1/`.
+
+### 10. Reusable pipeline (2026-10-06)
+The one-off scripts (`train_full.sbatch`, `train_smoke.sh`, `process_firstreal.sbatch`, `get_example_data.sbatch`) were replaced by a general per-task pipeline: `submit.sh` / `run_pipeline.sh`, `process_dataset.sbatch`, `train.sbatch` and `package_run.py`. Results now go to `results/<task>/run_NNN_<date>/`, and the job pushes them to GitHub itself. `first_smoketest/` became `results/block_raise/run_000_2026-10-05_smoke/`.
+
+> **NEXT SESSION, START HERE:** check job `10851655`, then do the one-time setup in **[DIRECTIONS.md](DIRECTIONS.md) §0** (pull on the cluster, git identity, move the dataset, repackage v1 as `run_001`). How it all fits together: **[DESIGN.md](DESIGN.md)**.
 
 ### 7. Read the training code and made the decisions it calls for
 - **No resume support** (details in step D). This has to be sorted out before a run that's longer than 8 hours.

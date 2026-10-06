@@ -26,15 +26,11 @@ Loading prompt dataset...
 Time taken to load prompt dataset: 0.03817462921142578 seconds
 Loading validation dataset...
 Time taken to load validation dataset: 0.005928993225097656 seconds
-
 Epoch 0. Recreated dataloaders
 train dataset length: 36198 train dataloader length: 518
 val dataset length: 1728 val dataloader length: 64 
-
 Computing normalizer on main process...
-
 Time taken to compute normalizer: 6.2993762493133545 seconds
-
 Training epoch 0:   0%|          | 1/518 [00:17<2:27:44, 17.15s/it, loss=1.15]
 Training epoch 0:   1%|          | 5/518 [00:18<23:44,  2.78s/it, loss=1.06]  
 Training epoch 0:   2%|▏         | 10/518 [00:19<10:33,  1.25s/it, loss=1.02]
@@ -139,29 +135,13 @@ Training epoch 0:  97%|█████████▋| 500/518 [02:07<00:03,  4.
 Training epoch 0:  97%|█████████▋| 505/518 [02:08<00:02,  4.58it/s, loss=0.046] 
 Training epoch 0:  98%|█████████▊| 510/518 [02:09<00:01,  4.61it/s, loss=0.0519]
 Training epoch 0:  99%|█████████▉| 515/518 [02:11<00:00,  4.62it/s, loss=0.0645]
-                                                                                
-
-                                                                   
-
 === Started UmiPromptingRunner run for task "block_raise" ===
 Finished prompting model! Time taken: 1.071122646331787 seconds
-
-                                                                        
-
-                                                                 
-
-                                                                                               
 Saved attention and rollout visualization to /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/vis/attention_and_rollout_umi_block_raise.mp4
 === Finished UmiPromptingRunner run for task "block_raise" ===
-
 Time taken to rollout policy: 14.750721454620361 seconds
-
-                                                                                                    
-
-                                                                                                  
 Saved train_loss top-k checkpoint (epoch % 1 == 0): /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/epoch=0000-train_loss=0.213.ckpt
 Saved val_action_mse_error_all top-k checkpoint (epoch % 1 == 0): /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/epoch=0000-val_action_mse_error_all=0.0388516.ckpt
-
 Training epoch 1:   0%|          | 1/518 [00:01<12:41,  1.47s/it, loss=0.0558]
 Training epoch 1:   1%|          | 6/518 [00:02<03:20,  2.56it/s, loss=0.0456]
 Training epoch 1:   2%|▏         | 11/518 [00:03<02:36,  3.24it/s, loss=0.0402]
@@ -266,29 +246,13 @@ Training epoch 1:  97%|█████████▋| 501/518 [02:04<00:03,  4.
 Training epoch 1:  98%|█████████▊| 506/518 [02:05<00:02,  4.55it/s, loss=0.0359]
 Training epoch 1:  99%|█████████▊| 511/518 [02:06<00:01,  4.57it/s, loss=0.0305]
 Training epoch 1: 100%|█████████▉| 516/518 [02:07<00:00,  4.59it/s, loss=0.034] 
-                                                                               
-
-                                                                   
-
 === Started UmiPromptingRunner run for task "block_raise" ===
 Finished prompting model! Time taken: 0.09686565399169922 seconds
-
-                                                                        
-
-                                                                 
-
-                                                                                               
 Saved attention and rollout visualization to /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/vis/attention_and_rollout_umi_block_raise.mp4
 === Finished UmiPromptingRunner run for task "block_raise" ===
-
 Time taken to rollout policy: 11.02544116973877 seconds
-
-                                                                                                    
-
-                                                                                                  
 Saved train_loss top-k checkpoint (epoch % 1 == 0): /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/epoch=0001-train_loss=0.040.ckpt
 Saved val_action_mse_error_all top-k checkpoint (epoch % 1 == 0): /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/epoch=0001-val_action_mse_error_all=0.0295159.ckpt
-
 Training epoch 2:   0%|          | 1/518 [00:01<13:32,  1.57s/it, loss=0.0283]
 Training epoch 2:   1%|          | 5/518 [00:02<03:54,  2.19it/s, loss=0.0325]
 Training epoch 2:   2%|▏         | 10/518 [00:03<02:45,  3.07it/s, loss=0.0332]
@@ -393,26 +357,11 @@ Training epoch 2:  97%|█████████▋| 500/518 [01:57<00:03,  4.
 Training epoch 2:  97%|█████████▋| 505/518 [01:58<00:02,  4.60it/s, loss=0.0276]
 Training epoch 2:  98%|█████████▊| 510/518 [01:59<00:01,  4.61it/s, loss=0.0275]
 Training epoch 2:  99%|█████████▉| 515/518 [02:00<00:00,  4.63it/s, loss=0.0254]
-                                                                                
-
-                                                                   
-
 === Started UmiPromptingRunner run for task "block_raise" ===
 Finished prompting model! Time taken: 0.09999656677246094 seconds
-
-                                                                        
-
-                                                                 
-
-                                                                                               
 Saved attention and rollout visualization to /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/vis/attention_and_rollout_umi_block_raise.mp4
 === Finished UmiPromptingRunner run for task "block_raise" ===
-
 Time taken to rollout policy: 10.752319812774658 seconds
-
-                                                                                                    
-
-                                                                                                  
 wandb: 
 wandb: Run history:
 wandb:                                          epoch ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▅▅▅▅▅▅▅▅▅▅▅▅▅▅▅██████████

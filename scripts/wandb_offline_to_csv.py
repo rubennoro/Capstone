@@ -34,6 +34,7 @@ SURFACE = '#fcfcfb'
 TEXT_PRIMARY = '#0b0b0b'
 TEXT_SECONDARY = '#52514e'
 GRID = '#e4e3dd'
+MAX_EPOCH_TICKS = 20  # above this, let matplotlib choose ticks and skip per-epoch boundary lines
 
 
 def read_history(wandb_file):
@@ -100,12 +101,25 @@ def plot_loss_per_step(history, epoch_ends, out_dir):
     ax.plot(df['global_step'], df['train_loss'], color=TRAIN_COLOR, alpha=0.25, linewidth=1)
     smooth = df['train_loss'].rolling(25, min_periods=1).mean()
     ax.plot(df['global_step'], smooth, color=TRAIN_COLOR, linewidth=2)
-    for step in epoch_ends[:-1]:
-        ax.axvline(step, color=TEXT_SECONDARY, linewidth=0.8, linestyle=':')
+    if len(epoch_ends) <= MAX_EPOCH_TICKS:
+        for step in epoch_ends[:-1]:
+            ax.axvline(step, color=TEXT_SECONDARY, linewidth=0.8, linestyle=':')
     ax.set_yscale('log')
     style_axes(ax, 'Train loss per step (25-step average; raw in light)', 'gradient step', 'train loss (log scale)')
     label_line_end(ax, df['global_step'].iloc[-1], smooth.iloc[-1], 'final avg', TRAIN_COLOR)
     save(fig, os.path.join(out_dir, 'loss_per_step.png'))
+
+
+def epoch_line_style(n_points):
+    # Markers only when points are sparse enough to read individually
+    if n_points <= MAX_EPOCH_TICKS:
+        return dict(linewidth=2, marker='o', markersize=8, markeredgecolor=SURFACE, markeredgewidth=2)
+    return dict(linewidth=2)
+
+
+def set_epoch_ticks(ax, epochs):
+    if len(epochs) <= MAX_EPOCH_TICKS:
+        ax.set_xticks(epochs['epoch'])
 
 
 def plot_loss_per_epoch(epochs, out_dir):
@@ -115,12 +129,11 @@ def plot_loss_per_epoch(epochs, out_dir):
     finals = {key: epochs[key].dropna().iloc[-1] for key, _, _ in series}
     for key, label, color_hex in series:
         df = epochs.dropna(subset=[key])
-        ax.plot(df['epoch'], df[key], color=color_hex, linewidth=2, marker='o', markersize=8,
-                markeredgecolor=SURFACE, markeredgewidth=2, label=label)
+        ax.plot(df['epoch'], df[key], color=color_hex, label=label, **epoch_line_style(len(df)))
         # Higher final value gets its label nudged up, lower one down
         dy = 7 if finals[key] == max(finals.values()) else -7
         label_line_end(ax, df['epoch'].iloc[-1], df[key].iloc[-1], label, color_hex, dy=dy if len(finals) > 1 else 0)
-    ax.set_xticks(epochs['epoch'])
+    set_epoch_ticks(ax, epochs)
     style_axes(ax, 'Loss per epoch', 'epoch', 'diffusion loss')
     ax.legend(frameon=False, labelcolor=TEXT_PRIMARY)
     ax.margins(x=0.15)
@@ -136,9 +149,8 @@ def plot_action_mse(epochs, out_dir):
             if key not in epochs:
                 continue
             df = epochs.dropna(subset=[key])
-            ax.plot(df['epoch'], df[key], color=color_hex, linewidth=2, marker='o', markersize=8,
-                    markeredgecolor=SURFACE, markeredgewidth=2, label=split)
-        ax.set_xticks(epochs['epoch'])
+            ax.plot(df['epoch'], df[key], color=color_hex, label=split, **epoch_line_style(len(df)))
+        set_epoch_ticks(ax, epochs)
         ax.ticklabel_format(axis='y', style='sci', scilimits=(-3, 3))
         style_axes(ax, f'{title} action MSE', 'epoch', 'MSE')
     axes[0].legend(frameon=False, labelcolor=TEXT_PRIMARY)
@@ -180,6 +192,27 @@ def plot_gpu_memory(gpu_csv, out_dir):
     save(fig, os.path.join(out_dir, 'gpu_memory.png'))
 
 
+def find_wandb_file(run):
+    return run if run.endswith('.wandb') else glob.glob(os.path.join(run, 'run-*.wandb'))[0]
+
+
+def epoch_table(history):
+    # Epoch-level metrics are logged on the last step of each epoch
+    epoch_keys = [c for c in history.columns if c.startswith(('val', 'train/')) or c == 'train_loss_epoch_average']
+    epochs = history.dropna(subset=epoch_keys, how='all')[['epoch', 'global_step'] + epoch_keys]
+    return epochs.groupby('epoch', as_index=False).last()
+
+
+def make_plots(history, epochs, out_dir, gpu_csv=None):
+    os.makedirs(out_dir, exist_ok=True)
+    plot_loss_per_step(history, list(epochs['global_step']), out_dir)
+    plot_loss_per_epoch(epochs, out_dir)
+    plot_action_mse(epochs, out_dir)
+    plot_lr_and_grad_norm(history, out_dir)
+    if gpu_csv and os.path.exists(gpu_csv):
+        plot_gpu_memory(gpu_csv, out_dir)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('run', help='offline-run-* directory or its run-*.wandb file')
@@ -187,25 +220,13 @@ def main():
     parser.add_argument('--gpu-csv', help='optional nvidia-smi CSV log to plot GPU memory')
     args = parser.parse_args()
 
-    wandb_file = args.run if args.run.endswith('.wandb') else glob.glob(os.path.join(args.run, 'run-*.wandb'))[0]
     os.makedirs(args.out_dir, exist_ok=True)
-
-    history = read_history(wandb_file)
+    history = read_history(find_wandb_file(args.run))
     history.to_csv(os.path.join(args.out_dir, 'history.csv'), index=False)
-
-    # Epoch-level metrics are logged on the last step of each epoch
-    epoch_keys = [c for c in history.columns if c.startswith(('val', 'train/')) or c == 'train_loss_epoch_average']
-    epochs = history.dropna(subset=epoch_keys, how='all')[['epoch', 'global_step'] + epoch_keys]
-    epochs = epochs.groupby('epoch', as_index=False).last()
+    epochs = epoch_table(history)
     epochs.to_csv(os.path.join(args.out_dir, 'epochs.csv'), index=False)
     print(f'{len(history)} steps, {len(epochs)} epochs')
-
-    plot_loss_per_step(history, list(epochs['global_step']), args.out_dir)
-    plot_loss_per_epoch(epochs, args.out_dir)
-    plot_action_mse(epochs, args.out_dir)
-    plot_lr_and_grad_norm(history, args.out_dir)
-    if args.gpu_csv:
-        plot_gpu_memory(args.gpu_csv, args.out_dir)
+    make_plots(history, epochs, args.out_dir, args.gpu_csv)
 
 
 if __name__ == '__main__':
