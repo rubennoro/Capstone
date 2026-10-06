@@ -26,18 +26,17 @@ Running status between working sessions. Update it at the end of each conversati
       `/scratch/noroian.r/bp_runs/2026.10.05/23.22.47_block_raise_bp_v1/checkpoints/`.
 - **Pipeline** (`scripts/run_pipeline.sh`, `scripts/cluster/{submit.sh,process_dataset.sbatch,train.sbatch}`,
   `scripts/package_run.py`): the cluster clone is now pulled to `b87c819` with its git identity set. DIRECTIONS.md §0 is fully done.
-  - **Pipeline smoke test submitted:** job `10878177` (gpu-short, 3 epochs) → `results/block_raise/run_002_2026-10-06_smoke/`,
-    submitted 2026-10-06 ~17:40. First real run of `train.sbatch` + in-job packaging + push from a compute node.
+  - **Pipeline tested end to end:** job `10878177` → `results/block_raise/run_002_2026-10-06_smoke/` (11 min). Trained, packaged
+    in-job, and pushed to GitHub from the compute node by itself, with per-epoch videos. The checkpoint stayed on the cluster.
+    Val action MSE 0.0191988, identical to run_000 (training is deterministic).
+  - `scripts/check_job.sh <jobid> [--wait]`: read-only status check (Slurm, log tail, packaged/pushed, what's on GitHub).
   - Still never run: `process_dataset.sbatch`.
   - `package_run.py` gets killed on the login node (too heavy). Run it inside a job, or locally.
 - Plots: the user is happy with them as they are. Don't change `scripts/wandb_offline_to_csv.py` unless asked.
 
 ## Next time
 
-1. Check job `10878177` (`sacct -j 10878177 -X; tail ~/CapstoneProject/logs/*10878177*`), then `git pull` locally.
-2. Watch the v1 videos (`results/block_raise/run_001_2026-10-05/videos/final/`): does the attention follow the prompt?
-3. **Verify the pipeline test** (job `10878177`):
-   - Confirm `results/block_raise/run_00N_..._smoke/` gets pushed to GitHub, with `videos/epoch_000{0,1,2}/`.
-   - Confirm the checkpoint stays only on the cluster.
-   - If the push from the compute node fails (SSH to GitHub blocked), move the commit + push into a small follow-up job that runs where GitHub is reachable (`--dependency=afterany`), or switch the clone to an HTTPS remote with a token.
-4. Optional: set a real git email on the laptop (`git config --global user.email ...`) so commits link to the GitHub account.
+1. Watch the v1 videos (`results/block_raise/run_001_2026-10-05/videos/final/`): does the attention follow the prompt?
+2. Decide the next real training run (e.g. ~60 epochs, since v1 overfit after ~50), or record more data and use
+   `scripts/run_pipeline.sh all ...` to test `process_dataset.sbatch`.
+3. Optional: set a real git email on the laptop (`git config --global user.email ...`) so commits link to the GitHub account.
