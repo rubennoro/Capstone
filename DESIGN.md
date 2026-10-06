@@ -38,7 +38,7 @@ iPhone app ──export──▶ laptop data/raw/<date>/ ──rsync──▶ cl
 ```
 Capstone/
 ├── DIRECTIONS.md  DESIGN.md       how to use it / how it's built
-├── CLUSTER_SETUP.md               history: cluster setup, what went wrong and why, measurements
+├── AGENTS.md                      current status and next steps (updated each working session)
 ├── results/<task>/                one folder per task
 │   ├── README.md                  what the task is, which datasets exist (written by hand)
 │   └── run_NNN_<date>[_smoke]/    one folder per training job (layout below)
@@ -105,7 +105,7 @@ Keep this list current: these edits are lost if the upstream code is ever re-imp
 - `behavior_prompting/.../workspace/train_policy_workspace.py`: after each rollout, copy `vis/*.mp4` into
   `vis/epoch_XXXX/` (the runner overwrites them otherwise). Marked `# Capstone:`.
 - `iPhUMI/.../calibration/gripper_calibration.yaml`: added the iPhone 16 Pro (`iPhone17,1`) entry.
-- `behavior_prompting/deps/{icrt,LIBERO,real-env}`: vendored copies of upstream git submodules (see `CLUSTER_SETUP.md` §6).
+- `behavior_prompting/deps/{icrt,LIBERO,real-env}`: vendored copies of upstream git submodules.
 
 ## Cluster quirks the scripts already handle
 - **Login node kills heavy work** (big copies, conda, even large Python imports): use `xfer.discovery.neu.edu` for transfers and Slurm for everything else.
