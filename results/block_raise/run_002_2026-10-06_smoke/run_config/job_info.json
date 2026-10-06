@@ -1,0 +1,12 @@
+{
+  "job_id": "10878177",
+  "task": "block_raise",
+  "dataset": "firstreal-single",
+  "run": "run_002_2026-10-06_smoke",
+  "mode": "smoke",
+  "config_name": "umi_policy_dunetp",
+  "partition": "gpu-short",
+  "node": "d4054",
+  "gpu_name": "NVIDIA H200",
+  "dataset_zip": "/home/noroian.r/CapstoneProject/datasets/block_raise/firstreal-single/firstreal-single.zarr.zip"
+}

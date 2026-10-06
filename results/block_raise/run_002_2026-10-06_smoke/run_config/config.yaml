@@ -1,0 +1,331 @@
+name: policy
+exp_name: run_002_2026-10-06_smoke
+group_tag: block_raise
+task_name: ${task.name}
+_target_: behavior_prompting.train_network.workspace.train_policy_workspace.TrainPolicyWorkspace
+shape_meta: ${task.shape_meta}
+ema:
+  _target_: diffusers.training_utils.EMAModel
+  inv_gamma: 1.0
+  decay: 0.9999
+  min_decay: 0.0
+  power: 0.75
+  update_after_step: 0
+logging:
+  project: behavior_prompting
+  resume: false
+  mode: offline
+  name: ${now:%Y.%m.%d-%H.%M.%S}_${exp_name}_${name}_${task_name}_${model.name}
+  tags:
+  - ${name}
+  - ${task_name}
+  - ${exp_name}
+  - ${group_tag}
+  - ${model.name}
+  id: null
+  group: null
+  dir: /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke
+multi_run:
+  run_dir: runs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${exp_name}_${name}_${task_name}_${model.name}
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${exp_name}_${name}_${task_name}_${model.name}
+rollout:
+  distribute: false
+training:
+  max_train_steps: null
+  max_val_steps: 64
+  sample_size: 64
+  sample_max_tasks: 5
+  seed: 0
+  tqdm_interval_sec: 1.0
+  repeat_dataset_n_times: 1
+  use_cached_normalizer: false
+  override_cached_normalizer: false
+  rollout:
+    enable_expensive_vis_every: 1
+    enable_expensive_vis_last_epoch: true
+    intermediate_max_tasks: null
+    intermediate_init_runner_kwargs: null
+  compilation_plugin:
+    _target_: accelerate.utils.TorchDynamoPlugin
+    backend: inductor
+    mode: default
+    fullgraph: false
+    dynamic: true
+    disable: true
+  group_dataloader_by_task:
+    enabled: true
+    balanced: false
+    log_frequency: false
+  rollout_every: 1
+  gradient_accumulate_every: 1
+  lr_scheduler: cosine
+  lr_warmup_proportion: 0.05
+  num_epochs: 3
+  sample_every: 1
+  use_ema: true
+  freeze_encoder: false
+  val_every: 1
+  mixed_precision: bf16
+  clip_grad_norm: 0.5
+task:
+  name: umi_prompt
+  train_rollout_max_tasks: 6
+  train_rollout_only_task_names: null
+  eval_dataset_path: null
+  eval_rollout_only_task_names: null
+  eval_rollout_max_tasks: null
+  obs_down_sample_steps: 3
+  ultrawide_down_sample_steps: 1
+  low_dim_obs_horizon: 2
+  img_obs_horizon: 2
+  action_horizon: 16
+  ignore_proprioception: false
+  shape_meta:
+    image_resolution: 224
+    prompt_sequence_length: 512
+    max_prompt_full_demos: 1
+    prompt_chunk_n_actions: 20
+    pad_end_prompt_actions: repeat
+    max_sequence_length: 1200
+    use_prompting: true
+    prompt_sample_mode: pair
+    action:
+      shape:
+      - 10
+      horizon: ${task.action_horizon}
+      down_sample_steps: ${task.obs_down_sample_steps}
+      rotation_rep: rotation_6d
+      components:
+      - type: right_pos
+        size: 3
+      - type: right_rot
+        size: 6
+      - type: right_gripper_width
+        size: 1
+    obs:
+      camera_right_main_rgb:
+        shape:
+        - 3
+        - 224
+        - 224
+        horizon: ${task.img_obs_horizon}
+        down_sample_steps: ${task.obs_down_sample_steps}
+        type: rgb
+        ignore_by_policy: false
+        include_in_receding_obs: true
+        include_in_prompt_current_obs: true
+        prompt_type: observation
+      camera_right_ultrawide_rgb:
+        shape:
+        - 3
+        - 224
+        - 224
+        horizon: ${task.img_obs_horizon}
+        down_sample_steps: ${task.ultrawide_down_sample_steps}
+        type: rgb
+        ignore_by_policy: false
+        include_in_receding_obs: true
+        include_in_prompt_current_obs: true
+        prompt_type: observation
+      gripper_right_eef_pos:
+        shape:
+        - 3
+        horizon: ${task.low_dim_obs_horizon}
+        down_sample_steps: ${task.obs_down_sample_steps}
+        type: low_dim
+        ignore_by_policy: ${task.ignore_proprioception}
+        include_in_receding_obs: true
+        include_in_prompt_current_obs: false
+        prompt_type: ignore
+        sampler_prompt_type: proprioception
+      gripper_right_eef_rot_axis_angle:
+        raw_shape:
+        - 3
+        shape:
+        - 6
+        horizon: ${task.low_dim_obs_horizon}
+        down_sample_steps: ${task.obs_down_sample_steps}
+        type: low_dim
+        rotation_rep: rotation_6d
+        ignore_by_policy: ${task.ignore_proprioception}
+        include_in_receding_obs: true
+        include_in_prompt_current_obs: false
+        prompt_type: ignore
+        sampler_prompt_type: proprioception
+      gripper_right_gripper_width:
+        shape:
+        - 1
+        horizon: ${task.low_dim_obs_horizon}
+        down_sample_steps: ${task.obs_down_sample_steps}
+        type: low_dim
+        ignore_by_policy: ${task.ignore_proprioception}
+        include_in_receding_obs: true
+        include_in_prompt_current_obs: true
+        prompt_type: proprioception
+      gripper_right_eef_rot_axis_angle_wrt_start:
+        raw_shape:
+        - 3
+        shape:
+        - 6
+        horizon: ${task.low_dim_obs_horizon}
+        down_sample_steps: ${task.obs_down_sample_steps}
+        type: low_dim
+        in_replay_buffer: false
+        ignore_by_policy: true
+        include_in_receding_obs: false
+        include_in_prompt_current_obs: false
+        prompt_type: ignore
+  task_name: ${name}
+  pose_repr:
+    obs_pose_repr: relative
+    action_pose_repr: relative
+  eval_image_transforms:
+    _target_: behavior_prompting.train_network.common.augmentation.ImageAugmentation
+    shape_meta: ${shape_meta}
+    transforms:
+    - type: CenterCrop
+      ratio: 0.95
+  train_image_transforms:
+    _target_: behavior_prompting.train_network.common.augmentation.ImageAugmentation
+    shape_meta: ${shape_meta}
+    transforms:
+    - type: RandomCrop
+      ratio: 0.95
+    - _target_: torchvision.transforms.ColorJitter
+      brightness: 0.3
+      contrast: 0.4
+      saturation: 0.5
+      hue: 0.08
+  dataset:
+    _target_: behavior_prompting.train_network.dataset.umi_task_dataset.UmiTaskDataset
+    shape_meta: ${shape_meta}
+    dataset_path: /home/noroian.r/CapstoneProject/datasets/block_raise/firstreal-single/firstreal-single.zarr.zip
+    cache_dir: /tmp/noroian.r/zarr_cache
+    pose_repr: ${task.pose_repr}
+    action_padding: true
+    action_padding_error_correction: false
+    temporally_independent_normalization: false
+    max_normalizer_iterations: null
+    seed: 42
+    val_ratio: 0.05
+    include_labels: false
+    sample_type: task
+    max_segments: -1
+    prompt_relative_to: last
+  env_runner:
+    _target_: behavior_prompting.train_network.env_runner.umi_prompting_runner.UmiPromptingRunner
+    shape_meta: ${shape_meta}
+    max_steps: 800
+    tqdm_interval_sec: 1.0
+    exec_action_horizon: 12
+    vis_attention_map: true
+    attention_map_version: v2
+    save_attention_weights: false
+    vis_prompt: false
+    pose_repr: ${task.pose_repr}
+    cache_dir: null
+checkpoint:
+  save_last_ckpt: false
+  save_last_snapshot: false
+  topk:
+    monitor_key: val_action_mse_error_all
+    format_str: epoch={epoch:04d}-val_action_mse_error_all={val_action_mse_error_all:.7f}.ckpt
+    k: 1
+    mode: min
+  save_train_loss_ckpt_every: null
+model:
+  _target_: behavior_prompting.train_network.policy.diffusion_unet_policy.DiffusionUnetPolicy
+  name: prompt_diffusion_unet
+  shape_meta: ${shape_meta}
+  noise_scheduler:
+    _target_: diffusers.DDIMScheduler
+    num_train_timesteps: 50
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    clip_sample: true
+    set_alpha_to_one: true
+    steps_offset: 0
+    prediction_type: epsilon
+  num_inference_steps: 16
+  obs_as_global_cond: true
+  diffusion_step_embed_dim: 128
+  down_dims:
+  - 256
+  - 512
+  - 1024
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+  input_pertub: 0.1
+  train_diffusion_n_samples: 1
+  obs_encoder:
+    _target_: behavior_prompting.train_network.model.prompt.prompt_obs_encoder.PairPromptObsEncoder
+    shape_meta: ${shape_meta}
+    obs_encoder:
+      _target_: behavior_prompting.train_network.model.prompt.prompt_obs_encoder.PairPromptTransformerTokenizer
+      shape_meta: ${shape_meta}
+      separate_prompt_and_receding_obs_encoders: false
+      obs_encoder:
+        _target_: behavior_prompting.train_network.model.vision.transformer_obs_encoder.TransformerObsEncoder
+        shape_meta: ${shape_meta}
+        global_pool: ''
+        n_emb: ${...n_emb}
+        model_name: vit_base_patch16_clip_224.openai
+        pretrained: true
+        frozen: false
+        feature_aggregation: cls
+        downsample_ratio: 32
+        train_image_transforms: ${.....task.train_image_transforms}
+        non_prompt_train_image_transforms: ${oc.select:.....task.non_prompt_train_image_transforms,null}
+        eval_image_transforms: ${.....task.eval_image_transforms}
+        use_group_norm: true
+        share_rgb_model: false
+        use_vision_norm: true
+        concat_time_dimension: false
+      n_emb: ${..n_emb}
+      concat_prompt_and_receding: false
+      only_use_last_step_of_prompt: false
+      cut_first_n_steps_of_prompt: 0
+      ignore_prompt_obs: false
+      ignore_prompt_proprio: false
+      ignore_prompt_action: false
+      merge_prompt_tokens: obs_and_action
+      use_pool_modality_pos_embed: true
+      prompt_attention_pool:
+        _target_: timm.layers.AttentionPoolLatent
+        in_features: ${...n_emb}
+        num_heads: 8
+        mlp_ratio: 4.0
+        pool_type: token
+    prompt_encoder_enabled: false
+    prompt_encoder_n_layer: 6
+    prompt_encoder_n_head: 8
+    prompt_with_obs_decoder_enabled: true
+    prompt_with_obs_decoder_n_layer: 6
+    prompt_with_obs_decoder_n_head: 8
+    ignore_prompt: false
+    flatten_output: true
+    n_emb: 768
+    p_drop_attn: 0.1
+    p_drop_prompt_tokens: 0.0
+    use_attention_sink: false
+    num_attention_sink_tokens: 4
+dataloader:
+  batch_size: 70
+  num_workers: 8
+  persistent_workers: true
+  pin_memory: true
+  shuffle: true
+val_dataloader:
+  batch_size: 16
+  num_workers: 4
+  persistent_workers: false
+  pin_memory: true
+  shuffle: false
+optimizer:
+  lr: 5.0e-05
+  weight_decay: 1.0e-06
+  betas:
+  - 0.95
+  - 0.999

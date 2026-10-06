@@ -1,0 +1,397 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+	`--num_machines` was set to a value of `1`
+	`--mixed_precision` was set to a value of `'no'`
+	`--dynamo_backend` was set to a value of `'no'`
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+pygame 2.6.1 (SDL 2.28.4, Python 3.10.20)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[Warning]: datasets path /home/noroian.r/CapstoneProject/Capstone/behavior_prompting/deps/LIBERO/libero/libero/../datasets does not exist!
+[2026-10-06 17:42:31,464][timm.models._builder][INFO] - Loading pretrained weights from Hugging Face hub (timm/vit_base_patch16_clip_224.openai)
+[2026-10-06 17:42:33,681][behavior_prompting.train_network.model.vision.transformer_obs_encoder][INFO] - number of parameters: 1.716088e+08
+[2026-10-06 17:42:40,073][behavior_prompting.train_network.model.diffusion.conditional_unet1d][INFO] - number of parameters: 2.391561e+08
+wandb: Tracking run with wandb version 0.27.2
+wandb: W&B syncing is set to `offline` in this directory. Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+wandb: Run data is saved locally in /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/wandb/offline-run-20261006_174240-go32smvj
+/home/noroian.r/.conda/envs/bp/lib/python3.10/site-packages/torch/utils/data/dataloader.py:626: UserWarning: This DataLoader will create 32 worker processes in total. Our suggested max number of worker in current system is 16, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(
+Started training. Run dir: /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke
+Initializing dataset...
+Acquiring lock on cache.
+Copying data to /tmp/noroian.r/zarr_cache/firstreal-single_2026-10-05T22:37:55.774749.zarr.mdb
+Cache written to disk!
+Time taken to initialize dataset: 3.5995309352874756 seconds
+Starting to load env runners
+Time taken to load env runners: 0.03719282150268555 seconds
+Loading prompt dataset...
+Time taken to load prompt dataset: 0.03709864616394043 seconds
+Loading validation dataset...
+Time taken to load validation dataset: 0.005614519119262695 seconds
+Epoch 0. Recreated dataloaders
+train dataset length: 36198 train dataloader length: 518
+val dataset length: 1728 val dataloader length: 64 
+Computing normalizer on main process...
+Time taken to compute normalizer: 6.581700801849365 seconds
+Training epoch 0:   0%|          | 1/518 [00:06<53:17,  6.18s/it, loss=1.15]
+Training epoch 0:   1%|          | 5/518 [00:07<09:49,  1.15s/it, loss=1.06]
+Training epoch 0:   2%|▏         | 10/518 [00:08<05:01,  1.69it/s, loss=1.02]
+Training epoch 0:   3%|▎         | 15/518 [00:09<03:30,  2.39it/s, loss=1.02]
+Training epoch 0:   4%|▍         | 20/518 [00:10<02:49,  2.94it/s, loss=0.988]
+Training epoch 0:   5%|▍         | 25/518 [00:11<02:25,  3.38it/s, loss=0.973]
+Training epoch 0:   6%|▌         | 30/518 [00:12<02:10,  3.73it/s, loss=0.952]
+Training epoch 0:   7%|▋         | 35/518 [00:13<02:02,  3.93it/s, loss=0.932]
+Training epoch 0:   8%|▊         | 40/518 [00:14<01:55,  4.13it/s, loss=0.875]
+Training epoch 0:   9%|▊         | 45/518 [00:16<01:51,  4.23it/s, loss=0.81] 
+Training epoch 0:  10%|▉         | 50/518 [00:17<01:47,  4.35it/s, loss=0.712]
+Training epoch 0:  11%|█         | 55/518 [00:18<01:45,  4.39it/s, loss=0.685]
+Training epoch 0:  12%|█▏        | 60/518 [00:19<01:43,  4.44it/s, loss=0.586]
+Training epoch 0:  13%|█▎        | 65/518 [00:20<01:40,  4.49it/s, loss=0.546]
+Training epoch 0:  14%|█▎        | 70/518 [00:21<01:39,  4.49it/s, loss=0.525]
+Training epoch 0:  14%|█▍        | 75/518 [00:22<01:37,  4.53it/s, loss=0.46] 
+Training epoch 0:  15%|█▌        | 80/518 [00:23<01:35,  4.56it/s, loss=0.399]
+Training epoch 0:  16%|█▋        | 85/518 [00:24<01:34,  4.57it/s, loss=0.372]
+Training epoch 0:  17%|█▋        | 90/518 [00:25<01:33,  4.55it/s, loss=0.366]
+Training epoch 0:  18%|█▊        | 95/518 [00:26<01:32,  4.58it/s, loss=0.339]
+Training epoch 0:  19%|█▉        | 100/518 [00:28<01:31,  4.57it/s, loss=0.27]
+Training epoch 0:  20%|██        | 105/518 [00:29<01:30,  4.57it/s, loss=0.262]
+Training epoch 0:  21%|██        | 110/518 [00:30<01:29,  4.54it/s, loss=0.273]
+Training epoch 0:  22%|██▏       | 115/518 [00:31<01:28,  4.56it/s, loss=0.224]
+Training epoch 0:  23%|██▎       | 120/518 [00:32<01:26,  4.58it/s, loss=0.208]
+Training epoch 0:  24%|██▍       | 125/518 [00:33<01:25,  4.59it/s, loss=0.19] 
+Training epoch 0:  25%|██▌       | 130/518 [00:34<01:24,  4.60it/s, loss=0.196]
+Training epoch 0:  26%|██▌       | 135/518 [00:35<01:23,  4.61it/s, loss=0.178]
+Training epoch 0:  27%|██▋       | 140/518 [00:36<01:21,  4.61it/s, loss=0.16] 
+Training epoch 0:  28%|██▊       | 145/518 [00:37<01:20,  4.61it/s, loss=0.171]
+Training epoch 0:  29%|██▉       | 150/518 [00:39<01:21,  4.53it/s, loss=0.144]
+Training epoch 0:  30%|██▉       | 155/518 [00:40<01:19,  4.56it/s, loss=0.161]
+Training epoch 0:  31%|███       | 160/518 [00:41<01:18,  4.58it/s, loss=0.15] 
+Training epoch 0:  32%|███▏      | 165/518 [00:42<01:16,  4.59it/s, loss=0.136]
+Training epoch 0:  33%|███▎      | 170/518 [00:43<01:15,  4.58it/s, loss=0.152]
+Training epoch 0:  34%|███▍      | 175/518 [00:44<01:14,  4.60it/s, loss=0.152]
+Training epoch 0:  35%|███▍      | 180/518 [00:45<01:13,  4.61it/s, loss=0.119]
+Training epoch 0:  36%|███▌      | 185/518 [00:46<01:12,  4.61it/s, loss=0.124]
+Training epoch 0:  37%|███▋      | 190/518 [00:47<01:11,  4.62it/s, loss=0.121]
+Training epoch 0:  38%|███▊      | 195/518 [00:48<01:09,  4.62it/s, loss=0.12] 
+Training epoch 0:  39%|███▊      | 200/518 [00:49<01:08,  4.62it/s, loss=0.111]
+Training epoch 0:  40%|███▉      | 205/518 [00:50<01:07,  4.62it/s, loss=0.14] 
+Training epoch 0:  41%|████      | 210/518 [00:52<01:06,  4.62it/s, loss=0.108]
+Training epoch 0:  42%|████▏     | 215/518 [00:53<01:05,  4.61it/s, loss=0.0926]
+Training epoch 0:  42%|████▏     | 220/518 [00:54<01:04,  4.61it/s, loss=0.0906]
+Training epoch 0:  43%|████▎     | 225/518 [00:55<01:03,  4.61it/s, loss=0.0962]
+Training epoch 0:  44%|████▍     | 230/518 [00:56<01:02,  4.61it/s, loss=0.0915]
+Training epoch 0:  45%|████▌     | 235/518 [00:57<01:01,  4.62it/s, loss=0.0897]
+Training epoch 0:  46%|████▋     | 240/518 [00:58<01:00,  4.62it/s, loss=0.0914]
+Training epoch 0:  47%|████▋     | 245/518 [00:59<00:59,  4.61it/s, loss=0.0854]
+Training epoch 0:  48%|████▊     | 250/518 [01:00<00:58,  4.62it/s, loss=0.105] 
+Training epoch 0:  49%|████▉     | 255/518 [01:01<00:56,  4.61it/s, loss=0.0808]
+Training epoch 0:  50%|█████     | 260/518 [01:02<00:56,  4.61it/s, loss=0.0848]
+Training epoch 0:  51%|█████     | 265/518 [01:03<00:54,  4.60it/s, loss=0.0737]
+Training epoch 0:  52%|█████▏    | 270/518 [01:05<00:53,  4.61it/s, loss=0.0695]
+Training epoch 0:  53%|█████▎    | 275/518 [01:06<00:52,  4.60it/s, loss=0.0723]
+Training epoch 0:  54%|█████▍    | 280/518 [01:07<00:51,  4.60it/s, loss=0.0798]
+Training epoch 0:  55%|█████▌    | 285/518 [01:08<00:50,  4.58it/s, loss=0.0822]
+Training epoch 0:  56%|█████▌    | 290/518 [01:09<00:50,  4.51it/s, loss=0.0756]
+Training epoch 0:  57%|█████▋    | 295/518 [01:10<00:49,  4.53it/s, loss=0.0733]
+Training epoch 0:  58%|█████▊    | 300/518 [01:11<00:47,  4.55it/s, loss=0.0698]
+Training epoch 0:  59%|█████▉    | 305/518 [01:12<00:46,  4.57it/s, loss=0.0793]
+Training epoch 0:  60%|█████▉    | 310/518 [01:13<00:45,  4.58it/s, loss=0.0713]
+Training epoch 0:  61%|██████    | 315/518 [01:14<00:44,  4.59it/s, loss=0.0695]
+Training epoch 0:  62%|██████▏   | 320/518 [01:15<00:43,  4.60it/s, loss=0.0634]
+Training epoch 0:  63%|██████▎   | 325/518 [01:17<00:41,  4.60it/s, loss=0.0722]
+Training epoch 0:  64%|██████▎   | 330/518 [01:18<00:40,  4.60it/s, loss=0.0729]
+Training epoch 0:  65%|██████▍   | 335/518 [01:19<00:39,  4.60it/s, loss=0.0651]
+Training epoch 0:  66%|██████▌   | 340/518 [01:20<00:38,  4.62it/s, loss=0.068] 
+Training epoch 0:  67%|██████▋   | 345/518 [01:21<00:37,  4.62it/s, loss=0.0668]
+Training epoch 0:  68%|██████▊   | 350/518 [01:22<00:36,  4.63it/s, loss=0.0653]
+Training epoch 0:  69%|██████▊   | 355/518 [01:23<00:35,  4.64it/s, loss=0.0746]
+Training epoch 0:  69%|██████▉   | 360/518 [01:24<00:34,  4.64it/s, loss=0.0631]
+Training epoch 0:  70%|███████   | 365/518 [01:25<00:32,  4.64it/s, loss=0.0669]
+Training epoch 0:  71%|███████▏  | 370/518 [01:26<00:31,  4.64it/s, loss=0.0616]
+Training epoch 0:  72%|███████▏  | 375/518 [01:27<00:30,  4.64it/s, loss=0.0718]
+Training epoch 0:  73%|███████▎  | 380/518 [01:28<00:29,  4.64it/s, loss=0.0629]
+Training epoch 0:  74%|███████▍  | 385/518 [01:30<00:28,  4.63it/s, loss=0.0603]
+Training epoch 0:  75%|███████▌  | 390/518 [01:31<00:27,  4.64it/s, loss=0.0576]
+Training epoch 0:  76%|███████▋  | 395/518 [01:32<00:26,  4.64it/s, loss=0.0595]
+Training epoch 0:  77%|███████▋  | 400/518 [01:33<00:25,  4.62it/s, loss=0.0547]
+Training epoch 0:  78%|███████▊  | 405/518 [01:34<00:24,  4.62it/s, loss=0.0487]
+Training epoch 0:  79%|███████▉  | 410/518 [01:35<00:23,  4.63it/s, loss=0.0625]
+Training epoch 0:  80%|████████  | 415/518 [01:36<00:22,  4.61it/s, loss=0.05]  
+Training epoch 0:  81%|████████  | 420/518 [01:37<00:21,  4.49it/s, loss=0.0541]
+Training epoch 0:  82%|████████▏ | 425/518 [01:38<00:20,  4.49it/s, loss=0.0472]
+Training epoch 0:  83%|████████▎ | 430/518 [01:39<00:19,  4.44it/s, loss=0.0656]
+Training epoch 0:  84%|████████▍ | 435/518 [01:41<00:18,  4.41it/s, loss=0.0528]
+Training epoch 0:  85%|████████▍ | 440/518 [01:42<00:17,  4.45it/s, loss=0.067] 
+Training epoch 0:  86%|████████▌ | 445/518 [01:43<00:16,  4.45it/s, loss=0.0608]
+Training epoch 0:  87%|████████▋ | 450/518 [01:44<00:15,  4.51it/s, loss=0.0565]
+Training epoch 0:  88%|████████▊ | 455/518 [01:45<00:14,  4.46it/s, loss=0.055] 
+Training epoch 0:  89%|████████▉ | 460/518 [01:46<00:13,  4.45it/s, loss=0.0548]
+Training epoch 0:  90%|████████▉ | 465/518 [01:47<00:11,  4.48it/s, loss=0.0561]
+Training epoch 0:  91%|█████████ | 470/518 [01:48<00:10,  4.50it/s, loss=0.0457]
+Training epoch 0:  92%|█████████▏| 475/518 [01:49<00:09,  4.53it/s, loss=0.0669]
+Training epoch 0:  93%|█████████▎| 480/518 [01:51<00:08,  4.54it/s, loss=0.0439]
+Training epoch 0:  94%|█████████▎| 485/518 [01:52<00:07,  4.55it/s, loss=0.0433]
+Training epoch 0:  95%|█████████▍| 490/518 [01:53<00:06,  4.54it/s, loss=0.0612]
+Training epoch 0:  96%|█████████▌| 495/518 [01:54<00:05,  4.57it/s, loss=0.0554]
+Training epoch 0:  97%|█████████▋| 500/518 [01:55<00:03,  4.58it/s, loss=0.0533]
+Training epoch 0:  97%|█████████▋| 505/518 [01:56<00:02,  4.60it/s, loss=0.046] 
+Training epoch 0:  98%|█████████▊| 510/518 [01:57<00:01,  4.63it/s, loss=0.0519]
+Training epoch 0:  99%|█████████▉| 515/518 [01:58<00:00,  4.66it/s, loss=0.0645]
+=== Started UmiPromptingRunner run for task "block_raise" ===
+Finished prompting model! Time taken: 0.3275716304779053 seconds
+Saved attention and rollout visualization to /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/vis/attention_and_rollout_umi_block_raise.mp4
+=== Finished UmiPromptingRunner run for task "block_raise" ===
+Time taken to rollout policy: 12.937271118164062 seconds
+Saved val_action_mse_error_all top-k checkpoint (epoch % 1 == 0): /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/checkpoints/epoch=0000-val_action_mse_error_all=0.0388516.ckpt
+Training epoch 1:   0%|          | 1/518 [00:01<13:16,  1.54s/it, loss=0.0558]
+Training epoch 1:   1%|          | 6/518 [00:02<03:21,  2.54it/s, loss=0.0456]
+Training epoch 1:   2%|▏         | 11/518 [00:03<02:32,  3.32it/s, loss=0.0402]
+Training epoch 1:   3%|▎         | 16/518 [00:04<02:12,  3.79it/s, loss=0.0452]
+Training epoch 1:   4%|▍         | 21/518 [00:06<02:02,  4.07it/s, loss=0.0476]
+Training epoch 1:   5%|▌         | 26/518 [00:07<01:56,  4.23it/s, loss=0.0495]
+Training epoch 1:   6%|▌         | 31/518 [00:08<01:52,  4.33it/s, loss=0.0464]
+Training epoch 1:   7%|▋         | 36/518 [00:09<01:50,  4.36it/s, loss=0.0462]
+Training epoch 1:   8%|▊         | 41/518 [00:10<01:47,  4.44it/s, loss=0.0458]
+Training epoch 1:   9%|▉         | 46/518 [00:11<01:46,  4.45it/s, loss=0.0467]
+Training epoch 1:  10%|▉         | 51/518 [00:12<01:43,  4.50it/s, loss=0.0455]
+Training epoch 1:  11%|█         | 56/518 [00:13<01:41,  4.54it/s, loss=0.041] 
+Training epoch 1:  12%|█▏        | 61/518 [00:14<01:42,  4.45it/s, loss=0.0484]
+Training epoch 1:  13%|█▎        | 66/518 [00:15<01:41,  4.47it/s, loss=0.0431]
+Training epoch 1:  14%|█▎        | 71/518 [00:17<01:41,  4.42it/s, loss=0.0469]
+Training epoch 1:  15%|█▍        | 76/518 [00:18<01:40,  4.39it/s, loss=0.0363]
+Training epoch 1:  16%|█▌        | 81/518 [00:19<01:38,  4.44it/s, loss=0.04]  
+Training epoch 1:  17%|█▋        | 86/518 [00:20<01:36,  4.48it/s, loss=0.0458]
+Training epoch 1:  18%|█▊        | 91/518 [00:21<01:34,  4.53it/s, loss=0.0487]
+Training epoch 1:  19%|█▊        | 96/518 [00:22<01:32,  4.56it/s, loss=0.0389]
+Training epoch 1:  19%|█▉        | 101/518 [00:23<01:31,  4.58it/s, loss=0.0373]
+Training epoch 1:  20%|██        | 106/518 [00:24<01:32,  4.47it/s, loss=0.0507]
+Training epoch 1:  21%|██▏       | 111/518 [00:26<01:30,  4.50it/s, loss=0.0414]
+Training epoch 1:  22%|██▏       | 116/518 [00:27<01:28,  4.53it/s, loss=0.0379]
+Training epoch 1:  23%|██▎       | 121/518 [00:28<01:27,  4.54it/s, loss=0.0462]
+Training epoch 1:  24%|██▍       | 126/518 [00:29<01:26,  4.54it/s, loss=0.0536]
+Training epoch 1:  25%|██▌       | 131/518 [00:30<01:25,  4.55it/s, loss=0.0553]
+Training epoch 1:  26%|██▋       | 136/518 [00:31<01:23,  4.56it/s, loss=0.0483]
+Training epoch 1:  27%|██▋       | 141/518 [00:32<01:22,  4.58it/s, loss=0.0449]
+Training epoch 1:  28%|██▊       | 146/518 [00:33<01:21,  4.59it/s, loss=0.042] 
+Training epoch 1:  29%|██▉       | 151/518 [00:34<01:19,  4.60it/s, loss=0.0445]
+Training epoch 1:  30%|███       | 156/518 [00:35<01:18,  4.62it/s, loss=0.0466]
+Training epoch 1:  31%|███       | 161/518 [00:36<01:17,  4.62it/s, loss=0.041] 
+Training epoch 1:  32%|███▏      | 166/518 [00:37<01:16,  4.62it/s, loss=0.0416]
+Training epoch 1:  33%|███▎      | 171/518 [00:39<01:15,  4.62it/s, loss=0.0479]
+Training epoch 1:  34%|███▍      | 176/518 [00:40<01:14,  4.61it/s, loss=0.049] 
+Training epoch 1:  35%|███▍      | 181/518 [00:41<01:12,  4.62it/s, loss=0.0505]
+Training epoch 1:  36%|███▌      | 186/518 [00:42<01:11,  4.62it/s, loss=0.0451]
+Training epoch 1:  37%|███▋      | 191/518 [00:43<01:10,  4.62it/s, loss=0.0488]
+Training epoch 1:  38%|███▊      | 196/518 [00:44<01:09,  4.62it/s, loss=0.0446]
+Training epoch 1:  39%|███▉      | 201/518 [00:45<01:08,  4.61it/s, loss=0.0409]
+Training epoch 1:  40%|███▉      | 206/518 [00:46<01:09,  4.49it/s, loss=0.0484]
+Training epoch 1:  41%|████      | 211/518 [00:47<01:08,  4.51it/s, loss=0.0471]
+Training epoch 1:  42%|████▏     | 216/518 [00:48<01:06,  4.55it/s, loss=0.0371]
+Training epoch 1:  43%|████▎     | 221/518 [00:49<01:05,  4.56it/s, loss=0.0451]
+Training epoch 1:  44%|████▎     | 226/518 [00:51<01:03,  4.58it/s, loss=0.0416]
+Training epoch 1:  45%|████▍     | 231/518 [00:52<01:02,  4.59it/s, loss=0.0403]
+Training epoch 1:  46%|████▌     | 236/518 [00:53<01:01,  4.60it/s, loss=0.0363]
+Training epoch 1:  47%|████▋     | 241/518 [00:54<01:00,  4.61it/s, loss=0.0378]
+Training epoch 1:  47%|████▋     | 246/518 [00:55<00:58,  4.61it/s, loss=0.0331]
+Training epoch 1:  48%|████▊     | 251/518 [00:56<00:57,  4.61it/s, loss=0.0366]
+Training epoch 1:  49%|████▉     | 256/518 [00:57<00:57,  4.58it/s, loss=0.0371]
+Training epoch 1:  50%|█████     | 261/518 [00:58<00:55,  4.60it/s, loss=0.0382]
+Training epoch 1:  51%|█████▏    | 266/518 [00:59<00:54,  4.61it/s, loss=0.044] 
+Training epoch 1:  52%|█████▏    | 271/518 [01:00<00:53,  4.62it/s, loss=0.0374]
+Training epoch 1:  53%|█████▎    | 276/518 [01:01<00:52,  4.62it/s, loss=0.0392]
+Training epoch 1:  54%|█████▍    | 281/518 [01:02<00:51,  4.61it/s, loss=0.0373]
+Training epoch 1:  55%|█████▌    | 286/518 [01:04<00:50,  4.59it/s, loss=0.0403]
+Training epoch 1:  56%|█████▌    | 291/518 [01:05<00:49,  4.58it/s, loss=0.0388]
+Training epoch 1:  57%|█████▋    | 296/518 [01:06<00:48,  4.58it/s, loss=0.0406]
+Training epoch 1:  58%|█████▊    | 301/518 [01:07<00:47,  4.58it/s, loss=0.0293]
+Training epoch 1:  59%|█████▉    | 306/518 [01:08<00:46,  4.57it/s, loss=0.0417]
+Training epoch 1:  60%|██████    | 311/518 [01:09<00:45,  4.58it/s, loss=0.04]  
+Training epoch 1:  61%|██████    | 316/518 [01:10<00:44,  4.58it/s, loss=0.04]
+Training epoch 1:  62%|██████▏   | 321/518 [01:11<00:43,  4.57it/s, loss=0.0344]
+Training epoch 1:  63%|██████▎   | 326/518 [01:12<00:41,  4.59it/s, loss=0.0402]
+Training epoch 1:  64%|██████▍   | 331/518 [01:13<00:40,  4.60it/s, loss=0.0344]
+Training epoch 1:  65%|██████▍   | 336/518 [01:15<00:39,  4.60it/s, loss=0.0316]
+Training epoch 1:  66%|██████▌   | 341/518 [01:16<00:38,  4.61it/s, loss=0.0432]
+Training epoch 1:  67%|██████▋   | 346/518 [01:17<00:37,  4.61it/s, loss=0.0359]
+Training epoch 1:  68%|██████▊   | 351/518 [01:18<00:36,  4.60it/s, loss=0.0331]
+Training epoch 1:  69%|██████▊   | 356/518 [01:19<00:35,  4.61it/s, loss=0.0397]
+Training epoch 1:  70%|██████▉   | 361/518 [01:20<00:34,  4.60it/s, loss=0.0342]
+Training epoch 1:  71%|███████   | 366/518 [01:21<00:32,  4.61it/s, loss=0.0391]
+Training epoch 1:  72%|███████▏  | 371/518 [01:22<00:31,  4.60it/s, loss=0.0308]
+Training epoch 1:  73%|███████▎  | 376/518 [01:23<00:30,  4.61it/s, loss=0.0316]
+Training epoch 1:  74%|███████▎  | 381/518 [01:24<00:30,  4.55it/s, loss=0.0369]
+Training epoch 1:  75%|███████▍  | 386/518 [01:25<00:28,  4.56it/s, loss=0.0319]
+Training epoch 1:  75%|███████▌  | 391/518 [01:27<00:28,  4.51it/s, loss=0.034] 
+Training epoch 1:  76%|███████▋  | 396/518 [01:28<00:27,  4.49it/s, loss=0.0359]
+Training epoch 1:  77%|███████▋  | 401/518 [01:29<00:25,  4.51it/s, loss=0.0306]
+Training epoch 1:  78%|███████▊  | 406/518 [01:30<00:24,  4.53it/s, loss=0.0319]
+Training epoch 1:  79%|███████▉  | 411/518 [01:31<00:23,  4.54it/s, loss=0.0343]
+Training epoch 1:  80%|████████  | 416/518 [01:32<00:22,  4.54it/s, loss=0.0397]
+Training epoch 1:  81%|████████▏ | 421/518 [01:33<00:21,  4.56it/s, loss=0.0285]
+Training epoch 1:  82%|████████▏ | 426/518 [01:34<00:20,  4.57it/s, loss=0.0339]
+Training epoch 1:  83%|████████▎ | 431/518 [01:35<00:18,  4.58it/s, loss=0.0377]
+Training epoch 1:  84%|████████▍ | 436/518 [01:36<00:17,  4.57it/s, loss=0.0349]
+Training epoch 1:  85%|████████▌ | 441/518 [01:38<00:16,  4.57it/s, loss=0.0346]
+Training epoch 1:  86%|████████▌ | 446/518 [01:39<00:15,  4.59it/s, loss=0.0339]
+Training epoch 1:  87%|████████▋ | 451/518 [01:40<00:14,  4.60it/s, loss=0.0301]
+Training epoch 1:  88%|████████▊ | 456/518 [01:41<00:13,  4.60it/s, loss=0.0394]
+Training epoch 1:  89%|████████▉ | 461/518 [01:42<00:12,  4.62it/s, loss=0.0328]
+Training epoch 1:  90%|████████▉ | 466/518 [01:43<00:11,  4.60it/s, loss=0.035] 
+Training epoch 1:  91%|█████████ | 471/518 [01:44<00:10,  4.62it/s, loss=0.0337]
+Training epoch 1:  92%|█████████▏| 476/518 [01:45<00:09,  4.62it/s, loss=0.0335]
+Training epoch 1:  93%|█████████▎| 481/518 [01:46<00:07,  4.63it/s, loss=0.0308]
+Training epoch 1:  94%|█████████▍| 486/518 [01:47<00:06,  4.62it/s, loss=0.0331]
+Training epoch 1:  95%|█████████▍| 491/518 [01:48<00:05,  4.61it/s, loss=0.0392]
+Training epoch 1:  96%|█████████▌| 496/518 [01:49<00:04,  4.62it/s, loss=0.0353]
+Training epoch 1:  97%|█████████▋| 501/518 [01:51<00:04,  4.12it/s, loss=0.0287]
+Training epoch 1:  98%|█████████▊| 506/518 [01:52<00:02,  4.27it/s, loss=0.0359]
+Training epoch 1:  99%|█████████▊| 511/518 [01:53<00:01,  4.38it/s, loss=0.0305]
+Training epoch 1: 100%|█████████▉| 516/518 [01:54<00:00,  4.47it/s, loss=0.034] 
+=== Started UmiPromptingRunner run for task "block_raise" ===
+Finished prompting model! Time taken: 0.0982973575592041 seconds
+Saved attention and rollout visualization to /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/vis/attention_and_rollout_umi_block_raise.mp4
+=== Finished UmiPromptingRunner run for task "block_raise" ===
+Time taken to rollout policy: 10.922541618347168 seconds
+Saved val_action_mse_error_all top-k checkpoint (epoch % 1 == 0): /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/checkpoints/epoch=0001-val_action_mse_error_all=0.0295159.ckpt
+Training epoch 2:   0%|          | 1/518 [00:01<12:40,  1.47s/it, loss=0.0283]
+Training epoch 2:   1%|          | 6/518 [00:02<03:21,  2.54it/s, loss=0.0302]
+Training epoch 2:   2%|▏         | 11/518 [00:03<02:32,  3.33it/s, loss=0.0342]
+Training epoch 2:   3%|▎         | 16/518 [00:05<02:17,  3.65it/s, loss=0.0296]
+Training epoch 2:   4%|▍         | 21/518 [00:06<02:07,  3.91it/s, loss=0.037] 
+Training epoch 2:   5%|▌         | 26/518 [00:07<02:00,  4.08it/s, loss=0.0261]
+Training epoch 2:   6%|▌         | 31/518 [00:08<01:57,  4.14it/s, loss=0.0279]
+Training epoch 2:   7%|▋         | 36/518 [00:09<01:53,  4.25it/s, loss=0.0411]
+Training epoch 2:   8%|▊         | 41/518 [00:10<01:51,  4.28it/s, loss=0.0328]
+Training epoch 2:   9%|▉         | 46/518 [00:11<01:49,  4.29it/s, loss=0.0297]
+Training epoch 2:  10%|▉         | 51/518 [00:12<01:46,  4.37it/s, loss=0.0263]
+Training epoch 2:  11%|█         | 56/518 [00:14<01:46,  4.32it/s, loss=0.0345]
+Training epoch 2:  12%|█▏        | 61/518 [00:15<01:44,  4.37it/s, loss=0.0253]
+Training epoch 2:  13%|█▎        | 66/518 [00:16<01:42,  4.43it/s, loss=0.0327]
+Training epoch 2:  14%|█▎        | 71/518 [00:17<01:39,  4.48it/s, loss=0.0312]
+Training epoch 2:  15%|█▍        | 76/518 [00:18<01:38,  4.50it/s, loss=0.0303]
+Training epoch 2:  16%|█▌        | 81/518 [00:19<01:38,  4.44it/s, loss=0.0331]
+Training epoch 2:  17%|█▋        | 86/518 [00:20<01:38,  4.40it/s, loss=0.0315]
+Training epoch 2:  18%|█▊        | 91/518 [00:22<01:37,  4.36it/s, loss=0.0286]
+Training epoch 2:  19%|█▊        | 96/518 [00:23<01:35,  4.41it/s, loss=0.0275]
+Training epoch 2:  19%|█▉        | 101/518 [00:24<01:34,  4.40it/s, loss=0.0307]
+Training epoch 2:  20%|██        | 106/518 [00:25<01:33,  4.38it/s, loss=0.0346]
+Training epoch 2:  21%|██▏       | 111/518 [00:26<01:31,  4.45it/s, loss=0.031] 
+Training epoch 2:  22%|██▏       | 116/518 [00:27<01:29,  4.49it/s, loss=0.025]
+Training epoch 2:  23%|██▎       | 121/518 [00:28<01:28,  4.50it/s, loss=0.0279]
+Training epoch 2:  24%|██▍       | 126/518 [00:29<01:26,  4.51it/s, loss=0.0351]
+Training epoch 2:  25%|██▌       | 131/518 [00:30<01:25,  4.53it/s, loss=0.0308]
+Training epoch 2:  26%|██▋       | 136/518 [00:32<01:24,  4.51it/s, loss=0.0282]
+Training epoch 2:  27%|██▋       | 141/518 [00:33<01:23,  4.54it/s, loss=0.029] 
+Training epoch 2:  28%|██▊       | 146/518 [00:34<01:21,  4.55it/s, loss=0.0308]
+Training epoch 2:  29%|██▉       | 151/518 [00:35<01:20,  4.56it/s, loss=0.0293]
+Training epoch 2:  30%|███       | 156/518 [00:36<01:19,  4.57it/s, loss=0.035] 
+Training epoch 2:  31%|███       | 161/518 [00:37<01:18,  4.57it/s, loss=0.0306]
+Training epoch 2:  32%|███▏      | 166/518 [00:38<01:17,  4.57it/s, loss=0.0247]
+Training epoch 2:  33%|███▎      | 171/518 [00:39<01:15,  4.57it/s, loss=0.0312]
+Training epoch 2:  34%|███▍      | 176/518 [00:40<01:14,  4.58it/s, loss=0.027] 
+Training epoch 2:  35%|███▍      | 181/518 [00:41<01:13,  4.58it/s, loss=0.0275]
+Training epoch 2:  36%|███▌      | 186/518 [00:42<01:12,  4.58it/s, loss=0.0282]
+Training epoch 2:  37%|███▋      | 191/518 [00:44<01:11,  4.58it/s, loss=0.0307]
+Training epoch 2:  38%|███▊      | 196/518 [00:45<01:10,  4.59it/s, loss=0.0361]
+Training epoch 2:  39%|███▉      | 201/518 [00:46<01:09,  4.59it/s, loss=0.0262]
+Training epoch 2:  40%|███▉      | 206/518 [00:47<01:08,  4.55it/s, loss=0.0352]
+Training epoch 2:  41%|████      | 211/518 [00:48<01:07,  4.55it/s, loss=0.029] 
+Training epoch 2:  42%|████▏     | 216/518 [00:49<01:06,  4.57it/s, loss=0.0331]
+Training epoch 2:  43%|████▎     | 221/518 [00:50<01:04,  4.58it/s, loss=0.0255]
+Training epoch 2:  44%|████▎     | 226/518 [00:51<01:03,  4.59it/s, loss=0.0268]
+Training epoch 2:  45%|████▍     | 231/518 [00:52<01:02,  4.60it/s, loss=0.0338]
+Training epoch 2:  46%|████▌     | 236/518 [00:53<01:01,  4.60it/s, loss=0.0326]
+Training epoch 2:  47%|████▋     | 241/518 [00:54<01:00,  4.60it/s, loss=0.0306]
+Training epoch 2:  47%|████▋     | 246/518 [00:56<00:59,  4.60it/s, loss=0.0257]
+Training epoch 2:  48%|████▊     | 251/518 [00:57<00:58,  4.56it/s, loss=0.0252]
+Training epoch 2:  49%|████▉     | 256/518 [00:58<00:57,  4.55it/s, loss=0.0322]
+Training epoch 2:  50%|█████     | 261/518 [00:59<00:56,  4.52it/s, loss=0.03]  
+Training epoch 2:  51%|█████▏    | 266/518 [01:00<00:55,  4.54it/s, loss=0.0296]
+Training epoch 2:  52%|█████▏    | 271/518 [01:01<00:54,  4.56it/s, loss=0.0262]
+Training epoch 2:  53%|█████▎    | 276/518 [01:02<00:52,  4.58it/s, loss=0.0336]
+Training epoch 2:  54%|█████▍    | 281/518 [01:03<00:51,  4.58it/s, loss=0.0302]
+Training epoch 2:  55%|█████▌    | 286/518 [01:04<00:50,  4.58it/s, loss=0.0276]
+Training epoch 2:  56%|█████▌    | 291/518 [01:05<00:49,  4.58it/s, loss=0.0281]
+Training epoch 2:  57%|█████▋    | 296/518 [01:06<00:48,  4.58it/s, loss=0.0267]
+Training epoch 2:  58%|█████▊    | 301/518 [01:08<00:47,  4.58it/s, loss=0.0262]
+Training epoch 2:  59%|█████▉    | 306/518 [01:09<00:46,  4.59it/s, loss=0.0279]
+Training epoch 2:  60%|██████    | 311/518 [01:10<00:45,  4.60it/s, loss=0.0289]
+Training epoch 2:  61%|██████    | 316/518 [01:11<00:43,  4.60it/s, loss=0.0332]
+Training epoch 2:  62%|██████▏   | 321/518 [01:12<00:42,  4.60it/s, loss=0.0244]
+Training epoch 2:  63%|██████▎   | 326/518 [01:13<00:41,  4.60it/s, loss=0.0353]
+Training epoch 2:  64%|██████▍   | 331/518 [01:14<00:40,  4.59it/s, loss=0.0285]
+Training epoch 2:  65%|██████▍   | 336/518 [01:15<00:39,  4.60it/s, loss=0.0313]
+Training epoch 2:  66%|██████▌   | 341/518 [01:16<00:38,  4.59it/s, loss=0.0255]
+Training epoch 2:  67%|██████▋   | 346/518 [01:17<00:37,  4.59it/s, loss=0.0282]
+Training epoch 2:  68%|██████▊   | 351/518 [01:18<00:36,  4.59it/s, loss=0.0256]
+Training epoch 2:  69%|██████▊   | 356/518 [01:20<00:35,  4.59it/s, loss=0.0284]
+Training epoch 2:  70%|██████▉   | 361/518 [01:21<00:34,  4.60it/s, loss=0.0266]
+Training epoch 2:  71%|███████   | 366/518 [01:22<00:33,  4.60it/s, loss=0.0241]
+Training epoch 2:  72%|███████▏  | 371/518 [01:23<00:31,  4.60it/s, loss=0.026] 
+Training epoch 2:  73%|███████▎  | 376/518 [01:24<00:30,  4.60it/s, loss=0.0221]
+Training epoch 2:  74%|███████▎  | 381/518 [01:25<00:29,  4.57it/s, loss=0.025] 
+Training epoch 2:  75%|███████▍  | 386/518 [01:26<00:28,  4.57it/s, loss=0.0277]
+Training epoch 2:  75%|███████▌  | 391/518 [01:27<00:27,  4.58it/s, loss=0.0272]
+Training epoch 2:  76%|███████▋  | 396/518 [01:28<00:26,  4.57it/s, loss=0.0271]
+Training epoch 2:  77%|███████▋  | 401/518 [01:29<00:25,  4.53it/s, loss=0.0253]
+Training epoch 2:  78%|███████▊  | 406/518 [01:31<00:24,  4.55it/s, loss=0.0231]
+Training epoch 2:  79%|███████▉  | 411/518 [01:32<00:23,  4.57it/s, loss=0.0277]
+Training epoch 2:  80%|████████  | 416/518 [01:33<00:22,  4.58it/s, loss=0.0243]
+Training epoch 2:  81%|████████▏ | 421/518 [01:34<00:21,  4.58it/s, loss=0.0257]
+Training epoch 2:  82%|████████▏ | 426/518 [01:35<00:20,  4.59it/s, loss=0.0247]
+Training epoch 2:  83%|████████▎ | 431/518 [01:36<00:18,  4.60it/s, loss=0.0266]
+Training epoch 2:  84%|████████▍ | 436/518 [01:37<00:17,  4.61it/s, loss=0.0224]
+Training epoch 2:  85%|████████▌ | 441/518 [01:38<00:16,  4.57it/s, loss=0.0248]
+Training epoch 2:  86%|████████▌ | 446/518 [01:39<00:15,  4.59it/s, loss=0.026] 
+Training epoch 2:  87%|████████▋ | 451/518 [01:40<00:14,  4.59it/s, loss=0.0246]
+Training epoch 2:  88%|████████▊ | 456/518 [01:41<00:13,  4.60it/s, loss=0.0252]
+Training epoch 2:  89%|████████▉ | 461/518 [01:42<00:12,  4.61it/s, loss=0.0297]
+Training epoch 2:  90%|████████▉ | 466/518 [01:44<00:11,  4.61it/s, loss=0.0307]
+Training epoch 2:  91%|█████████ | 471/518 [01:45<00:10,  4.62it/s, loss=0.033] 
+Training epoch 2:  92%|█████████▏| 476/518 [01:46<00:09,  4.62it/s, loss=0.0274]
+Training epoch 2:  93%|█████████▎| 481/518 [01:47<00:07,  4.63it/s, loss=0.0305]
+Training epoch 2:  94%|█████████▍| 486/518 [01:48<00:06,  4.63it/s, loss=0.0259]
+Training epoch 2:  95%|█████████▍| 491/518 [01:49<00:05,  4.62it/s, loss=0.0269]
+Training epoch 2:  96%|█████████▌| 496/518 [01:50<00:04,  4.62it/s, loss=0.0281]
+Training epoch 2:  97%|█████████▋| 501/518 [01:51<00:03,  4.62it/s, loss=0.0302]
+Training epoch 2:  98%|█████████▊| 506/518 [01:52<00:02,  4.64it/s, loss=0.0331]
+Training epoch 2:  99%|█████████▊| 511/518 [01:53<00:01,  4.66it/s, loss=0.0232]
+Training epoch 2: 100%|█████████▉| 516/518 [01:54<00:00,  4.67it/s, loss=0.0256]
+=== Started UmiPromptingRunner run for task "block_raise" ===
+Finished prompting model! Time taken: 0.09744119644165039 seconds
+Saved attention and rollout visualization to /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/vis/attention_and_rollout_umi_block_raise.mp4
+=== Finished UmiPromptingRunner run for task "block_raise" ===
+Time taken to rollout policy: 11.052299499511719 seconds
+wandb: 
+wandb: Run history:
+wandb:                                          epoch ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▅▅▅▅▅▅▅▅▅▅██████████████
+wandb:                                    global_step ▁▁▂▂▂▂▂▃▃▃▃▃▄▄▄▄▄▄▄▅▅▅▅▅▅▆▆▆▆▆▆▆▇▇▇▇▇███
+wandb:                                      grad_norm █▆▃▆▅▄▄▆▃▄▃▃▂▄▄▃▃▃▃▃▂▃▂▂▂▂▂▂▃▁▂▂▂▂▂▁▁▁▁▁
+wandb:                              grad_norm_clipped ████████████████████████████████████▁█▄█
+wandb:                                     grad_steps ▁▁▁▂▂▃▃▃▄▄▄▄▄▄▄▅▅▆▆▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇▇█████
+wandb:                          iterations_per_second █▇▇██▆▇▇▆▇▇▆▆▇▇▇▆▆▆▇▇▆▇▆▅█▆▆▆▁▇▆▂▂▆▇▇▆▇▇
+wandb:                                             lr ▂▂███████████▇▇▇▇▇▇▆▅▅▅▅▅▄▄▃▃▂▂▂▂▁▁▁▁▁▁▁
+wandb:                     train/action_mse_error/all █▂▁
+wandb:             train/action_mse_error/block_raise █▃▁
+wandb: train/action_mse_error_right_gripper_width/all █▃▁
+wandb:                                            +16 ...
+wandb: 
+wandb: Run summary:
+wandb:                                          epoch 2
+wandb:                                    global_step 1553
+wandb:                                      grad_norm 0.68825
+wandb:                              grad_norm_clipped 0.5
+wandb:                                     grad_steps 1554
+wandb:                          iterations_per_second 4.70509
+wandb:                                             lr 0
+wandb:                     train/action_mse_error/all 0.02526
+wandb:             train/action_mse_error/block_raise 0.0226
+wandb: train/action_mse_error_right_gripper_width/all 4e-05
+wandb:                                            +16 ...
+wandb: 
+wandb: You can sync this run to the cloud by running:
+wandb: wandb sync /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/wandb/offline-run-20261006_174240-go32smvj
+wandb: Find logs at: /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/wandb/offline-run-20261006_174240-go32smvj/logs
+Saved latest checkpoint (final epoch): /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/checkpoints/latest.ckpt
+Saved val_action_mse_error_all top-k checkpoint (epoch % 1 == 0): /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke/checkpoints/epoch=0002-val_action_mse_error_all=0.0191988.ckpt
+Finished training. Run dir: /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke
+Finished training. Run dir: /scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke
+== Training finished with status: ok (exit code 0)

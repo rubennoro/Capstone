@@ -1,0 +1,30 @@
+{
+  "run": "run_002_2026-10-06_smoke",
+  "task": "block_raise",
+  "dataset": "firstreal-single",
+  "mode": "smoke",
+  "status": "ok",
+  "note": "pipeline test",
+  "job_id": "10878177",
+  "packaged": "2026-10-06T17:52:37",
+  "num_epochs_configured": 3,
+  "gpu_peak_gb": 34.1,
+  "epochs_completed": 3,
+  "steps": 1554,
+  "steps_per_epoch": 518,
+  "iterations_per_second": 4.61,
+  "minutes_per_epoch": 1.87,
+  "training_minutes": 8.8,
+  "final": {
+    "train_loss_epoch_average": 0.02862559721722451,
+    "val_loss": 0.02703094109892845,
+    "val/action_mse_error/all": 0.019198795780539513,
+    "train/action_mse_error/all": 0.025258252397179604
+  },
+  "best_checkpoint": {
+    "epoch": 2,
+    "metric": "val_action_mse_error_all",
+    "value": 0.0191988,
+    "file": "best_epoch=0002-val_action_mse_error_all=0.0191988.ckpt"
+  }
+}

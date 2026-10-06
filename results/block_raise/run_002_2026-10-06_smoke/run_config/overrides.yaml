@@ -1,0 +1,12 @@
+- task.dataset.dataset_path=/home/noroian.r/CapstoneProject/datasets/block_raise/firstreal-single/firstreal-single.zarr.zip
+- task.dataset.cache_dir=/tmp/noroian.r/zarr_cache
+- exp_name=run_002_2026-10-06_smoke
+- group_tag=block_raise
+- logging.mode=offline
+- +logging.dir=/scratch/noroian.r/bp_runs/block_raise/run_002_2026-10-06_smoke
+- checkpoint.topk.k=1
+- checkpoint.save_train_loss_ckpt_every=null
+- training.num_epochs=3
+- training.val_every=1
+- training.rollout_every=1
+- training.sample_every=1
