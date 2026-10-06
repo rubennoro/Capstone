@@ -5,3 +5,6 @@ __pycache__/
 .nfs*
 *.log
 data/
+# Model checkpoints are GBs each; keep them out of git (also rsync partial-transfer temp files)
+*.ckpt
+.*.ckpt.*

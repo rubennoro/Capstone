@@ -84,7 +84,7 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
   | `sharing`         | H100, H200, A100, L40S, ... | 1 h |
 
   Prefer **H200 (141 GB)**, because some A100s are only 40 GB. With the 8-hour limit, the full 140-epoch run will probably take several jobs that resume from checkpoints.
-- Not yet created: the `bp` env (no conda env exists yet) and the HF example dataset (not downloaded yet).
+- At the time of this survey, neither the `bp` env nor the HF example dataset existed yet.
 
 ### 6. Submitted the `bp` env build (job `10838595`)
 - Submitted with the sbatch script in step A below. It's running on node `c0613` in the `short` partition.
@@ -96,6 +96,37 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
   - Fix (commit `d0298b9`): vendored all three at the commits upstream pins (listed in the commit message) and deleted `behavior_prompting/.gitmodules`.
   - Gotcha: the `data` rule in `behavior_prompting/.gitignore` silently ignored 3 source files (`icrt/data/{dataset,utils}.py`, `libero/configs/data/default.yaml`), so they had to be force-added with `git add -f`.
   - The failed build left a partial `bp` env, so the rebuild has to run `conda env remove -n bp -y` first.
+- Pushed the fix to GitHub, then ran `git pull --ff-only` on the cluster through `xfer.discovery.neu.edu`. The cluster clone is now at `3c54bee`, with `deps/icrt` 19 MB, `deps/LIBERO` 424 MB and `deps/real-env` 458 KB.
+- **Resubmitted the env build as job `10841186`** (2026-10-05). It uses the same sbatch script with `conda env remove -n bp -y || true` added before `conda env create`.
+
+- **Job `10841186` succeeded.** The final check printed `2.7.1+cu126 12.6`. torch came from pip's default **CUDA 12.6** wheels rather than cu118, which is fine for the H200s; confirm `torch.cuda.is_available()` in the smoke test. The `bp` env now exists.
+
+### 8. Submitted the example-data download and our data processing (2026-10-05)
+- Job scripts now live in `scripts/cluster/`. They're copied with `scp` and submitted with `sbatch`, because pasting long heredocs into the terminal got line-wrapped and mangled (jobs `10847006` and `10847112` failed that way).
+- **`10847436`** (`get_example_data.sbatch`, step B): the download took about 15 s (3 zips, about 350 MB in total). Unzipping the single-arm zarr (2,296 small files) runs at only about 1–2 files/s on the networked home filesystem.
+- **`10848060`** (`build_iphumi_env.sbatch`): built the `iphumi` env in 45 min (`iphumi env OK 2.18.3 4.12.0`).
+- **`10848071`** (`process_firstreal.sbatch block_raise`, step E): started after `10848060` succeeded (`--dependency=afterok`) and ran every step of E with task name **`block_raise`** (raising an eraser with one gripper).
+  - Group copied 45 demos + 1 calibration. The labeling script tagged 45 demos. `align_validate` **passed 45, failed 0**.
+  - **Dataset: `iPhUMI/python_package/iphumi/demonstration_processing/tmp_sessions/firstreal-single/replay_buffer_firstreal-single.zarr.zip`** (845 MB): 45 episodes, 37,971 frames, `block_raise` × 45, no error-correction demos.
+  - With `sides=single` the pipeline **already names the single gripper `right`** (`camera_right_*`, `gripper_right_*`), even though it was recorded as `L`, so `rename_zarr_side.py` isn't needed.
+  - **Cancelled during the unzip step** (`scancel`, after 54 min). Unzipping writes about 44,000 small files at about 4 files/s, which would take about 3 h. Training reads the zip through the LMDB cache instead (see 9), so the unzipped copy isn't needed. The optional `visualize` stage never ran.
+- Logs: `~/CapstoneProject/logs/<job-name>_<jobid>.out`.
+
+### 9. Smoke tests (2026-10-05)
+- **The storage (VAST `/home` and `/scratch`) was very slow tonight:** about 1.3 MB/s home reads and 10 MB/s scratch writes, measured with `dd`. The first `import torch` from the new `bp` env took **about 30 min**, stuck in `D` state on `folio_wait`. Later imports were fast because the files were cached.
+- **`10848996` (example data):** crashed after the imports. **LIBERO asks an interactive `(Y/N)` question on its first import** and got `EOFError` in batch mode. Fix in `train_smoke.sh`: `echo n | python -c "from libero.libero import get_libero_path"` before training, which creates `~/.libero/config.yaml`. Slurm reported `COMPLETED` because `| tee` hid the exit code, so the scripts now use `set -o pipefail`.
+- **`10850472` (example data):** reached dataset loading in 3.5 min, downloaded the CLIP weights (so **GPU nodes have internet**) and confirmed the **offline wandb path `train_network/wandb/offline-run-*`**. Then it failed: the example single-arm zarr has **only 3 episodes and 5 tasks, one demo each**, so the per-task validation split leaves nothing to train on. **It can't be trained with `val_ratio > 0`, and it's useless for timing.**
+- **`10850802` (our `block_raise` data, from the zip with `task.dataset.cache_dir=/tmp/noroian.r/zarr_cache`): passed.** 3 epochs in 13.7 min. Train loss 0.213 → 0.040 → 0.029, val action MSE 0.0389 → 0.0295 → 0.0192.
+  - **4.66 steps/s, 518 steps/epoch, about 2.1 min/epoch of training.** Peak GPU memory **34 GB**. Full plots, videos and CSVs are in **`first_smoketest/`** (see its README).
+  - **Each checkpoint is 6.4 GB** (weights + EMA + optimizer). A run keeps up to 5: top-2 by val MSE, top-2 by train loss, and `latest.ckpt` at the final epoch. The smoke run alone left 30 GB in home (still to delete).
+  - The per-epoch attention videos are all copies of the final epoch: the runner overwrites `vis/`, and offline wandb only copies media when the run ends.
+- `scripts/wandb_offline_to_csv.py` turns an offline run into `history.csv` / `epochs.csv` and loss, action-MSE, lr/grad-norm and GPU-memory PNGs. It needs `wandb==0.27.2`, pandas and matplotlib, all available in the `bp` env.
+
+> **NEXT SESSION, START HERE: the full training run (step D).**
+> 1. Delete the smoke-run checkpoints (30 GB): `rm ~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/*.ckpt`
+> 2. Get `scripts/cluster/train_full.sbatch` onto the cluster: `git pull --ff-only` in the cluster clone, through `xfer.discovery.neu.edu`, or `scp`.
+> 3. Submit it: `sbatch train_full.sbatch <the firstreal-single .zarr.zip> block_raise_bp_v1`. The run dir goes to `/scratch/noroian.r/bp_runs/`. Expect about 5.2 h.
+> 4. Afterwards: run `slim_checkpoint.py` on the best checkpoint, copy it to home or the laptop, and run `wandb_offline_to_csv.py` on the run.
 
 ### 7. Read the training code and made the decisions it calls for
 - **No resume support** (details in step D). This has to be sorted out before a run that's longer than 8 hours.
@@ -107,11 +138,11 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
 - Add **`logging.mode=offline`** to every train command, so no `wandb login` or account is needed.
 - What gets saved:
   - **Checkpoints:** `train_network/runs/<date>/<time>_<exp_name>_.../checkpoints/*.ckpt`. These are saved whether or not wandb is used.
-  - **wandb offline run:** `wandb/offline-run-<timestamp>-<id>/`. It's probably under `train_network/wandb/`, because the code doesn't set a wandb `dir` and Hydra 1.2 doesn't change the working directory. **Confirm the exact path during the smoke test.**
+  - **wandb offline run:** `train_network/wandb/offline-run-<timestamp>-<id>/` (confirmed in the smoke test).
     - Metrics go into a binary `run-<id>.wandb` file.
     - The config and the attention-visualization images are normal files under `files/` (images in `files/media/`).
   - **Slurm log:** the printed loss per epoch, readable as plain text.
-- **To do: write `scripts/wandb_offline_to_csv.py`.** It should read the `.wandb` file with wandb's own Python reader (no account), write the logged metrics to a **CSV**, and save **loss-curve PNGs** (train loss, val loss, action MSE). Write and test it against a real offline run from the smoke test, using `wandb==0.27.2` from the `bp` env.
+- **`scripts/wandb_offline_to_csv.py` (done):** reads the `.wandb` file with wandb's own reader (no account) and writes `history.csv`, `epochs.csv` and loss-curve PNGs. It was tested on the smoke run, and the output is in `first_smoketest/`.
 - To view results on the laptop, copy the run folders back through the transfer node:
   ```bash
   rsync -a noroian.r@xfer.discovery.neu.edu:~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/ ./runs/
@@ -123,7 +154,7 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
 
 ## Remaining work
 
-### A. Build the `bp` conda env (submitted as job `10838595`; running)
+### A. Build the `bp` conda env (DONE: job `10841186`, after `10838595` failed)
 Submit as a CPU batch job so it survives disconnects:
 ```bash
 ssh noroian.r@login.explorer.northeastern.edu 'mkdir -p ~/CapstoneProject/logs && cat > ~/CapstoneProject/build_env.sbatch <<"EOF"
@@ -145,7 +176,7 @@ sbatch ~/CapstoneProject/build_env.sbatch'
 - The parts most likely to fail to build are `free-mujoco-py`, `spnav` (a GitHub tarball) and the `robomimic` git install.
 - If the env gets partly built and then fails, run `conda env remove -n bp` before retrying.
 
-### B. Download and unzip the example dataset
+### B. Download and unzip the example dataset (DONE: job `10847436`; the dataset turned out to be untrainable, see 9)
 Run on a compute node or as a short batch job:
 ```bash
 conda activate bp
@@ -156,7 +187,8 @@ cd ~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/scripts
 python unzip_zarr.py -i ../train_network/datasets/umi/iphumi_example_zarr_datasets/replay_buffer_test-data-042926-single.zarr.zip
 ```
 
-### C. Smoke-test training on a GPU node (example data)
+### C. Smoke-test training on a GPU node (DONE on our data: job `10850802`, see 9 and `first_smoketest/`)
+> What actually worked: `scripts/cluster/train_smoke.sh` submitted with `sbatch --wrap` on `gpu-short` (interactive `srun --pty` isn't needed).
 1. Get an interactive H200 node for a short test:
    ```bash
    srun -p gpu-interactive --gres=gpu:h200:1 --cpus-per-task=8 --mem=64G --time=02:00:00 --pty bash
@@ -180,15 +212,16 @@ python unzip_zarr.py -i ../train_network/datasets/umi/iphumi_example_zarr_datase
   - `logging.resume` is only a wandb option. `train.py` → `TrainPolicyWorkspace.run()` always starts at epoch 0 with a fresh optimizer and LR scheduler, and it never calls `load_checkpoint`. Only `rollout_policy_workspace.py` loads checkpoints.
   - With `umi_policy_base` (`save_last_ckpt: False`), the only mid-run saves are `train_loss` top-k checkpoints every 10 epochs (`save_train_loss_ckpt_every: 10`). Those store the **EMA weights** as `model`, and the LR scheduler state isn't saved at all.
   - Each launch creates a new `runs/...` folder.
-- **Strategy for the 8-hour limit, chosen from the smoke test's time per epoch:**
+- **Decided from the smoke test: a single 8 h job on 1 H200** (140 epochs × about 2.1 min + evaluation every 10 epochs ≈ 5.2 h). Script: `scripts/cluster/train_full.sbatch` (dataset zip + node-local LMDB cache, run dir on `/scratch`).
+- The fallback strategy, if a bigger dataset stops fitting:
   1. If 140 epochs fit in about 7.5 h on 1 GPU, submit a single job.
   2. If not, use more GPUs: `--gres=gpu:h200:N` with `--num_processes=N`. The code scales the LR by the number of processes automatically.
   3. If not, reduce `training.num_epochs`.
   4. As a last resort, patch in resume support: save a `latest` checkpoint with the raw model, EMA, optimizer, scheduler and epoch, and reload it on restart.
-- Output and checkpoints go under `train_network/runs/` (the hydra `run.dir`). Move them to `/scratch` if home space gets tight.
+- Output and checkpoints go under the hydra `run.dir`. `train_full.sbatch` sets it to `/scratch/$USER/bp_runs/...`, because 5 checkpoints × 6.4 GB is too much for home. Scratch is purged, so copy the keeper back.
 - Use `scripts/slim_checkpoint.py` to remove optimizer state before sharing or deploying a checkpoint.
 
-### E. Process our custom data into a training dataset
+### E. Process our custom data into a training dataset (DONE: jobs `10848060` + `10848071`, see 8; the scripted version is `scripts/cluster/process_firstreal.sbatch`)
 The raw data in `data/raw/2026-10-01/` has to go through the iPhUMI pipeline, which uses a **separate `iphumi` conda env** from `iPhUMI/python_package/environment.yml`:
 1. Build the `iphumi` env on a compute node: `cd iPhUMI/python_package && conda env create -f environment.yml`.
 2. Process the demos:
@@ -223,4 +256,9 @@ The raw data in `data/raw/2026-10-01/` has to go through the iPhUMI pipeline, wh
 - **Don't run heavy commands on the login node**: big rsyncs, `conda env create` and even `conda env list` get killed. Use `xfer.discovery.neu.edu` for transfers and Slurm (`sbatch` / `srun`) for everything else.
 - **`data/` is gitignored**, so it never arrives with `git clone` and always has to be copied separately.
 - **When vendoring a repo, check `.gitmodules`.** Submodules arrive as empty folders. Also run `git ls-files --others --ignored --exclude-standard <dir>` to catch code that our ignore rules drop.
-- **Plan for the 8-hour GPU job limit**: training has to be able to resume from checkpoints.
+- **Plan for the 8-hour GPU job limit**: training can't resume from checkpoints. Our current data fits in one job (about 5.2 h).
+- **Never unzip big zarrs on the networked filesystem.** Train from the `.zarr.zip` with `task.dataset.cache_dir=/tmp/$USER/zarr_cache`, which makes a one-time LMDB copy on node-local disk that multiple dataloader workers can read safely.
+- **Batch jobs have no stdin**: anything that calls `input()` (LIBERO's first import) crashes. Answer it with `echo n |` first.
+- **`cmd | tee log` hides failures** unless `set -o pipefail` is set.
+- **Don't paste long multi-line commands into the terminal.** Write the script locally, `scp` it over, then `sbatch` it.
+- **`scancel` returns before the job stops.** Wait a few seconds before deleting files the job was writing.

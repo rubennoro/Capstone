@@ -1,0 +1,10 @@
+- task.dataset.dataset_path=/home/noroian.r/CapstoneProject/Capstone/iPhUMI/python_package/iphumi/demonstration_processing/tmp_sessions/firstreal-single/replay_buffer_firstreal-single.zarr.zip
+- exp_name=smoke_replay_buffer_firstreal-single
+- group_tag=smoke_tests
+- logging.mode=offline
+- training.num_epochs=3
+- training.val_every=1
+- training.rollout_every=1
+- training.sample_every=1
+- checkpoint.save_train_loss_ckpt_every=1
+- task.dataset.cache_dir=/tmp/noroian.r/zarr_cache
