@@ -28,8 +28,9 @@ nvidia-smi --query-gpu=timestamp,memory.used,utilization.gpu --format=csv -l 60 
 GPU_LOG_PID=$!
 trap "kill $GPU_LOG_PID" EXIT
 
-# Checkpoints are ~6 GB each and a run keeps up to 5 (top-2 val, top-2 train loss, final), so the run dir
-# goes on /scratch. Copy the checkpoint you want to keep back to home afterwards (slim it first).
+# Only the best checkpoint is kept: top-1 by val action MSE, no train-loss checkpoints, and the forced final-epoch
+# latest.ckpt is deleted after packaging. Checkpoints are ~6.4 GB, so the run dir goes on /scratch (purged
+# periodically); a slimmed copy of the best one (no optimizer state) is saved into the results folder in home.
 RUN_DIR=/scratch/$USER/bp_runs/$(date +%Y.%m.%d)/$(date +%H.%M.%S)_${EXP_NAME}
 
 REPO=~/CapstoneProject/Capstone
@@ -45,6 +46,8 @@ accelerate launch --num_processes=1 train.py \
   group_tag=block_raise \
   logging.mode=offline \
   hydra.run.dir=$RUN_DIR \
+  checkpoint.topk.k=1 \
+  checkpoint.save_train_loss_ckpt_every=null \
   "$@"
 
 echo "== Packaging results into $RESULTS"
@@ -53,13 +56,13 @@ mkdir -p $RESULTS
 cp -r $RUN_DIR/vis $RUN_DIR/.hydra $RUN_DIR/normalizer.pkl $RESULTS/
 cp $RUN_DIR/train.log $RESULTS/train_log.txt
 cp ~/CapstoneProject/logs/${SLURM_JOB_NAME}_${SLURM_JOB_ID}*.csv $RESULTS/ 2>/dev/null
-ls -la $RUN_DIR/checkpoints > $RESULTS/checkpoints_on_scratch.txt
 
 # Best checkpoint = lowest val action MSE in its filename; slimmed (no optimizer state) into home
 BEST=$(ls $RUN_DIR/checkpoints/*val_action_mse_error_all=*.ckpt 2>/dev/null \
   | sed 's/.*=\([0-9.]*\)\.ckpt$/\1 &/' | sort -g | head -1 | cut -d' ' -f2)
-if [ -n "$BEST" ]; then
-  python $REPO/scripts/slim_checkpoint.py "$BEST" "$RESULTS/best_slim_$(basename "$BEST")"
+if [ -n "$BEST" ] && python $REPO/scripts/slim_checkpoint.py "$BEST" "$RESULTS/best_slim_$(basename "$BEST")"; then
+  # Keep only the best checkpoint (full size on scratch, slimmed in home); remove latest.ckpt and anything else
+  find $RUN_DIR/checkpoints -name '*.ckpt' ! -samefile "$BEST" -print -delete
 fi
 
 # Plots + CSVs from this job's offline wandb run (the newest one created after the job started)
@@ -69,5 +72,6 @@ if [ -n "$WANDB_RUN" ]; then
   python $REPO/scripts/wandb_offline_to_csv.py "$WANDB_RUN" -o $RESULTS/plots \
     --gpu-csv ~/CapstoneProject/logs/${SLURM_JOB_NAME}_${SLURM_JOB_ID}_gpu.csv
 fi
+ls -la $RUN_DIR/checkpoints > $RESULTS/checkpoints_on_scratch.txt
 du -sh $RESULTS/*
-echo "== Done. Results: $RESULTS   Full run (all checkpoints): $RUN_DIR"
+echo "== Done. Results: $RESULTS   Run dir (full-size best checkpoint): $RUN_DIR"

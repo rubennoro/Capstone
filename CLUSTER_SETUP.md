@@ -126,7 +126,7 @@ cd ~/CapstoneProject && git clone git@github.com:rubennoro/Capstone.git
 > 1. Delete the smoke-run checkpoints (30 GB): `rm ~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/runs/2026.10.05/22.47.06_smoke_replay_buffer_firstreal-single_policy_umi_prompt_prompt_diffusion_unet/checkpoints/*.ckpt`
 > 2. Get `scripts/cluster/train_full.sbatch` onto the cluster: `git pull --ff-only` in the cluster clone, through `xfer.discovery.neu.edu`, or `scp`.
 > 3. Submit it: `sbatch train_full.sbatch <the firstreal-single .zarr.zip> block_raise_bp_v1`. The run dir goes to `/scratch/noroian.r/bp_runs/`. Expect about 5.2 h.
-> 4. Afterwards: run `slim_checkpoint.py` on the best checkpoint, copy it to home or the laptop, and run `wandb_offline_to_csv.py` on the run.
+> 4. Afterwards, there's nothing to do on the cluster. The job keeps **only the best checkpoint** (`topk.k=1`, no train-loss checkpoints, `latest.ckpt` deleted) and packages everything into **`~/CapstoneProject/results/<exp_name>/`**: plots and CSVs, videos, config, logs, and a slimmed best checkpoint. Copy it to the laptop with `rsync -a noroian.r@xfer.discovery.neu.edu:CapstoneProject/results/<exp_name>/ ~/Capstone/results/<exp_name>/`.
 
 ### 7. Read the training code and made the decisions it calls for
 - **No resume support** (details in step D). This has to be sorted out before a run that's longer than 8 hours.
