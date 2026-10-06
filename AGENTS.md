@@ -20,10 +20,11 @@ Running status between working sessions. Update it at the end of each conversati
   - `run_001_2026-10-05/`: first full run (job `10851655`, 140 epochs, 4h55m on 1 H200). Best val action MSE **0.000148
     at epoch 50**. Val MSE plateaus from ~epoch 30 and val loss creeps up after ~50 (mild overfitting), so ~60 epochs is
     enough next time.
-    - Copied by hand from the old sbatch output (`~/CapstoneProject/results/block_raise_bp_v1/`, still on the cluster) and
+    - Copied by hand from the old sbatch output (since deleted from the cluster; all of it is in this folder) and
       pushed (`8ac2faf`). Only final-epoch videos exist.
-    - Slim best checkpoint (2.5 GB) is on the laptop in `checkpoints/` (gitignored) and on the cluster. The full-size one is in
-      `/scratch/noroian.r/bp_runs/2026.10.05/23.22.47_block_raise_bp_v1/checkpoints/`.
+    - Slim best checkpoint (2.5 GB) is in `run_001_2026-10-05/checkpoints/` (gitignored) on both the laptop and the cluster
+      clone. The full-size one (with optimizer, for resuming) plus its `.hydra/` config is the only thing left in
+      `/scratch/noroian.r/bp_runs/2026.10.05/23.22.47_block_raise_bp_v1/`; scratch gets purged eventually.
 - **Pipeline** (`scripts/run_pipeline.sh`, `scripts/cluster/{submit.sh,process_dataset.sbatch,train.sbatch}`,
   `scripts/package_run.py`): the cluster clone is now pulled to `b87c819` with its git identity set. DIRECTIONS.md §0 is fully done.
   - **Pipeline tested end to end:** job `10878177` → `results/block_raise/run_002_2026-10-06_smoke/` (11 min). Trained, packaged
