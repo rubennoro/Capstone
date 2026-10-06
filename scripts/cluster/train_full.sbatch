@@ -8,6 +8,8 @@
 #SBATCH --output=/home/noroian.r/CapstoneProject/logs/%x_%j.out
 # Full behavior-prompting training run (step D in CLUSTER_SETUP.md).
 # Usage: sbatch train_full.sbatch <dataset .zarr.zip> <exp_name> [extra hydra overrides...]
+# When training ends, the job packages its results into ~/CapstoneProject/results/<exp_name>/ (home, never
+# purged): plots + CSVs, videos, config, logs, and a slimmed copy of the best checkpoint.
 # Smoke test on block_raise (45 demos): ~2.1 min/epoch of training on one H200, so 140 epochs ~5.2 h.
 set -eo pipefail
 DATASET=${1:?pass the dataset .zarr.zip path}
@@ -30,7 +32,11 @@ trap "kill $GPU_LOG_PID" EXIT
 # goes on /scratch. Copy the checkpoint you want to keep back to home afterwards (slim it first).
 RUN_DIR=/scratch/$USER/bp_runs/$(date +%Y.%m.%d)/$(date +%H.%M.%S)_${EXP_NAME}
 
-cd ~/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network
+REPO=~/CapstoneProject/Capstone
+RESULTS=~/CapstoneProject/results/$EXP_NAME
+JOB_START=$(date +%s)
+
+cd $REPO/behavior_prompting/behavior_prompting/train_network
 accelerate launch --num_processes=1 train.py \
   --config-name=umi_policy_dunetp \
   task.dataset.dataset_path=$DATASET \
@@ -40,3 +46,28 @@ accelerate launch --num_processes=1 train.py \
   logging.mode=offline \
   hydra.run.dir=$RUN_DIR \
   "$@"
+
+echo "== Packaging results into $RESULTS"
+set +e  # package whatever exists even if one step fails
+mkdir -p $RESULTS
+cp -r $RUN_DIR/vis $RUN_DIR/.hydra $RUN_DIR/normalizer.pkl $RESULTS/
+cp $RUN_DIR/train.log $RESULTS/train_log.txt
+cp ~/CapstoneProject/logs/${SLURM_JOB_NAME}_${SLURM_JOB_ID}*.csv $RESULTS/ 2>/dev/null
+ls -la $RUN_DIR/checkpoints > $RESULTS/checkpoints_on_scratch.txt
+
+# Best checkpoint = lowest val action MSE in its filename; slimmed (no optimizer state) into home
+BEST=$(ls $RUN_DIR/checkpoints/*val_action_mse_error_all=*.ckpt 2>/dev/null \
+  | sed 's/.*=\([0-9.]*\)\.ckpt$/\1 &/' | sort -g | head -1 | cut -d' ' -f2)
+if [ -n "$BEST" ]; then
+  python $REPO/scripts/slim_checkpoint.py "$BEST" "$RESULTS/best_slim_$(basename "$BEST")"
+fi
+
+# Plots + CSVs from this job's offline wandb run (the newest one created after the job started)
+WANDB_RUN=$(find wandb -maxdepth 1 -name 'offline-run-*' -newermt "@$JOB_START" | sort | tail -1)
+if [ -n "$WANDB_RUN" ]; then
+  echo "$WANDB_RUN" > $RESULTS/wandb_run_path.txt
+  python $REPO/scripts/wandb_offline_to_csv.py "$WANDB_RUN" -o $RESULTS/plots \
+    --gpu-csv ~/CapstoneProject/logs/${SLURM_JOB_NAME}_${SLURM_JOB_ID}_gpu.csv
+fi
+du -sh $RESULTS/*
+echo "== Done. Results: $RESULTS   Full run (all checkpoints): $RUN_DIR"
