@@ -38,8 +38,8 @@ end to end and to measure speed before the full 140-epoch run. The policy itself
 | `plots/gpu_memory.png` | GPU memory over the job |
 | `history.csv` | Every logged step: `train_loss`, `lr`, `grad_norm`, ... |
 | `epochs.csv` | One row per epoch with all train/val loss and action-MSE metrics |
-| `videos/rollout_block_raise.mp4` | The policy run on a training demo (224×224 wrist camera, 16.6 s) |
-| `videos/attention_and_rollout_umi_block_raise.mp4` | Top: the current camera frame. Bottom grid: frames from the **prompt** demo, tinted by how much the policy attends to each one |
+| `videos/rollout_block_raise.mp4` | One of our recorded demos replayed at the policy's input resolution (224×224, 20 fps, 16.6 s). The policy is queried every 12 frames, but its predictions aren't drawn here. This is the footage for the top panel of the attention video |
+| `videos/attention_and_rollout_umi_block_raise.mp4` | Top: the current frame of the replayed demo. Bottom grid: 14 frames in order from a *different* `block_raise` demo, which is the **prompt**. Each tile's background tint (pale green = low, darker blue = high) shows how much the policy attends to that moment of the prompt |
 | `run_config/config.yaml`, `overrides.yaml` | The exact Hydra config the run used |
 | `run_config/normalizer.pkl` | Data normalization statistics (needed to run the policy) |
 | `logs/smoke_train_log.txt` | The training console output, without the progress-bar lines |
@@ -48,7 +48,9 @@ end to end and to measure speed before the full 140-epoch run. The policy itself
 
 **The videos show the final epoch only.** The runner overwrites `vis/` every epoch, and offline wandb only copies
 the file when the run ends, so the three per-epoch attention videos it saved are identical. With such a
-lightly trained policy, the attention over the prompt frames is close to uniform.
+lightly trained policy, the attention over the prompt frames is close to uniform (all tiles the same pale green).
+In a well-trained policy, a band of higher attention should move through the prompt as the task progresses
+(approach frames while approaching, lift frames while lifting). That's the thing to look for in the full run.
 
 ## Regenerating the plots
 
