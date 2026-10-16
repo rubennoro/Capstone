@@ -1,0 +1,103 @@
+# Sensor rig description (sensor_rig rig.yaml, schema_version 1).
+# Conventions: T_a_b maps points in frame b to frame a (pose of b in a), 4x4 row-major, metres; camera frames are
+# OpenCV optical (x right, y down, z forward); times are CLOCK_MONOTONIC integer ns, t_capture = t_stamp + offset.
+# EVERY SECTION MARKED placeholder: true IS A GUESS. Replace it with `python -m sensor_rig calib-import ...`
+# (sensor_rig/docs/calibration.md).
+schema_version: 1
+rig_name: jetson-rig-v1-default
+notes: >
+  Placeholder lenses were chosen so the virtual iPhone cameras are fully covered (coverage 1.0): main is a ~90 deg
+  DFOV class lens, ultrawide a ~160 deg DFOV class fisheye (e.g. Waveshare IMX219-160 / Arducam with a 160 deg M12).
+  An IMX219-77 main (f=2.96 mm -> fx~1321 at 1640x1232) covers only ~0.83 of the virtual main (more with barrel
+  distortion); an IMX219-120 ultrawide only ~0.83 of the virtual ultrawide. Check real lenses with calib-check.
+
+cameras:
+  main:
+    placeholder: true
+    sensor: imx219
+    sensor_id: 0                 # Argus sensor-id (CAM0 = J20, 2-lane)
+    sensor_mode: 3               # 1640x1232@30, 2x2 binned, full FOV (verify with the Argus mode list on your L4T)
+    resolution: [1640, 1232]
+    fps: 30
+    argus: {exposure_time_range_ns: [100000, 4000000], gain_range: [1.0, 8.0], aelock: false, awblock: false, wbmode: 1}
+    model:
+      type: pinhole-radtan
+      intrinsics: [1150.0, 1150.0, 819.5, 615.5]      # fu fv pu pv (placeholder; 2.58 mm @ 2.24 um binned pixels)
+      distortion: [-0.30, 0.09, 0.0, 0.0]              # k1 k2 p1 p2 (placeholder)
+    T_imu_cam:                   # placeholder: IMU 15 mm behind the main camera, rotated 90 deg about z
+      rotation: {matrix: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]}
+      translation_m: [0.0, 0.010, -0.015]
+    time:
+      offset_prior_ns: -30000000         # placeholder: appsink-delivery stamps are ~30 ms late vs mid-exposure
+      kalibr_timeshift_cam_imu_s: 0.0
+  ultrawide:
+    placeholder: true
+    sensor: imx219
+    sensor_id: 1                 # CAM1 = J21
+    sensor_mode: 3
+    resolution: [1640, 1232]
+    fps: 30
+    argus: {exposure_time_range_ns: [100000, 4000000], gain_range: [1.0, 8.0], aelock: false, awblock: false, wbmode: 1}
+    model:
+      type: fisheye-equidistant
+      intrinsics: [734.5, 734.5, 819.5, 615.5]        # placeholder: 160 deg diagonal equidistant at 1640x1232
+      distortion: [0.020, -0.008, 0.002, -0.0003]      # k1..k4 (placeholder)
+      theta_max_deg: 89.0
+    T_imu_cam:                   # placeholder: ultrawide 12 mm below the main camera, parallel optical axes
+      rotation: {matrix: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]}
+      translation_m: [-0.012, 0.010, -0.015]
+    time:
+      offset_prior_ns: -30000000
+      kalibr_timeshift_cam_imu_s: 0.0
+
+virtual_cameras:
+  main:
+    source: main
+    reference: {resolution: [1920, 1440], intrinsics: [1406.3428, 1406.3428, 953.2503, 723.22003]}  # iPhone 16 Pro
+    rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}       # R_phys_virt; set by calib-align
+    outputs: {export: [1920, 1440], deploy: [960, 720]}
+    min_coverage: 0.99
+  ultrawide:
+    source: ultrawide
+    reference: {resolution: [640, 480], intrinsics: [259.01538, 259.01538, 320.2935, 239.67455]}
+    rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}
+    outputs: {export: [640, 480], deploy: [960, 720]}
+    min_coverage: 0.99
+
+imu:
+  placeholder: true
+  type: icm42688p
+  spi: {device: /dev/spidev0.0, speed_hz: 10000000, mode: 0}   # 40-pin header SPI1 (pins 19/21/23/24), enable with jetson-io
+  odr_hz: 1000
+  output_rate_hz: 1000          # written to imu0/data.csv; the pose stage may decimate to 200-400 Hz
+  accel_range_g: 16
+  gyro_range_dps: 2000
+  accel_ui_filter_bw: odr_div_4
+  gyro_ui_filter_bw: odr_div_4
+  fifo: {packet: 20byte_highres_ts, watermark_packets: 16, poll_period_ms: 5, timestamp_resolution_us: 1}
+  noise:                        # datasheet-derived placeholders; replace with allan_variance_ros (>=3 h static)
+    accelerometer_noise_density: 6.9e-4     # 70 ug/sqrt(Hz)
+    accelerometer_random_walk: 1.0e-4
+    gyroscope_noise_density: 4.9e-5         # 2.8 mdps/sqrt(Hz)
+    gyroscope_random_walk: 1.0e-6
+    vio_inflation: {noise_density: 5.0, random_walk: 10.0}
+  time: {offset_ns: 0}           # IMU defines the reference clock
+
+vio:
+  camera: ultrawide
+  trajectory_frame: imu          # the TUM trajectory is the pose of this frame (T_W_S)
+
+export:
+  device_identifier: "JetsonRig1,1"
+  device_name: "Jetson Sensor Rig"
+  gripper_id: default
+  world_offset: {translation_m: [1.0, -0.2, 5.0], yaw_deg: 30.0}   # applied in the y-up world, never identity (D4)
+
+capture:                         # recorder-only settings (schema owned by the recorder, passed through untouched)
+  backends: {main: argus, ultrawide: argus, imu: icm42688_spi}     # or mock
+  jpeg: {encoder: opencv, quality: 90, workers_per_camera: 2, queue_seconds: 0.75}
+  live_abort: {min_fps_ratio: 0.52, after_s: 1.0, min_disk_free_gb: 2.0}
+
+calibration:                     # provenance; calib-import overwrites this block
+  source: placeholder
+  date: null

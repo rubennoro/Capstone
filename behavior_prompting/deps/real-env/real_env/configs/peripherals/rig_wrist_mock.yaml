@@ -1,0 +1,15 @@
+# Rig camera without hardware (laptop / CI). Run: `rig_camera wrist_mock` (synthetic moving checkerboard) or
+# `rig_camera wrist_mock backend_opts.episode_dir=/path/to/raw/<date>/<NAME>` (replays a raw rig episode; with
+# rig_config_path null the episode's own rig.yaml snapshot is used).
+defaults:
+  - rig_wrist_right
+  - _self_
+
+rig_config_path: null                    # null: <episode_dir>/rig.yaml, or rig_default.yaml without an episode
+backend: mock
+publish_mode: fixed_rate
+backend_opts:
+  episode_dir: null                      # null = synthetic pattern at the physical resolution
+  realtime: true
+  loop: true
+  restamp: true                          # re-base recorded stamps to time.monotonic_ns() at start

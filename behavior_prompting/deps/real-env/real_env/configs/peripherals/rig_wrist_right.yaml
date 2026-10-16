@@ -1,0 +1,40 @@
+# Jetson sensor rig on the right wrist: drop-in for iphone_wrist_right (same name and endpoints, so tasks need no
+# change). Run: `rig_camera wrist_right`. Docs: sensor_rig/docs/deployment.md.
+_target_: real_env.peripherals.rig_camera.RigCamera
+
+name: right_wrist_camera_0               # robologger naming; same as iphone_wrist_right
+server_endpoint: tcp://localhost:16702   # = task wrist_camera_right_endpoint
+logger_endpoint: tcp://localhost:55556   # = task logger_endpoints.right_wrist_camera_0
+
+rig_config_path: rig_default.yaml        # REPLACE with the calibrated rig.yaml (absolute path); bare names resolve in sensor_rig/configs/
+backend: argus
+backend_opts: {}
+publish_mode: auto                       # auto = fixed_rate when cameras.main.fps in rig.yaml (30) < camera_configs fps (60)
+
+camera_configs:                          # virtual iPhone cameras at the deployment scale (exactly what the iPhone streamed)
+  main:
+    type: rgb
+    width: 960
+    height: 720
+    fps: 60                              # 60 so fps % agent_update_freq_hz == 0 at 20 Hz and the 2/fps selection tolerance is 33 ms
+  ultrawide:
+    type: rgb
+    width: 960
+    height: 720
+    fps: 60
+
+camera_latency_s: 0.0                    # timestamps are true capture times (rig.yaml cameras.*.time); never set the latency here too
+display_resolution_WH: null              # headless Jetson
+
+pairing:
+  ultrawide: nearest
+  max_skew_s: 0.034
+  stale_after_s: 0.25
+  history: 4
+frame_timeout_s: 0.5
+max_consecutive_timeouts: 10
+min_coverage: 0.98
+video_codec: libx264                     # Orin Nano has no NVENC (VideoLogger default h264_nvenc fails silently)
+num_cv_threads: null
+stats_period_s: 5.0
+sync: live

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sensor_rig"
+version = "0.1.0"
+description = "Jetson sensor rig (2 CSI cameras + IMU) that records iPhUMI-compatible episodes and feeds deployment"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "opencv-python-headless",
+    "pyyaml",
+    "scipy",
+    "av",
+]
+
+[project.optional-dependencies]
+jetson = ["PyGObject", "spidev"]
+rosbags = ["rosbags"]
+test = ["pytest"]
+
+[project.scripts]
+sensor-rig = "sensor_rig.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sensor_rig*"]
+
+[tool.setuptools.package-data]
+sensor_rig = ["configs/*.yaml", "sim/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# ROS Humble on this laptop puts its pytest plugins on PYTHONPATH; they fail to import (missing lark).
+addopts = "-p no:launch_testing -p no:launch_ros -p no:ament_copyright -p no:ament_flake8 -p no:ament_lint -p no:ament_xmllint -p no:ament_pep257"
+markers = [
+    "e2e: end-to-end pipeline comparison (slow; needs SENSOR_RIG_E2E=1)",
+    "data: needs the real iPhone exports (SENSOR_RIG_IPHONE_DATA)",
+    "perf: timing/performance checks (machine-dependent)",
+]

@@ -10,7 +10,23 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-06)
+## Current state (2026-10-15)
+
+- **New: `sensor_rig/`** (uncommitted). Software for replacing the iPhone with a Jetson Orin Nano + 2 CSI cameras +
+  an ICM-42688-P IMU. Overview and commands: [sensor_rig/README.md](sensor_rig/README.md).
+  - Flow: record raw frames + IMU on the Jetson → offline pose (ORB-SLAM3/OpenVINS adapters; the VIO itself isn't
+    built) → `export` writes episodes in the exact iPhone format → unchanged iPhUMI pipeline.
+  - Deployment: `RigCamera` in real-env (`rig_camera.py`, `rig_wrist_right.yaml` / `rig_wrist_mock.yaml`) produces
+    the iPhone's observation images, rendered by the same remap code as export.
+  - Tested without hardware: 199 unit tests pass, plus the end-to-end test. That test simulates rig recordings from
+    real `firstreal` demos and runs them through export and the real pipeline. Results match the original zarr:
+    gripper width median diff ~0.1 mm, relative motion ~1e-5, image MAE ~1 at 224 px.
+  - Touched outside `sensor_rig/`: a `"JetsonRig1,1"` entry in `gripper_calibration.yaml` (a copy of iPhone17,1;
+    needs a measured TCP), and +1 line in real-env `pyproject.toml`.
+  - Test env (not in the repo): a conda env built from `iPhUMI/python_package/environment.yml` minus pypeertalk, plus
+    pytest and `pip install -e sensor_rig`.
+  - Design docs, research and reviews were in the session scratchpad, not the repo. The decisions are summarized in
+    the README and `sensor_rig/docs/`.
 
 - **Task `block_raise`** (raise an eraser with one gripper). Dataset **`firstreal-single`**: session `firstreal`, 45 demos,
   37,971 frames, 845 MB.
@@ -37,6 +53,11 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
+0. sensor_rig:
+   - Decide whether to commit it.
+   - Pick the lenses. 77°/120° only cover ~83% of the iPhone views; aim for a ≥90° main and a ~140–160° fisheye.
+   - Decide on the upstream real-env issues listed in `sensor_rig/docs/deployment.md` (not applied).
+   - On hardware, follow `sensor_rig/sensor_rig/record/HARDWARE_CHECKLIST.md` and `sensor_rig/docs/calibration.md`.
 1. Watch the v1 videos (`results/block_raise/run_001_2026-10-05/videos/final/`): does the attention follow the prompt?
 2. Decide the next real training run (e.g. ~60 epochs, since v1 overfit after ~50), or record more data and use
    `scripts/run_pipeline.sh all ...` to test `process_dataset.sbatch`.

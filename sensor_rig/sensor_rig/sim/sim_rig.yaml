@@ -1,0 +1,97 @@
+# Simulation rig for the D10 acceptance tests (P1 §4.1; P2 schema). The simulator warps real iPhone frames into these
+# physical camera models, so every number here is "truth" (not a placeholder): non-trivial extrinsics, a non-identity
+# virtual rotation, distortion and time offsets exercise every step of the export chain.
+#   main:      pinhole-radtan 1280x720 @ 60 fps, fx=fy=620 (~92 x 60 deg) -> covers the virtual iPhone main (68.6 x 54.2)
+#   ultrawide: fisheye-equidistant 1640x1232 @ 30 fps, f=783 -> covers the virtual UW (102 x 85.5; corner ray 57.1 deg)
+schema_version: 1
+rig_name: sim-rig-v1
+
+cameras:
+  main:
+    placeholder: false
+    sensor: imx219
+    sensor_id: 0
+    sensor_mode: 4
+    resolution: [1280, 720]
+    fps: 60
+    argus: {exposure_time_range_ns: [100000, 4000000], gain_range: [1.0, 8.0], aelock: true, awblock: true, wbmode: 1}
+    model:
+      type: pinhole-radtan
+      intrinsics: [620.0, 620.0, 640.0, 360.0]
+      distortion: [-0.05, 0.01, 0.0005, -0.0003]
+    T_imu_cam:                       # Rx(-90 deg) with a 3 deg tilt, offset 3/1/2 cm
+      rotation: {euler_xyz_deg: [-90.0, 3.0, 0.0]}
+      translation_m: [0.03, -0.01, 0.02]
+    time:                            # total offset -30 ms + 4.2 ms = -25.8 ms (t_capture = t_stamp + offset)
+      offset_prior_ns: -30000000
+      kalibr_timeshift_cam_imu_s: 0.0042
+  ultrawide:
+    placeholder: false
+    sensor: imx219
+    sensor_id: 1
+    sensor_mode: 3
+    resolution: [1640, 1232]
+    fps: 30
+    argus: {exposure_time_range_ns: [100000, 4000000], gain_range: [1.0, 8.0], aelock: true, awblock: true, wbmode: 1}
+    model:
+      type: fisheye-equidistant
+      intrinsics: [783.0, 783.0, 820.0, 616.0]
+      distortion: [0.02, -0.005, 0.001, 0.0]
+      theta_max_deg: 89.0
+    T_imu_cam:
+      rotation: {euler_xyz_deg: [-80.0, -5.0, 95.0]}
+      translation_m: [-0.02, 0.0, 0.015]
+    time:                            # total -30 ms + 3.1 ms = -26.9 ms
+      offset_prior_ns: -30000000
+      kalibr_timeshift_cam_imu_s: 0.0031
+
+virtual_cameras:
+  main:
+    source: main
+    reference: {resolution: [1920, 1440], intrinsics: [1406.3428, 1406.3428, 953.2503, 723.22003]}
+    rotation: {euler_xyz_deg: [0.0, 1.5, 0.0]}
+    outputs: {export: [1920, 1440], deploy: [960, 720]}
+    min_coverage: 0.99
+  ultrawide:
+    source: ultrawide
+    reference: {resolution: [640, 480], intrinsics: [259.01538, 259.01538, 320.2935, 239.67455]}
+    rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}
+    outputs: {export: [640, 480], deploy: [960, 720]}
+    min_coverage: 0.99
+
+imu:
+  placeholder: false
+  type: icm42688p
+  spi: {device: /dev/spidev0.0, speed_hz: 10000000, mode: 0}
+  odr_hz: 1000
+  output_rate_hz: 400
+  accel_range_g: 16
+  gyro_range_dps: 2000
+  accel_ui_filter_bw: odr_div_4
+  gyro_ui_filter_bw: odr_div_4
+  fifo: {packet: 20byte_highres_ts, watermark_packets: 16, poll_period_ms: 5, timestamp_resolution_us: 1}
+  noise:                             # ICM-42688-class values inflated 5x (P1 §4.1)
+    accelerometer_noise_density: 3.4e-3
+    accelerometer_random_walk: 3.0e-4
+    gyroscope_noise_density: 2.4e-4
+    gyroscope_random_walk: 2.0e-5
+    vio_inflation: {noise_density: 1.0, random_walk: 1.0}
+  time: {offset_ns: 0}
+
+vio:
+  camera: ultrawide
+  trajectory_frame: imu
+
+export:
+  device_identifier: "JetsonRig1,1"
+  device_name: "Jetson Sensor Rig"
+  gripper_id: default
+  world_offset: {translation_m: [1.0, -0.2, 5.0], yaw_deg: 30.0}
+
+capture:
+  backends: {main: mock, ultrawide: mock, imu: mock}
+  jpeg: {encoder: opencv, quality: 95, workers_per_camera: 2, queue_seconds: 0.75}
+  live_abort: {min_fps_ratio: 0.52, after_s: 1.0, min_disk_free_gb: 2.0}
+
+calibration:
+  source: sim
