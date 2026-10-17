@@ -13,7 +13,7 @@ Conventions, used everywhere in rig.yaml:
 - Times are CLOCK_MONOTONIC integer ns. For each camera, `t_capture = t_stamp + offset_prior_ns + round(kalibr_timeshift_cam_imu_s * 1e9)`.
   Raw files keep the unmodified stamps.
 
-Commands below are `python -m sensor_rig <command>`. Without WP-A's top-level CLI, `python -m sensor_rig.calib.cli <command>`
+Commands below are `sensor-rig <command>`. Without WP-A's top-level CLI, `python -m sensor_rig.calib.cli <command>`
 runs the same commands.
 
 ## 0. Lenses: check coverage before you buy
@@ -38,11 +38,12 @@ The 1280x720 @ 60 mode crops the field of view, which drops ultrawide coverage t
 Mount both cameras and the IMU on one rigid plate, then glue the M12 focus. Put the physical main and ultrawide lens
 centres where the iPhone 16 Pro's main and ultrawide lenses were: a remap can fix orientation but not position.
 Calibrate in the same Argus `sensor_mode`, resolution and exposure limits that recording and deployment use
-(`cameras.*.sensor_mode`, `cameras.*.argus`). Redo steps 3 to 8 after any remount or refocus.
+(`cameras.*.sensor_mode`, `cameras.*.argus`; on a Raspberry Pi: `cameras.*.picamera2`, `resolution`, flips and
+`lens_position`). Redo steps 3 to 8 after any remount or refocus.
 
 ## 2. IMU noise (once per IMU part)
 
-1. Record at least 3 h static, at the operating ODR and a stable temperature: `python -m sensor_rig record --imu-only ...`.
+1. Record at least 3 h static, at the operating ODR and a stable temperature: `sensor-rig record --imu-only ...`.
 2. Convert the recording to a ROS1 bag with the rosbags converter (pose stage) and run `allan_variance_ros` in Docker.
    Keep the resulting `imu.yaml`.
 3. rig.yaml keeps the raw values. `imu.noise.vio_inflation` (default x5 noise density, x10 random walk) is applied
@@ -83,7 +84,7 @@ Accept the result if all of these hold:
 ## 5. Import
 
 ```
-python -m sensor_rig calib-import --rig rig.yaml --camchain camchain-imucam.yaml --imu imu.yaml --out rig_v1.yaml
+sensor-rig calib-import --rig rig.yaml --camchain camchain-imucam.yaml --imu imu.yaml --out rig_v1.yaml
 ```
 
 What the import does:
@@ -103,7 +104,7 @@ A camera-only `camchain.yaml` (no `T_cam_imu`) imports intrinsics only, and that
 ## 6. Virtual camera rotation
 
 ```
-python -m sensor_rig calib-align --rig rig_v1.yaml --iphone-calib <iPhone gripper-calibration export folder> \
+sensor-rig calib-align --rig rig_v1.yaml --iphone-calib <iPhone gripper-calibration export folder> \
     --rig-calib <raw rig gripper-calibration episode> [--iphone-main-uw <iPhone demo of a scene >= 3 m away>] \
     --write rig_v1.yaml
 ```
@@ -138,7 +139,7 @@ entry (the export's `deviceIdentifier`) copied from `iPhone17,1`. It is correct 
 sits where the iPhone main camera was and step 6 matched the orientations. Otherwise compute it from CAD:
 
 ```
-python -m sensor_rig calib-tcp --rig rig_v1.yaml --tcp-in-main-cv X Y Z [--tcp-rot-euler-xyz-deg A B C]
+sensor-rig calib-tcp --rig rig_v1.yaml --tcp-in-main-cv X Y Z [--tcp-rot-euler-xyz-deg A B C]
 ```
 
 The inputs are the TCP origin (fingertip midpoint) and the TCP axes (z along the fingers, x right, y down), expressed in
@@ -152,9 +153,9 @@ prints it as `tag_z_m`. It is only a +-0.08 m outlier gate, so +-1 cm is fine.
 ## 8. Verify on the hardware
 
 ```
-python -m sensor_rig calib-check --rig rig_v1.yaml --live --out check/ [--reference-iphone <iPhone export>] [--watch 2]
-python -m sensor_rig calib-check --rig rig_v1.yaml --episode <raw episode> [--frame N] --out check/
-python -m sensor_rig calib-check --rig rig_v1.yaml --images main.png ultrawide.png --out check/
+sensor-rig calib-check --rig rig_v1.yaml --live --out check/ [--reference-iphone <iPhone export>] [--watch 2]
+sensor-rig calib-check --rig rig_v1.yaml --episode <raw episode> [--frame N] --out check/
+sensor-rig calib-check --rig rig_v1.yaml --images main.png ultrawide.png --out check/
 ```
 
 The command writes PNGs and `report.json` (`coverage`, `tag_z_m`, `tag_sep_m`, `rms_vs_reference_px`,
@@ -174,8 +175,8 @@ Acceptance:
 - The blend shows no visible finger misalignment against an iPhone frame of the same gripper state. The tag-corner RMS
   should be below 2 px at 640x480.
 
-`python -m sensor_rig rig-validate rig_v1.yaml` prints the load errors or warnings and the coverage.
-`python -m sensor_rig bench-remap --rig rig_v1.yaml --purpose deploy --iters 600` prints remap p50/p99 per camera.
+`sensor-rig rig-validate rig_v1.yaml` prints the load errors or warnings and the coverage.
+`sensor-rig bench-remap --rig rig_v1.yaml --purpose deploy --iters 600` prints remap p50/p99 per camera.
 The Jetson target is p99 <= 4 ms per camera (laptop: about 2 ms on 1 thread).
 
 ## 9. Version it

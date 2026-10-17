@@ -122,6 +122,12 @@ def simulate_raw_from_iphone(iphone_dir, rig, raw_root, opts: SimOptions | None 
 
     opts = opts or SimOptions()
     rig = load_rig(rig) if not hasattr(rig, "cameras") else rig
+    if opts.main_fps and float(opts.main_fps) != float(rig.cameras["main"].fps):
+        # the raw episode's rig.yaml snapshot must state the simulated main rate (export's fill-mode fps rule and
+        # the recorder's live rules read it): T3 found 30 fps sims carrying fps: 60
+        import dataclasses as _dc
+
+        rig = rig.replace(cameras={**rig.cameras, "main": _dc.replace(rig.cameras["main"], fps=float(opts.main_fps))})
     E = IphoneEpisode(iphone_dir)
     rng = np.random.default_rng(opts.seed)
     demo = not E.is_calibration

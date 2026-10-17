@@ -342,24 +342,36 @@ def test_replay_keeps_camera_offsets(small_rig, tmp_path):
     rec_main, rec_uw = ep.camera_times("main"), ep.camera_times("ultrawide")
     offset_rec = int(rec_uw[0] - rec_main[0])
 
+    rec_t = {"main": rec_main, "ultrawide": rec_uw}
+    origin = min(int(rec_main[0]), int(rec_uw[0]))
+
     def first_two(cams_):
+        """Live stamp of each camera's first delivered frame, mapped back to the episode origin via its source
+        sequence number (``Frame.seq`` = source frame index), so a frame lost to the bounded queue under CPU load
+        cannot fake an offset: returns {cam: t_live - (t_rec[seq] - origin)}, which must equal the shared live
+        start for every camera."""
         for c in cams_.values():
             c.start()
         try:
-            return {n: c.read(timeout_s=2.0).t_ns for n, c in cams_.items()}
+            out = {}
+            for n, c in cams_.items():
+                f = c.read(timeout_s=2.0)
+                out[n] = int(f.t_ns) - (int(rec_t[n][f.seq]) - origin)
+            return out
         finally:
             for c in cams_.values():
                 c.stop()
 
+    assert offset_rec == int(rec_uw[0]) - int(rec_main[0])
     live_clock = SimClock(speed=20.0)
     got = first_two(MockCamera.replay_set(path, clock=live_clock, realtime=True))
-    assert abs((got["ultrawide"] - got["main"]) - offset_rec) < 1_000_000
+    assert abs(got["ultrawide"] - got["main"]) < 1_000_000      # same live origin -> recorded offsets kept
     start = live_clock.now_ns() + 50_000_000
     via_factory = {n: make_camera(small_rig, n, backend="mock", episode_dir=path, clock=live_clock, realtime=True,
                                   restamp=True, start_now_ns=start) for n in ("main", "ultrawide")}
     got = first_two(via_factory)
-    assert abs((got["ultrawide"] - got["main"]) - offset_rec) < 1_000_000
-    assert min(got.values()) == start            # the episode origin maps to start_now_ns
+    assert abs(got["ultrawide"] - got["main"]) < 1_000_000
+    assert got["main"] == start and got["ultrawide"] == start   # the episode origin maps to start_now_ns
     # synthetic mocks ignore replay-only options instead of raising
     syn = make_camera(small_rig, "main", backend="mock", clock=live_clock, realtime=True, loop=True, restamp=True,
                       start_now_ns=start)

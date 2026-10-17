@@ -58,6 +58,12 @@ def _host_info() -> dict:
             l4t = f.readline().strip() or None
     except OSError:
         pass
+    board = None
+    try:      # e.g. "Raspberry Pi 5 Model B Rev 1.0" or "NVIDIA Jetson Orin Nano ..."
+        with open("/proc/device-tree/model") as f:
+            board = f.read().strip("\x00\n ") or None
+    except OSError:
+        pass
     commit = None
     try:
         out = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"],
@@ -68,7 +74,7 @@ def _host_info() -> dict:
         pass
     from sensor_rig import __version__
 
-    return {"hostname": socket.gethostname(), "l4t": l4t, "sensor_rig_version": __version__, "git_commit": commit,
+    return {"hostname": socket.gethostname(), "board": board, "l4t": l4t, "sensor_rig_version": __version__, "git_commit": commit,
             "python": platform.python_version()}
 
 
@@ -339,7 +345,7 @@ class Recorder:
     def start_episode(self, kind: str, session: str, side: str, gripper_id: str = "default",
                       calibration_run: str | None = "auto", task_label: str | None = None,
                       sides_present: list[str] | None = None, note: str = "",
-                      allow_no_calibration: bool = False) -> str:
+                      allow_no_calibration: bool = False, extra_meta: dict | None = None) -> str:
         if not self._opened:
             raise RecorderError("call open() first")
         if kind not in KIND_TO_NAME:
@@ -392,6 +398,8 @@ class Recorder:
                 "sensors": sensors,
                 "host": _host_info(),
             }
+            if extra_meta:          # e.g. {"sim": {...}} from collect --mock-replay
+                meta_init.update(extra_meta)
             writer = RawEpisodeWriter(self.raw_root, name, self.rig, meta_init)
             self._writer = writer
             self._stopping = False

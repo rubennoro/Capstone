@@ -43,6 +43,11 @@ def _one(args_tuple):
 def _cmd_sim(args: argparse.Namespace) -> int:
     from sensor_rig.sim.simulator import SIM_RIG_PATH, SimOptions, find_iphone_episodes, kind_order
 
+    if args.rig:
+        from sensor_rig.rig_config import load_rig_arg
+
+        load_rig_arg(args.rig)          # missing / invalid rig file -> exit 2 before any work
+
     srcs = sorted(find_iphone_episodes(args.iphone), key=kind_order)
     if args.filter:
         srcs = [s for s in srcs if args.filter in s.name]

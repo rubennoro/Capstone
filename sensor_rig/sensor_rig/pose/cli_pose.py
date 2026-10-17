@@ -30,18 +30,34 @@ def register(subparsers) -> None:
                    help="keep the trajectory's world as is (default: rotate it so IMU gravity is along -z)")
     q.add_argument("--gravity-align-min-deg", type=float, default=2.0,
                    help="only re-align when the estimated world tilt exceeds this (default 2 deg)")
-    q.add_argument("--force", action="store_true", help="import even if the overlap/gravity checks fail")
+    q.add_argument("--time-offset-ns", default="auto",
+                   help="add this to every trajectory stamp; 'auto' (default) = meta.sim.replay_offset_ns of an "
+                        "episode recorded by collect --mock-replay, else 0")
+    q.add_argument("--force", action="store_true",
+                   help="import even if the overlap / gravity / motion (gyro residual, jumps) checks fail")
     q.set_defaults(func=_cmd_import)
 
 
 def _rig(args, ep):
-    return ep.rig(args.rig) if args.rig else ep.rig()
+    if args.rig:
+        from sensor_rig.rig_config import load_rig_arg
+
+        return load_rig_arg(args.rig)
+    return ep.rig()
+
+
+def _check_rig(args) -> None:
+    if args.rig:
+        from sensor_rig.rig_config import load_rig_arg
+
+        load_rig_arg(args.rig)
 
 
 def _cmd_prep(args: argparse.Namespace) -> int:
     from sensor_rig.pose.stage import prepare
     from sensor_rig.raw_episode import find_raw_episodes
 
+    _check_rig(args)
     eps = find_raw_episodes(args.raw)
     if not eps:
         print(f"no raw episodes under {args.raw}", file=sys.stderr)
@@ -57,15 +73,18 @@ def _cmd_import(args: argparse.Namespace) -> int:
     from sensor_rig.pose.stage import TrajectoryImportError, import_trajectory
     from sensor_rig.raw_episode import RawEpisode
 
+    _check_rig(args)
     ep = RawEpisode(args.raw)
     try:
         info = import_trajectory(ep, args.traj, fmt=args.format, time_unit=args.time_unit, frame=args.frame,
                                  force=args.force, rig=_rig(args, ep),
                                  gravity_align=not args.no_gravity_align,
-                                 gravity_align_min_deg=args.gravity_align_min_deg)
+                                 gravity_align_min_deg=args.gravity_align_min_deg,
+                                 time_offset_ns="auto" if args.time_offset_ns == "auto" else int(args.time_offset_ns))
     except TrajectoryImportError as e:
         print(f"{ep.name}: refused: {e}", file=sys.stderr)
         return 1
-    keys = ("n_poses", "frame", "main_overlap_fraction", "gravity_alignment", "gravity_check", "time_offset_check")
+    keys = ("n_poses", "frame", "main_overlap_fraction", "gravity_alignment", "gravity_check", "time_offset_check",
+            "motion_check", "time_offset_applied_ns")
     print(json.dumps({k: info[k] for k in keys}, indent=1))
     return 0

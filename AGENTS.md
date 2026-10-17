@@ -10,23 +10,29 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-15)
+## Current state (2026-10-17)
 
-- **New: `sensor_rig/`** (uncommitted). Software for replacing the iPhone with a Jetson Orin Nano + 2 CSI cameras +
-  an ICM-42688-P IMU. Overview and commands: [sensor_rig/README.md](sensor_rig/README.md).
-  - Flow: record raw frames + IMU on the Jetson → offline pose (ORB-SLAM3/OpenVINS adapters; the VIO itself isn't
-    built) → `export` writes episodes in the exact iPhone format → unchanged iPhUMI pipeline.
-  - Deployment: `RigCamera` in real-env (`rig_camera.py`, `rig_wrist_right.yaml` / `rig_wrist_mock.yaml`) produces
-    the iPhone's observation images, rendered by the same remap code as export.
-  - Tested without hardware: 199 unit tests pass, plus the end-to-end test. That test simulates rig recordings from
-    real `firstreal` demos and runs them through export and the real pipeline. Results match the original zarr:
-    gripper width median diff ~0.1 mm, relative motion ~1e-5, image MAE ~1 at 224 px.
-  - Touched outside `sensor_rig/`: a `"JetsonRig1,1"` entry in `gripper_calibration.yaml` (a copy of iPhone17,1;
-    needs a measured TCP), and +1 line in real-env `pyproject.toml`.
-  - Test env (not in the repo): a conda env built from `iPhUMI/python_package/environment.yml` minus pypeertalk, plus
-    pytest and `pip install -e sensor_rig`.
-  - Design docs, research and reviews were in the session scratchpad, not the repo. The decisions are summarized in
-    the README and `sensor_rig/docs/`.
+- **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
+  yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
+  - Data collection: `sensor_rig/`, 400 tests, committed in `987dcd6` with newer changes uncommitted. On the Jetson:
+    `jetson_setup.sh`, `sensor-rig doctor`, `sensor-rig collect`, `stamp-offset`. On the laptop: `sensor-rig
+    process-session`. Procedure in `sensor_rig/docs/first_plugin.md`.
+  - Deployment: `controlSW/franka_deploy/` (uncommitted, ~190 tests): `python -m franka_deploy run --config
+    deploy.yaml [--mock]`, plus annotate/eval/offline-eval/reinfer. Procedure in `controlSW/franka_deploy/docs/hardware_day.md`.
+  - Built by executor + reviewer agent pairs. Every step was independently re-verified.
+  - **iPhone path guard:** `scripts/regression/` (uncommitted).
+    - It proves the iPhone pipeline and deployment are unchanged since `0ddedef`: protected paths, the real
+      processing on 5 firstreal episodes against an exact golden, and the iPhone peripheral configs.
+    - Run it before any commit touching shared code. The rule is additive-only; upstream fixes are not applied
+      (subclassed in franka_deploy instead).
+  - Only shared-file touches: an appended `"JetsonRig1,1"` entry in `gripper_calibration.yaml` (a copy of iPhone17,1;
+    needs a measured TCP), +1 line in real-env `pyproject.toml`, and new `rig_*` files in real-env.
+  - Local scratch envs (not in the repo, in the session scratchpad):
+    - env_iphumi (processing + sensor_rig);
+    - env_bp (inference; torch shared from `~/.local`);
+    - env_realenv (real-env stack).
+  - Planning docs and research are in `sensor_rig/docs/planning/`. A Raspberry Pi 5 backend also exists
+    (`rig_pi5.yaml`) but the chosen platform is the Jetson.
 
 - **Task `block_raise`** (raise an eraser with one gripper). Dataset **`firstreal-single`**: session `firstreal`, 45 demos,
   37,971 frames, 845 MB.
@@ -53,11 +59,13 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-0. sensor_rig:
-   - Decide whether to commit it.
-   - Pick the lenses. 77°/120° only cover ~83% of the iPhone views; aim for a ≥90° main and a ~140–160° fisheye.
-   - Decide on the upstream real-env issues listed in `sensor_rig/docs/deployment.md` (not applied).
-   - On hardware, follow `sensor_rig/sensor_rig/record/HARDWARE_CHECKLIST.md` and `sensor_rig/docs/calibration.md`.
+0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
+   - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
+     loop runs; v_max and the success rule for evaluation; whether to commit the new work.
+   - Hardware day:
+     - data collection: `sensor_rig/docs/first_plugin.md`;
+     - arm: `controlSW/franka_deploy/docs/hardware_day.md`.
+   - Build the ORB-SLAM3 image on a machine with ≥ 20 GB free (the laptop disk is ~90% full).
 1. Watch the v1 videos (`results/block_raise/run_001_2026-10-05/videos/final/`): does the attention follow the prompt?
 2. Decide the next real training run (e.g. ~60 epochs, since v1 overfit after ~50), or record more data and use
    `scripts/run_pipeline.sh all ...` to test `process_dataset.sbatch`.

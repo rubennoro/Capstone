@@ -87,6 +87,7 @@ class PhysicalCamera:
     time: TimeOffsets
     argus: dict[str, Any]
     placeholder: bool
+    picamera2: dict[str, Any] = field(default_factory=dict)   # Raspberry Pi backend settings (drivers/picamera2_logic)
 
 
 @dataclass(frozen=True, eq=False)
@@ -342,7 +343,8 @@ def _camera_to_dict(c: PhysicalCamera) -> dict:
         "placeholder": bool(c.placeholder), "sensor": c.sensor, "sensor_id": int(c.sensor_id),
         "sensor_mode": None if c.sensor_mode is None else int(c.sensor_mode),
         "resolution": [int(c.resolution[0]), int(c.resolution[1])], "fps": float(c.fps),
-        "argus": _plain(c.argus), "model": model_to_dict(c.model),
+        "argus": _plain(c.argus), **({"picamera2": _plain(c.picamera2)} if c.picamera2 else {}),
+        "model": model_to_dict(c.model),
         "T_imu_cam": {"rotation": _rotation_to_dict(c.T_imu_cam[:3, :3]),
                       "translation_m": [float(x) for x in c.T_imu_cam[:3, 3]]},
         "time": {"offset_prior_ns": int(c.time.offset_prior_ns),
@@ -569,8 +571,24 @@ def _parse_camera(name, m: _Map, strict, w) -> PhysicalCamera:
         argus=_mapping(m.opt("argus", {}), m.p("argus")),
         placeholder=_bool(m.opt("placeholder", False), m.p("placeholder")),
     )
+    cam = dataclasses.replace(cam, picamera2=_parse_picamera2(m, cam, w))
     m.finish(strict, w)
     return cam
+
+
+def _parse_picamera2(m: _Map, cam: PhysicalCamera, w) -> dict:
+    """Optional ``picamera2:`` settings: values are validated here, unknown keys only warn (like ``argus``)."""
+    raw = _mapping(m.opt("picamera2", {}), m.p("picamera2"))
+    if raw:
+        from sensor_rig.drivers.picamera2_logic import Picamera2ConfigError, picamera2_params_from_dict
+
+        try:
+            params = picamera2_params_from_dict(raw, sensor_id=cam.sensor_id, resolution=cam.resolution, fps=cam.fps,
+                                                sensor=cam.sensor, warn=False)
+        except Picamera2ConfigError as e:
+            raise RigConfigError(f"{m.p('picamera2')}.{e}") from None
+        w.extend(f"{m.p('picamera2')}.{k}: unknown key (ignored by Picamera2Camera)" for k in params.unknown_keys)
+    return raw
 
 
 def _parse_virtual(name, m: _Map, cameras, strict, w) -> VirtualCameraSpec:
@@ -731,6 +749,24 @@ def load_rig(src: str | os.PathLike | dict, *, strict: bool = True) -> RigConfig
     return _parse(d, str(p.resolve()), strict)
 
 
+class RigFileError(RigConfigError):
+    """A --rig argument that is missing or does not load (CLI: one message, exit 2)."""
+
+
+def load_rig_arg(path) -> RigConfig:
+    """``load_rig`` for command-line arguments: a missing or invalid file raises ``RigFileError`` with one clear
+    message (``sensor_rig.cli.main`` prints it and exits 2)."""
+    try:
+        return load_rig(path)
+    except FileNotFoundError:
+        reason = "file not found"
+    except IsADirectoryError:
+        reason = "is a directory"
+    except (RigConfigError, OSError, UnicodeDecodeError, TypeError, AttributeError) as e:
+        reason = str(e) or type(e).__name__
+    raise RigFileError(f"rig file not found/invalid: {path} — {reason} (run sensor-rig rig-validate {path})")
+
+
 def validate(cfg: RigConfig) -> list[str]:
     """Non-fatal warnings: unknown keys (non-strict load), placeholders, coverage below ``min_coverage``."""
     out = list(cfg.load_warnings)
@@ -739,8 +775,35 @@ def validate(cfg: RigConfig) -> list[str]:
             out.append(f"cameras.{n}: placeholder calibration (replace with calib-import)")
     if cfg.imu.placeholder:
         out.append("imu: placeholder noise/settings (replace with calib-import --imu)")
+    backends = (cfg.capture.get("backends") or {}) if isinstance(cfg.capture, dict) else {}
+    for n, c in cfg.cameras.items():
+        if backends.get(n) == "picamera2":
+            out.extend(_picamera2_warnings(n, c))
     for n, cov in cfg.coverage_report().items():
         if cov < cfg.virtual[n].min_coverage:
             out.append(f"virtual_cameras.{n}: coverage {cov:.4f} < min_coverage {cfg.virtual[n].min_coverage} "
                        "(the physical lens does not see the whole virtual image)")
+    return out
+
+
+def _picamera2_warnings(name: str, cam: PhysicalCamera) -> list[str]:
+    """Offline checks of a camera recorded with the picamera2 backend (full-FOV mode, locked exposure / colour)."""
+    from sensor_rig.drivers.picamera2_logic import (
+        Picamera2ConfigError, offline_mode_check, picamera2_params_from_camera,
+    )
+
+    p = f"cameras.{name}.picamera2"
+    try:
+        params = picamera2_params_from_camera(cam, warn=False)
+        mode = offline_mode_check(params)
+    except Picamera2ConfigError as e:
+        return [f"{p}: {e}"]
+    out = []
+    if mode is None:
+        out.append(f"cameras.{name}: sensor {cam.sensor!r} is not in the offline mode table; the full-FOV mode check "
+                   "only runs when the camera starts")
+    if params.exposure_us is None:
+        out.append(f"{p}: auto exposure (set exposure_us + analogue_gain to lock it; calibration wants <= 4 ms)")
+    if params.colour_gains is None:
+        out.append(f"{p}: auto white balance (set colour_gains to lock it)")
     return out

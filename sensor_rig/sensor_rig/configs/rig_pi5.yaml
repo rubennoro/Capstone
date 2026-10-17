@@ -1,0 +1,140 @@
+# Sensor rig description (sensor_rig rig.yaml, schema_version 1): Raspberry Pi 5 variant.
+# Conventions: T_a_b maps points in frame b to frame a (pose of b in a), 4x4 row-major, metres; camera frames are
+# OpenCV optical (x right, y down, z forward); times are CLOCK_MONOTONIC integer ns, t_capture = t_stamp + offset.
+# EVERY SECTION MARKED placeholder: true IS A GUESS. Replace it with `python -m sensor_rig calib-import ...`
+# (sensor_rig/docs/calibration.md, sensor_rig/docs/raspberry_pi.md).
+schema_version: 1
+rig_name: pi5-rig-v1-default
+notes: >
+  Raspberry Pi 5 + 2 CSI cameras + ICM-42688-P on SPI0, chosen for the closest match to the iPhone 16 Pro views
+  (virtual main 68.6 x 54.2 deg, virtual ultrawide 102 x 86 deg, both 4:3). Main = HQ Camera (IMX477, M12 variant) with
+  a ~4.5 mm lens (~70 x 55 deg) in the 2x2-binned full-FOV 4:3 mode 2028x1520, ISP-downscaled by exactly 1/2 to
+  1014x760. Ultrawide = IMX219 board with a ~160 deg DFOV M12 fisheye in the binned full-FOV 4:3 mode 1640x1232,
+  unscaled. Both cover their virtual camera fully (coverage 1.0); main/ultrawide output size = calibration size.
+  Output sizes keep the CPU JPEG load ~1/2 core at 30 fps (docs/raspberry_pi.md). All intrinsics, extrinsics, focus,
+  exposure and colour gains are placeholders until Kalibr calibration.
+
+cameras:
+  main:
+    placeholder: true
+    sensor: imx477
+    sensor_id: 0                 # CAM0 connector; Picamera2 camera_num defaults to this
+    sensor_mode: null            # Argus-only; the Pi backend selects the mode with picamera2.sensor_size
+    resolution: [1014, 760]      # main stream size == calibration size: 2028x1520 / 2 (4:3, full FOV)
+    fps: 30
+    argus: {}
+    picamera2:
+      camera_num: 0
+      model: imx477              # checked against Picamera2.global_camera_info() at start
+      sensor_size: [2028, 1520]  # 2x2 binned full-FOV mode (max 40 fps); 2028x1080 / 1332x990 are cropped
+      bit_depth: 12
+      exposure_us: 4000          # placeholder: locked; <= 4 ms keeps motion blur low (calibration wants the same)
+      analogue_gain: 4.0         # placeholder
+      colour_gains: [2.0, 1.8]   # placeholder [red, blue]; read ColourGains from an AWB run under the rig's lights
+      af: none                   # fixed-focus M12 lens: focus once, glue the thread, then calibrate
+      buffer_count: 6
+      noise_reduction: fast
+    model:
+      type: pinhole-radtan
+      intrinsics: [725.8, 725.8, 506.5, 379.5]        # placeholder: f 4.5 mm / (2 x 3.1 um binned pixel) at 1014x760
+      distortion: [-0.05, 0.02, 0.0, 0.0]              # placeholder
+    T_imu_cam:                   # placeholder: IMU 15 mm behind the main camera, rotated 90 deg about z
+      rotation: {matrix: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]}
+      translation_m: [0.0, 0.010, -0.015]
+    time:
+      # placeholder: SensorTimestamp = start of frame (first row read out). Mid-exposure of the middle row is
+      # readout/2 - exposure/2 later: 1520 lines x 12740 px / 840 MHz = 23.1 ms readout -> +11.5 ms - 2.0 ms.
+      offset_prior_ns: 9500000
+      kalibr_timeshift_cam_imu_s: 0.0
+  # Alternative main: Camera Module 3 Wide (IMX708, 102 x 67 deg, 16:9). Also covers the virtual main (1.0) but
+  # wastes about half of the sensor width, and its autofocus must be pinned with lens_position:
+  # main:
+  #   sensor: imx708_wide
+  #   resolution: [1536, 864]          # 2304x1296 binned full-FOV mode x 2/3 (the 1536x864 SENSOR mode is cropped)
+  #   picamera2: {camera_num: 0, model: imx708_wide, sensor_size: [2304, 1296], bit_depth: 10, exposure_us: 4000,
+  #               analogue_gain: 4.0, colour_gains: [2.0, 1.8], lens_position: 3.0, buffer_count: 6}
+  #   model: {type: pinhole-radtan, intrinsics: [655.0, 655.0, 767.5, 431.5], distortion: [-0.04, 0.01, 0.0, 0.0]}
+  #   time: {offset_prior_ns: 6660000}   # 1296 x 7824 px / 585.6 MHz = 17.3 ms readout -> +8.66 ms - 2.0 ms
+  ultrawide:
+    placeholder: true
+    sensor: imx219
+    sensor_id: 1                 # CAM1 connector
+    sensor_mode: null
+    resolution: [1640, 1232]     # IMX219 2x2 binned full-FOV mode, delivered unscaled
+    fps: 30
+    argus: {}
+    picamera2:
+      camera_num: 1
+      model: imx219
+      sensor_size: [1640, 1232]  # max ~41.9 fps
+      bit_depth: 10
+      exposure_us: 4000          # placeholder
+      analogue_gain: 4.0         # placeholder
+      colour_gains: [1.8, 1.6]   # placeholder
+      af: none                   # fixed-focus M12 lens: glue the thread after focusing
+      buffer_count: 6
+      noise_reduction: fast
+    model:
+      type: fisheye-equidistant
+      intrinsics: [734.5, 734.5, 819.5, 615.5]        # placeholder: 160 deg diagonal equidistant at 1640x1232
+      distortion: [0.020, -0.008, 0.002, -0.0003]      # k1..k4 (placeholder)
+      theta_max_deg: 89.0
+    T_imu_cam:                   # placeholder: ultrawide 12 mm below the main camera, parallel optical axes
+      rotation: {matrix: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]}
+      translation_m: [-0.012, 0.010, -0.015]
+    time:
+      # placeholder: 1232 lines x 3448 px / 182.4 MHz = 23.3 ms readout -> +11.65 ms - 2.0 ms
+      offset_prior_ns: 9650000
+      kalibr_timeshift_cam_imu_s: 0.0
+
+virtual_cameras:
+  main:
+    source: main
+    reference: {resolution: [1920, 1440], intrinsics: [1406.3428, 1406.3428, 953.2503, 723.22003]}  # iPhone 16 Pro
+    rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}       # R_phys_virt; set by calib-align
+    outputs: {export: [1920, 1440], deploy: [960, 720]}
+    min_coverage: 0.99
+  ultrawide:
+    source: ultrawide
+    reference: {resolution: [640, 480], intrinsics: [259.01538, 259.01538, 320.2935, 239.67455]}
+    rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}
+    outputs: {export: [640, 480], deploy: [960, 720]}
+    min_coverage: 0.99
+
+imu:
+  placeholder: true
+  type: icm42688p
+  spi: {device: /dev/spidev0.0, speed_hz: 10000000, mode: 0}   # Pi 5 SPI0 (pins 19/21/23/24), dtparam=spi=on
+  odr_hz: 1000
+  output_rate_hz: 1000
+  accel_range_g: 16
+  gyro_range_dps: 2000
+  accel_ui_filter_bw: odr_div_4
+  gyro_ui_filter_bw: odr_div_4
+  fifo: {packet: 20byte_highres_ts, watermark_packets: 16, poll_period_ms: 5, timestamp_resolution_us: 1}
+  noise:                        # datasheet-derived placeholders; replace with allan_variance_ros (>=3 h static)
+    accelerometer_noise_density: 6.9e-4
+    accelerometer_random_walk: 1.0e-4
+    gyroscope_noise_density: 4.9e-5
+    gyroscope_random_walk: 1.0e-6
+    vio_inflation: {noise_density: 5.0, random_walk: 10.0}
+  time: {offset_ns: 0}           # IMU defines the reference clock
+
+vio:
+  camera: ultrawide
+  trajectory_frame: imu
+
+export:
+  device_identifier: "JetsonRig1,1"   # kept: iPhUMI's gripper_calibration.yaml has an entry under this name
+  device_name: "Raspberry Pi 5 Sensor Rig"
+  gripper_id: default
+  world_offset: {translation_m: [1.0, -0.2, 5.0], yaw_deg: 30.0}
+
+capture:
+  backends: {main: picamera2, ultrawide: picamera2, imu: icm42688_spi}     # or mock
+  jpeg: {encoder: opencv, quality: 90, workers_per_camera: 2, queue_seconds: 0.75}
+  live_abort: {min_fps_ratio: 0.52, after_s: 1.0, min_disk_free_gb: 2.0}
+
+calibration:
+  source: placeholder
+  date: null

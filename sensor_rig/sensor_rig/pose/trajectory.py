@@ -263,3 +263,69 @@ def time_offset_check(traj: Trajectory, imu_t, imu_gyro, rig=None, rate_hz: floa
     peak = float(corr[k])
     ok = abs(delay) <= 5.0 and peak >= 0.8
     return {"ok": bool(ok), "traj_delay_ms": delay, "corr": peak}
+
+
+# ---------------------------------------------------------------- F5: VIO consistency (jumps / resets)
+
+MOTION_LIMITS = {"gyro_resid_rms": 0.15, "gyro_resid_max": 1.5, "step_speed_max": 5.0}
+
+
+def motion_consistency_check(traj: Trajectory, imu_t, imu_gyro, rig, max_interval_s: float = 0.2,
+                             limits: dict | None = None) -> dict:
+    """Gyro vs VIO angular rate, and per-step translation jumps (VIO resets / relocalisation jumps).
+
+    For every pair of consecutive poses (gap <= ``max_interval_s``): the VIO body rate
+    ``rotvec(R_k^T R_k+1) / dt``, rotated into the IMU frame, vs the mean gyro over the same interval. A constant
+    gyro bias (median residual) is removed first. Reports the residual RMS / max (rad/s) and the largest per-step
+    translation and speed. ``ok`` is False above ``limits`` (default ``MOTION_LIMITS``).
+    """
+    lim = {**MOTION_LIMITS, **(limits or {})}
+    imu_t = np.asarray(imu_t, dtype=np.int64)
+    g = np.asarray(imu_gyro, dtype=np.float64)
+    t = traj.t_ns
+    T = traj.T()
+    dt = np.diff(t) / 1e9
+    use = (dt > 0) & (dt <= max_interval_s)
+    out: dict = {"limits": lim}
+    step = np.linalg.norm(np.diff(T[:, :3, 3], axis=0), axis=1)
+    if use.any():
+        speed = step[use] / dt[use]
+        k = int(np.argmax(speed))
+        out.update(step_max_m=float(step[use].max()), step_speed_max=float(speed[k]),
+                   step_speed_at_s=float((t[np.flatnonzero(use)[k]] - t[0]) / 1e9))
+    else:
+        out.update(step_max_m=None, step_speed_max=None)
+    resid_rms = resid_max = None
+    if len(imu_t) >= 2 and use.any():
+        R = Rotation.from_matrix(T[:, :3, :3])
+        w_S = (R[:-1].inv() * R[1:]).as_rotvec() / np.maximum(dt, 1e-9)[:, None]
+        R_S_imu = _imu_rotation_in_S(rig, traj.frame)
+        w_imu = w_S @ R_S_imu                     # = (R_S_imu^T w_S^T)^T
+        c = np.vstack([np.zeros((1, 3)), np.cumsum(g, axis=0)])
+        lo = np.searchsorted(imu_t, t[:-1], side="left")
+        hi = np.searchsorted(imu_t, t[1:], side="right")
+        cnt = hi - lo
+        ok_iv = use & (cnt >= 1)
+        if ok_iv.any():
+            g_mean = (c[hi[ok_iv]] - c[lo[ok_iv]]) / cnt[ok_iv][:, None]
+            r = g_mean - w_imu[ok_iv]
+            bias = np.median(r, axis=0)
+            rn = np.linalg.norm(r - bias, axis=1)
+            resid_rms, resid_max = float(np.sqrt(np.mean(rn ** 2))), float(rn.max())
+            out.update(gyro_bias_est=bias.tolist(), gyro_resid_at_s=float(
+                (t[:-1][ok_iv][int(np.argmax(rn))] - t[0]) / 1e9), n_intervals=int(ok_iv.sum()))
+    out.update(gyro_resid_rms=resid_rms, gyro_resid_max=resid_max)
+    problems = []
+    if resid_rms is not None and resid_rms > lim["gyro_resid_rms"]:
+        problems.append(f"gyro vs VIO rate residual RMS {resid_rms:.3f} rad/s > {lim['gyro_resid_rms']}")
+    if resid_max is not None and resid_max > lim["gyro_resid_max"]:
+        problems.append(f"gyro vs VIO rate residual max {resid_max:.2f} rad/s > {lim['gyro_resid_max']} at "
+                        f"{out['gyro_resid_at_s']:.2f} s (VIO jump/reset?)")
+    if out["step_speed_max"] is not None and out["step_speed_max"] > lim["step_speed_max"]:
+        problems.append(f"translation jump: {out['step_max_m']:.3f} m step, {out['step_speed_max']:.1f} m/s > "
+                        f"{lim['step_speed_max']} m/s at {out['step_speed_at_s']:.2f} s")
+    if resid_rms is None:
+        out["note"] = "no IMU samples inside pose intervals: gyro residual not computed"
+    out["ok"] = not problems
+    out["problems"] = problems
+    return out

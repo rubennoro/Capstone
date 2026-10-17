@@ -1,0 +1,42 @@
+# Files and directories the iPhone path depends on (record -> process -> train -> deploy).
+# Checked by check_protected.sh against a baseline ref (default 0ddedef, the last commit before sensor_rig).
+#
+# Syntax (one rule per line, paths relative to the repo root, '#' starts a comment):
+#   <path>                 protected: any modification, deletion or new file under it FAILS
+#   +<glob>                allowed addition: a NEW file matching this glob is reported as INFO, not a failure
+#                          (modifying/deleting a baseline file is still a failure). Glob: fnmatch on the repo path.
+#   @additive <path>       only added lines are allowed (no baseline line removed or changed)
+#   @yaml-append <path>    the baseline text must be a byte-identical prefix of the new text, and every baseline
+#                          YAML key must parse to the same value (new keys may only be appended)
+# Special rules take precedence over the directory rules that contain the same path.
+#
+# Why each block (see DESIGN.md "The pipeline at a glance" and scripts/cluster/process_dataset.sbatch):
+
+# 1. Recording: the iPhone app (export format is the pipeline's input contract)
+iPhUMI/ios_app/
+
+# 2. Processing: the iPhUMI package (process_demos_iphone.py, create_session_iphone.py, build_umi_dataset_iphone.py,
+#    their Hydra configs, aruco config, codecs) + its env and setup. Whole iPhUMI/ tree, incl. .gitignore, which keeps
+#    tmp_demonstrations/ tmp_sessions/ out of git.
+iPhUMI/
+@yaml-append iPhUMI/python_package/iphumi/demonstration_processing/calibration/gripper_calibration.yaml
+
+# 3. Orchestration (laptop -> cluster -> results)
+scripts/run_pipeline.sh
+scripts/cluster/
+scripts/label_whole_demo_as_task.py
+scripts/package_run.py
+scripts/slim_checkpoint.py
+scripts/wandb_offline_to_csv.py
+scripts/check_job.sh
+
+# 4. Training (train.py, policy/task configs, workspace, dataset loading, common utils) and its env, and
+# 5. Deployment (behavior_prompting/deployment/detached_inference.py, behavior_prompting/common/cv_util.py, and the
+#    vendored real-env: base_camera.py, iphone.py, iphone_*.yaml, tasks, agents, controllers, common, utils).
+#    Whole behavior_prompting/ tree, incl. deps/icrt (prompt model) and deps/LIBERO (imported by train_network utils).
+behavior_prompting/
+# sensor_rig's additive real-env files (new files only; never edits of existing ones)
++behavior_prompting/deps/real-env/real_env/peripherals/rig_*.py
++behavior_prompting/deps/real-env/real_env/configs/peripherals/rig_*.yaml
+# real-env console-script entry points: sensor_rig appended `rig_camera = ...`; the `iphone` entry must stay
+@additive behavior_prompting/deps/real-env/pyproject.toml

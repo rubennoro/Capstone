@@ -1,0 +1,28 @@
+# Inference-side (behavior_prompting) pins for franka_deploy, laptop and Jetson.
+# Versions = behavior_prompting/environment.yml (the training env). torch/torchvision are NOT listed: laptop dev
+# reuses a CUDA build; the Jetson must use NVIDIA's JetPack 6 torch wheel.
+#
+# imagecodecs MUST stay at the training pin: prompts are JPEG-XL frames decoded from the zarr, and 2025.3.30
+# decodes them up to 0.011 grey levels (per-frame mean) differently from 2023.9.18 (measured in D1a). The server
+# reports the installed version at startup and warns if it differs. On aarch64 check that the 2023.9.18 wheel
+# installs (it ships manylinux aarch64 wheels); if it must be built from source, use the same libjxl as the wheel.
+imagecodecs==2023.9.18
+numcodecs==0.13.1
+zarr==2.16.0
+numpy==1.26.4
+hydra-core==1.2.0
+dill==0.3.7
+einops==0.6.1
+timm==1.0.20
+diffusers==0.35.1
+transformers==4.57.1
+accelerate==1.10.1
+huggingface_hub==0.35.3
+safetensors==0.6.2
+opencv-python==4.11.0.86
+scipy==1.15.3
+robotmq==0.1.14
+pyzmq==27.1.0
+click==8.3.2
+imageio==2.38.0
+matplotlib==3.10.8

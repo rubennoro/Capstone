@@ -16,8 +16,8 @@ __all__ = ["register", "main"]
 
 
 def _load(path):
-    from sensor_rig.rig_config import load_rig
-    return load_rig(path)
+    from sensor_rig.rig_config import load_rig_arg
+    return load_rig_arg(path)          # missing / invalid -> RigFileError -> exit 2 (sensor_rig.cli.main)
 
 
 def _print_coverage(rig) -> None:
@@ -27,9 +27,15 @@ def _print_coverage(rig) -> None:
 
 
 def cmd_rig_validate(args) -> int:
-    from sensor_rig.rig_config import RigConfigError, validate
+    from pathlib import Path
+
+    from sensor_rig.rig_config import DEFAULT_RIG_PATH, RigConfigError, RigFileError, load_rig, validate
+
+    p = Path(args.rig)
+    if not p.exists() and not (len(p.parts) == 1 and (DEFAULT_RIG_PATH.parent / p).exists()):
+        raise RigFileError(f"rig file not found/invalid: {args.rig} — file not found")
     try:
-        rig = _load(args.rig)
+        rig = load_rig(args.rig)     # the validator itself: invalid content is reported below with exit 1
     except RigConfigError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -154,7 +160,7 @@ def register(subparsers) -> None:
     src.add_argument("--live", action="store_true", help="grab frames from the cameras")
     src.add_argument("--episode", help="raw rig episode directory")
     src.add_argument("--images", nargs=2, metavar=("MAIN", "ULTRAWIDE"), help="physical frames as image files")
-    p.add_argument("--backend", choices=["argus", "mock"], help="camera backend for --live")
+    p.add_argument("--backend", choices=["argus", "picamera2", "mock"], help="camera backend for --live")
     p.add_argument("--frame", type=int, help="frame index for --episode (default: middle)")
     p.add_argument("--watch", type=float, default=0.0, help="--live: refresh every N seconds")
     p.add_argument("--out", required=True, help="output directory")
@@ -194,7 +200,13 @@ def main(argv: list[str] | None = None) -> int:
     if not getattr(args, "func", None):
         parser.print_help()
         return 2
-    return int(args.func(args) or 0)
+    from sensor_rig.rig_config import RigFileError
+
+    try:
+        return int(args.func(args) or 0)
+    except RigFileError as e:
+        print(f"{args.command}: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

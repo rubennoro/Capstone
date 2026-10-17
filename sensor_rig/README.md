@@ -14,14 +14,18 @@ Hardware backends (GStreamer/Argus, spidev) are imported lazily. Everything else
 ## Data path
 
 ```
-Jetson : python -m sensor_rig record      -> raw rig episode  <raw>/<YYYY-MM-DD>/<NAME>/   (JPEG + CSV + meta.json + rig.yaml)
-laptop : python -m sensor_rig pose-prep   -> EuRoC folder + ORB-SLAM3 settings (or OpenVINS/Kalibr yamls)
+Jetson : sensor-rig doctor      -> preflight table (devices, IMU, clock, disk, rig.yaml)
+Jetson : sensor-rig collect     -> raw rig episodes (doctor, calibration, demos; or `record`)  <raw>/<YYYY-MM-DD>/<NAME>/   (JPEG + CSV + meta.json + rig.yaml)
+laptop : sensor-rig pose-prep   -> EuRoC folder + ORB-SLAM3 settings (or OpenVINS/Kalibr yamls)
 extern : ORB-SLAM3 mono-inertial (or OpenVINS) -> trajectory file
-laptop : python -m sensor_rig pose-import -> <NAME>/trajectory/trajectory.{tum,json}  (with sanity checks)
-laptop : python -m sensor_rig export      -> <out>/<YYYY-MM-DD>/<NAME>/<NAME>{.json,_rgb.mp4,_ultrawidergb.mp4}
-laptop : python -m sensor_rig validate    -> checks every iPhone-format invariant (export also runs it)
+laptop : sensor-rig pose-import -> <NAME>/trajectory/trajectory.{tum,json}  (with sanity checks)
+laptop : sensor-rig export      -> <out>/<YYYY-MM-DD>/<NAME>/<NAME>{.json,_rgb.mp4,_ultrawidergb.mp4}
+laptop : sensor-rig validate    -> checks every iPhone-format invariant (export also runs it)
 then   : the unchanged iPhUMI pipeline, with group.iphone_dir=<out>
 ```
+
+One command for the laptop part: `sensor-rig process-session` (below) runs pose-prep → VIO → pose-import → export →
+validate for a whole session and prints the `scripts/run_pipeline.sh` line.
 
 The raw episode folder name is already the final iPhone-style NAME
 (`<UTC time with ':'→'-'>_<5 digits>_<session>_<demonstration|grippercalibration>_<side>`). It is chosen at record
@@ -29,10 +33,11 @@ start, like the app does.
 
 ## Install and test
 
-The package needs numpy, opencv, pyyaml, scipy and PyAV. Install it with `pip install -e sensor_rig` (extras:
-`[jetson]`, `[rosbags]`, `[test]`). The tests don't need an install: `tests/conftest.py` puts `sensor_rig/` on
-`sys.path`. `python -m sensor_rig` does need the install when run from the repo root. Without it, Python imports the
-project folder `sensor_rig/` as an empty namespace package and fails with "cannot be directly executed".
+The package needs numpy, opencv, pyyaml, scipy and PyAV. On a laptop, install it with `pip install -e sensor_rig`
+(extras: `[jetson]`, `[rosbags]`, `[test]`). On the Jetson, use `scripts/jetson_setup.sh` instead (below). Run
+commands with the `sensor-rig` entry point. `python -m sensor_rig` fails when run from the repo root: Python imports
+the project folder `sensor_rig/` as an empty namespace package. The tests don't need an install, because
+`tests/conftest.py` puts `sensor_rig/` on `sys.path`.
 
 ```bash
 PY=<python with numpy, opencv, scipy, pyyaml, av, pytest>
@@ -78,9 +83,9 @@ writes this format (`RawEpisodeWriter` is used by the recorder and the simulator
 ## Pose stage
 
 ```bash
-python -m sensor_rig pose-prep --raw <episode|date dir|raw root> --out <dir> --target orbslam3 --scale 0.5 --imu-rate 200
+sensor-rig pose-prep --raw <episode|date dir|raw root> --out <dir> --target orbslam3 --scale 0.5 --imu-rate 200
 <dir>/<NAME>/run_orbslam3.sh                      # needs $ORB_SLAM3; writes f_<NAME>.txt
-python -m sensor_rig pose-import --raw <episode> --traj f_<NAME>.txt --format orbslam3-euroc --frame imu
+sensor-rig pose-import --raw <episode> --traj f_<NAME>.txt --format orbslam3-euroc --frame imu
 ```
 
 - `pose-prep` writes `mav0/cam0` (grayscale PNG, optionally downscaled with scaled intrinsics; `--scale` snaps to
@@ -101,30 +106,76 @@ python -m sensor_rig pose-import --raw <episode> --traj f_<NAME>.txt --format or
   - **gravity**: the mean accelerometer reading rotated into the VIO world must point along +z within 3°;
   - **time offset**: |ω| cross-correlation between the trajectory and the gyro; it warns if the delay is > 5 ms.
 
-  It refuses on a failed overlap or gravity check unless you pass `--force`. Otherwise it writes
+  - **motion** (T3): gyro vs VIO angular rate over each pose interval, with a constant bias removed. It refuses
+    above an RMS of 0.15 rad/s or a max of 1.5 rad/s, or on a per-step speed > 5 m/s (VIO jumps, resets,
+    relocalisation).
+
+  It refuses on a failed overlap, gravity or motion check unless you pass `--force`. `--time-offset-ns` (default
+  `auto` = `meta.sim.replay_offset_ns` of an episode recorded by `collect --mock-replay`) shifts the trajectory onto
+  the episode's clock. Otherwise it writes
   `trajectory/trajectory.tum` and `trajectory.json` (frame, checks, source sha256).
+
+## Process a session (laptop)
+
+```bash
+sensor-rig process-session --raw <raw root> --session rig1020 --out data/rig_export/rig1020 \
+    --vio {import-dir --traj-dir D | cmd --vio-cmd "TEMPLATE" | orbslam3-docker [--docker-image IMG]} \
+    [--rig calibrated.yaml] [--task-label block_raise] [--workers 4] [--overwrite] [--force-episode NAME] [--allow-partial]
+```
+
+- **Checks first:** the session name must be rig-only (`rig*`) and unused in `data/raw`. Every demo must name a kept
+  calibration of the session; hidden aborted / discarded / rejected episodes are never read.
+- **Demos:** pose-prep (EuRoC folder, ORB-SLAM3 settings, finger mask `mask_ultrawide.png` under
+  `<out>/.sensor_rig/vio/<session>/`) → VIO hook → pose-import (gravity, overlap and motion checks, replay offset).
+  - `import-dir` looks for `<NAME>.tum`, `<NAME>/trajectory.tum`, `f_<NAME>.txt`, or for a `collect
+    --mock-replay` episode, the source's `sim/vio_trajectory.tum`.
+  - `cmd` runs a shell template with `{prep} {settings} {times} {name} {mask} {out}`.
+  - `orbslam3-docker` runs ORB-SLAM3 in the image from `docker/orbslam3/`. That image is not built yet; see its
+    README.
+- **Calibration episodes skip the pose stage:** export reads a trajectory only for demonstrations.
+- **Export and validate:** export runs calibrations first, then validate runs on the export root.
+- **Failures and resume:** a failed episode never stops the others, and re-runs resume finished steps
+  (`--overwrite` redoes them).
+- **Report:** `<out>/.sensor_rig/process_<session>.json` gives per-episode status and reason, VIO residuals, lag
+  stats, coverage and trim.
+- **Exit code:** 0 only if the calibration and ≥ 1 demo exported and no demo failed (or `--allow-partial`).
+- **Next step:** it prints the `scripts/run_pipeline.sh all --task ... --dataset rig-<session>-single --sessions
+  <session> --raw-dir <repo-relative export root> --smoke-first` command; run it yourself.
 
 ## Export
 
 ```bash
-python -m sensor_rig export --raw <raw root|date dir|episode ...> --out <export_root> [--uw-rate 10|all]
+sensor-rig export --raw <raw root|date dir|episode ...> --out <export_root> [--uw-rate 10|all]
        [--label-task block_raise] [--calibration-run NAME] [--rig better_rig.yaml] [--trajectory f.tum
-       --trajectory-frame imu] [--workers N] [--overwrite] [--force]
-python -m sensor_rig validate <export_root|episode> [--gripper-calibration .../gripper_calibration.yaml] [--decode]
+       --trajectory-frame imu] [--workers N] [--overwrite] [--force] [--fix-world-yaw]
+       [--max-main-gap 0.10] [--max-uw-gap 0.25]
+sensor-rig validate <export_root|episode> [--gripper-calibration .../gripper_calibration.yaml] [--decode]
 ```
 
 What export does (code in `sensor_rig/export/`):
 
 - **Grid** (`grid.py`): the main camera drives the 60 Hz record, because the pipeline hardcodes 1/60.
   - Main camera at ≥ 50 fps: the grid is the actual main frame times (dropped frames stay gaps, like the iPhone).
-  - Slower main camera (e.g. 30 fps): a uniform 60 Hz grid where each slot shows the **nearest** main frame (zero-mean
-    image-vs-pose time error; exact ties alternate).
+  - Slower main camera (e.g. 30 fps, the Jetson's only full-FOV mode): **align-exact fill grid** (T3).
+    - The ms time strings are written so that iPhUMI's align stage (`np.arange` over the pose strings at 1/60 s,
+      then "most recent string ≤ sample") maps sample k to slot k exactly. The sample times are reproduced bit for
+      bit, including numpy's float drift, with ≥ 0.5 ms of slack.
+    - Poses are sampled at the string times. Each slot shows one of the two main frames around align's sample time,
+      chosen by error diffusion, so the image-vs-pose lag is zero-mean (|mean| < 2 ms). The worst case is half a
+      frame interval plus the grid phase (≈ 17 ms; ≈ 19 ms when the camera clock drifts, as in the iPhone-derived
+      sims).
+    - `export_log.jsonl` records the lag stats per episode. The k / k−3 observation pair never shows the same frame.
   - Episodes with fewer than 31 frames in any 1-s window after the first second abort. In fill mode the threshold
     is 0.52 × nominal fps.
 - **Poses** (`exporter.py`, `pose/`): linear position + SLERP rotation at grid times.
   - Slots without a pose (VIO not yet initialised, or lost) at the head or tail are trimmed. A gap in the middle
     aborts the episode (`pose_gap_mid_episode`).
-  - It also aborts on: speed > 7 m/s, an identity rotation, NaN, or duration < 1 s.
+  - It also aborts on: speed > 7 m/s, an identity rotation, NaN, duration < 1 s, or a frame gap > 0.10 s (main) /
+    > 0.25 s (ultrawide). The gap reasons name the gap and its time; change the limits with `--max-main-gap` /
+    `--max-uw-gap`.
+  - Rotation angles > 170° get a warning: align interpolates rotation vectors component by component, which is
+    wrong near 180°. `--fix-world-yaw` rotates the (arbitrary) world yaw per episode to keep them small. Relative
+    motion is unchanged.
   - A demonstration without `gripperCalibrationRunName` aborts early with `no_calibration_run`; pass
     `--calibration-run <NAME>`.
 - **Ultrawide** (`slotting.py`): decimated to ~10 Hz (like the iPhone), then each frame is attached to the nearest
@@ -158,12 +209,101 @@ After export, run the pipeline on `<export_root>` exactly as for iPhone data. Th
 Before the first real recording, work through the hardware checklist in
 [sensor_rig/record/HARDWARE_CHECKLIST.md](sensor_rig/record/HARDWARE_CHECKLIST.md).
 
-## Recording (Jetson)
+## First plug-in
+
+The full hardware-day procedure, from a bare Jetson to the printed cluster command, with pass/fail numbers for each
+step: [docs/first_plugin.md](docs/first_plugin.md). Its commands are run by `tests/test_first_plugin.py`.
+
+## Jetson setup and preflight
 
 ```bash
-python -m sensor_rig record --rig <calibrated rig.yaml> --out <raw root> --session firstrig --side left   # see --help
-python -m sensor_rig record --mock --duration 5 ...      # same recorder with mock cameras + IMU, runs on a laptop
-python -m sensor_rig bench-encode                        # JPEG encode budget check (run it on the Orin Nano)
+sensor_rig/scripts/jetson_setup.sh [--dry-run]       # once per Jetson; idempotent, prints every command it runs
+source ~/sensor_rig_venv/bin/activate
+sensor-rig doctor --rig <rig.yaml> --out /mnt/nvme/raw [--json doctor.json]   # before every session
+sensor-rig doctor --mock --out /tmp/raw                  # laptop: hardware checks skipped, mock sensors
+```
+
+- The setup script installs JetPack's apt packages (`python3-gi`, GStreamer, `python3-numpy/-opencv/-scipy/-yaml/-spidev`).
+  It creates a `--system-site-packages` venv (default `~/sensor_rig_venv`), upgrades pip in it to ≥ 23, and runs
+  `pip install --no-deps -e sensor_rig`. It never pip-installs OpenCV, scipy or PyAV.
+  - The recorder needs only numpy, cv2, yaml, scipy (rig transforms), spidev and gi. PyAV is needed only for export,
+    which runs on the laptop.
+  - It then checks every import, adds the `video`/`spi` groups and an spidev udev rule, and loads spidev at boot.
+    Finally it prints the manual jetson-io, power and clock steps.
+  - Tested on Ubuntu 22.04's own apt stack (python 3.10, numpy 1.21, scipy 1.8, OpenCV 4.5.4, the same base as
+    JetPack 6), not on a Jetson.
+- `doctor` prints a PASS/WARN/FAIL table, and each FAIL/WARN line names its fix. It exits 1 on any FAIL.
+  - Checks: Python deps, entry point, rig.yaml (placeholders, AE/AWB lock, exposure ≤ 4 ms, coverage), wall clock
+    (year < 2026 = FAIL: no RTC battery) and NTP, free disk (minutes at 30 MB/s) and write speed.
+  - Hardware checks: GStreamer + `nvarguscamerasrc`, `nvargus-daemon`, `/dev/videoN`, the Argus sensor mode vs
+    rig.yaml, `/dev/spidev*` access, IMU WHO_AM_I, a 2 s capture on both cameras at once (fps, stamp latency sign,
+    drops), and 1 s of IMU (rate, |a| ≈ 9.81 at rest).
+  - Every hardware call has a deadline, so a hung camera gives a FAIL instead of a hang.
+  - `run_doctor()` in `sensor_rig/doctor.py` is reusable (`quick=True` skips the mode listing and the write test).
+
+## Stamp offsets and start-of-frame stamps
+
+- `sensor-rig stamp-offset --rig rig.yaml --led gpio:7` blinks an LED at random phases while both cameras record
+  under full load. It prints each camera's stamp → mid-exposure offset (error ≤ ~0.5 ms with 0.5 ms jitter in
+  simulation), jitter and drift, plus the `cameras.<c>.time.offset_prior_ns` patch. `--mock` runs it on a laptop.
+- Backend `argus_sof` (`capture.backends.<cam>: argus_sof`): a libargus helper (`native/argus_sof/`, C++, not built
+  yet) that delivers sensor start-of-frame timestamps instead of appsink arrival times. Doctor checks the helper
+  binary.
+
+## Recording (Jetson)
+
+One command per session (run it inside `tmux` so an SSH drop doesn't end it):
+
+```bash
+sensor-rig collect --rig <rig.yaml> --out /mnt/nvme/raw --session rig1020 --task-label block_raise   # --side left (default)
+sensor-rig collect --mock --out /tmp/raw --session mocktest              # laptop: mock cameras + IMU
+sensor-rig collect --mock-replay <raw episodes...> --out /tmp/raw --session replaytest   # one source per episode
+```
+
+- **Flow:** a quick `doctor` runs first (it refuses on any FAIL unless you pass `--force`). The sensors are then opened
+  **once** for the whole session.
+- **Calibration first:** the first episode is always the gripper calibration (open and close the fingers fully 2-3
+  times, both tags visible, ≥ 3 s), as in the iPhone app. It is checked: duration ≥ 3 s, both cameras ≥ 0.9× nominal
+  fps, IMU ≥ 0.95× ODR, no dropped frames. A failed calibration is moved to `.<NAME>.rejected`, and demos stay
+  blocked until one passes. `--reuse-calibration` takes the last accepted one of the same session/side/gripper instead.
+- **Keys** (letter + Enter):
+
+  | Key | Action |
+  |---|---|
+  | Enter | start / stop an episode |
+  | `a` | abort the running episode (kept as `.<NAME>.aborted`) |
+  | `d` | discard the last kept episode (renamed to `.<NAME>.discarded`, never deleted) |
+  | `c` | record a new calibration next |
+  | `s` | status |
+  | `q` | quit |
+
+  While recording, a status line prints every second. After each stop, a verdict line shows the duration, frames /
+  fps / drops per camera, IMU rate, size, and KEPT / ABORTED / REJECTED with the reason, plus the running counts.
+- **Tag check:** after the calibration, ~10 ultrawide frames are remapped to the virtual iPhone ultrawide and run
+  through ArUco (DICT_4X4_50; both the OpenCV < 4.7 and the ≥ 4.7 APIs). If no frame shows both finger tags, the
+  calibration is rejected; below 20 % it gets a warning. The check is off for `--mock` (synthetic images have no
+  tags).
+- **`--mock-replay`:** each episode replays the next source of its kind (calibration sources for calibrations), with
+  every stamp shifted by one constant. The episode stops by itself when the source ends. The shift is stored in
+  `meta.json` (`sim.replay_offset_ns`), and `pose-import` applies it to the source trajectory.
+  `tests/e2e/run_collect_dryrun.py` runs the whole chain: collect → pose-import → export → real iPhUMI pipeline.
+- **Push button** (optional, off by default): `capture.button: {enabled: true, pin: 7}` in rig.yaml, or
+  `--button gpio:7` (BOARD numbering, Jetson.GPIO). A short press acts as Enter, a long press as abort.
+- **Signals:** Ctrl-C, SIGTERM and SSH hangup abort the running episode (kept hidden) and close the sensors. The
+  session summary `<out>/.sensor_rig/sessions/<session>_<UTC>.json` is written anyway: every episode, its status,
+  verdict and calibration, the doctor result and the counts.
+- **Rig-only names:** use session names that never collide with iPhone sessions (e.g. `rig1020`). Calibration and
+  demos always share the session, side and gripper ID, and every demo names its calibration explicitly.
+- **Extra live abort rules for collect:** the main camera's fps rule also applies to the ultrawide (the VIO camera),
+  and any camera aborts on a frame gap > 0.25 s. Set them with `capture.live_abort.{all_cameras_fps,
+  max_frame_gap_s}`. Both are off for `record` with older rig.yaml files.
+
+Lower-level tools:
+
+```bash
+sensor-rig record --rig <rig.yaml> --out <raw root> --session rig1020 --side left [--kind gripper_calibration]  # one kind per run
+sensor-rig record --mock --duration 5 ...      # same recorder with mock cameras + IMU, runs on a laptop
+sensor-rig bench-encode                        # JPEG encode budget check (run it on the Orin Nano)
 ```
 
 Code in `sensor_rig/drivers/` (backends) and `sensor_rig/record/` (recorder). Everything is stamped with
@@ -171,6 +311,17 @@ CLOCK_MONOTONIC ns. Argus stamps (MONOTONIC_RAW) are converted in the backend, a
 mapped to the host clock by `drivers/chip_clock.py`. Rig offsets (`rig.yaml` `cameras.*.time`) are applied only at
 export and deployment, never on disk. Live abort rules mirror the app (fps, disk space, sensor errors). The Argus and
 SPI backends have not run on hardware yet; see the checklist above.
+
+## Raspberry Pi 5
+
+Data collection also works on a Raspberry Pi 5 (Bookworm, libcamera / Picamera2): set
+`capture.backends: {main: picamera2, ultrawide: picamera2}` and give each camera a `picamera2:` block (camera number,
+full-FOV sensor mode, locked exposure / gain / white balance, manual focus). The ICM-42688-P stays on SPI0, on the same
+header pins as on the Jetson. Everything after recording is unchanged. Example: `configs/rig_pi5.yaml`, with an HQ
+Camera IMX477 + 4.5 mm main at 1014x760 and an IMX219 + 160° fisheye ultrawide at 1640x1232; both have coverage 1.0.
+Setup, wiring, lens choice, the CPU JPEG budget and the timestamp research (Pi 5 `SensorTimestamp` = CLOCK_MONOTONIC
+at start of frame) are in [docs/raspberry_pi.md](docs/raspberry_pi.md). The bring-up steps are in the Raspberry Pi
+section of the [hardware checklist](sensor_rig/record/HARDWARE_CHECKLIST.md).
 
 ## Calibration
 
@@ -187,6 +338,7 @@ cameras (`rig-validate` prints it):
 | ~120° fisheye ultrawide | 0.84 |
 | ~140° fisheye ultrawide | 0.996 |
 | ≥ 90° main / ~160° fisheye (`rig_default.yaml` placeholders) | 1.0 / 1.0 |
+| 2.1 mm main / 1.55 mm fisheye (`configs/rig_jetson_imx219_2p1_1p55.yaml`, the charter parts, nominal) | 1.0 / 1.0 |
 
 Below ~0.98 the exported images get black borders the policy never saw in iPhone data.
 
@@ -205,9 +357,14 @@ PY=<env python>
 $PY -m pytest sensor_rig/tests -m "not e2e"                    # unit + D10a/b/d
 SENSOR_RIG_E2E=1 $PY -m pytest sensor_rig/tests/test_e2e.py    # D10c (~4 min)
 $PY sensor_rig/tests/e2e/run_pipeline_compare.py --workdir /tmp/d10c --workers 6   # same, keeps the work dir
+$PY sensor_rig/tests/e2e/run_pipeline_compare.py --workdir /tmp/d10c30 --main-fps 30 [--ts-jitter-ns 1000000 --drop-rate 0.01]   # fill mode
+$PY sensor_rig/tests/e2e/run_collect_dryrun.py --workdir /tmp/dry      # collect --mock-replay -> ... -> zarr
 ```
 
-D10c simulates rig recordings from real iPhone demos (`python -m sensor_rig sim`), then runs pose-import, export and
+Fill-mode runs use the separate, justified tolerances `TOL_FILL` in `run_pipeline_compare.py`. Native tolerances
+are unchanged.
+
+D10c simulates rig recordings from real iPhone demos (`sensor-rig sim`), then runs pose-import, export and
 validate. It runs the real iPhUMI pipeline on the originals and on the exports in isolated work dirs and compares the
 two zarrs (keys, lengths, relative TCP motion, gripper width, images, tag detection). It writes `report.json`, exits
 0 only if every check passes, and never writes to iPhUMI's `tmp_*` folders or `data/raw`.

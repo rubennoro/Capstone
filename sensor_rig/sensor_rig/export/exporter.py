@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from sensor_rig.export.grid import build_grid, fps_abort
+from sensor_rig.export.grid import build_grid, fill_slots, fps_abort, lag_stats
 from sensor_rig.export.iphone_json import build_json, dumps_swift
 from sensor_rig.export.slotting import select_uw, slot_uw, uw_pts
 from sensor_rig.export.video import Mp4Writer, probe_video
@@ -42,6 +42,11 @@ class ExportOptions:
     min_fps: float = 31.0  # native-mode live-fps rule (VC:1821)
     min_fps_ratio: float = 0.52  # fill-mode rule: frames/s >= ratio * nominal main fps
     min_duration_s: float = 1.0
+    max_main_gap_s: float | None = 0.10  # F6: abort on a longer gap between main frames (None = off)
+    max_uw_gap_s: float | None = 0.25  # F6: abort on a longer gap between ultrawide frames (None = off)
+    max_rotvec_deg: float = 170.0  # F9: warn above this rotation angle (align's rotvec interpolation breaks near pi)
+    fix_world_yaw: bool = False  # F9: also pick a per-episode world yaw that keeps the angles below max_rotvec_deg
+    fill_max_extra_ns: int = 2_000_000  # fill mode: a frame may be up to half an interval + this from its slot
     min_coverage_warn: float = 0.98
     container: str = "mov"
     time_base_den: int = 600
@@ -75,6 +80,8 @@ class ExportResult:
     coverage: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     grid_mode: str = ""
+    lag: dict = field(default_factory=dict)  # fill mode: image-vs-pose lag stats over align's samples
+    world_yaw_extra_deg: float = 0.0  # F9: extra world yaw applied to keep rotation angles < max_rotvec_deg
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -145,6 +152,39 @@ def _check_poses(T: np.ndarray, t_ns: np.ndarray, opts: ExportOptions, warnings:
         raise ExportAbort("identity_pose", "an exported rotation is (numerically) the identity")
 
 
+def _yaw_y(deg: float) -> np.ndarray:
+    M = np.eye(4)
+    M[:3, :3] = Rotation.from_euler("y", deg, degrees=True).as_matrix()
+    return M
+
+
+def choose_world_yaw(T: np.ndarray, max_deg: float = 170.0, step_deg: float = 5.0) -> float:
+    """F9: iPhUMI align interpolates rotation vectors component-wise, which breaks near |theta| = pi. The ARKit world
+    yaw (about +y, gravity) is arbitrary for the relative policy representation, so if any pose's rotation angle
+    exceeds ``max_deg``, return the extra yaw (deg) that minimises the largest angle (0 if no change is needed)."""
+    ang = np.degrees(Rotation.from_matrix(T[:, :3, :3]).magnitude())
+    if ang.max() <= max_deg:
+        return 0.0
+    best, best_val = 0.0, float(ang.max())
+    R = Rotation.from_matrix(T[:, :3, :3])
+    for psi in np.arange(step_deg, 360.0, step_deg):
+        a = np.degrees((Rotation.from_euler("y", psi, degrees=True) * R).magnitude())
+        if a.min() > 0.1 and a.max() < best_val:
+            best, best_val = float(psi), float(a.max())
+    return best
+
+
+def _gap_abort(t_ns: np.ndarray, t0: int, max_gap_s: float | None, what: str) -> None:
+    """F6: abort if two consecutive frames are more than ``max_gap_s`` apart (reason names the gap and its time)."""
+    if max_gap_s is None or len(t_ns) < 2:
+        return
+    d = np.diff(t_ns)
+    i = int(np.argmax(d))
+    if d[i] > max_gap_s * 1e9:
+        raise ExportAbort(f"{what}_gap", f"{d[i] / 1e9:.3f} s gap between {what} frames at "
+                          f"{(t_ns[i] - t0) / 1e9:.2f} s into the episode (> {max_gap_s} s)")
+
+
 def export_episode(raw_dir, out_root, opts: ExportOptions | None = None) -> ExportResult:
     opts = opts or ExportOptions()
     raw_dir, out_root = Path(raw_dir), Path(out_root)
@@ -211,21 +251,53 @@ def _export_into(ep: RawEpisode, out: Path, opts: ExportOptions, res: ExportResu
         i0, i1 = _trim_by_pose(valid)
     else:
         i0, i1 = 0, G - 1
-    t_grid = grid.t_ns[i0:i1 + 1]
-    src_idx = grid.src_idx[i0:i1 + 1]
+    wall = ep.wall_offset_ns()
+    if grid.mode == "fill":
+        # F2: align-exact strings; images at align's sample times, poses at the string times
+        try:
+            fs = fill_slots(t_main, int(grid.t_ns[i0]), int(grid.t_ns[i1]), wall, opts.grid_hz,
+                            max_extra_ns=opts.fill_max_extra_ns)
+        except ValueError as e:
+            raise ExportAbort("too_short", str(e))
+        t_grid, src_idx = fs.string_ns, fs.src_idx
+        if demo:
+            T_S, valid = traj.sample(t_grid, max_gap_ns=int(opts.max_pose_gap_s * 1e9))
+            j0, j1 = _trim_by_pose(valid)
+            if j0 != 0:
+                raise ExportAbort("pose_gap_mid_episode", "fill grid start lost its pose")
+            t_grid, src_idx, T_S = t_grid[:j1 + 1], src_idx[:j1 + 1], T_S[:j1 + 1]
+            fs = type(fs)(fs.sample_ns[:j1 + 1], fs.string_ns[:j1 + 1], fs.string_unix_ns[:j1 + 1], src_idx)
+        res.lag = lag_stats(t_main, fs)
+        p0, p1 = 0, len(t_grid) - 1
+    else:
+        t_grid = grid.t_ns[i0:i1 + 1]
+        src_idx = grid.src_idx[i0:i1 + 1]
+        p0, p1 = i0, i1
     n = len(t_grid)
-    if (t_grid[-1] - t_grid[0]) * 1e-9 < opts.min_duration_s:
+    if n < 2 or (t_grid[-1] - t_grid[0]) * 1e-9 < opts.min_duration_s:
         raise ExportAbort("too_short", f"{(t_grid[-1] - t_grid[0]) * 1e-9:.2f} s")
     res.trim_head_s = float((t_grid[0] - grid.t_ns[0]) * 1e-9)
     res.trim_tail_s = float((grid.t_ns[-1] - t_grid[-1]) * 1e-9)
+    in_main = t_main[(t_main >= t_grid[0]) & (t_main <= t_grid[-1])]
+    _gap_abort(in_main, int(t_grid[0]), opts.max_main_gap_s, "main")
     if demo:
-        T = rig_vio_to_arkit_main(rig, T_S[i0:i1 + 1], traj.frame)
+        T = rig_vio_to_arkit_main(rig, T_S if grid.mode == "fill" else T_S[p0:p1 + 1], traj.frame)
         T[:, :3, :3] = orthonormalize(T[:, :3, :3])
         T[:, 3, :] = (0.0, 0.0, 0.0, 1.0)
+        yaw = choose_world_yaw(T, opts.max_rotvec_deg)
+        if yaw and opts.fix_world_yaw:
+            T = _yaw_y(yaw)[None] @ T
+            res.world_yaw_extra_deg = yaw
+            warnings.append(f"rotation angle > {opts.max_rotvec_deg} deg: world yaw +{yaw:g} deg applied (F9)")
+        elif yaw:
+            amax = float(np.degrees(Rotation.from_matrix(T[:, :3, :3]).magnitude()).max())
+            warnings.append(f"rotation angle up to {amax:.1f} deg > {opts.max_rotvec_deg} deg: iPhUMI align "
+                            f"interpolates rotation vectors component-wise and is wrong near 180 deg; re-export with "
+                            f"--fix-world-yaw (would add {yaw:g} deg of world yaw) (F9)")
         _check_poses(T, t_grid, opts, warnings)
 
     # ---- time strings (one UNIX offset per episode, taken at record start)
-    times = iso_ms_array(t_grid + ep.wall_offset_ns())
+    times = iso_ms_array(t_grid + wall)
     if any(a >= b for a, b in zip(times, times[1:])) or not all(ISO_RE.match(s) for s in times):
         raise ExportAbort("time_strings", "slot time strings are not strictly increasing ISO-ms strings")
 
@@ -233,6 +305,7 @@ def _export_into(ep: RawEpisode, out: Path, opts: ExportOptions, res: ExportResu
     t_uw = np.asarray(rig.capture_time_ns("ultrawide", ep.camera_times("ultrawide")), dtype=np.int64)
     h = int(np.median(np.diff(t_grid)) // 2) if n > 1 else 8_333_333
     in_range = np.flatnonzero((t_uw >= t_grid[0] - h) & (t_uw <= t_grid[-1] + h))
+    _gap_abort(t_uw[in_range], int(t_grid[0]), opts.max_uw_gap_s, "ultrawide")
     sel = in_range[select_uw(t_uw[in_range], opts.ultrawide_rate_hz)] if len(in_range) else in_range
     slot_of = slot_uw(t_grid, t_uw, sel)
     occ = np.flatnonzero(slot_of >= 0)

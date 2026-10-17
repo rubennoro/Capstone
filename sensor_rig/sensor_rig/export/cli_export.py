@@ -22,6 +22,10 @@ def register(subparsers) -> None:
                    help="sensor frame of --trajectory (default: trajectory.json, else rig.vio.trajectory_frame)")
     p.add_argument("--max-pose-gap", type=float, default=0.10, help="max gap between trajectory poses (s)")
     p.add_argument("--crf", type=int, default=18, help="x264 CRF for both videos")
+    p.add_argument("--fix-world-yaw", action="store_true",
+                   help="rotate the (arbitrary) world yaw per episode so no rotation angle exceeds 170 deg (F9)")
+    p.add_argument("--max-main-gap", type=float, default=0.10, help="abort on a longer main-camera gap (s)")
+    p.add_argument("--max-uw-gap", type=float, default=0.25, help="abort on a longer ultrawide gap (s)")
     p.add_argument("--overwrite", action="store_true", help="replace existing exported episodes")
     p.add_argument("--force", action="store_true", help="export raw episodes whose status is not 'complete'")
     p.set_defaults(func=_cmd_export)
@@ -36,6 +40,11 @@ def register(subparsers) -> None:
 def _cmd_export(args: argparse.Namespace) -> int:
     from sensor_rig.export.exporter import ExportOptions, export_many
 
+    if args.rig:
+        from sensor_rig.rig_config import load_rig_arg
+
+        load_rig_arg(args.rig)
+
     if args.trajectory and len(args.raw) != 1:
         print("--trajectory needs exactly one --raw episode", file=sys.stderr)
         return 2
@@ -45,7 +54,8 @@ def _cmd_export(args: argparse.Namespace) -> int:
         rig_override=Path(args.rig) if args.rig else None,
         trajectory=Path(args.trajectory) if args.trajectory else None, trajectory_frame=args.trajectory_frame,
         max_pose_gap_s=args.max_pose_gap, main_crf=args.crf, uw_crf=args.crf,
-        overwrite=args.overwrite, force=args.force,
+        overwrite=args.overwrite, force=args.force, fix_world_yaw=args.fix_world_yaw,
+        max_main_gap_s=args.max_main_gap, max_uw_gap_s=args.max_uw_gap,
     )
     results = export_many([Path(r) for r in args.raw], Path(args.out), opts, workers=args.workers)
     if not results:
@@ -57,6 +67,8 @@ def _cmd_export(args: argparse.Namespace) -> int:
         if r.status == "exported":
             line += f"  frames={r.frame_count} uw={r.uw_count} grid={r.grid_mode}"
             line += "".join(f" cov_{k}={v:.3f}" for k, v in r.coverage.items())
+            if r.lag:
+                line += f" lag={r.lag['lag_ms_mean']:+.2f}/{r.lag['lag_ms_max_abs']:.1f}ms"
             if r.trim_head_s or r.trim_tail_s:
                 line += f" trim={r.trim_head_s:.2f}/{r.trim_tail_s:.2f}s"
         else:

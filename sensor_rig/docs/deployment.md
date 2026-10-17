@@ -120,6 +120,10 @@ No IMU is opened at deployment. Pose comes from robot FK (R3 §5).
 
 - The backend's `Frame.t_ns` is the raw CLOCK_MONOTONIC stamp, exactly what the recorder writes to `data.csv`.
   Argus MONOTONIC_RAW is converted inside the backend.
+- Raspberry Pi 5: `backend: picamera2` (in the peripheral config / `RigFrameSource(..., backend="picamera2")`) is passed
+  through to `make_camera` unchanged and reads each camera's `picamera2:` block from rig.yaml. Its `t_ns` is the
+  libcamera `SensorTimestamp` (CLOCK_MONOTONIC start of frame). Deploy with the same rig.yaml (sensor mode, locks,
+  focus) that recorded the training data. See [raspberry_pi.md](raspberry_pi.md).
 - `RigFrameSource` adds the per-camera rig.yaml offset (`cameras.<c>.time`: `offset_prior_ns` + Kalibr
   `timeshift_cam_imu`) through `rig.capture_time_ns`. Export uses the same function, so training and deployment
   timestamps mean the same thing.

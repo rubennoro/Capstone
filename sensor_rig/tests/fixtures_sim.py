@@ -73,8 +73,16 @@ class SimExport:
         if not self.json["poseTimes"]:  # calibrations are never trimmed
             return 0, n
         off = self.raw.wall_offset_ns()
+        if self.grid().mode == "fill":   # T3/F2: fill strings are align-exact, not the uniform grid's
+            return 0, n
         strings = [iso_ms(int(t) + off) for t in self.grid_ns()]
         return strings.index(self.json["poseTimes"][0]), n
+
+    def exported_times_ns(self) -> np.ndarray:
+        """Rig-clock times of the exported poseTimes strings."""
+        from sensor_rig.timefmt import parse_iso
+
+        return np.array([parse_iso(s) for s in self.json["poseTimes"]], np.int64) - self.raw.wall_offset_ns()
 
     def exported_poses(self) -> np.ndarray:
         return np.asarray(self.json["poseTransforms"], dtype=np.float64).reshape(-1, 4, 4)
@@ -88,7 +96,7 @@ class SimExport:
         if g.mode == "native":
             return T_o[self.truth["main_src_index"][i0:i0 + n]]
         traj = Trajectory.from_T(self.truth["t_ns"], T_o, frame="imu")
-        T, valid = traj.sample(g.t_ns[i0:i0 + n], max_gap_ns=10**12)
+        T, valid = traj.sample(self.exported_times_ns(), max_gap_ns=10**12)   # poses are sampled at the strings
         assert valid.all()
         return T
 

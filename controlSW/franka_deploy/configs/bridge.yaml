@@ -1,0 +1,29 @@
+# franka_bridge (franka_deploy/bridge/franka_bridge.py). Values marked HW must be set on the real arm.
+endpoint: tcp://127.0.0.1:5555          # co-located on the Jetson; tcp://<rt-pc>:5555 for the RT-PC fallback
+home_O_T_EE_xyz_wxyz: [0.45, 0.0, 0.45, 0.0, 1.0, 0.0, 0.0]   # FakeBackend start pose (EE z down)
+watchdog_hold_s: 0.18                    # detection margin: hold within 0.2 s of the last target
+watchdog_stop_s: 1.95                    # stop within 2 s
+safety:                                  # applied in this order to every set_target (bridge/safety.py)
+  workspace_min: [0.25, -0.40, 0.05]     # HW: measure around the table, base frame, EE (flange) position
+  workspace_max: [0.80, 0.40, 0.70]
+  cone_axis: [0.0, 0.0, -1.0]            # EE z-axis at home (approach direction)
+  cone_max_deg: 60.0
+  v_max: 0.25                            # m/s per-update step clamp (raise to 0.5 after B3-hw)
+  w_max: 1.0                             # rad/s
+  slack_s: 0.010                         # leaky bucket: <= v_max * (T + 10 ms) over any window T, any request rate
+                                         # HW: if gonogo/controller micro-clamps > 1% of ticks on the Jetson -> 0.020 (overshoot <= v_max*slack = 5 mm)
+backend:
+  type: fake                             # fake | panda_py
+  tau_s: 0.03                            # FakeBackend tracking lag
+  bias_m: [0.0, 0.0, 0.0]                # FakeBackend steady-state error (impedance bias emulation)
+  panda_py_version: null                 # HW: pin once Panda/FR3 + system version are known (B0)
+  libfranka_version: null
+  panda_py:                              # only read with type: panda_py (hardware)
+    hostname: 172.16.0.2
+    impedance: [[800, 0, 0, 0, 0, 0], [0, 800, 0, 0, 0, 0], [0, 0, 800, 0, 0, 0],
+                [0, 0, 0, 40, 0, 0], [0, 0, 0, 0, 40, 0], [0, 0, 0, 0, 0, 40]]   # HW: tune in B3-hw (600-1000 N/m, 30-50 Nm/rad)
+    damping_ratio: 1.0
+    nullspace_stiffness: 0.5
+    filter_coeff: 1.0
+    collision: null                      # HW: lowered thresholds, e.g. ~20 N / 10 Nm (set_collision_behavior args)
+    NE_T_EE: null                        # HW: set if the TCP is configured as EE (then ee_is_tcp: true in franka_cartesian.yaml)

@@ -71,16 +71,16 @@ def test_cli_record_mock(test_rig_path, tmp_path, capsys):
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers()
     cli.register(sub)
-    args = parser.parse_args(["record", "--rig", str(test_rig_path), "--out", str(tmp_path), "--session", "cli-test",
+    args = parser.parse_args(["record", "--rig", str(test_rig_path), "--out", str(tmp_path), "--session", "rig-cli-test",
                               "--side", "left", "--kind", "gripper_calibration", "--duration", "0.6", "--mock",
                               "--warmup", "1.1", "--quiet"])
     assert args.func(args) == 0
     eps = [p for p in tmp_path.glob("*/*") if p.is_dir()]
-    assert len(eps) == 1 and "_cli-test_grippercalibration_left" in eps[0].name
+    assert len(eps) == 1 and "_rig-cli-test_grippercalibration_left" in eps[0].name
     meta = json.loads((eps[0] / "meta.json").read_text())
     assert meta["status"] == "complete" and meta["sensors"]["main"]["frames"] >= 15
     # demonstration now finds the calibration automatically; bad args -> exit code 2
-    args = parser.parse_args(["record", "--rig", str(test_rig_path), "--out", str(tmp_path), "--session", "cli-test",
+    args = parser.parse_args(["record", "--rig", str(test_rig_path), "--out", str(tmp_path), "--session", "rig-cli-test",
                               "--side", "left", "--duration", "-1", "--mock"])
     assert args.func(args) == 2
     args = parser.parse_args(["bench-encode", "--width", "64", "--height", "48", "--n", "4", "--workers", "1"])

@@ -2,6 +2,8 @@
 
 Every timestamp on the Jetson is CLOCK_MONOTONIC in integer nanoseconds (the clock of ``time.monotonic_ns()``).
 Argus sensor-of-frame stamps are probably CLOCK_MONOTONIC_RAW; ``RawToMono`` converts them using paired clock samples.
+libcamera documents ``SensorTimestamp`` as CLOCK_BOOTTIME (on a Pi 5 it is in fact CLOCK_MONOTONIC);
+``boot_minus_mono_ns`` gives the offset for the optional conversion (zero unless the system was suspended).
 Wall-clock (UNIX) time is only needed for the iPhone-format time strings and is derived from one ``ClockSample`` taken
 at record start (``realtime_ns - monotonic_ns``).
 """
@@ -26,6 +28,23 @@ def now_raw_ns() -> int:
     if _HAS_RAW:
         return time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
     return time.monotonic_ns()
+
+
+def boot_minus_mono_ns(n: int = 5) -> int:
+    """CLOCK_BOOTTIME - CLOCK_MONOTONIC in ns (time spent suspended; 0 where BOOTTIME is unavailable).
+
+    Both clocks tick at the same (NTP-slewed) rate, so one offset converts between them until the next suspend.
+    """
+    if not hasattr(time, "CLOCK_BOOTTIME"):
+        return 0
+    best = None
+    for _ in range(max(1, n)):
+        m1 = time.monotonic_ns()
+        b = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        m2 = time.monotonic_ns()
+        if best is None or m2 - m1 < best[0]:
+            best = (m2 - m1, b - (m1 + m2) // 2)
+    return int(best[1])
 
 
 @dataclass(frozen=True)

@@ -13,6 +13,8 @@ from sensor_rig.pose.euroc import corrected_imu, write_euroc
 from sensor_rig.pose.frames import rig_frame
 from sensor_rig.pose.trajectory import gravity_align as _gravity_align
 from sensor_rig.pose.trajectory import (
+    Trajectory,
+    motion_consistency_check,
     gravity_check,
     load_orbslam3_euroc,
     load_tum,
@@ -34,6 +36,14 @@ def prepare(ep: RawEpisode, out_dir, target: str = "orbslam3", camera: str | Non
     out = Path(out_dir) / ep.name
     info = write_euroc(ep, out, camera=camera, scale=scale, gray=True, imu_rate_hz=imu_rate_hz, rig=rig)
     rate = info["imu_rate_hz"] or None
+    try:   # F3: finger/gripper mask for the VIO camera (consumed by mask-aware ORB-SLAM3 builds only)
+        from sensor_rig.pose.euroc import scaled_size
+        from sensor_rig.pose.mask import write_finger_mask
+
+        info["mask"] = write_finger_mask(rig, camera, out / f"mask_{camera}.png",
+                                         scaled_size(rig.cameras[camera].resolution, scale))
+    except ValueError as e:
+        info["mask"] = {"error": str(e)}
     if target == "orbslam3":
         s = orbslam3.write_orbslam3_settings(rig, camera, scale, out / "orbslam3_settings.yaml", imu_rate_hz=rate)
         info["settings"] = str(s)
@@ -50,9 +60,17 @@ class TrajectoryImportError(RuntimeError):
     pass
 
 
+def replay_offset_ns(ep: RawEpisode) -> int | None:
+    """Source -> live clock offset of an episode recorded by ``collect --mock-replay`` (``meta.sim``), else None."""
+    sim = ep.meta.get("sim") or {}
+    v = sim.get("replay_offset_ns") if isinstance(sim, dict) else None
+    return None if v is None else int(v)
+
+
 def import_trajectory(ep: RawEpisode, traj_file, fmt: str = "tum", time_unit: str = "auto", frame: str | None = None,
                       force: bool = False, rig=None, gravity_align: bool = True,
-                      gravity_align_min_deg: float = 2.0) -> dict:
+                      gravity_align_min_deg: float = 2.0, time_offset_ns: int | str | None = "auto",
+                      motion_limits: dict | None = None) -> dict:
     """Normalise a VIO trajectory into ``<ep>/trajectory/trajectory.{tum,json}`` after sanity checks.
 
     By default the trajectory's world is first rotated so gravity points along -z (estimated from the episode's IMU,
@@ -74,6 +92,14 @@ def import_trajectory(ep: RawEpisode, traj_file, fmt: str = "tum", time_unit: st
         raise ValueError(f"unknown trajectory format {fmt!r}")
     if len(traj) < 2:
         raise TrajectoryImportError(f"{traj_file}: fewer than 2 poses")
+    # time offset: trajectory clock -> this episode's clock (collect --mock-replay re-stamps the source by a constant)
+    if time_offset_ns == "auto":
+        off = replay_offset_ns(ep) or 0
+        off_src = "meta.sim.replay_offset_ns" if off else "none"
+    else:
+        off, off_src = int(time_offset_ns or 0), "argument"
+    if off:
+        traj = Trajectory.from_T(traj.t_ns + off, traj.T(), frame=traj.frame, world=traj.world)
 
     t_main = np.asarray(rig.capture_time_ns("main", ep.camera_times("main")), dtype=np.int64)
     span = max(int(t_main[-1] - t_main[0]), 1)
@@ -93,6 +119,7 @@ def import_trajectory(ep: RawEpisode, traj_file, fmt: str = "tum", time_unit: st
             align_info = {"applied": False, "reason": str(e)}
     grav = gravity_check(traj, imu_t, acc, rig) if len(imu_t) else {"ok": False, "reason": "no IMU data"}
     toff = time_offset_check(traj, imu_t, gyro, rig) if len(imu_t) else {"ok": False, "reason": "no IMU data"}
+    motion = motion_consistency_check(traj, imu_t, gyro, rig, limits=motion_limits)
 
     problems = []
     if overlap_frac < 0.5:
@@ -100,6 +127,7 @@ def import_trajectory(ep: RawEpisode, traj_file, fmt: str = "tum", time_unit: st
                         "(wrong time unit or clock?)")
     if not grav.get("ok"):
         problems.append(f"gravity check failed: {grav}")
+    problems += [f"motion check: {p}" for p in motion["problems"]]
     if problems and not force:
         raise TrajectoryImportError("; ".join(problems) + " (use --force to import anyway)")
 
@@ -120,6 +148,9 @@ def import_trajectory(ep: RawEpisode, traj_file, fmt: str = "tum", time_unit: st
         "gravity_alignment": align_info,
         "gravity_check": grav,
         "time_offset_check": toff,
+        "motion_check": motion,
+        "time_offset_applied_ns": int(off),
+        "time_offset_source": off_src,
         "forced": bool(problems),
         "problems": problems,
         "imported_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),

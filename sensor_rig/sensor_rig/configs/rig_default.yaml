@@ -19,7 +19,9 @@ cameras:
     sensor_mode: 3               # 1640x1232@30, 2x2 binned, full FOV (verify with the Argus mode list on your L4T)
     resolution: [1640, 1232]
     fps: 30
-    argus: {exposure_time_range_ns: [100000, 4000000], gain_range: [1.0, 8.0], aelock: false, awblock: false, wbmode: 1}
+    # Locked for recording and calibration (F7): fixed exposure <= 4 ms (motion blur) and fixed gain; AE/AWB locked.
+    # PLACEHOLDER values: set them once under the lab lighting (HARDWARE_CHECKLIST §1) and keep them for the session.
+    argus: {exposure_time_range_ns: [3000000, 3000000], gain_range: [4.0, 4.0], aelock: true, awblock: true, wbmode: 1}
     model:
       type: pinhole-radtan
       intrinsics: [1150.0, 1150.0, 819.5, 615.5]      # fu fv pu pv (placeholder; 2.58 mm @ 2.24 um binned pixels)
@@ -37,7 +39,9 @@ cameras:
     sensor_mode: 3
     resolution: [1640, 1232]
     fps: 30
-    argus: {exposure_time_range_ns: [100000, 4000000], gain_range: [1.0, 8.0], aelock: false, awblock: false, wbmode: 1}
+    # Locked for recording and calibration (F7): fixed exposure <= 4 ms (motion blur) and fixed gain; AE/AWB locked.
+    # PLACEHOLDER values: set them once under the lab lighting (HARDWARE_CHECKLIST §1) and keep them for the session.
+    argus: {exposure_time_range_ns: [3000000, 3000000], gain_range: [4.0, 4.0], aelock: true, awblock: true, wbmode: 1}
     model:
       type: fisheye-equidistant
       intrinsics: [734.5, 734.5, 819.5, 615.5]        # placeholder: 160 deg diagonal equidistant at 1640x1232
@@ -96,7 +100,8 @@ export:
 capture:                         # recorder-only settings (schema owned by the recorder, passed through untouched)
   backends: {main: argus, ultrawide: argus, imu: icm42688_spi}     # or mock
   jpeg: {encoder: opencv, quality: 90, workers_per_camera: 2, queue_seconds: 0.75}
-  live_abort: {min_fps_ratio: 0.52, after_s: 1.0, min_disk_free_gb: 2.0}
+  live_abort: {min_fps_ratio: 0.52, after_s: 1.0, min_disk_free_gb: 2.0, all_cameras_fps: true, max_frame_gap_s: 0.25}
+  button: {enabled: false, pin: 7, active_low: true, long_press_s: 1.5}   # optional start/stop push button (collect)
 
 calibration:                     # provenance; calib-import overwrites this block
   source: placeholder

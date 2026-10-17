@@ -10,6 +10,12 @@ Rules (each returns a reason string):
 * ``queue_full``: queue_full drops > ``max_queue_full_frac`` (2 %) of a camera's frames in the last 2 s.
 * ``imu_rate_low``: after 2 s, IMU samples in the last 2 s < ``imu_min_ratio`` (0.9) x ODR.
 * ``disk_low``: free space on the output disk < ``min_disk_free_gb``.
+* ``<cam>_fps_low`` (opt-in, ``all_cameras_fps: true``): the main-camera fps rule applied to every camera, e.g. a
+  stalled ultrawide (the VIO camera).
+* ``frame_gap`` (opt-in, ``max_frame_gap_s``): after ``after_s``, any camera with an interval between consecutive
+  frames (or since its last frame) longer than this, within the last ``gap_window_s``.
+The two opt-in rules are off by default, so existing rig.yaml files behave as before; ``collect`` and
+``configs/rig_default.yaml`` turn them on.
 There is no live pose; the app's 7 m/s rule is applied at export.
 """
 
@@ -34,6 +40,9 @@ class LiveAbortConfig:
     imu_window_s: float = 2.0
     stale_s: float = 0.5
     warmup_min_fps_ratio: float = 0.85   # open(): refuse if a warm-up fps is below this x nominal
+    all_cameras_fps: bool = False        # opt-in: min_fps_ratio rule for every camera, not only main
+    max_frame_gap_s: float | None = None  # opt-in: abort when a camera has a longer gap between frames
+    gap_window_s: float = 2.0            # how far back the gap rule looks (>= monitor period)
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "LiveAbortConfig":
@@ -70,14 +79,23 @@ def evaluate_live_abort(snap: dict, cfg: LiveAbortConfig) -> str | None:
     for name, c in (snap.get("cameras") or {}).items():
         ft = np.asarray(c.get("frame_times", []), dtype=np.int64)
         qf = np.asarray(c.get("queue_full_times", []), dtype=np.int64)
-        if c.get("is_main") and elapsed >= cfg.after_s:
+        if (c.get("is_main") or cfg.all_cameras_fps) and elapsed >= cfg.after_s:
             if len(ft) == 0 or now - int(ft[-1]) > stale_ns:
                 n = 0
             else:
                 n = _count_window(ft, int(ft[-1]), 1_000_000_000)
             thresh = cfg.min_fps_ratio * float(c["fps_nominal"])
             if n < thresh:
-                return f"main_fps_low: {name} {n} frames in the last 1 s < {thresh:.1f}"
+                rule = "main_fps_low" if c.get("is_main") else f"{name}_fps_low"
+                return f"{rule}: {name} {n} frames in the last 1 s < {thresh:.1f}"
+        if cfg.max_frame_gap_s is not None and elapsed >= cfg.after_s and len(ft):
+            gap_ns = int(cfg.max_frame_gap_s * 1e9)
+            since_last = now - int(ft[-1])
+            recent = ft[ft >= now - int(cfg.gap_window_s * 1e9)]
+            worst = int(np.max(np.diff(recent))) if len(recent) > 1 else 0
+            worst = max(worst, since_last)
+            if worst > gap_ns:
+                return f"frame_gap: {name} has a {worst / 1e6:.0f} ms gap between frames > {cfg.max_frame_gap_s * 1e3:.0f} ms"
         if len(ft) and len(qf):
             w = int(cfg.queue_window_s * 1e9)
             t_end = int(ft[-1])

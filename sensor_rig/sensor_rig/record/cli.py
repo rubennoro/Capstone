@@ -21,7 +21,7 @@ DEFAULT_RIG = Path(__file__).resolve().parents[1] / "configs" / "rig_default.yam
 
 
 def register(subparsers) -> None:
-    p = subparsers.add_parser("record", help="record raw rig episodes (Jetson; --mock on a laptop)",
+    p = subparsers.add_parser("record", help="record raw rig episodes (Jetson / Raspberry Pi 5; --mock on a laptop)",
                               description=__doc__.splitlines()[0])
     p.add_argument("--rig", default=str(DEFAULT_RIG), help="rig.yaml (default: configs/rig_default.yaml)")
     p.add_argument("--out", required=True, help="raw root: episodes go to <out>/<YYYY-MM-DD>/<NAME>/")
@@ -68,9 +68,9 @@ def cmd_bench(args) -> int:
 def _make_recorder(args):
     from sensor_rig.drivers.base import make_camera, make_imu
     from sensor_rig.record.recorder import Recorder
-    from sensor_rig.rig_config import load_rig
+    from sensor_rig.rig_config import load_rig_arg
 
-    rig = load_rig(args.rig)
+    rig = load_rig_arg(args.rig)
     cameras = imu = None
     if args.mock:
         cameras = {c: make_camera(rig, c, backend="mock") for c in ("main", "ultrawide")}
@@ -90,6 +90,19 @@ def cmd_record(args) -> int:
 
     if args.duration is not None and (args.duration <= 0 or args.count < 1):
         print("--duration must be > 0 and --count >= 1", file=sys.stderr)
+        return 2
+    from sensor_rig.rig_config import load_rig_arg
+
+    load_rig_arg(args.rig)          # missing / invalid rig file -> RigFileError -> exit 2 (before any sensor)
+    from sensor_rig.naming import session_name_problems
+    from sensor_rig.timefmt import sanitize_session
+
+    try:
+        probs = session_name_problems(sanitize_session(args.session))
+    except ValueError as e:
+        probs = [str(e)]
+    if probs:
+        print("record: " + "; ".join(probs), file=sys.stderr)
         return 2
     try:
         rec = _make_recorder(args)

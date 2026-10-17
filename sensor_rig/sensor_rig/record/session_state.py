@@ -46,3 +46,18 @@ class SessionState:
                 json.dump(d, f, indent=1, sort_keys=True)
                 f.write("\n")
             os.replace(tmp, self.path)
+
+    def clear_calibration(self, session: str, side: str, gripper_id: str = "default", name: str | None = None) -> None:
+        """Forget the stored calibration (only if it is ``name``, when given): used when ``collect`` discards or
+        rejects the calibration episode it just recorded."""
+        with self._lock:
+            d = self._load()
+            k = self.key(session, side, gripper_id)
+            if k not in d or (name is not None and d[k] != name):
+                return
+            del d[k]
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            with open(tmp, "w") as f:
+                json.dump(d, f, indent=1, sort_keys=True)
+                f.write("\n")
+            os.replace(tmp, self.path)

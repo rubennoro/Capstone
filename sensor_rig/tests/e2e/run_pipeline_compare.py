@@ -65,6 +65,40 @@ TOL = {
     "width_max": 5e-3, "width_median": 1e-3,
     "main_mae_mean": 4.0, "main_mae_p99": 8.0, "uw_mae_mean": 6.0,
 }
+# Fill mode (rig main camera at 30 fps, T3). Only these keys differ from TOL; native runs keep TOL unchanged.
+# Justification:
+# - B's 60 Hz grid starts up to 17 ms after A's (the align-exact grid start is a ms boundary chosen so the 30 fps
+#   frames sit on the sample grid: 1 sample), align drops B's last string (1), B's grid ends at the last 30 fps frame
+#   (1), and a dropped first/last frame in the drop variant moves an end by one more 30 fps frame (2 samples):
+#   aligned_len / ep_len 4 (measured: 2-3 without drops, 4 with a dropped edge frame). Pose/width/UW comparisons are made at matching TIMES: A is interpolated at B's sample
+#   times (the start offset is known from the two JSONs), so the pose tolerances stay as in native mode.
+# - UW upsample index: each grid shows a UW frame from the slot it is attached to (A: the iPhone main frame it came
+#   with; B: the B slot nearest to its capture time). The two 60 Hz grids are offset by a fraction of a slot, so the
+#   switch to the next UW frame can happen one slot earlier or later in B: at most 1 of every 6 samples (10 Hz UW)
+#   differs, and only by exactly one UW frame -> fraction <= 0.2 ("uw_index_frac") and |diff| <= 1 (always checked).
+# - N_uw: the shorter range can drop one decimated UW frame at either end: 2.
+# - Main images: B shows one of the two 30 fps frames around the sample time (|dt| <= ~17-19 ms) where A shows the
+#   60 Hz frame at the nearest A slot (|dt| <= 8 ms), so the per-frame MAE includes the motion over that time
+#   difference: mean 4 (as native), p99 10 (native 8; measured fill: mean <= 2.4, p99 <= 7.2).
+#   UW images are the same frames as in native mode: unchanged.
+# - Image-pose lag (fill exports, from export_log.jsonl), gates: |mean| <= 2 ms, p99 |lag| <= 20 ms (half a 30 fps
+#   interval + grid phase/drift + jitter); sanity: max <= 35 ms, or half the largest dropped-frame gap + 3 ms when the
+#   camera lost frames (the slot in the middle of a gap is that far from both neighbours). The exact max is reported.
+TOL_FILL = {"aligned_len": 4, "ep_len": 4, "uw_index_frac": 0.2, "n_uw": 2, "main_mae_mean": 4.0,
+            "main_mae_p99": 10.0}
+LAG_GATES = {"lag_mean_ms": 2.0, "lag_p99_ms": 20.0, "lag_max_ms": 35.0}
+
+
+def lag_rows(rep: "Report", label: str, lg: dict) -> None:
+    rep.add(f"export {label}: image-pose lag |mean| [ms]", abs(lg["lag_ms_mean"]), LAG_GATES["lag_mean_ms"])
+    rep.add(f"export {label}: image-pose lag p99 [ms]", lg["lag_ms_p99_abs"], LAG_GATES["lag_p99_ms"])
+    gap = lg.get("max_main_gap_ms") or 0.0
+    bound = max(LAG_GATES["lag_max_ms"], gap / 2 + 3.0)
+    rep.add(f"export {label}: image-pose lag max [ms] (sanity)", lg["lag_ms_max_abs"], bound,
+            note=f"exact max {lg['lag_ms_max_abs']:.2f} ms; largest main gap {gap:.1f} ms")
+    rep.add(f"export {label}: k vs k-3 pair same frame (not at a dropped frame)",
+            lg.get("obs_pairs_same_frame_no_drop", lg["obs_pairs_same_frame"]), 0,
+            note=f"{lg['obs_pairs_same_frame']} in total")
 
 
 # ------------------------------------------------------------------------------------------------ helpers
@@ -148,7 +182,7 @@ def make_calibration_yaml(dst: Path) -> None:
         yaml.safe_dump(cal, f)
 
 
-def pipeline(X: str, raw_dir: Path, W: Path, py: str, workers: int) -> Path:
+def pipeline(X: str, raw_dir: Path, W: Path, py: str, workers: int, session: str = SESSION) -> Path:
     pipe = W / f"pipe_{X}"
     pipe.mkdir(parents=True, exist_ok=True)
     demos = pipe / "tmp_demonstrations"
@@ -158,20 +192,20 @@ def pipeline(X: str, raw_dir: Path, W: Path, py: str, workers: int) -> Path:
         log(f"pipeline {X}: {zarr_path} exists, skipping")
         return zarr_path
     common = [f"demonstrations_dir={demos}", f"group.gripper_calibration={W / 'gripper_calibration.yaml'}",
-              f"detect.aruco_config={DP / 'calibration' / 'aruco_config.yaml'}", f"filters.session_name=[{SESSION}]"]
+              f"detect.aruco_config={DP / 'calibration' / 'aruco_config.yaml'}", f"filters.session_name=[{session}]"]
     L = W / "logs"
     log(f"pipeline {X}: group")
     run([py, str(DP / "process_demos_iphone.py"), *common, f"group.iphone_dir={raw_dir}", "stages=[group]"],
         pipe, L / f"{X}_1_group.log")
     log(f"pipeline {X}: label whole demo as task")
     run([py, str(REPO / "scripts" / "label_whole_demo_as_task.py"), "--demonstrations-dir", str(demos),
-         "--session-name", SESSION, "--task-name", TASK], pipe, L / f"{X}_2_label_whole.log")
+         "--session-name", session, "--task-name", TASK], pipe, L / f"{X}_2_label_whole.log")
     log(f"pipeline {X}: detect, calibrate, align, validate, label")
     run([py, str(DP / "process_demos_iphone.py"), *common, f"num_workers={workers}",
          "skip_stages=[group,visualize]", "label.task_extraction.visualize=false"], pipe, L / f"{X}_3_process.log")
     log(f"pipeline {X}: create session")
     run([py, str(DP / "create_session_iphone.py"), f"demonstrations_dir={demos}", f"sessions_dir={sessions}",
-         f"input_session_filters=[{SESSION}]", f"output_session_name={DATASET}", "sides=single"],
+         f"input_session_filters=[{session}]", f"output_session_name={DATASET}", "sides=single"],
         pipe, L / f"{X}_4_session.log")
     log(f"pipeline {X}: build dataset")
     run([py, str(DP / "build_umi_dataset_iphone.py"), f"session_dir={sessions / DATASET}",
@@ -222,29 +256,39 @@ def _tag_fraction(path: Path, tag: int) -> float:
     return sum(1 for d in det if str(tag) in d["tag_dict"] or tag in d["tag_dict"]) / len(det)
 
 
-def intermediate_checks(W: Path, rep: Report) -> None:
+def _eid(name: str) -> str:
+    return name.split("_")[1]
+
+
+def intermediate_checks(W: Path, rep: Report, tol: dict | None = None, id_map: dict | None = None) -> None:
+    """``id_map``: A episode id -> B episode id (B recorded under new names, e.g. by collect); default identity."""
+    tol = tol or TOL
+    id_map = id_map or {}
     A, B = _demo_dirs(W / "pipe_A"), _demo_dirs(W / "pipe_B")
-    rep.add("tmp_demonstrations: same demo folders", sorted(A) == sorted(B), note=f"{len(A)} folders")
-    for name in sorted(set(A) & set(B)):
-        a, b = A[name], B[name]
+    b_by_id = {_eid(n): n for n in B}
+    pairs = {n: b_by_id.get(id_map.get(_eid(n), _eid(n))) for n in A}
+    rep.add("tmp_demonstrations: same demo folders", all(pairs.values()) and len(A) == len(B),
+            note=f"{len(A)} folders")
+    for name in sorted(n for n in A if pairs[n]):
+        a, b = A[name], B[pairs[name]]
         short = name.split("_")[1]
         if "grippercalibration" in name:
             ga = json.load(open(a / "left_gripper_range.json"))
             gb = json.load(open(b / "left_gripper_range.json"))
             rep.add(f"calib {short}: gripper_id equal", ga["gripper_id"] == gb["gripper_id"])
             for k in ("min_width", "max_width"):
-                rep.add(f"calib {short}: |{k} B-A|", abs(gb[k] - ga[k]), TOL["calib_width"],
+                rep.add(f"calib {short}: |{k} B-A|", abs(gb[k] - ga[k]), tol["calib_width"],
                         note=f"A={ga[k]:.5f} B={gb[k]:.5f}")
         else:
             rep.add(f"demo {short}: valid.txt in B", (b / "valid.txt").is_file() or not (a / "valid.txt").is_file(),
                     note=f"A valid={(a / 'valid.txt').is_file()}")
             la = sum(1 for _ in open(a / "left_aligned.csv"))
             lb = sum(1 for _ in open(b / "left_aligned.csv"))
-            rep.add(f"demo {short}: aligned.csv length diff", abs(la - lb), TOL["aligned_len"], note=f"A={la} B={lb}")
+            rep.add(f"demo {short}: aligned.csv length diff", abs(la - lb), tol["aligned_len"], note=f"A={la} B={lb}")
         for tag in (0, 1):
             fa = _tag_fraction(a / "left_tag_detection.json", tag)
             fb = _tag_fraction(b / "left_tag_detection.json", tag)
-            rep.add(f"{short}: tag {tag} detection fraction diff", abs(fa - fb), TOL["tag_frac"],
+            rep.add(f"{short}: tag {tag} detection fraction diff", abs(fa - fb), tol["tag_frac"],
                     note=f"A={fa:.3f} B={fb:.3f}")
 
 
@@ -273,7 +317,33 @@ def _virtual_k_demos(W: Path) -> dict[str, bool]:
     return out
 
 
-def zarr_checks(W: Path, za_path: Path, zb_path: Path, rep: Report, image_stride: int = 1) -> None:
+def _interp_rows(x: np.ndarray, f: np.ndarray) -> np.ndarray:
+    """Rows of ``x`` linearly interpolated at fractional indices ``f`` (clipped to the valid range)."""
+    f = np.clip(f, 0, len(x) - 1)
+    i0 = np.floor(f).astype(int)
+    i1 = np.minimum(i0 + 1, len(x) - 1)
+    w = (f - i0)[:, None] if x.ndim > 1 else (f - i0)
+    return x[i0] * (1 - w) + x[i1] * w
+
+
+def _interp_T(T: np.ndarray, f: np.ndarray) -> np.ndarray:
+    """Poses at fractional indices: linear position, SLERP rotation."""
+    from scipy.spatial.transform import Rotation, Slerp
+
+    f = np.clip(f, 0, len(T) - 1)
+    out = np.tile(np.eye(4), (len(f), 1, 1))
+    out[:, :3, 3] = _interp_rows(T[:, :3, 3], f)
+    out[:, :3, :3] = Slerp(np.arange(len(T)), Rotation.from_matrix(T[:, :3, :3]))(f).as_matrix()
+    return out
+
+
+def zarr_checks(W: Path, za_path: Path, zb_path: Path, rep: Report, image_stride: int = 1, tol: dict | None = None,
+                id_map: dict | None = None, shift_ns: dict | None = None) -> None:
+    """``shift_ns``: A episode id -> (B start time - A start time) in ns; B sample i is compared with A at
+    fractional sample i + shift * 60 Hz (fill mode, where B's grid is offset from A's). Default: index-wise."""
+    tol = tol or TOL
+    id_map = id_map or {}
+    shift_ns = shift_ns or {}
     from sensor_rig.sim.compare import masked_mae, pose6_to_T, rel_pose_errors, world_transform_residual
 
     za, zb = _open_zarr(za_path), _open_zarr(zb_path)
@@ -292,7 +362,13 @@ def zarr_checks(W: Path, za_path: Path, zb_path: Path, rep: Report, image_stride
     rep.add("gripper_right_gripper_width present in B", "gripper_right_gripper_width" in kb)
     names_a = [str(x) for x in za["meta"]["episode_names"][:]]
     names_b = [str(x) for x in zb["meta"]["episode_names"][:]]
-    rep.add("episode names equal", names_a == names_b, note=f"{len(names_a)} episodes")
+    b_by_id = {_eid(n): n for n in names_b}
+    pair = {n: b_by_id.get(id_map.get(_eid(n), _eid(n))) for n in names_a}
+    if id_map:
+        rep.add("episodes pair up (by id map)", all(pair.values()) and len(names_a) == len(names_b),
+                note=f"{len(names_a)} episodes")
+    else:
+        rep.add("episode names equal", names_a == names_b, note=f"{len(names_a)} episodes")
     ta = [str(x) for x in za["meta"]["task_names"][:]] if "task_names" in ma else []
     tb = [str(x) for x in zb["meta"]["task_names"][:]] if "task_names" in mb else []
     rep.add("meta/task_names equal", ta == tb, note=",".join(sorted(set(ta))))
@@ -312,56 +388,111 @@ def zarr_checks(W: Path, za_path: Path, zb_path: Path, rep: Report, image_stride
     uw_a, uw_b = za["data"]["camera_right_ultrawide_rgb"], zb["data"]["camera_right_ultrawide_rgb"]
 
     for e, name in enumerate(names_a):
-        if name not in names_b:
+        if pair.get(name) is None:
             continue
-        eb = names_b.index(name)
+        eb = names_b.index(pair[name])
         short = name.split("_")[1]
         sa = slice(0 if e == 0 else int(ends_a[e - 1]), int(ends_a[e]))
         sb = slice(0 if eb == 0 else int(ends_b[eb - 1]), int(ends_b[eb]))
         na, nb = sa.stop - sa.start, sb.stop - sb.start
-        rep.add(f"ep {short}: length diff", abs(na - nb), 1, note=f"A={na} B={nb}")
+        rep.add(f"ep {short}: length diff", abs(na - nb), tol.get("ep_len", 1), note=f"A={na} B={nb}")
         ua0 = 0 if e == 0 else int(uwe_a[e - 1])
         ub0 = 0 if eb == 0 else int(uwe_b[eb - 1])
         nua, nub = int(uwe_a[e]) - ua0, int(uwe_b[eb]) - ub0
-        rep.add(f"ep {short}: N_uw equal", nua == nub, note=f"A={nua} B={nub}")
-        n = min(na, nb)
-        ia = up_a[sa][:n] - ua0
-        ib = up_b[sb][:n] - ub0
-        rep.add(f"ep {short}: UW upsample index equal (common prefix)", bool(np.array_equal(ia, ib)),
-                note=f"{int((ia != ib).sum())} differ")
-        Ta = pose6_to_T(pos_a[sa][:n].astype(np.float64), rot_a[sa][:n].astype(np.float64))
-        Tb = pose6_to_T(pos_b[sb][:n].astype(np.float64), rot_b[sb][:n].astype(np.float64))
+        if short in shift_ns:
+            # fill mode: B sample i <-> A fractional sample i + f (time-aligned); keep the B samples inside A
+            f0 = shift_ns[short] * 60 / 1e9
+            ib_all = np.arange(nb)
+            keep = (ib_all + f0 >= 0) & (ib_all + f0 <= na - 1)
+            ib_idx, fa = ib_all[keep], ib_all[keep] + f0
+            ia_idx = np.clip(np.round(fa).astype(int), 0, na - 1)
+            rep.add(f"ep {short}: N_uw diff", abs(nua - nub), tol["n_uw"], note=f"A={nua} B={nub}; "
+                    f"B grid offset {shift_ns[short] / 1e6:+.2f} ms")
+            ia = up_a[sa][ia_idx] - ua0
+            ib = up_b[sb][ib_idx] - ub0
+            # B's UW frame index k corresponds to A's k + (index of B's first UW frame in A)
+            d0 = int(np.median(ia - ib))
+            frac = float(np.mean(ia - d0 != ib))
+            rep.add(f"ep {short}: UW upsample index differ fraction (time-aligned)", frac, tol["uw_index_frac"],
+                    note=f"UW index offset {d0}")
+            rep.add(f"ep {short}: UW upsample index max |diff| (time-aligned)", int(np.abs(ia - d0 - ib).max()), 1)
+            Ta = _interp_T(pose6_to_T(pos_a[sa].astype(np.float64), rot_a[sa].astype(np.float64)), fa)
+            Tb = pose6_to_T(pos_b[sb][ib_idx].astype(np.float64), rot_b[sb][ib_idx].astype(np.float64))
+            n = len(ib_idx)
+        else:
+            rep.add(f"ep {short}: N_uw equal", nua == nub, note=f"A={nua} B={nub}")
+            n = min(na, nb)
+            ia_idx = ib_idx = np.arange(n)
+            fa = None
+            ia = up_a[sa][:n] - ua0
+            ib = up_b[sb][:n] - ub0
+            rep.add(f"ep {short}: UW upsample index equal (common prefix)", bool(np.array_equal(ia, ib)),
+                    note=f"{int((ia != ib).sum())} differ")
+            Ta = pose6_to_T(pos_a[sa][:n].astype(np.float64), rot_a[sa][:n].astype(np.float64))
+            Tb = pose6_to_T(pos_b[sb][:n].astype(np.float64), rot_b[sb][:n].astype(np.float64))
         worst_r, worst_t = 0.0, 0.0
         for k in (1, 3, 60, "all"):
             r, t = rel_pose_errors(Tb, Ta, k)
             worst_r, worst_t = max(worst_r, r), max(worst_t, t)
-        rep.add(f"ep {short}: TCP relative motion trans err [m]", worst_t, TOL["tcp_rel_trans"],
+        rep.add(f"ep {short}: TCP relative motion trans err [m]", worst_t, tol["tcp_rel_trans"],
                 note="k in 1,3,60,all-to-0")
-        rep.add(f"ep {short}: TCP relative motion rot err [rad]", worst_r, TOL["tcp_rel_rot"])
+        rep.add(f"ep {short}: TCP relative motion rot err [rad]", worst_r, tol["tcp_rel_rot"])
         _, rr, rt = world_transform_residual(Tb, Ta)
-        rep.add(f"ep {short}: B = D*A residual (trans m / rot rad)", max(rr, rt), TOL["tcp_world_resid"],
+        rep.add(f"ep {short}: B = D*A residual (trans m / rot rad)", max(rr, rt), tol["tcp_world_resid"],
                 note=f"trans {rt:.2e} rot {rr:.2e}")
         if w_a is not None and w_b is not None:
-            dw = np.abs(w_b[sb][:n] - w_a[sa][:n])
-            rep.add(f"ep {short}: gripper width max |B-A|", float(dw.max()), TOL["width_max"],
+            wa = w_a[sa][:n] if fa is None else _interp_rows(w_a[sa].astype(np.float64), fa)
+            dw = np.abs(w_b[sb][ib_idx] - wa)
+            rep.add(f"ep {short}: gripper width max |B-A|", float(dw.max()), tol["width_max"],
                     note=f"range A {w_a[sa].min():.4f}..{w_a[sa].max():.4f}")
-            rep.add(f"ep {short}: gripper width median |B-A|", float(np.median(dw)), TOL["width_median"])
+            rep.add(f"ep {short}: gripper width median |B-A|", float(np.median(dw)), tol["width_median"])
         if comparable.get(short):
             idx = np.arange(0, n, image_stride)
-            ma_ = main_a[sa.start + idx[0]: sa.start + idx[-1] + 1][::image_stride]
-            mb_ = main_b[sb.start + idx[0]: sb.start + idx[-1] + 1][::image_stride]
-            mae = np.array([masked_mae(x, y) for x, y in zip(ma_, mb_)])
-            rep.add(f"ep {short}: main 224 MAE mean", float(mae.mean()), TOL["main_mae_mean"],
+            mae = np.array([masked_mae(main_a[sa.start + int(ia_idx[j])], main_b[sb.start + int(ib_idx[j])])
+                            for j in idx])
+            rep.add(f"ep {short}: main 224 MAE mean", float(mae.mean()), tol["main_mae_mean"],
                     note=f"{len(mae)} frames")
-            rep.add(f"ep {short}: main 224 MAE p99", float(np.percentile(mae, 99)), TOL["main_mae_p99"])
-            nu = min(nua, nub)
-            xa = uw_a[ua0: ua0 + nu]
-            xb = uw_b[ub0: ub0 + nu]
+            rep.add(f"ep {short}: main 224 MAE p99", float(np.percentile(mae, 99)), tol["main_mae_p99"])
+            d_uw = 0 if fa is None else d0
+            nu = min(nua - max(d_uw, 0), nub + min(d_uw, 0))
+            xa = uw_a[ua0 + max(d_uw, 0): ua0 + max(d_uw, 0) + nu]
+            xb = uw_b[ub0 - min(d_uw, 0): ub0 - min(d_uw, 0) + nu]
             umae = np.array([masked_mae(x, y) for x, y in zip(xa, xb)])
-            rep.add(f"ep {short}: UW 224 MAE mean", float(umae.mean()), TOL["uw_mae_mean"], note=f"{nu} frames")
+            rep.add(f"ep {short}: UW 224 MAE mean", float(umae.mean()), tol["uw_mae_mean"], note=f"{nu} frames")
         else:
             rep.add(f"ep {short}: image comparison skipped", True,
                     note="iPhone K != virtual K (different crop by design)")
+
+
+def export_modes(exp_root: Path) -> tuple[dict, dict]:
+    """{episode id: grid_mode} and {demo id: lag stats} from the export log (last line per episode)."""
+    modes, lags = {}, {}
+    for ln in (exp_root / ".sensor_rig" / "export_log.jsonl").read_text().splitlines():
+        r = json.loads(ln)
+        if r.get("status") != "exported":
+            continue
+        modes[_eid(r["name"])] = r.get("grid_mode")
+        if r.get("lag"):
+            lags[_eid(r["name"])] = r["lag"]
+    return modes, lags
+
+
+def start_offsets(a_root: Path, b_root: Path, b_minus_a_extra: dict | None = None) -> dict:
+    """{A id: first B poseTime - first A poseTime (ns)} for demos (same UNIX timeline; ``b_minus_a_extra`` adds a
+    per-id correction when B was re-recorded on another clock)."""
+    from sensor_rig.timefmt import parse_iso
+
+    first = {}
+    for root, key in ((a_root, "A"), (b_root, "B")):
+        for j in root.glob("*/*/*.json"):
+            d = json.load(open(j))
+            if d.get("poseTimes"):
+                first.setdefault(_eid(j.stem), {})[key] = parse_iso(d["poseTimes"][0])
+    out = {}
+    for k, v in first.items():
+        if "A" in v and "B" in v:
+            out[k] = v["B"] - v["A"] + int((b_minus_a_extra or {}).get(k, 0))
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ main
@@ -375,6 +506,10 @@ def main(argv=None) -> int:
     ap.add_argument("--keep", action="store_true", help="keep the work dir on success")
     ap.add_argument("--python", default=sys.executable, help="python of the iphumi env")
     ap.add_argument("--image-stride", type=int, default=1, help="compare every n-th 60 Hz main image")
+    ap.add_argument("--main-fps", type=float, default=None, help="simulated rig main fps (30 -> fill mode)")
+    ap.add_argument("--ts-jitter-ns", type=int, default=0, help="simulated stamp jitter (ns rms)")
+    ap.add_argument("--drop-rate", type=float, default=0.0, help="simulated main frame drop rate")
+    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
     py = args.python
@@ -408,8 +543,11 @@ def main(argv=None) -> int:
     sr = [py, "-m", "sensor_rig"]
     if not rig_raw.exists():
         log("sim")
+        sim_extra = (["--main-fps", str(args.main_fps)] if args.main_fps else []) + \
+            (["--ts-jitter-ns", str(args.ts_jitter_ns)] if args.ts_jitter_ns else []) + \
+            (["--drop-rate", str(args.drop_rate)] if args.drop_rate else []) + ["--seed", str(args.seed)]
         run(sr + ["sim", "--iphone", *[str(W / "orig_raw" / e.name[:10] / e.name) for e in eps],
-                  "--out", str(rig_raw), "--no-import", "--workers", str(args.workers)], W, L / "sim.log")
+                  "--out", str(rig_raw), "--no-import", "--workers", str(args.workers), *sim_extra], W, L / "sim.log")
         from sensor_rig.raw_episode import find_raw_episodes
 
         for ep in find_raw_episodes(rig_raw):
@@ -434,19 +572,29 @@ def main(argv=None) -> int:
         rep.add(f"pose-import {short}: gravity angle [deg]", info["gravity_check"]["angle_to_up_deg"], 3.0)
         rep.add(f"pose-import {short}: |traj delay| [ms]", abs(info["time_offset_check"]["traj_delay_ms"]), 5.0)
 
+    modes, lags = export_modes(rig_exp)
+    fill = "fill" in modes.values()
+    tol = {**TOL, **TOL_FILL} if fill else dict(TOL)
+    rep.add("export grid modes", True, note=",".join(sorted(set(modes.values()))))
+    if args.main_fps and args.main_fps < 50:
+        rep.add("every export logged grid_mode fill", set(modes.values()) == {"fill"}, note=str(modes))
+    for short, lg in lags.items():
+        lag_rows(rep, short, lg)
+    shift = start_offsets(W / "orig_raw", rig_exp) if fill else {}
+
     # ---- pipelines
     za = pipeline("A", W / "orig_raw", W, py, args.workers)
     zb = pipeline("B", rig_exp, W, py, args.workers)
 
     # ---- comparisons
-    intermediate_checks(W, rep)
-    zarr_checks(W, za, zb, rep, args.image_stride)
+    intermediate_checks(W, rep, tol)
+    zarr_checks(W, za, zb, rep, args.image_stride, tol, shift_ns=shift)
 
     snap1 = repo_snapshot()
     diff = snapshot_diff(snap0, snap1)
     rep.add("repo untouched (iPhUMI/, scripts/, data/raw)", not diff, note="; ".join(diff[:5]))
 
-    report = {"workdir": str(W), "ok": rep.ok, "tolerances": TOL, "rows": rep.rows,
+    report = {"workdir": str(W), "ok": rep.ok, "tolerances": tol, "fill_mode": fill, "rows": rep.rows,
               "episodes": [e.name for e in eps], "runtime_s": round(time.time() - t_start, 1),
               "zarr": {"A": str(za), "B": str(zb)}}
     (W / "report.json").write_text(json.dumps(report, indent=1, default=str))

@@ -7,7 +7,8 @@
   look at a ring of the newest frames (for deployment pairing) without consuming the queue.
 * ``ImuBatch`` / ``ImuBackend``: batches of IMU samples (rad/s, m/s^2, IMU frame, CLOCK_MONOTONIC ns).
 * ``make_camera`` / ``make_imu``: build a backend from a ``RigConfig`` (P2 §4.1 camera/imu sections + the recorder-only
-  ``capture:`` mapping, R3). Hardware modules are imported lazily.
+  ``capture:`` mapping, R3). Cameras: ``mock``, ``argus`` (Jetson), ``picamera2`` (Raspberry Pi 5). Hardware modules
+  are imported lazily.
 * ``RealClock`` / ``SimClock``: the clock objects mocks and the recorder use (``now_ns``, ``sleep_until``, ``sample``).
 
 Hardware backends run a producer thread that calls ``_push``; mocks use the same machinery, so the queue/ring code the
@@ -397,7 +398,7 @@ class ImuBackend(abc.ABC):
 # --------------------------------------------------------------------------------------------------------------------
 # Factories
 # --------------------------------------------------------------------------------------------------------------------
-CAMERA_BACKENDS = ("mock", "argus")
+CAMERA_BACKENDS = ("mock", "argus", "argus_sof", "picamera2")
 IMU_BACKENDS = ("mock", "icm42688_spi")
 
 
@@ -418,11 +419,13 @@ def imu_backend_name(rig) -> str:
 def make_camera(rig, name: str, backend: str | None = None, **opts) -> CameraBackend:
     """Build the camera backend for physical camera ``name``.
 
-    ``backend``: ``"mock"`` or ``"argus"`` (default: ``rig.capture.backends.<name>``, else ``argus``).
+    ``backend``: ``"mock"``, ``"argus"`` (Jetson) or ``"picamera2"`` (Raspberry Pi 5) (default:
+    ``rig.capture.backends.<name>``, else ``argus``).
     Mock options: ``episode_dir`` (replay a raw episode), ``realtime`` (default True), ``loop``,
     ``preserve_timestamps`` (``restamp=True`` is accepted as its negation), ``origin_ns`` / ``start_now_ns`` (shared
     replay origin / live start, see ``MockCamera.replay``), ``pattern``, ``clock``, ``jitter_ns``, ``drop_seqs``,
-    ``latency_ns``. Replay-only options are ignored by synthetic mocks. Argus options are forwarded to ``ArgusCamera.from_rig``.
+    ``latency_ns``. Replay-only options are ignored by synthetic mocks. Argus options are forwarded to ``ArgusCamera.from_rig``,
+    picamera2 options (``clock``, ``queue_size``, ``settings_overrides``, ...) to ``Picamera2Camera.from_rig``.
     """
     backend = backend or camera_backend_name(rig, name)
     cam_cfg = rig.cameras[name]
@@ -445,6 +448,14 @@ def make_camera(rig, name: str, backend: str | None = None, **opts) -> CameraBac
         from sensor_rig.drivers.argus_camera import ArgusCamera
 
         return ArgusCamera.from_rig(rig, name, **opts)
+    if backend == "argus_sof":
+        from sensor_rig.drivers.argus_sof_camera import ArgusSofCamera
+
+        return ArgusSofCamera.from_rig(rig, name, **opts)
+    if backend == "picamera2":
+        from sensor_rig.drivers.picamera2_camera import Picamera2Camera
+
+        return Picamera2Camera.from_rig(rig, name, **opts)
     raise ValueError(f"unknown camera backend {backend!r} (expected one of {CAMERA_BACKENDS})")
 
 
