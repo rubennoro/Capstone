@@ -64,10 +64,23 @@ ZARR=$S/deploy_work/prompt_zarr/firstreal-single.zarr.zip   # firstreal-single d
 - On 429/overload: back off 60 → 120 → 240 → 480 s (cap 10 min), then resume the **same** agent with SendMessage: "continue from your WORKLOG".
 - Never put two agents on one phase. After 2 rate-limit events in a wave, drop to 2 concurrent agents for the rest of that wave.
 
+## Commit rule
+
+Commit each phase as soon as its review PASSes, by explicit file list, before the next phase of the same track edits
+the same files.
+
+## Carry-over notes
+
+- A7: rendered images are offset about 0.5 px (MuJoCo principal point is measured from W/2; OpenCV pixel centres are
+  integers). Use cx+0.5, cy+0.5 in the renderer (A1 review finding 1).
+- B6: align the `station-mock` FakeBackend home and F_T_TCP with the station (B2 open question); wire `robot.home_tcp`. Set `run/policy/demo_replay.yaml` python to `${host.python.realenv}` (replay_server's historical env).
+
 ## Status
 
 | Wave | Track A | Track B | Gate |
 |---|---|---|---|
 | W0 | setup | setup | done (branch, env, docs) |
 | W1 | A0 assets: PASS | B1 station: PASS | committed d888546 (RE suite 190 passed / 8 skipped; regression guard PASS) |
-| W2 | A1 model | B2 constants + launcher | |
+| W2 | A1 model: PASS | B2 constants + launcher: PASS | committed 0da4d34 (B2), 2efc96f (A1); RE suite 215 passed |
+| W3 | A2 kinematics: PASS (+link6 fix) | B3 policy slot: PASS after FIX | committed 8522223 (A2), see log (B3) |
+| W4 | A3 Stage 1 | B4 stream protocol/link/sender | |

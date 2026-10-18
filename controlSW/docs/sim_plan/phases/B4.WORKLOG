@@ -1,0 +1,9 @@
+18:55:12 read spec + Swift (SocketClient.swift, DeploymentViewController.swift); UW finding: app streams real UW at camera fps (30) 960x720
+18:55:56 protocol.py + test_stream_protocol.py done (IP+RE)
+18:56:42 link.py written (needs tests)
+18:59:32 link.py + test_stream_link.py pass (11)
+19:00:11 client.py written (needs tests)
+19:04:37 test_stream_client.py written, iphone_replay_sender.py written; client tests running in bg (flock contention with other agents)
+19:05:11 requirements-wireless.txt written
+19:06:26 fixed test JPEG fixture (server decodes), rerun queued
+19:10:34 all tests pass: protocol 13 (IP+RE), link 11, client 7 (incl replay)
