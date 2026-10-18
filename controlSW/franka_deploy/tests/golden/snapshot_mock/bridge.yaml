@@ -1,0 +1,81 @@
+backend:
+  bias_m:
+  - 0.0
+  - 0.0
+  - 0.0
+  libfranka_version: null
+  panda_py:
+    NE_T_EE: null
+    collision: null
+    damping_ratio: 1.0
+    filter_coeff: 1.0
+    hostname: 172.16.0.2
+    impedance:
+    - - 800
+      - 0
+      - 0
+      - 0
+      - 0
+      - 0
+    - - 0
+      - 800
+      - 0
+      - 0
+      - 0
+      - 0
+    - - 0
+      - 0
+      - 800
+      - 0
+      - 0
+      - 0
+    - - 0
+      - 0
+      - 0
+      - 40
+      - 0
+      - 0
+    - - 0
+      - 0
+      - 0
+      - 0
+      - 40
+      - 0
+    - - 0
+      - 0
+      - 0
+      - 0
+      - 0
+      - 40
+    nullspace_stiffness: 0.5
+  panda_py_version: null
+  tau_s: 0.03
+  type: fake
+endpoint: tcp://127.0.0.1:5555
+home_O_T_EE_xyz_wxyz:
+- 0.45
+- 0.0
+- 0.45
+- 0.0
+- 1.0
+- 0.0
+- 0.0
+safety:
+  cone_axis:
+  - 0.0
+  - 0.0
+  - -1.0
+  cone_max_deg: 60.0
+  slack_s: 0.01
+  v_max: 0.25
+  w_max: 1.0
+  workspace_max:
+  - 0.8
+  - 0.4
+  - 0.7
+  workspace_min:
+  - 0.25
+  - -0.4
+  - 0.05
+watchdog_hold_s: 0.18
+watchdog_stop_s: 1.95

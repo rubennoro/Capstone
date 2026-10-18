@@ -35,7 +35,7 @@ camera:
   overrides: []
 bridge:
   config: configs/bridge.yaml
-  endpoint: tcp://127.0.0.1:5555
+  endpoint: tcp://127.0.0.1:5565
   allow_inject: false
   override:
     backend: {type: panda_py}
@@ -47,7 +47,7 @@ controller:
 inference: {endpoint: tcp://0.0.0.0:18765, device: cuda, ready_timeout_s: 300}
 spacemouse: {endpoint: tcp://localhost:15557, mock: false}
 profiles:
-  mock:
+  mock: &mock_profile
     camera:
       config: wrist_mock
       rig_config_path: null                   # the replayed episode's rig.yaml
@@ -57,3 +57,9 @@ profiles:
     controller: {override: {gripper: {type: fake}}}
     spacemouse: {mock: true}
     home: {xyz: [0.45, -0.0644, 0.1386], max_dist_m: 0.05, pose: [0.45, -0.0644, 0.1386, -0.1306, 0.9914, 0.0, 0.0]}  # FakeBackend flange home composed with F_T_TCP
+  station-mock:                               # the mock profile + a station (B2): bridge/controller/task values come from controlSW/configs
+    <<: *mock_profile
+    station: {robot: panda, tooling: franka_hand_iphumi_iphone16pro, sensor: iphone16pro_wifi, scene: block_raise_table, host: pc_laptop}
+    run: {policy: fake, link: ideal, criteria: block_raise, sim: video_replay}
+    run_mode: sim                             # sim | real (default real when a station exists: critical placeholders then fail preflight)
+    allow_placeholders: []                    # station paths (e.g. robot.desk_end_effector) a real run accepts as still unset; logged

@@ -1,0 +1,9 @@
+18:31 Step 0 done: goldens generated from unmodified HEAD code via controlSW/franka_deploy/tests/golden/make_goldens.py (Launcher.snapshot() for jetson+mock in tmp dir, python paths patched to RE, config_path/work_root/python normalised; git.json/versions.json not saved) -> tests/golden/snapshot_{jetson,mock}/
+18:31 Change 1 port 5565 applied (deploy/bridge/franka_cartesian yaml, franka_bridge.py 16+198, capture.py, dryrun.py, hardware_day, panda_py_checklist)
+18:32 Changes 2 (run_task flags), 7 (task_franka.yaml deleted, README line), 8 (README Station configs) done
+18:32 Change 5 fdcal handeye/width done (K.json in data dir still wins over station K)
+18:32 Change 6 annotate --criteria + defaults 0.05 done (no existing test referenced the 0.03 default; new test added instead)
+18:33 Change 3/4 launcher (station merge, station_resolved.yaml, run_mode, preflight checks, task flags, check_config) + station-mock profile + preflight helpers done; next: station.py fix (9), tests
+18:34 Change 9 station.py: sets before _resolve, groups/provenance deep-frozen (get()/fragments return thawed copies); test_station literal check switched to run_task parser defaults
+18:36 tests written (tests/test_launcher_station.py 23, +2 in test_station.py); fixed np.bool_ JSON bug in fdcal width main; running full suite
+18:38 full RE suite: 215 passed, 8 skipped (before final test-literal tweak; subset rerun green). DONE

@@ -1,0 +1,6 @@
+bridge.yaml
+deploy.yaml
+deploy_resolved.yaml
+franka_cartesian.yaml
+git.json
+versions.json

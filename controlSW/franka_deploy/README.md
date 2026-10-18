@@ -76,7 +76,12 @@ Tests live in `tests/`. Most run in env_realenv; the server, eval and light-work
 - [configs/deploy.yaml](configs/deploy.yaml): launcher (paths, task settings, profiles).
 - [configs/bridge.yaml](configs/bridge.yaml): safety box/cone, v_max, slack, watchdog, backend.
 - [configs/franka_cartesian.yaml](configs/franka_cartesian.yaml): F_T_TCP, interpolator, gripper and width map.
-- [configs/task_franka.yaml](configs/task_franka.yaml): anchor, pause/exec_h, width proprio.
+
+Station configs: a deploy profile can carry `station:` / `run:` ids (see profile `station-mock`). The launcher then
+derives bridge/controller values and the task flags from `controlSW/configs/` (see [../configs/README.md](../configs/README.md)),
+writes `config/station_resolved.yaml` into the session and refuses real runs with critical placeholders. Profiles
+without `station:` behave as before. The bridge REQ/REP endpoint is now `tcp://127.0.0.1:5565` (was 5555: the iPhone
+app hardcodes 5555/5556 for its camera streams).
 
 Values marked `HW:` must be measured on the arm. See [docs/hardware_day.md](docs/hardware_day.md) and
 [docs/panda_py_checklist.md](docs/panda_py_checklist.md).

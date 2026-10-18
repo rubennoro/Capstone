@@ -6,6 +6,7 @@ F_T_C by cv2.calibrateHandEye (Tsai and Park; both reported, Park used). Then F_
 training TCP in the OpenCV camera frame) and the agreement with the CAD F_T_C (accept <= 3 mm / 1 deg).
 
     python -m franka_deploy fdcal handeye --data DIR [--cad-F_T_C cad.json] [--out result.json]
+        [--deploy-config D --profile P]   # C_T_TCP and K from the station instead of the built-in constants
 DIR/poses.json = [{"image": "000.png", "O_T_F": 4x4}, ...]; DIR/board.json = {"squares_x", "squares_y",
 "square_m", "marker_m", "dict"}; DIR/K.json = 3x3 (default: the virtual main camera at 960x720).
 """
@@ -75,7 +76,18 @@ def pose_diff(A, B):
     return dt, da
 
 
-def calibrate(O_T_F_list, C_T_B_list, cad_F_T_C=None) -> dict:
+def station_values(deploy_config: str, profile: str):
+    """(C_T_TCP, K main) from the station of a deploy profile (tooling.C_T_TCP, sensor.streams.main.K)."""
+    from franka_deploy.launch.launcher import load_config
+    from franka_deploy.station import station_from_deploy_cfg
+
+    st = station_from_deploy_cfg(load_config(deploy_config, profile))
+    if st is None:
+        raise SystemExit(f"profile '{profile}' of {deploy_config} has no station: block")
+    return np.array(st.get("tooling.C_T_TCP"), float), np.array(st.get("sensor.streams.main.K"), float)
+
+
+def calibrate(O_T_F_list, C_T_B_list, cad_F_T_C=None, C_T_TCP=C_T_TCP) -> dict:
     res = {}
     for m in ("tsai", "park"):
         res[m] = solve_hand_eye(O_T_F_list, C_T_B_list, m)
@@ -97,11 +109,16 @@ def main(argv=None) -> int:
     ap.add_argument("--data", required=True)
     ap.add_argument("--cad-F_T_C", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--deploy-config", default=None, help="with --profile: C_T_TCP and K come from the station")
+    ap.add_argument("--profile", default=None)
     a = ap.parse_args(argv)
+    if bool(a.deploy_config) != bool(a.profile):
+        ap.error("--deploy-config and --profile go together")
+    C_T_TCP_use, K_default = (station_values(a.deploy_config, a.profile) if a.deploy_config else (C_T_TCP, K_MAIN_960))
     poses = json.load(open(os.path.join(a.data, "poses.json")))
     board = make_board(json.load(open(os.path.join(a.data, "board.json"))))
     kp = os.path.join(a.data, "K.json")
-    K = np.array(json.load(open(kp))) if os.path.exists(kp) else K_MAIN_960
+    K = np.array(json.load(open(kp))) if os.path.exists(kp) else K_default
     F, C = [], []
     for p in poses:
         img = cv2.imread(os.path.join(a.data, p["image"]), cv2.IMREAD_GRAYSCALE)
@@ -113,7 +130,7 @@ def main(argv=None) -> int:
         print(f"only {len(F)} usable views (need >= 5)")
         return 1
     cad = json.load(open(a.cad_F_T_C)) if a.cad_F_T_C else None
-    out = calibrate(F, C, cad)
+    out = calibrate(F, C, cad, C_T_TCP_use)
     print(json.dumps(out, indent=1))
     if a.out:
         json.dump(out, open(a.out, "w"), indent=1)

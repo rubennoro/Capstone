@@ -18,7 +18,9 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from pathlib import Path
 
 import numpy as np
@@ -77,14 +79,32 @@ class Prov:
 # ---------------------------------------------------------------------------------------------------- tree helpers
 
 
+def _freeze(v):
+    """Deep read-only view: dicts -> MappingProxyType, lists -> tuples."""
+    if isinstance(v, Mapping):
+        return MappingProxyType({k: _freeze(x) for k, x in v.items()})
+    if isinstance(v, (list, tuple)):
+        return tuple(_freeze(x) for x in v)
+    return v
+
+
+def _thaw(v):
+    """Deep mutable copy of a (possibly frozen) tree: mappings -> dict, tuples/lists -> list."""
+    if isinstance(v, Mapping):
+        return {k: _thaw(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_thaw(x) for x in v]
+    return v
+
+
 def _leaves(d, prefix=()):
     """Yield (path tuple, value) for every leaf. Dicts and lists of dicts recurse; other lists are leaves."""
-    if isinstance(d, dict) and d:
+    if isinstance(d, Mapping) and d:
         for k, v in d.items():
             if not prefix and k in META_KEYS:
                 continue
             yield from _leaves(v, prefix + (str(k),))
-    elif isinstance(d, list) and d and any(isinstance(x, dict) for x in d):
+    elif isinstance(d, (list, tuple)) and d and any(isinstance(x, Mapping) for x in d):
         for i, v in enumerate(d):
             yield from _leaves(v, prefix + (str(i),))
     else:
@@ -92,11 +112,11 @@ def _leaves(d, prefix=()):
 
 
 def _step(node, key):
-    if isinstance(node, dict):
+    if isinstance(node, Mapping):
         if key in node:
             return node[key]
         raise KeyError(key)
-    if isinstance(node, list) and key.isdigit() and int(key) < len(node):
+    if isinstance(node, (list, tuple)) and key.isdigit() and int(key) < len(node):
         return node[int(key)]
     raise KeyError(key)
 
@@ -123,7 +143,7 @@ def _has_number(v) -> bool:
         return False
     if isinstance(v, (int, float)):
         return True
-    if isinstance(v, list):
+    if isinstance(v, (list, tuple)):
         return any(_has_number(x) for x in v)
     return False
 
@@ -221,16 +241,21 @@ def validate_group(group: str, d: dict, expect_id: str | None = None) -> list[st
 
 @dataclass(frozen=True)
 class Station:
-    groups: dict          # group -> data (schema/id kept, provenance/critical removed), interpolated and overridden
+    groups: dict          # group -> data (schema/id kept, provenance/critical removed), interpolated and overridden;
+                          # deep read-only (MappingProxyType / tuples). get() and the fragments return mutable copies.
     ids: dict             # group -> id
     provenance: dict      # group -> {path: {status, source, note?}}
     critical: tuple       # "group.path" strings
     overrides: tuple      # the applied "group.path=value" strings
 
+    def __post_init__(self):
+        object.__setattr__(self, "groups", _freeze(self.groups))
+        object.__setattr__(self, "provenance", _freeze(self.provenance))
+
     def get(self, path: str, default=_MISSING):
         group, _, rest = path.partition(".")
         try:
-            return _get_in(self.groups[group], rest)
+            return _thaw(_get_in(self.groups[group], rest))
         except KeyError:
             if default is _MISSING:
                 raise KeyError(f"station has no value '{path}'") from None
@@ -259,12 +284,12 @@ class Station:
         return out
 
     def fingerprint(self) -> str:
-        blob = json.dumps(self.groups, sort_keys=True, separators=(",", ":"), default=str)
+        blob = json.dumps(_thaw(self.groups), sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
     def to_yaml(self) -> str:
         doc = {"ids": self.ids, "overrides": list(self.overrides), "critical": list(self.critical),
-               "fingerprint": self.fingerprint(), "groups": self.groups, "provenance": self.provenance}
+               "fingerprint": self.fingerprint(), "groups": _thaw(self.groups), "provenance": _thaw(self.provenance)}
         return yaml.safe_dump(doc, sort_keys=False)
 
     # ------------------------------------------------------------------------------------ derived legacy fragments
@@ -276,7 +301,7 @@ class Station:
         if rb:
             for k in ("watchdog_hold_s", "watchdog_stop_s", "home_O_T_EE_xyz_wxyz"):
                 if k in rb:
-                    out[k] = copy.deepcopy(rb[k])
+                    out[k] = _thaw(rb[k])
         safety: dict = {}
         ws = self.get("scene.workspace", None)
         if ws:
@@ -295,8 +320,8 @@ class Station:
             t, r = imp["translational_n_m"], imp["rotational_nm_rad"]
             pp = {"hostname": fci["hostname"], "impedance": np.diag([t, t, t, r, r, r]).tolist(),
                   "damping_ratio": imp["damping_ratio"], "nullspace_stiffness": imp["nullspace_stiffness"],
-                  "filter_coeff": imp["filter_coeff"], "collision": copy.deepcopy(imp["collision_thresholds"]),
-                  "NE_T_EE": None if robot["desk_end_effector"] == "none" else copy.deepcopy(robot["NE_T_EE"])}
+                  "filter_coeff": imp["filter_coeff"], "collision": _thaw(imp["collision_thresholds"]),
+                  "NE_T_EE": None if robot["desk_end_effector"] == "none" else _thaw(robot["NE_T_EE"])}
             out["backend"] = {"panda_py_version": fci["panda_py_version"],
                               "libfranka_version": fci["libfranka_version"], "panda_py": pp}
         return out
@@ -347,12 +372,12 @@ class Station:
         return {
             "endpoint": endpoint, "logger_endpoint": logger_endpoint, "name": s["camera_server"]["name"],
             "video_codec": s["camera_server"]["video_codec"], "protocol": tr["protocol"], "bind_host": tr["bind_host"],
-            "ports": copy.deepcopy(tr["ports"]), "validate_ack": tr["validate_ack"],
+            "ports": _thaw(tr["ports"]), "validate_ack": tr["validate_ack"],
             "require_websocket": tr["require_websocket"], "max_http_buffer_bytes": tr["max_http_buffer_bytes"],
             "streams": {n: {"width_px": v["width_px"], "height_px": v["height_px"], "fps_hz": fps}
                         for n, v in s["streams"].items()},
-            "publish": copy.deepcopy(s["publish"]), "on_size_mismatch": s["on_size_mismatch"],
-            "clock": copy.deepcopy(s["clock"]), "health": copy.deepcopy(s["health"]),
+            "publish": _thaw(s["publish"]), "on_size_mismatch": s["on_size_mismatch"],
+            "clock": _thaw(s["clock"]), "health": _thaw(s["health"]),
             "camera_latency_s": s["task"]["camera_latency_s"],
         }
 
@@ -360,15 +385,15 @@ class Station:
         """sender.yaml for the sim/replay senders: imitate the sensor's wire behaviour over the run's link."""
         s = self.groups["sensor"]
         tr = s["transport"]
-        out = {"protocol": tr["protocol"], "ports": copy.deepcopy(tr["ports"]),
-               "streams": copy.deepcopy(s["streams"]), "publish": copy.deepcopy(s["publish"]),
-               "clock": copy.deepcopy(s["clock"]), "sender": copy.deepcopy(s.get("sender")),
-               "training_intrinsics_variants": copy.deepcopy(s.get("training_intrinsics_variants")),
+        out = {"protocol": tr["protocol"], "ports": _thaw(tr["ports"]),
+               "streams": _thaw(s["streams"]), "publish": _thaw(s["publish"]),
+               "clock": _thaw(s["clock"]), "sender": _thaw(s.get("sender")),
+               "training_intrinsics_variants": _thaw(s.get("training_intrinsics_variants")),
                "link": None, "sim": None}
         if "link" in self.groups:
-            out["link"] = {k: copy.deepcopy(v) for k, v in self.groups["link"].items() if k != "schema"}
+            out["link"] = {k: _thaw(v) for k, v in self.groups["link"].items() if k != "schema"}
         if "sim" in self.groups:
-            out["sim"] = {k: copy.deepcopy(v) for k, v in self.groups["sim"].items() if k != "schema"}
+            out["sim"] = {k: _thaw(v) for k, v in self.groups["sim"].items() if k != "schema"}
         return out
 
 
@@ -453,9 +478,8 @@ def load_station(spec: dict, root: Path = STATION_ROOT, sets=()) -> Station:
     critical = tuple(f"{g}.{c}" for g, d in raw.items() for c in d.get("critical", []))
     groups = {g: {k: copy.deepcopy(v) for k, v in d.items() if k not in ("provenance", "critical")}
               for g, d in raw.items()}
-    errs += _resolve(groups)
     applied = []
-    for s in sets:
+    for s in sets:   # overrides first, so that ${} references to an overridden value follow it
         path, eq, text = str(s).partition("=")
         group, _, rest = path.partition(".")
         if not eq or group not in groups or not rest:
@@ -466,6 +490,7 @@ def load_station(spec: dict, root: Path = STATION_ROOT, sets=()) -> Station:
             applied.append(str(s))
         except (KeyError, yaml.YAMLError):
             errs.append(f"override '{s}': path '{path}' does not exist or value is not valid YAML")
+    errs += _resolve(groups)
     if errs:
         raise StationError(errs)
     return Station(groups=groups, ids=ids, provenance=provenance, critical=critical, overrides=tuple(applied))

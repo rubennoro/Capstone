@@ -1,8 +1,9 @@
 # FrankaCartesian controller (franka_deploy/controllers/franka_cartesian.py)
-bridge_endpoint: tcp://127.0.0.1:5555
+bridge_endpoint: tcp://127.0.0.1:5565
 bridge_timeout_s: 0.02                   # late replies are skipped (3 in a row -> error)
 ee_is_tcp: false                         # false: the bridge commands the flange, F_T_TCP applied here exactly once
-# F_T_TCP: flange -> training TCP. HW: CAD first, then hand-eye (B4): F_T_TCP = F_T_C @ C_T_TCP with
+# F_T_TCP: flange -> training TCP (with a station, controller_fragment()["F_T_TCP"] holds EE_T_TCP when Desk has an end effector,
+# else F_T_TCP; it overrides this file). HW: CAD first, then hand-eye (B4): F_T_TCP = F_T_C @ C_T_TCP with
 # C_T_TCP (OpenCV frame of the virtual main camera) = R [[1,0,0],[0,0.966,-0.259],[0,0.259,0.966]], t (0, 0.0644, 0.2114).
 # Placeholder below = camera 0.10 m ahead of the flange along z, axes aligned (NOT a calibration).
 F_T_TCP:

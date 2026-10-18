@@ -9,7 +9,7 @@ pivot    bridge running (`start`), fingertip centre on the marked point: drives 
 width    servo sweep (raw positions; gripper type from franka_cartesian.yaml): per position, wait, save the RigCamera
          ultrawide image. Writes DIR/sweep.json, then run `fdcal width --data DIR`.
 
-    python -m franka_deploy fdcal capture handeye --out DIR [--bridge tcp://127.0.0.1:5555] [--camera tcp://localhost:16702]
+    python -m franka_deploy fdcal capture handeye --out DIR [--bridge tcp://127.0.0.1:5565] [--camera tcp://localhost:16702]
     python -m franka_deploy fdcal capture pivot --out DIR --F_T_TCP configs/franka_cartesian.yaml [--angle 20]
     python -m franka_deploy fdcal capture width --out DIR --controller-config configs/franka_cartesian.yaml
         --positions 3000:1800:-100 [--settle-s 1.0]
@@ -152,7 +152,7 @@ def main(argv=None) -> int:
     w = sub.add_parser("width")
     for s in (h, p, w):
         s.add_argument("--out", required=True)
-        s.add_argument("--bridge", default="tcp://127.0.0.1:5555")
+        s.add_argument("--bridge", default="tcp://127.0.0.1:5565")
         s.add_argument("--camera", default="tcp://localhost:16702")
     h.add_argument("--squares-x", type=int, default=9)
     h.add_argument("--squares-y", type=int, default=7)

@@ -350,11 +350,11 @@ def test_task_args_equal_run_task_literals():
     assert st.task_args() == {"lookahead_s": 0.1, "home_gripper_m": 0.08, "camera_latency_s": 0.08,
                               "policy_latency_s": 0.1, "max_image_age_s": st.get("sensor.task.max_image_age_s")}
     assert st.task_args()["max_image_age_s"] == 0.35
-    # run_task.py literals the config mirrors
-    src = (DEPLOY_DIR / "franka_deploy/tasks/run_task.py").read_text()
-    for lit in ("arx5_lookahead_time_s=0.1", "arx5_home_gripper_pos_m=0.08", "camera_latency_s=0.08",
-                "policy_latency_s=0.1"):
-        assert lit in src
+    # run_task.py flags (B2: were literals) default to the same values the config mirrors
+    from franka_deploy.tasks.run_task import parser
+
+    d = parser().parse_args(["--work-dir", "w"])
+    assert (d.lookahead_s, d.home_gripper_m, d.camera_latency_s, d.policy_latency_s) == (0.1, 0.08, 0.08, 0.1)
     # station-only (no run groups): the same literals
     assert load_station({"station": IPHONE["station"]}).task_args()["policy_latency_s"] == 0.1
 
@@ -406,3 +406,33 @@ def test_import_does_not_pull_mujoco_or_robotmq():
     env["PYTHONPATH"] = str(DEPLOY_DIR)
     r = subprocess.run([sys.executable, "-c", code], env=env, cwd=str(DEPLOY_DIR), capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_sets_apply_before_interpolation():
+    """B2: an override of a referenced value reaches every dependent value (policy.checkpoint = ${host.checkpoint})."""
+    spec = {"station": {"host": "pc_laptop"}, "run": {"policy": "bp_run001"}}
+    base = load_station(spec)
+    st = load_station(spec, sets=["host.checkpoint=/tmp/other.ckpt", "policy.contract.exec_h=4"])
+    assert st.get("host.checkpoint") == "/tmp/other.ckpt"
+    assert st.get("policy.checkpoint") == "/tmp/other.ckpt" != base.get("policy.checkpoint")
+    assert st.get("policy.task.exec_h") == 4               # "${policy.contract.exec_h}" follows the override too
+    assert st.overrides == ("host.checkpoint=/tmp/other.ckpt", "policy.contract.exec_h=4")
+    # overriding the dependent value directly still wins over the reference
+    assert load_station(spec, sets=["policy.checkpoint=/x.ckpt"]).get("policy.checkpoint") == "/x.ckpt"
+
+
+def test_station_groups_are_deeply_frozen():
+    st = load_station(IPHONE)
+    with pytest.raises(TypeError):
+        st.groups["tooling"]["C_T_TCP"] = 1
+    with pytest.raises(TypeError):
+        st.groups["new"] = {}
+    assert isinstance(st.groups["tooling"]["C_T_TCP"], tuple) and isinstance(st.groups["tooling"]["C_T_TCP"][0], tuple)
+    fp = st.fingerprint()
+    got = st.get("tooling.C_T_TCP")                         # accessors return mutable copies
+    got[0][0] = 99.0
+    frag = st.controller_fragment()
+    frag["F_T_TCP"][0][0] = 99.0
+    st.bridge_fragment()["safety"]["v_max"] = 99.0
+    assert st.get("tooling.C_T_TCP")[0][0] == 1.0 and st.fingerprint() == fp
+    assert yaml.safe_load(st.to_yaml())["fingerprint"] == fp   # to_yaml thaws

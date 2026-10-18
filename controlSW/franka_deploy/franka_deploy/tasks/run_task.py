@@ -54,10 +54,10 @@ def build_task(a):
         root_dir=os.path.join(a.work_dir, "episodes"), project_name="franka_deploy", run_name=a.run_name,
         logger_endpoints=({"right_wrist_camera_0": a.video_logger_endpoint} if a.video_logger_endpoint else {}),
         spacemouse_agent=spacemouse_agent, policy_agent=policy_agent,
-        config_str=json.dumps(cfg), arx5_controller_endpoint=a.controller_endpoint, arx5_lookahead_time_s=0.1,
+        config_str=json.dumps(cfg), arx5_controller_endpoint=a.controller_endpoint, arx5_lookahead_time_s=a.lookahead_s,
         pause_when_policy_inference=a.pause, wrist_camera_endpoint=a.camera_endpoint,
-        third_person_camera_endpoint="", arx5_home_gripper_pos_m=0.08, draw_gripper_mask=False,
-        draw_mirrors_mask=False, camera_latency_s=0.08, policy_latency_s=0.1, crop_image=None,
+        third_person_camera_endpoint="", arx5_home_gripper_pos_m=a.home_gripper_m, draw_gripper_mask=False,
+        draw_mirrors_mask=False, camera_latency_s=a.camera_latency_s, policy_latency_s=a.policy_latency_s, crop_image=None,
         match_camera_latency=a.match_camera_latency)
 
 
@@ -104,6 +104,10 @@ def parser():
     ap.add_argument("--ready-file", default=None)
     ap.add_argument("--home-xyz", type=float, nargs=3, default=None, help="refuse c/C unless FK is near this TCP position")
     ap.add_argument("--home-max-dist", type=float, default=0.05)
+    ap.add_argument("--lookahead-s", type=float, default=0.1, help="controller lookahead (station policy.task.lookahead_s)")
+    ap.add_argument("--home-gripper-m", type=float, default=0.08, help="gripper width at home (station tooling.hand.home_width_m)")
+    ap.add_argument("--camera-latency-s", type=float, default=0.08, help="camera latency (station sensor.task.camera_latency_s)")
+    ap.add_argument("--policy-latency-s", type=float, default=0.1, help="policy latency (station policy.task.policy_latency_s)")
     return ap
 
 

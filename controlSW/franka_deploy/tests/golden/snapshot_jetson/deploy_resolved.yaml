@@ -1,0 +1,57 @@
+bridge:
+  allow_inject: false
+  config: configs/bridge.yaml
+  endpoint: tcp://127.0.0.1:5555
+  override:
+    backend:
+      type: panda_py
+camera:
+  config: wrist_right
+  endpoint: tcp://localhost:16702
+  logger_endpoint: tcp://localhost:55556
+  overrides: []
+  rig_config_path: /home/jetson/rig/rig_calibrated.yaml
+  video: true
+checkpoint: /home/jetson/models/run_001/best_slim.ckpt
+config_path: <CONFIG_PATH>
+controller:
+  config: configs/franka_cartesian.yaml
+  endpoint: tcp://localhost:26010
+  override:
+    gripper:
+      type: feetech
+disk_budget_gb: 5.0
+extra_path: []
+home:
+  max_dist_m: 0.05
+  pose: null
+  xyz:
+  - 0.45
+  - 0.0
+  - 0.25
+inference:
+  device: cuda
+  endpoint: tcp://0.0.0.0:18765
+  ready_timeout_s: 300
+profile: jetson
+prompt_zarr: /home/jetson/models/run_001/firstreal-single.zarr.zip
+prompt_zarr_sha256: null
+python:
+  bp: <PY>
+  realenv: <PY>
+spacemouse:
+  endpoint: tcp://localhost:15557
+  mock: false
+task:
+  agent_hz: 20
+  anchor: target
+  exec_h: 8
+  inference_timeout_s: 2.0
+  name: block_raise
+  pause: true
+  prompt_index: 0
+  tap_images_every: 50
+  v_max: 0.25
+  w_max: 1.0
+  width_proprio: commanded
+work_root: <WORK_ROOT>

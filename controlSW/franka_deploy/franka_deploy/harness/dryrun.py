@@ -200,7 +200,7 @@ def main(argv=None):
                 from franka_deploy.bridge.link import BridgeClient
 
                 ev["t_mono"] = time.monotonic()
-                ev["reply"] = str(BridgeClient("tcp://127.0.0.1:5555", timeout_s=0.5).request("inject_reflex"))
+                ev["reply"] = str(BridgeClient("tcp://127.0.0.1:5565", timeout_s=0.5).request("inject_reflex"))
             else:
                 with open(cmd_file, "a") as f:
                     f.write(act + "\n")

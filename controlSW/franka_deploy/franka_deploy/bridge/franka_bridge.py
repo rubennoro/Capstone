@@ -13,7 +13,7 @@ Watchdog (while running): no set_target for > watchdog_hold_s (0.2) -> "hold" (k
 never recovered automatically. Per-second stats line: request counts, hop service time, safety counters,
 1 kHz loop percentiles, min success rate. SIGINT/SIGTERM -> backend stop, socket closed (linger 0), exit.
 
-    python -m franka_deploy.bridge.franka_bridge --config configs/bridge.yaml [--endpoint tcp://127.0.0.1:5555]
+    python -m franka_deploy.bridge.franka_bridge --config configs/bridge.yaml [--endpoint tcp://127.0.0.1:5565]
 """
 
 from __future__ import annotations
@@ -195,7 +195,7 @@ def main(argv=None):
     cfg = yaml.safe_load(open(a.config))
     if a.bias is not None:
         cfg.setdefault("backend", {})["bias_m"] = a.bias
-    FrankaBridge(cfg, a.endpoint or cfg.get("endpoint", "tcp://127.0.0.1:5555"), a.allow_inject, a.log_jsonl).run()
+    FrankaBridge(cfg, a.endpoint or cfg.get("endpoint", "tcp://127.0.0.1:5565"), a.allow_inject, a.log_jsonl).run()
 
 
 if __name__ == "__main__":

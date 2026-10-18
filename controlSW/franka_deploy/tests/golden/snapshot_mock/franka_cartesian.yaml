@@ -1,0 +1,64 @@
+F_T_TCP:
+- - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+- - 0.0
+  - 0.966
+  - -0.259
+  - 0.0644
+- - 0.0
+  - 0.259
+  - 0.966
+  - 0.3114
+- - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+bridge_endpoint: tcp://127.0.0.1:5555
+bridge_timeout_s: 0.02
+controller:
+  ctrl_freq: 200
+  endpoint: tcp://localhost:26010
+  hold_target_max_dev_m: 0.02
+  lookahead_time_s: 0.1
+  max_gripper_speed_m_per_s: 5.0
+  max_pos_speed_m_per_s: 10.0
+  max_rot_speed_rad_per_s: 20.0
+  name: franka
+  traj_smooth_time_s: 0.05
+  trim_new_trajectory_time_s: 0.09
+ee_is_tcp: false
+gripper:
+  calibration:
+    position:
+    - 3000
+    - 2700
+    - 2400
+    - 2100
+    - 1800
+    - 1500
+    - 1350
+    width_m:
+    - 0.0
+    - 0.02
+    - 0.04
+    - 0.06
+    - 0.08
+    - 0.1
+    - 0.11
+  current_limit: 300
+  object_width_m: null
+  squeeze_below_m: 0.06
+  squeeze_delta_m: 0.005
+  start_width_m: 0.08
+  type: fake
+gripper_rate_hz: 50
+home_tcp_xyz_wxyz:
+- 0.45
+- -0.0644
+- 0.1386
+- -0.1306
+- 0.9914
+- 0.0
+- 0.0

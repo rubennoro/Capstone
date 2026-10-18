@@ -161,3 +161,30 @@ def fk_near_home(fk_xyz_wxyz, home_xyz, max_dist_m: float) -> tuple[bool, str]:
 def write_json(path, obj):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(obj, indent=1, default=str))
+
+
+# ------------------------------------------------------------------------------------------------ station checks
+
+
+def _covered(path: str, allow) -> bool:
+    return any(path == a or path.startswith(str(a) + ".") for a in allow)
+
+
+def station_placeholders(station, run_mode: str, allow=()) -> tuple[bool, str]:
+    """Critical placeholder/hw values of the station. Real mode fails on those not listed in `allow_placeholders`;
+    sim mode passes and lists them."""
+    crit = [path for path, _ in station.placeholders(critical_only=True)]
+    if run_mode == "sim":
+        return True, f"sim mode, {len(crit)} critical placeholder/hw value(s): {crit}" if crit else "none"
+    bad = [c for c in crit if not _covered(c, allow)]
+    if bad:
+        return False, f"real mode with critical placeholder/hw values (set them, or list them in allow_placeholders): {bad}"
+    return True, f"{len(crit)} critical value(s), all allowed" if crit else "none"
+
+
+def tooling_sensor_compat(station) -> tuple[bool, str]:
+    tool, sens = station.ids.get("tooling"), station.ids.get("sensor")
+    if tool is None or sens is None:
+        return True, "tooling or sensor group not loaded"
+    compat = station.get("tooling.sensor_compat", [])
+    return sens in compat, f"tooling {tool} / sensor {sens} (sensor_compat: {list(compat)})"

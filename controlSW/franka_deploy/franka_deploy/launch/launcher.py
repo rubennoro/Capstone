@@ -34,6 +34,7 @@ import yaml
 
 from franka_deploy.launch import preflight as pf
 from franka_deploy.paths import REPO_ROOT, check_writable_dir
+from franka_deploy.station import StationError, station_from_deploy_cfg
 
 PKG = Path(__file__).resolve().parents[2]
 KEYS = "cCsynrRq"
@@ -49,6 +50,25 @@ def deep_merge(a: dict, b: dict) -> dict:
     for k, v in (b or {}).items():
         out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else copy.deepcopy(v)
     return out
+
+
+def station_contradictions(target: str, fragment: dict, override: dict, prefix: str = "") -> list[dict]:
+    """Override leaves that set a different value than the station fragment holds at the same path."""
+    out = []
+    for k, v in (override or {}).items():
+        path = f"{prefix}{k}"
+        if k not in fragment:
+            continue
+        if isinstance(v, dict) and isinstance(fragment[k], dict):
+            out += station_contradictions(target, fragment[k], v, path + ".")
+        elif v != fragment[k]:
+            out.append({"target": target, "path": path, "station": fragment[k], "override": v})
+    return out
+
+
+def run_mode_of(cfg: dict) -> str:
+    """`run_mode: sim|real`; real when a station exists and the key is missing (the safe option)."""
+    return str(cfg.get("run_mode", "real"))
 
 
 def load_config(path, profile: str) -> dict:
@@ -105,6 +125,7 @@ class Child:
 class Launcher:
     def __init__(self, cfg: dict, interactive: bool | None = None, script: str | None = None):
         self.cfg = cfg
+        self.station = station_from_deploy_cfg(cfg)   # None for profiles without `station:`
         self.t0 = time.monotonic()
         self.children: dict[str, Child] = {}
         self.events: list[dict] = []
@@ -176,10 +197,19 @@ class Launcher:
         (self.session / "logs").mkdir(exist_ok=True)
         c = self.cfg
         bridge = yaml.safe_load(open(self.resolve(c["bridge"]["config"])))
+        st, overrides = self.station, []
+        if st is not None:   # precedence: bridge.yaml < station fragment < deploy.yaml bridge.override
+            frag = st.bridge_fragment()
+            overrides += station_contradictions("bridge", frag, c["bridge"].get("override", {}))
+            bridge = deep_merge(bridge, frag)
         bridge = deep_merge(bridge, c["bridge"].get("override", {}))
         bridge["endpoint"] = c["bridge"]["endpoint"]
         (cfgd / "bridge.yaml").write_text(yaml.safe_dump(bridge))
         ctrl = yaml.safe_load(open(self.resolve(c["controller"]["config"])))
+        if st is not None:   # precedence: franka_cartesian.yaml < station fragment < deploy.yaml controller.override
+            frag = st.controller_fragment()
+            overrides += station_contradictions("controller", frag, c["controller"].get("override", {}))
+            ctrl = deep_merge(ctrl, frag)
         ctrl = deep_merge(ctrl, c["controller"].get("override", {}))
         ctrl["bridge_endpoint"] = c["bridge"]["endpoint"]
         ctrl["controller"]["endpoint"] = c["controller"]["endpoint"]
@@ -187,6 +217,12 @@ class Launcher:
             ctrl["home_tcp_xyz_wxyz"] = list(c["home"]["pose"])
         (cfgd / "franka_cartesian.yaml").write_text(yaml.safe_dump(ctrl))
         (cfgd / "deploy_resolved.yaml").write_text(yaml.safe_dump(c))
+        if st is not None:
+            (cfgd / "station_resolved.yaml").write_text(st.to_yaml())
+            self.summary["station_fingerprint"] = st.fingerprint()
+            self.summary["preflight"]["station_overrides"] = overrides
+            if overrides:
+                self.log("station_overrides", overrides=overrides)
         shutil.copy(c["config_path"], cfgd / "deploy.yaml")
         if c["camera"].get("rig_config_path"):
             try:
@@ -243,6 +279,11 @@ class Launcher:
         self.check("imagecodecs_pin", pf.imagecodecs_pin(c["python"]["bp"]))
         self.check("rig_not_default", pf.rig_not_default(self.rig_path()))
         self.check("agent_hz", pf.agent_hz_ok(c["task"].get("agent_hz", 20)))
+        if self.station is not None:
+            self.check("station_valid", (True, f"{self.station.ids} fingerprint {self.station.fingerprint()}"))
+            self.check("station_placeholders", pf.station_placeholders(self.station, run_mode_of(c),
+                                                                       c.get("allow_placeholders", [])))
+            self.check("tooling_sensor_compat", pf.tooling_sensor_compat(self.station))
 
     def start_all(self):
         c, py = self.cfg, self.cfg["python"]["realenv"]
@@ -325,6 +366,12 @@ class Launcher:
                 "--camera-log", str(logs / "camera.log"), "--ready-file", str(tready),
                 "--home-xyz", *[str(x) for x in c["home"]["xyz"]], "--home-max-dist", str(c["home"]["max_dist_m"]),
                 "--pause" if t.get("pause", True) else "--continuous"]
+        if self.station is not None:
+            ta = self.station.task_args()
+            for flag, key in (("--lookahead-s", "lookahead_s"), ("--home-gripper-m", "home_gripper_m"),
+                              ("--camera-latency-s", "camera_latency_s"), ("--policy-latency-s", "policy_latency_s")):
+                if key in ta:
+                    tcmd += [flag, str(ta[key])]
         if cam.get("video", False):
             tcmd += ["--video-logger-endpoint", cam["logger_endpoint"]]
         self.start("task", tcmd)
@@ -534,6 +581,21 @@ def check_config(cfg: dict) -> int:
         rp = cam.get("rig_config_path")
         r.append(("rig_not_default", pf.rig_not_default(rp) if rp and Path(str(rp)).exists()
                   else (False, f"rig config {rp} missing or default")))
+    try:
+        st = station_from_deploy_cfg(cfg)
+    except StationError as e:
+        print(f"FAIL station: {e}")
+        return 1
+    if st is not None:
+        mode = run_mode_of(cfg)
+        crit = {p for p, _ in st.placeholders(critical_only=True)}
+        print(f"NOTE station {st.ids} fingerprint {st.fingerprint()} run_mode {mode}")
+        for path, p in st.placeholders(critical_only=True):
+            print(f"NOTE   CRITICAL {p.status:11s} {path}")
+        print(f"NOTE   {len(crit)} critical, {len(st.placeholders())} placeholder/hw value(s) in total "
+              f"(python -m franka_deploy.station validate --all -v lists them)")
+        r.append(("station_placeholders", pf.station_placeholders(st, mode, cfg.get("allow_placeholders", []))))
+        r.append(("tooling_sensor_compat", pf.tooling_sensor_compat(st)))
     ok = True
     for name, (good, detail) in r:
         print(f"{'OK  ' if good else 'FAIL'} {name}: {detail}")

@@ -27,7 +27,7 @@ arm. Do them in order, with the external activation device (user stop) in hand a
 - [ ] libfranka `communication_test`: success rate ≥ 0.99.
 - [ ] 30-minute co-load: bridge holding the home pose, with RigCamera, back-to-back inference and the task running.
   - Pass: zero reflexes, per-second `min_success` ≥ 0.99 in the bridge stats lines, 1 kHz loop p99.9 < 0.5 ms.
-  - On failure, move only the bridge to an x86 PREEMPT_RT PC (`endpoint: tcp://<rt-pc>:5555`).
+  - On failure, move only the bridge to an x86 PREEMPT_RT PC (`endpoint: tcp://<rt-pc>:5565`).
 
 ## 2. Bridge alone (no task, no policy)
 

@@ -1,6 +1,6 @@
 """Success annotation for block_raise rollouts.
 
-SUCCESS RULE (block_raise): the eraser is lifted >= 3 cm above its resting height and held for >= 2 s without
+SUCCESS RULE (block_raise): the eraser is lifted >= 5 cm above its resting height and held for >= 2 s without
 slipping (the fingers stay within 2 mm of the grasp width while lifted), then the episode may end. The live operator
 label (y/n/s) is kept as is; this file adds a post-hoc annotation from the logged video and logs.
 
@@ -9,7 +9,9 @@ system_fault (process died, Ctrl+C, controller/bridge fault, inference error) is
 but reported.
 
     python -m franka_deploy annotate <episode_dir> --annotator NAME [--success yes|no] [--grasp-t S] [--lift-t S]
-        [--category CAT] [--note TEXT] [--auto]
+        [--category CAT] [--note TEXT] [--auto] [--criteria PATH|ID]
+--criteria reads `success` (lift_min_m, hold_s, slip_tol_m) from a run/criteria yaml (path, or an id under
+controlSW/configs/run/criteria/); the defaults below are the rule fixed before trial 1 (hardware_day section 10).
 Without flags on a terminal: prints the episode timeline + the automatic suggestion (from the trace: phases of the
 measured width + TCP height) and the video paths, then asks. --auto writes the suggestion only (source "auto").
 """
@@ -21,14 +23,31 @@ import glob
 import json
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 
 CATEGORIES = ("missed_grasp", "slip", "no_approach", "collision_box_contact", "safety_stop", "timeout", "system_fault", "none")
-LIFT_MIN_M, HOLD_MIN_S, SLIP_TOL_M = 0.03, 2.0, 0.002
+LIFT_MIN_M, HOLD_MIN_S, SLIP_TOL_M = 0.05, 2.0, 0.002   # hardware_day section 10: fixed before trial 1
 
 
-def auto_suggest(ep_dir: str, up_axis=(0.0, 0.0, 1.0)) -> dict:
+def load_success_rule(criteria: str) -> dict:
+    """auto_suggest kwargs {lift_min_m, hold_min_s, slip_tol_m} from the `success` block (lift_min_m, hold_s, slip_tol_m) of a criteria yaml: a file path, or an id in controlSW/configs/run/criteria/."""
+    import yaml
+
+    from franka_deploy.station import STATION_ROOT
+
+    p = Path(criteria)
+    if not p.is_file():
+        p = STATION_ROOT / "run" / "criteria" / f"{criteria}.yaml"
+    if not p.is_file():
+        raise SystemExit(f"criteria '{criteria}' not found (path or id under {STATION_ROOT / 'run' / 'criteria'})")
+    succ = yaml.safe_load(p.read_text())["success"]
+    return {"lift_min_m": float(succ["lift_min_m"]), "hold_min_s": float(succ["hold_s"]), "slip_tol_m": float(succ["slip_tol_m"])}
+
+
+def auto_suggest(ep_dir: str, up_axis=(0.0, 0.0, 1.0), lift_min_m: float = LIFT_MIN_M, hold_min_s: float = HOLD_MIN_S,
+                 slip_tol_m: float = SLIP_TOL_M) -> dict:
     from franka_deploy.eval.metrics import phases
 
     lab = json.load(open(os.path.join(ep_dir, "label.json")))
@@ -51,12 +70,12 @@ def auto_suggest(ep_dir: str, up_axis=(0.0, 0.0, 1.0)) -> dict:
         sug.update(success=False, failure_category=cat, detail="gripper never closed")
         return sug
     held_mask = (t - t[0] >= ph["t_grasp"]) & (t - t[0] <= ph["t_release"])
-    lifted = h - h[np.searchsorted(t - t[0], ph["t_grasp"])] >= LIFT_MIN_M
+    lifted = h - h[np.searchsorted(t - t[0], ph["t_grasp"])] >= lift_min_m
     hold_s = float(np.sum(np.diff(t, prepend=t[0])[held_mask & lifted]))
-    slip = bool(np.any(w[held_mask & lifted] < ph["grasp_width_m"] - SLIP_TOL_M)) if np.any(held_mask & lifted) else False
-    ok = ph["lift_height_m"] >= LIFT_MIN_M and hold_s >= HOLD_MIN_S and not slip
+    slip = bool(np.any(w[held_mask & lifted] < ph["grasp_width_m"] - slip_tol_m)) if np.any(held_mask & lifted) else False
+    ok = ph["lift_height_m"] >= lift_min_m and hold_s >= hold_min_s and not slip
     cat = "none" if ok else ("slip" if slip else ("collision_box_contact" if s.get("workspace_contacts") else
-                                                  ("timeout" if ph["lift_height_m"] < LIFT_MIN_M else "slip")))
+                                                  ("timeout" if ph["lift_height_m"] < lift_min_m else "slip")))
     sug.update(success=bool(ok), grasp_t=ph["t_grasp"], lift_t=ph["t_lift_peak"], lift_height_m=ph["lift_height_m"],
                hold_s=hold_s, failure_category=cat)
     return sug
@@ -72,9 +91,10 @@ def main(argv=None) -> int:
     ap.add_argument("--note", default="")
     ap.add_argument("--annotator", required=True, help="who annotates (required; never defaulted from $USER)")
     ap.add_argument("--auto", action="store_true")
+    ap.add_argument("--criteria", default=None, metavar="PATH|ID", help="success rule from a run/criteria yaml")
     a = ap.parse_args(argv)
     d = a.episode_dir
-    sug = auto_suggest(d)
+    sug = auto_suggest(d, **(load_success_rule(a.criteria) if a.criteria else {}))
     ann = dict(sug)
     if not a.auto:
         manual = {}
