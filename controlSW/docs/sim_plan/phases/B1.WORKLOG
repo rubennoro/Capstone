@@ -1,0 +1,6 @@
+B1 start: read spec, design, today's configs
+created robot, tooling, sensor, scene, host yamls
+created run yamls
+station.py written; validate --all OK on 26 files and 6 profiles
+test_station.py written (45 tests); README.md still to write
+README written; running suites

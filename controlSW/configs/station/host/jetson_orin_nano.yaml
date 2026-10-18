@@ -1,0 +1,19 @@
+schema: station.host/v1
+id: jetson_orin_nano
+work_root: /home/jetson/franka_runs          # must be outside the repo (preflight)
+python: {bp: /home/jetson/envs/bp/bin/python, realenv: /home/jetson/envs/realenv/bin/python}
+extra_path: []                               # e.g. the dir holding ffmpeg (libx264) for the camera VideoLogger
+inference_device: cuda
+checkpoint: /home/jetson/models/run_001/best_slim.ckpt
+prompt_zarr: /home/jetson/models/run_001/firstreal-single.zarr.zip
+prompt_zarr_sha256: null                     # set to pin the prompt dataset (preflight)
+disk_budget_gb: 5.0
+provenance:
+  work_root: {status: decision, source: "deploy.yaml:3"}
+  python: {status: decision, source: "deploy.yaml:4-6 (REPLACE on the Jetson)"}
+  extra_path: {status: decision, source: "deploy.yaml:7"}
+  inference_device: {status: decision, source: "deploy.yaml:41 inference.device"}
+  checkpoint: {status: decision, source: "deploy.yaml:8"}
+  prompt_zarr: {status: decision, source: "deploy.yaml:9"}
+  prompt_zarr_sha256: {status: decision, source: "deploy.yaml:10"}
+  disk_budget_gb: {status: decision, source: "deploy.yaml:11"}

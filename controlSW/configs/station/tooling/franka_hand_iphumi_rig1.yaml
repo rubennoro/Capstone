@@ -1,0 +1,60 @@
+schema: station.tooling/v1
+id: franka_hand_iphumi_rig1
+sensor_compat: [rig1_wifi]
+hand:
+  type: franka_hand
+  stroke_m: 0.080
+  speed_m_s: 0.10
+  force_n: 30.0
+  force_max_n: 70.0
+  grasp_epsilon_inner_m: 0.01
+  grasp_epsilon_outer_m: 0.08
+  home_width_m: 0.08
+  port: 5566                                 # hand_server (real Franka Hand, libfranka Gripper); in sim the bridge serves it
+  endpoint: "tcp://localhost:${tooling.hand.port}"
+finger_adapter: {printed: iphumi_finger_v1, extension_m: 0.0, pad_size_m: [0.02, 0.008, 0.03], friction: 1.0}
+width_map:                                   # train = a * gap + b
+  a: 1.0
+  b: 0.008
+  gap_min_m: 0.0
+  gap_max_m: 0.080
+  coverage_required_m: 0.080
+  train_closed_m: 0.0431
+  train_min_m: 0.0447
+  train_max_m: 0.0844
+F_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966, 0.3114], [0.0, 0.0, 0.0, 1.0]]
+C_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966, 0.2114], [0.0, 0.0, 0.0, 1.0]]
+F_T_C_main: null                             # rig CAD then fdcal handeye; null -> derived F_T_TCP @ inv(C_T_TCP)
+C_main_T_C_uw: null                          # rig main -> UW extrinsic; HW/CAD (placeholder: 12 mm offset, parallel axes)
+payload:
+  mass_kg: 1.15
+  com_flange_m: [0.0, 0.0, 0.06]
+  inertia_kgm2: [[0.003, 0, 0], [0, 0.003, 0], [0, 0, 0.002]]
+collision_boxes:                             # flange frame
+  - {name: cradle, center_m: [0.0, 0.07, 0.08], half_extents_m: [0.04, 0.01, 0.08], mass_kg: 0.10}
+  - {name: rig_housing, center_m: [0.0, 0.09, 0.10], half_extents_m: [0.045, 0.015, 0.07], mass_kg: 0.25}
+provenance:
+  sensor_compat: {status: decision, source: "design_track_b.md: tooling x sensor pairing"}
+  hand: {status: datasheet, source: "Franka Hand datasheet (stroke 0.080 m, 70 N max continuous); speed/force: decision"}
+  hand.speed_m_s: {status: decision, source: "design_track_b.md tooling example"}
+  hand.force_n: {status: decision, source: "design_track_b.md tooling example"}
+  hand.grasp_epsilon_inner_m: {status: decision, source: "design_track_b.md tooling example"}
+  hand.grasp_epsilon_outer_m: {status: decision, source: "design_track_b.md tooling example"}
+  hand.home_width_m: {status: decision, source: "run_task.py:92 arx5_home_gripper_pos_m=0.08"}
+  hand.port: {status: decision, source: "INTERFACES.md section 2 (5566 hand_server)"}
+  hand.endpoint: {status: derived, source: "from hand.port"}
+  finger_adapter: {status: placeholder, source: "iphumi_finger_v1 print; not measured on the Franka Hand"}
+  width_map: {status: placeholder, source: "PLAN.md width map default a=1.0 b=0.008; measure with fdcal width on hardware"}
+  width_map.gap_min_m: {status: datasheet, source: "Franka Hand"}
+  width_map.gap_max_m: {status: datasheet, source: "Franka Hand"}
+  width_map.coverage_required_m: {status: decision, source: "PLAN.md (= stroke; fdcal default 0.085 is above the stroke)"}
+  width_map.train_closed_m: {status: measured, source: "training data: tag separation at closed (iPhUMI gripper_calibration)"}
+  width_map.train_min_m: {status: measured, source: "training data width range (firstreal-single)"}
+  width_map.train_max_m: {status: measured, source: "training data width range (firstreal-single)"}
+  F_T_TCP: {status: placeholder, source: "franka_cartesian.yaml:5-12 (camera ahead of the flange, NOT a calibration)"}
+  C_T_TCP: {status: placeholder, source: "copy of gripper_calibration.yaml iPhone17,1 (JetsonRig1,1 entry is a copy); measure the rig"}
+  F_T_C_main: {status: hw, source: "CAD then fdcal handeye"}
+  C_main_T_C_uw: {status: hw, source: "rig CAD / rig_calibrated.yaml"}
+  payload: {status: placeholder, source: "estimate: Franka Hand 0.73 kg + cradle 0.10 + rig housing 0.25 + adapters; weigh it"}
+  collision_boxes: {status: placeholder, source: "design_track_b.md tooling example; replace with CAD"}
+critical: [F_T_TCP, width_map, payload.mass_kg]

@@ -1,0 +1,21 @@
+schema: run.policy/v1
+id: bp_run001
+kind: bp_server
+checkpoint: ${host.checkpoint}
+prompt_zarr: ${host.prompt_zarr}
+prompt_index: 0
+python: ${host.python.bp}
+ready_timeout_s: 300
+contract: {K: 16, exec_h: 8, uses_prompt: true, reset_max_s: 0.5}
+task: {agent_hz: 20, exec_h: "${policy.contract.exec_h}", inference_timeout_s: 2.0, lookahead_s: 0.1, policy_latency_s: 0.1}
+provenance:
+  kind: {status: decision, source: "design_track_b.md run/policy"}
+  checkpoint: {status: derived, source: "host group; run_001 best slim checkpoint (epoch 50, val action MSE 0.000148)"}
+  prompt_zarr: {status: derived, source: "host group; firstreal-single"}
+  prompt_index: {status: decision, source: "deploy.yaml:23"}
+  python: {status: derived, source: "host group"}
+  ready_timeout_s: {status: decision, source: "deploy.yaml:41 inference.ready_timeout_s"}
+  contract: {status: measured, source: "tools/analyze_tap.py CONTRACT_OBS/CONTRACT_REPLY; AGENTS.md run_001 (K=16)"}
+  task: {status: decision, source: "deploy.yaml:21-29; run_task.py:57-61 literals"}
+  task.exec_h: {status: derived, source: "from contract.exec_h"}
+critical: []

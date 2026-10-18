@@ -1,0 +1,5 @@
+2026-10-18T22:17:21Z read spec; creating package skeleton
+2026-10-18T22:17:28Z vendored 128 files 95.78MB commit 62ab00f2bc44f6f20c1c9b7a13f3fb1dd41a4e35; clone deleted
+2026-10-18 code+tests written; RE 10 passed; BP 7 passed 3 skipped; check-assets OK 128 files
+joints: panda.xml joint1..7 (hinge)+finger_joint1/2 (slide); fr3.xml fr3_joint1..7; hand.xml finger_joint1/2 compiles standalone
+panda.xml: no sites, tendon 'split', actuators actuator1..8, key home. panda_nohand.xml/fr3.xml: site attachment_site, key home; fr3 actuators fr3_joint1..7

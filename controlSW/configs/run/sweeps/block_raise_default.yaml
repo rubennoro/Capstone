@@ -1,0 +1,12 @@
+schema: run.sweeps/v1
+id: block_raise_default
+axes:                                        # cartesian product of the ids of each group
+  - {group: link, ids: [ideal, wifi_good, wifi_busy, wifi_bad]}
+  - {group: policy, ids: [demo_replay, bp_run001]}
+max_runs: 16
+seed: 0
+n_episodes: 3
+resume: true
+provenance:
+  "": {status: decision, source: "PLAN.md B9 (2x2 sweep that resumes); design_track_b.md sweeps.py"}
+critical: []

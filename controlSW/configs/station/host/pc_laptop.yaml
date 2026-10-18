@@ -1,0 +1,21 @@
+schema: station.host/v1
+id: pc_laptop
+work_root: /home/ruben/franka_runs
+python:
+  bp: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_bp/bin/python
+  realenv: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_realenv/bin/python
+extra_path: []
+inference_device: cuda
+checkpoint: /home/ruben/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
+prompt_zarr: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
+prompt_zarr_sha256: null
+disk_budget_gb: 1.5
+provenance:
+  work_root: {status: decision, source: "sim_plan/README.md environments (outside the repo)"}
+  python: {status: decision, source: "sim_plan/README.md RE/BP scratch envs (not in the repo; lost when scratch is purged)"}
+  extra_path: {status: decision, source: "none needed on the laptop"}
+  inference_device: {status: decision, source: "RTX 3050 Ti laptop GPU (nvidia-smi); cpu if the GPU is busy"}
+  checkpoint: {status: decision, source: "results/block_raise/run_001_2026-10-05/checkpoints (gitignored slim best, epoch 50)"}
+  prompt_zarr: {status: decision, source: "sim_plan/README.md ZARR (scratch copy of firstreal-single)"}
+  prompt_zarr_sha256: {status: decision, source: "unset"}
+  disk_budget_gb: {status: decision, source: "laptop disk is ~99% full (README.md)"}

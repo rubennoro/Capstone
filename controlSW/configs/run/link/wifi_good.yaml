@@ -1,0 +1,12 @@
+schema: run.link/v1
+id: wifi_good
+latency_s: 0.008
+jitter_s: 0.004
+jitter_dist: gamma
+stall: {rate_hz: 0.02, duration_s: [0.05, 0.15]}
+bandwidth_mbit_s: 400.0                         # 0 = unlimited
+clock: {offset_s: 0.0, drift_ppm: 0.0}
+seed: 1
+provenance:
+  "": {status: decision, source: "design_track_b.md run/link (wifi_good)"}
+critical: []

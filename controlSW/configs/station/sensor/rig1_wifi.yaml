@@ -1,0 +1,55 @@
+schema: station.sensor/v1
+id: rig1_wifi
+device: {model: "Jetson rig 1 (IMX219 x2 + ICM-42688-P)", identifier: "JetsonRig1,1", sender: "sensor-rig stream-send"}
+rig_config_path: /home/jetson/rig/rig_calibrated.yaml
+transport:
+  protocol: iphumi_socketio_v2
+  bind_host: 0.0.0.0
+  ports: {main: 5555}
+  validate_ack: "server got it!"
+  require_websocket: true
+  max_http_buffer_bytes: 10485760
+streams:                                     # K: placeholders from the lens datasheets; the rig_config_path file is the truth
+  main:
+    width_px: 960
+    height_px: 720
+    physical_fps_hz: 30
+    jpeg_quality: 0.9
+    K: [[548.7, 0, 480.0], [0, 548.7, 360.0], [0, 0, 1]]
+  ultrawide:
+    width_px: 960
+    height_px: 720
+    physical_fps_hz: 30
+    jpeg_quality: 0.9
+    K: [[405.0, 0, 480.0], [0, 405.0, 360.0], [0, 0, 1]]
+publish: {fps_hz: 60, mode: fixed_rate}
+on_size_mismatch: error
+clock:
+  mode: sender_stamp_ping
+  ping_hz: 2.0
+  ping_window_s: 20.0
+  residual_latency_s: {main: 0.0, ultrawide: 0.0}
+health: {max_age_s: 0.30, min_fps_ratio: 0.9, stats_period_s: 1.0}
+sender: {jpeg_quality: 90, max_queue: 4, drop_policy: drop_oldest}
+task: {camera_latency_s: 0.0, max_image_age_s: 0.35}
+camera_server: {name: right_wrist_camera_0, video_codec: libx264}
+provenance:
+  device: {status: decision, source: "ROADMAP.md sensor rig status"}
+  rig_config_path: {status: hw, source: "deploy.yaml:33 camera.rig_config_path; produced by rig calibration"}
+  transport: {status: decision, source: "design_track_b.md rig1_wifi (protocol v2, main port only)"}
+  transport.ports: {status: decision, source: "INTERFACES.md section 2"}
+  streams: {status: placeholder, source: "IMX219 1.12 um pixel binned to 960x720, lens 2.1 mm (main) / ~1.55 mm fisheye (UW, pinhole approximation); PURCHASING.md"}
+  streams.main.physical_fps_hz: {status: decision, source: "design_track_b.md"}
+  streams.ultrawide.physical_fps_hz: {status: decision, source: "design_track_b.md"}
+  streams.main.jpeg_quality: {status: decision, source: "sender.jpeg_quality 90 on a 0-1 scale"}
+  streams.ultrawide.jpeg_quality: {status: decision, source: "sender.jpeg_quality 90 on a 0-1 scale"}
+  publish: {status: decision, source: "RigCamera fixed-rate republish"}
+  on_size_mismatch: {status: decision, source: "design_track_b.md: clear error"}
+  clock: {status: placeholder, source: "design_track_b.md rig1_wifi; residual latency to be measured with wireless_latency.py"}
+  clock.mode: {status: decision, source: "design_track_b.md finding 6 (NTP-style ping)"}
+  health: {status: decision, source: "design_track_b.md receiver"}
+  sender: {status: decision, source: "design_track_b.md rig1_wifi"}
+  task: {status: placeholder, source: "stamps are sender-side, so no camera latency correction; measure"}
+  task.max_image_age_s: {status: decision, source: "design_track_b.md finding 4"}
+  camera_server: {status: decision, source: "deploy.yaml camera section"}
+critical: [rig_config_path, streams.main.K, streams.ultrawide.K]

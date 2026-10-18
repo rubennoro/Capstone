@@ -1,0 +1,10 @@
+schema: run.sim/v1
+id: rig_raw_replay
+image_source: rig_raw_replay                 # replays a raw rig episode through RigStreamSender (mock backend)
+raw_episode_dir: null
+loop: false
+start_delay_s: 2.0
+provenance:
+  "": {status: decision, source: "design_track_b.md Senders (rig_replay_sender)"}
+  raw_episode_dir: {status: placeholder, source: "REPLACE: a raw rig episode (deploy.yaml:63 mock episode_dir)"}
+critical: []

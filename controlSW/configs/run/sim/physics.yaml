@@ -1,0 +1,13 @@
+schema: run.sim/v1
+id: physics
+timestep_s: 0.001
+n_substeps: 1
+joint_frictionloss_scale: 0.0
+damping_scale: 1.0
+impratio: 10.0
+cone: elliptic
+payload_error_kg: 0.0
+reflex: {contact: true, velocity: true, joint_limit: true}
+provenance:
+  "": {status: decision, source: "design_track_b.md run/sim physics"}
+critical: []

@@ -1,0 +1,11 @@
+schema: run.sim/v1
+id: stage1
+n_grid: [7, 7]
+yaw_step_deg: 45
+coarse_hz: 10
+n_fine_top_k: 5
+ik_tol_m: 0.001
+ik_tol_deg: 0.5
+provenance:
+  "": {status: decision, source: "design_track_b.md run/sim stage1"}
+critical: []

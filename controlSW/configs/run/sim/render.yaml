@@ -1,0 +1,7 @@
+schema: run.sim/v1
+id: render
+image_source: render
+render_fps_hz: 30
+provenance:
+  "": {status: decision, source: "design_track_b.md run/sim (images follow the sim in closed loop)"}
+critical: []

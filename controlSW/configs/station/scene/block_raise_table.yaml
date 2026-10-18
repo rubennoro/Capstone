@@ -1,0 +1,22 @@
+schema: station.scene/v1
+id: block_raise_table
+table: {size_m: [1.2, 0.8, 0.75], top_z_base_m: 0.0, friction: 0.8}
+robot_base_T_table: null                     # from stage1.json or measured
+eraser: {size_m: [0.060, 0.020, 0.012], mass_kg: 0.015, friction: [0.9, 0.005, 0.0001]}
+grasp_tcp_height_m: 0.01
+workspace:                                   # safety box (EE/flange position, base frame) and approach cone
+  min_m: [0.25, -0.40, 0.05]
+  max_m: [0.80, 0.40, 0.70]
+  cone_axis: [0.0, 0.0, -1.0]
+  cone_max_deg: 60.0
+placement_grid: {x_m: [0.40, 0.55, 4], y_m: [-0.10, 0.10, 3], yaw_deg: [-30, 30, 3], seed: 0}
+provenance:
+  table: {status: placeholder, source: "design_track_b.md scene example; measure the real table"}
+  robot_base_T_table: {status: placeholder, source: "stage1.json recommendation or measurement"}
+  eraser: {status: placeholder, source: "design_track_b.md scene example; weigh and measure the eraser"}
+  grasp_tcp_height_m: {status: placeholder, source: "design_track_b.md scene example"}
+  workspace: {status: hw, source: "bridge.yaml:7-8 (HW: measure around the table)"}
+  workspace.cone_axis: {status: decision, source: "bridge.yaml:9 (EE z-axis at home)"}
+  workspace.cone_max_deg: {status: decision, source: "bridge.yaml:10"}
+  placement_grid: {status: decision, source: "design_track_b.md scene example"}
+critical: [workspace]

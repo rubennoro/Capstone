@@ -1,0 +1,41 @@
+schema: station.robot/v1
+id: panda
+model: {mjcf: franka_sim/assets/franka_emika_panda/panda.xml, flange_site: attachment_site}
+desk_end_effector: none              # none | franka_hand  (must match the Desk setting; hardware_day check)
+F_T_NE: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+NE_T_EE: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+joints:
+  q_min_rad: [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
+  q_max_rad: [2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973]
+  dq_max_rad_s: [2.1750, 2.1750, 2.1750, 2.1750, 2.6100, 2.6100, 2.6100]
+  ddq_max_rad_s2: [15.0, 7.5, 10.0, 12.5, 15.0, 20.0, 20.0]
+  dddq_max_rad_s3: [7500, 3750, 5000, 6250, 7500, 10000, 10000]
+  tau_max_nm: [87, 87, 87, 87, 12, 12, 12]
+  dtau_max_nm_s: [1000, 1000, 1000, 1000, 1000, 1000, 1000]
+cartesian: {v_max_m_s: 1.7, a_max_m_s2: 13.0, j_max_m_s3: 6500.0, w_max_rad_s: 2.5}
+home_q_rad: [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
+home_tcp: {xyz_m: [0.45, 0.0, 0.25], max_dist_m: 0.05}      # TCP home in the base frame (deploy.yaml home)
+fci: {hostname: 172.16.0.2, libfranka_version: null, system_version: null, panda_py_version: null}
+impedance: {translational_n_m: 800.0, rotational_nm_rad: 40.0, damping_ratio: 1.0, nullspace_stiffness: 0.5,
+            filter_coeff: 1.0, collision_thresholds: null}
+bridge:                              # robot-independent bridge constants (franka_bridge / safety.py)
+  watchdog_hold_s: 0.18
+  watchdog_stop_s: 1.95
+  slack_s: 0.010
+  home_O_T_EE_xyz_wxyz: [0.45, 0.0, 0.45, 0.0, 1.0, 0.0, 0.0]   # FakeBackend start pose (EE z down)
+provenance:
+  model: {status: derived, source: "vendored menagerie model (franka_sim assets)"}
+  desk_end_effector: {status: hw, source: "Desk setting (bridge.yaml:21 NE_T_EE note)"}
+  F_T_NE: {status: hw, source: "Desk setting"}
+  NE_T_EE: {status: hw, source: "Desk setting; bridge.yaml:33"}
+  joints: {status: datasheet, source: "Franka Panda datasheet"}
+  cartesian: {status: datasheet, source: "Franka Panda datasheet"}
+  home_q_rad: {status: decision, source: "ready pose; replaced by the stage1 recommendation"}
+  home_tcp: {status: decision, source: "deploy.yaml:25-28"}
+  fci: {status: hw, source: "bridge.yaml:19-22,29-30"}
+  impedance: {status: hw, source: "bridge.yaml:30-35 (tune in B3-hw: 600-1000 N/m, 30-50 Nm/rad)"}
+  bridge.watchdog_hold_s: {status: decision, source: "bridge.yaml:4"}
+  bridge.watchdog_stop_s: {status: decision, source: "bridge.yaml:5"}
+  bridge.slack_s: {status: decision, source: "bridge.yaml:14 (HW: 0.020 if micro-clamps > 1% of ticks)"}
+  bridge.home_O_T_EE_xyz_wxyz: {status: decision, source: "bridge.yaml:3 FakeBackend start pose"}
+critical: [fci.libfranka_version, impedance.collision_thresholds, desk_end_effector]

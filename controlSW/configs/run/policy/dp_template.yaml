@@ -1,0 +1,17 @@
+schema: run.policy/v1
+id: dp_template
+kind: command                                # template for any other policy server: edit cmd and contract
+cmd: "{python} {endpoint} {ready_file} {work_dir}"
+python: ${host.python.bp}
+ready_timeout_s: 300
+contract: {K: 16, exec_h: 8, uses_prompt: false, reset_max_s: 0.5}
+task: {agent_hz: 20, exec_h: "${policy.contract.exec_h}", inference_timeout_s: 2.0, lookahead_s: 0.1, policy_latency_s: 0.1}
+provenance:
+  kind: {status: decision, source: "design_track_b.md run/policy"}
+  cmd: {status: placeholder, source: "template: command line of the policy server, placeholders {python} {endpoint} {ready_file} {work_dir}"}
+  python: {status: derived, source: "host group"}
+  ready_timeout_s: {status: decision, source: "deploy.yaml:41"}
+  contract: {status: placeholder, source: "adding_a_policy.md; set to the new policy's chunk length"}
+  task: {status: decision, source: "deploy.yaml:21-29; run_task.py:57-61 literals"}
+  task.exec_h: {status: derived, source: "from contract.exec_h"}
+critical: [cmd]

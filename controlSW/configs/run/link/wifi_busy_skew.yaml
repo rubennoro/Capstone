@@ -1,0 +1,12 @@
+schema: run.link/v1
+id: wifi_busy_skew
+latency_s: 0.020
+jitter_s: 0.015
+jitter_dist: gamma
+stall: {rate_hz: 0.2, duration_s: [0.05, 0.25]}
+bandwidth_mbit_s: 150.0                         # 0 = unlimited
+clock: {offset_s: 12.345, drift_ppm: 30.0}
+seed: 2
+provenance:
+  "": {status: decision, source: "design_track_b.md run/link (wifi_busy_skew)"}
+critical: []

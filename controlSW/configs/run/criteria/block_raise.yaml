@@ -1,0 +1,32 @@
+schema: run.criteria/v1
+id: block_raise
+limits: {v_max_m_s: 0.25, w_max_rad_s: 1.0}   # per-update step clamp (bridge safety) and chunk time-scaling (task --v-max/--w-max)
+success: {lift_min_m: 0.05, hold_s: 2.0, timeout_s: 60, slip_tol_m: 0.002}
+stage1: {reachable_fraction_min: 0.95, joint_margin_deg_min: 10, collisions_max: 0, width_p99_mapped_le_stroke: true}
+stage1b: {track_pos_m: 0.01, track_rot_deg: 3, track_ok_fraction_min: 0.9, reflex_max: 0}
+stage2:
+  chunk_reachable_fraction_min: 0.95
+  chunk_joint_margin_deg_min: 10
+  pred_vs_demo_pos_err_mm_p95_max: {k4: 15, k8: 25, k15: 40}
+  live_vs_offline_pos_err_mm_p95_max: 5
+  frame_selection_errors_max: 0
+  cam_stamp_err_ms_p95_max: {v1: 30, v2: 5}
+stage3:
+  collisions_max: 0
+  reflex_max: 0
+  tracking_err_mm_p95_max: 5
+  gripper_width_reached_within_steps: 1
+  inference_latency_s_p95_max: 0.45
+  receiver_age_s_p95_max: 0.15
+  stale_image_errors_max: 0
+  obs_motion_mm_p95_max: 3
+gonogo: {reflexes: 0, min_success_rate: 0.99, loop_p999_ms: 0.5}
+provenance:
+  limits: {status: decision, source: "deploy.yaml:30-31 task.v_max/w_max; bridge.yaml:12-13 (0.5 m/s only after B3-hw)"}
+  success: {status: decision, source: "PLAN.md success rule 0.05 / 2.0 / 60 / slip 0.002"}
+  stage1: {status: decision, source: "design_track_b.md run/criteria"}
+  stage1b: {status: decision, source: "design_track_b.md run/criteria"}
+  stage2: {status: decision, source: "design_track_b.md run/criteria"}
+  stage3: {status: decision, source: "design_track_b.md run/criteria"}
+  gonogo: {status: decision, source: "design_track_b.md run/criteria"}
+critical: []

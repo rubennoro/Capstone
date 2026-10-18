@@ -1,0 +1,54 @@
+schema: station.sensor/v1
+id: iphone16pro_wifi
+device: {model: "iPhone 16 Pro", identifier: "iPhone17,1", sender: "iPhUMI app Deployment, Ethernet mode"}
+app_settings_required: {connection: Ethernet, stream_resolution: High, camera_fps_hz: 30, host_ip: "<policy host IP>"}
+transport:
+  protocol: iphumi_socketio_v1
+  bind_host: 0.0.0.0
+  ports: {main: 5555, ultrawide: 5556}
+  validate_ack: "server got it!"
+  require_websocket: true
+  max_http_buffer_bytes: 10485760
+streams:
+  main:
+    width_px: 960
+    height_px: 720
+    physical_fps_hz: 30
+    jpeg_quality: 0.9
+    K: [[703.1714, 0, 476.3752], [0, 703.1714, 361.3600], [0, 0, 1]]
+  ultrawide:
+    width_px: 960
+    height_px: 720
+    physical_fps_hz: 30
+    jpeg_quality: 0.9
+    K: [[388.5231, 0, 480.6903], [0, 388.5231, 359.7618], [0, 0, 1]]
+training_intrinsics_variants:
+  - {main_1920_f_px: 1406.3428, main_c_px: [953.2503, 723.22003], uw_640_f_px: 259.01538, uw_c_px: [320.2935, 239.67455], n_demos: 39}
+  - {main_1920_f_px: 1278.4507, main_c_px: [954.6028, 723.5324], uw_640_f_px: 246.64919, uw_c_px: null, n_demos: 6}
+publish: {fps_hz: 60, mode: fixed_rate}
+on_size_mismatch: error
+clock: {mode: arrival_minus_latency, latency_s: {main: 0.08, ultrawide: 0.08}, dejitter_window_s: 2.0}
+health: {max_age_s: 0.30, min_fps_ratio: 0.9, stats_period_s: 1.0}
+task: {camera_latency_s: 0.08, max_image_age_s: 0.35}
+camera_server: {name: right_wrist_camera_0, video_codec: libx264}
+provenance:
+  device: {status: datasheet, source: "Apple; sender per iPhUMI app"}
+  app_settings_required: {status: decision, source: "design_track_b.md (High = 960x720; Low 320x240 is the app default)"}
+  transport: {status: decision, source: "design_track_b.md code facts (SocketClient.swift:89-96)"}
+  transport.ports: {status: measured, source: "hardcoded in the iPhone app (INTERFACES.md section 2)"}
+  streams: {status: derived, source: "training intrinsics (data/raw/2026-10-01/*/*.json) scaled to 960x720; UW at deployment may differ"}
+  streams.main.physical_fps_hz: {status: measured, source: "app High setting, 30 fps"}
+  streams.ultrawide.physical_fps_hz: {status: measured, source: "app High setting, 30 fps"}
+  streams.main.jpeg_quality: {status: measured, source: "app emit: JPEG quality 0.9"}
+  streams.ultrawide.jpeg_quality: {status: measured, source: "app emit: JPEG quality 0.9"}
+  training_intrinsics_variants: {status: measured, source: "data/raw/2026-10-01/*/*.json (39 + 6 demos)"}
+  publish: {status: decision, source: "RigCamera fixed-rate republish; frame_select tolerance max(2/fps, 2 dt)"}
+  on_size_mismatch: {status: decision, source: "design_track_b.md: clear error"}
+  clock: {status: placeholder, source: "run_task.py:106 camera_latency_s=0.08; measure with tools/wireless_latency.py"}
+  clock.mode: {status: decision, source: "design_track_b.md ClockMap"}
+  clock.dejitter_window_s: {status: decision, source: "design_track_b.md ClockMap"}
+  health: {status: decision, source: "design_track_b.md receiver"}
+  task: {status: placeholder, source: "run_task.py:106 camera_latency_s=0.08; max_image_age_s design guard"}
+  task.max_image_age_s: {status: decision, source: "design_track_b.md finding 4"}
+  camera_server: {status: decision, source: "deploy.yaml camera section; rig camera name"}
+critical: [clock.latency_s, streams.main.K, streams.ultrawide.K]
