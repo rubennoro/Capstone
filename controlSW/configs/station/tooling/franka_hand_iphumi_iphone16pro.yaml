@@ -26,6 +26,15 @@ F_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966
 C_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966, 0.2114], [0.0, 0.0, 0.0, 1.0]]
 F_T_C_main: null                             # CAD then fdcal handeye; null -> derived F_T_TCP @ inv(C_T_TCP)
 C_main_T_C_uw: null                          # iPhone main -> UW extrinsic; HW/CAD
+tcp_x_along_hand: "+y"                       # TCP x = +hand y (finger closing axis); the camera sits on TCP -y
+housing:                                     # phone body; frame = OpenCV camera axes (x right, y down, z optical)
+  size_m: [0.1496, 0.0715, 0.00825]          # iPhone 16 Pro 149.6 x 71.5 x 8.25 mm, landscape (long side along x)
+  main_lens_in_body_m: [-0.0548, -0.0158, 0.004125]   # main lens point from the box centre (on the back face)
+  mass_kg: 0.199
+cradle_boxes:                                # rigid with the housing; body_T_box in the housing frame. The arm
+                                             # from the plate to the hand is CAD pending (its mass is in the plate)
+  - {name: back_plate, size_m: [0.160, 0.080, 0.005], mass_kg: 0.10,
+     body_T_box: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, -0.0066], [0, 0, 0, 1]]}
 payload:
   mass_kg: 1.15
   com_flange_m: [0.0, 0.0, 0.06]
@@ -56,5 +65,8 @@ provenance:
   F_T_C_main: {status: hw, source: "CAD then fdcal handeye"}
   C_main_T_C_uw: {status: hw, source: "CAD / iPhone calibration"}
   payload: {status: placeholder, source: "estimate: Franka Hand 0.73 kg + cradle 0.10 + iPhone 0.199 + adapters; weigh it"}
+  tcp_x_along_hand: {status: placeholder, source: "CAD pending (which side of the hand the camera mount sits on)"}
+  housing: {status: placeholder, source: "CAD pending"}
+  cradle_boxes: {status: placeholder, source: "CAD pending"}
   collision_boxes: {status: placeholder, source: "design_track_b.md tooling example; replace with CAD"}
 critical: [F_T_TCP, width_map, payload.mass_kg]

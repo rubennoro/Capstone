@@ -1,6 +1,6 @@
 schema: station.robot/v1
 id: panda
-model: {mjcf: franka_sim/assets/franka_emika_panda/panda.xml, flange_site: attachment_site}
+model: {mjcf: franka_sim/franka_sim/assets/franka_emika_panda/panda_nohand.xml, flange_site: attachment_site}
 desk_end_effector: none              # none | franka_hand  (must match the Desk setting; hardware_day check)
 F_T_NE: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
 NE_T_EE: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]

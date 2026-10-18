@@ -7,7 +7,9 @@ damping_scale: 1.0
 impratio: 10.0
 cone: elliptic
 payload_error_kg: 0.0
+use_station_F_T_TCP: false               # true: put the tcp site at tooling.F_T_TCP (when not a placeholder)
 reflex: {contact: true, velocity: true, joint_limit: true}
 provenance:
   "": {status: decision, source: "design_track_b.md run/sim physics"}
+  use_station_F_T_TCP: {status: placeholder, source: "CAD pending (derived from the finger geometry until calibrated)"}
 critical: []

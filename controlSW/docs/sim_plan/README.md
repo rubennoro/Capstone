@@ -69,4 +69,5 @@ ZARR=$S/deploy_work/prompt_zarr/firstreal-single.zarr.zip   # firstreal-single d
 | Wave | Track A | Track B | Gate |
 |---|---|---|---|
 | W0 | setup | setup | done (branch, env, docs) |
-| W1 | A0 assets | B1 station | |
+| W1 | A0 assets: PASS | B1 station: PASS | committed d888546 (RE suite 190 passed / 8 skipped; regression guard PASS) |
+| W2 | A1 model | B2 constants + launcher | |

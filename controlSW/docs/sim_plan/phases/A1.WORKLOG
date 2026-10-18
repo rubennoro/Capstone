@@ -1,1 +1,16 @@
 2026-10-18T22:29:03Z read spec + listed files; plan: hand via attach at attachment_site (+correction frame for FR3), tooling child body of link7 in F coords
+2026-10-18T22:36:12Z model.py written; intrinsics: MjSpec resolution/focal_pixel/principal_pixel/sensor_size, render-verified (principal_pixel = (W/2-cx, cy-H/2); x sign reversed vs OpenCV, y not), anisotropic f ok to <0.1 px
+2026-10-18T22:36:12Z panda attachment_site already = 135deg (hand total -45); FR3 site identity -> correction frame 135deg; flange site placed on tool body (link7 + 0.107 z, identity), not on panda attachment_site (rotated)
+2026-10-18T22:36:12Z placeholder bracket (plate->hand) penetrated link7/link6 at home; dropped, mount mass folded into back_plate (0.10 kg)
+2026-10-18T22:37:29Z YAML edits applied: robot model.mjcf -> franka_sim/franka_sim/assets/... (panda_nohand.xml); tooling +tcp_x_along_hand/housing/cradle_boxes (collision_boxes kept: used by tests/test_station.py); physics +use_station_F_T_TCP
+2026-10-18 tests: cd controlSW/franka_sim && env -u PYTHONPATH MUJOCO_GL=egl $RE -m pytest -q tests -> 45 passed (test_model 35 + A0 10); BP 7 passed 4 skipped; station validate --all OK; test_station 47 passed
+2026-10-18 derived F_T_TCP (panda = fr3, bit-identical): xyz (0, 0, 97.3) mm, rpy (0, 0, +45) deg for tcp_x_along_hand=+y (-y: yaw -135); station placeholder F_T_TCP differs by 223.6 mm / 47.3 deg (ignored: placeholder)
+2026-10-18 F_T_cam_main (OpenCV) xyz (82.7, -82.7, -90.2) mm rpy (-15.0, 0, 45) deg: lens 90 mm behind the flange plane, 117 mm off-axis; hand body occludes the image bottom ~17% (rows > ~590) with extension_m 0
+2026-10-18 clearance CLI: python -m franka_sim model --profile sim-iphone --robot R --set tooling.tcp_x_along_hand=S --clearance (13x13 q6 x q7, other joints = station home); min over links 5/6 (negative = penetration):
+  panda +y: -60.4 mm link5 (cradle_back_plate) at q6=-0.0175 q7=-1.9315; at home +21.6 mm; 46% of grid >= 10 mm; static: link7 53.9 mm, hand 101.5 mm
+  panda -y: -62.6 mm link5 (housing) at q6=-0.0175 q7=0.9658; at home -52.7 mm (penetrates link6); 54% of grid >= 10 mm
+  fr3   +y: -67.7 mm link5 (housing) at q6=0.5445 q7=-2.0106; at home +21.6 mm; 41% of grid >= 10 mm; static: link7 53.9 mm, hand 101.5 mm
+  fr3   -y: -68.0 mm link5 (housing) at q6=0.5445 q7=1.5079; at home -55.6 mm; 48% of grid >= 10 mm
+2026-10-18 extra (panda +y, extension_m sweep): 0.05 -> home 21.0 mm, 61% clear; 0.10 -> home 44.4 mm, 93% clear; 0.15 -> home 91.1 mm, 93% clear (worst cases always at small q6, wrist folded)
+2026-10-18 payload: tooling 0.299 kg (iPhone) / 0.350 kg (rig) vs payload 1.15 - hand 0.76 = 0.390 kg -> diff -0.091 / -0.040 kg
+2026-10-18 done; frames JSON + renders in scratchpad a1/

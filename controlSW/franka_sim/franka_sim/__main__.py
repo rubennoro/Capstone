@@ -1,6 +1,7 @@
 """``python -m franka_sim <cmd>``: registers the built-in commands (lazily imported) and dispatches.
 
-Usage: ``python -m franka_sim --help`` | ``python -m franka_sim check-assets``.
+Usage: ``python -m franka_sim --help`` | ``python -m franka_sim check-assets``
+       | ``python -m franka_sim model --profile sim-iphone [--robot fr3] [--clearance]``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,19 @@ def _register_builtins() -> None:
 
     cli.register("check-assets", add_check_assets, run_check_assets,
                  help="verify the vendored menagerie assets against SOURCE.md")
+
+    def add_model(p):
+        from franka_sim import model
+
+        model.add_arguments(p)
+
+    def run_model(args):
+        from franka_sim import model
+
+        return model.run(args)
+
+    cli.register("model", add_model, run_model,
+                 help="build the station model; print frames (F_T_TCP, cameras, tags), payload and clearance")
 
 
 def main(argv: list[str] | None = None) -> int:
