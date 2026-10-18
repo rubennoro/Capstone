@@ -1,0 +1,6 @@
+18:41:55 A2 started: read spec, model.py
+18:42:19 frames.py written (T_ZUP_YUP = inverse; spec's T_YUP_ZUP@T is the wrong direction for y-up->z-up)
+18:43:26 kinematics.py first draft written
+18:54:28 kinematics: LM IK + random restarts (single run ~70% from q_rest, local minima at joint limits; 24 restarts ->~99%+); FK==DH exact
+18:59:59 tests written: RE 85 passed (full franka_sim suite), BP frames 8 passed; DONE
+19:04:35 fix per orchestrator: adjacency rule only in self group; tooling/table/min_distance see link6; new test test_tooling_group_sees_link6_with_minus_y; kinematics+model tests pass

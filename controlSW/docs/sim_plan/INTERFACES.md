@@ -86,7 +86,8 @@ Until B1 lands, Track A reads a fixture dict with the same group layout (`franka
 
 **I-KIN (A2).**
 - `franka_sim.kinematics.Kin(sm, frame="flange")`: `.fk(q)`, `.jac(q)`, `.ik(T, q0, **kw) -> (q, info)`, `.contacts(q)`, `.min_distance(q, pairs)`.
-- `check_traj(T_seq, station, q_seed) -> {reachable[N], joint_margin_deg[N], collisions[N], q[N,7]}`.
+- `check_traj(sm, T_seq, q_seed, frame="ee", *, tol_p=1e-3, tol_r=deg2rad(0.5), collision=True) -> {reachable[N], q[N,7], err_p[N], err_r[N], joint_margin_rad[N,7], joint_margin_deg[N], collisions[N], manip[N]}` (as built in A2).
+- `frames.arkit_to_zup(T)` = `inv(T_YUP_ZUP) @ T` (sensor_rig's T_YUP_ZUP maps z-up to y-up)..
 
 **I-STAGE1 (A3).** `python -m franka_sim stage1 ...` writes `stage1.json`, containing `placement: {base_T_table|grid point, yaw}`, `home_q`, the start q/pose for each demo, and `score`.
 
