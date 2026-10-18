@@ -1,0 +1,7 @@
+18:45 step1: fake_policy_server flags (--ready-file --k --reset-delay --no-prompt-rules --accept-second-prompt) done
+18:45 step2: launcher resolve_policy/policy_command/start_policy/policy_problems, static_preflight + check_config policy-aware done
+18:46 step3: tools/policy_contract.py + __main__ passthrough written
+18:48 step4: tests/test_policy_contract.py 12 passed (fake, no-prompt-rules, replay synthetic zarr, k8/reset 0.7/second-prompt, expect, tap, unit)
+18:49 step5: launcher tests added to test_launcher_station.py (scripted station-mock fake run reaches READY; fixed leftover inf name); docs/adding_a_policy.md written, --help ok
+18:54 DONE: phase tests 44 passed; full RE suite 236 passed, 8 skipped
+19:05 FIX round: doc example provenance + doc-validates test; replay/fake default python realenv (+test); replay writes checksums.json (prompt zarr only). Phase tests 45 passed; full RE suite 252 passed, 8 skipped, 1 failed (B4's tests/test_stream_client.py::test_v1_reconnects_when_no_ack, not B3)

@@ -329,3 +329,177 @@ def test_bridge_port_is_5565_everywhere():
     for f in ("deploy.yaml", "bridge.yaml", "franka_cartesian.yaml"):
         text = (PKG / "configs" / f).read_text()
         assert "127.0.0.1:5565" in text and "127.0.0.1:" + OLD_PORT not in text
+
+
+# ------------------------------------------------------------------------------------------------------- B3: policy slot
+
+OFFSET = int(__import__("os").environ.get("FD_TEST_PORT_OFFSET", "0"))
+
+
+def _policy_launcher(tmp_path, policy=None, profile="mock", mutate=None):
+    """Launcher (nothing started) with the policy forced to `policy` (a resolved policy dict) for command tests."""
+    cfg = patched_cfg(tmp_path, profile)
+    if mutate:
+        mutate(cfg)
+    L = Launcher(cfg, interactive=False)
+    if policy is not None:
+        L.policy = policy
+    return L
+
+
+def test_policy_command_legacy_bp_server_is_todays_command(tmp_path):
+    L = _policy_launcher(tmp_path)
+    c = L.cfg
+    cmd, timeout = L.policy_command()
+    assert L.policy["kind"] == "bp_server" and timeout == c["inference"]["ready_timeout_s"]
+    assert cmd == [c["python"]["bp"], "-u", "-m", "franka_deploy.inference.server", "--ckpt", c["checkpoint"],
+                   "--work-dir", str(L.session / "server"), "--dataset-path", c["prompt_zarr"], "--endpoint",
+                   c["inference"]["endpoint"], "--device", "cuda", "--ready-file", str(L.session / "server_ready.json")]
+
+
+def test_policy_command_legacy_replay_flag_maps_to_replay(tmp_path):
+    def mut(c):
+        c["python"] = {"bp": "/envs/bp/python", "realenv": "/envs/re/python"}
+        c["inference"].update(replay={"episode": "3", "speed": 0.5})
+    L = _policy_launcher(tmp_path, mutate=mut)
+    cmd, timeout = L.policy_command()
+    assert L.policy["kind"] == "replay" and timeout == 60
+    assert cmd[0] == "/envs/re/python"          # the pre-B3 command ran replay_server under python.realenv
+    assert cmd[1:5] == ["-u", "-m", "franka_deploy.tools.replay_server", "--zarr"]
+    assert cmd[cmd.index("--episode") + 1] == "3" and cmd[cmd.index("--speed") + 1] == "0.5"
+    assert cmd[cmd.index("--exec-h") + 1] == "8" and cmd[cmd.index("--start-frame") + 1] == "0"
+    assert cmd[cmd.index("--ready-file") + 1] == str(L.session / "server_ready.json") and "--continuous" not in cmd
+    L2 = _policy_launcher(tmp_path / "b", mutate=lambda c: (c["inference"].update(replay={"episode": 0}), c["task"].update(pause=False)))
+    assert "--continuous" in L2.policy_command()[0]
+
+
+def test_policy_command_kinds_from_station_policies(tmp_path):
+    def with_policy(pid):
+        return _policy_launcher(tmp_path / pid, profile="station-mock",
+                                mutate=lambda c: c.__setitem__("run", {**c["run"], "policy": pid}))
+
+    L = with_policy("fake")
+    cmd, timeout = L.policy_command()
+    assert L.policy["kind"] == "fake" and timeout == 60
+    assert cmd[1:5] == ["-u", "-m", "franka_deploy.mocks.fake_policy_server", "--endpoint"]
+    assert cmd[cmd.index("--delay") + 1] == "0.0" and cmd[cmd.index("--ready-file") + 1].endswith("server_ready.json")
+
+    L = with_policy("bp_run001")
+    cmd, timeout = L.policy_command()
+    assert L.policy["kind"] == "bp_server" and timeout == 300
+    assert cmd[1:4] == ["-u", "-m", "franka_deploy.inference.server"]
+    assert cmd[cmd.index("--ckpt") + 1] == L.station.get("policy.checkpoint")           # the station's, not deploy.yaml's
+    assert cmd[cmd.index("--device") + 1] == L.station.get("host.inference_device")
+
+    L = with_policy("demo_replay")
+    cmd, timeout = L.policy_command()
+    assert L.policy["kind"] == "replay" and cmd[cmd.index("--episode") + 1] == "0" and cmd[cmd.index("--speed") + 1] == "1.0"
+    assert cmd[cmd.index("--zarr") + 1] == L.cfg["prompt_zarr"]
+
+
+def test_policy_command_kind_command_template(tmp_path):
+    pol = {"id": "dp", "kind": "command", "python": "bp", "ready_timeout_s": 12, "checkpoint": "/m/dp.ckpt",
+           "cmd": ["{python}", "-u", "serve.py", "--listen={endpoint}", "--ready", "{ready_file}", "--out", "{work_dir}",
+                   "--ckpt", "{checkpoint}"]}
+    L = _policy_launcher(tmp_path, pol)
+    cmd, timeout = L.policy_command()
+    assert timeout == 12
+    assert cmd == [L.cfg["python"]["bp"], "-u", "serve.py", "--listen=" + L.cfg["inference"]["endpoint"], "--ready",
+                   str(L.session / "server_ready.json"), "--out", str(L.session / "server"), "--ckpt", "/m/dp.ckpt"]
+    L = _policy_launcher(tmp_path / "s", {**pol, "python": "/opt/py", "cmd": "{python} serve.py {endpoint} {ready_file}"})
+    cmd, _ = L.policy_command()                      # a string is split like a shell would
+    assert cmd[:2] == ["/opt/py", "serve.py"] and len(cmd) == 4
+
+
+def test_policy_command_unknown_kind_aborts(tmp_path):
+    from franka_deploy.launch.launcher import Abort
+
+    with pytest.raises(Abort, match="unknown policy kind"):
+        _policy_launcher(tmp_path, {"id": "x", "kind": "magic"}).policy_command()
+
+
+def test_start_policy_starts_inference_and_waits_for_the_ready_file(tmp_path, monkeypatch):
+    L = _policy_launcher(tmp_path, profile="station-mock")
+    seen = {}
+    monkeypatch.setattr(L, "start", lambda name, cmd: seen.update(name=name, cmd=cmd))
+    monkeypatch.setattr(L, "wait_until", lambda name, fn, timeout, what: seen.update(timeout=timeout, what=what))
+    monkeypatch.setattr(L, "check", lambda *a: seen.update(checked=a))
+    L.start_policy()
+    assert seen["name"] == "inference" and seen["timeout"] == 60 and "fake" in seen["what"] and "checked" not in seen
+
+
+def test_policy_problems_and_check_config(tmp_path, capsys):
+    from franka_deploy.launch.launcher import policy_problems
+
+    cfg = patched_cfg(tmp_path, "mock")
+    ok = {"id": "d", "kind": "command", "cmd": "{python} s.py {endpoint} {ready_file}"}
+    assert policy_problems(cfg, ok) == []
+    assert any("unknown kind" in p for p in policy_problems(cfg, {"id": "d", "kind": "magic"}))
+    assert policy_problems(cfg, {**ok, "cmd": "{python} s.py {endpoint}"}) == ["policy d: cmd lacks {ready_file}"]
+    assert any("unknown or malformed placeholder" in p for p in policy_problems(cfg, {**ok, "cmd": ok["cmd"] + " {nope}"}))
+    assert any("checkpoint" in p for p in policy_problems(cfg, {"id": "b", "kind": "bp_server", "checkpoint": "/no/x.ckpt"}))
+    # check_config: a command policy without {endpoint} is flagged (the shipped dp_template is valid); fake needs no checkpoint
+    run = {"policy": "dp_template", "criteria": "block_raise", "sim": "video_replay"}
+    assert check_config(_check_config_cfg(tmp_path / "t0", run=run)) == 0
+    capsys.readouterr()
+    t = _check_config_cfg(tmp_path / "t", run=run, station_set=["policy.cmd=\"{python} serve.py {ready_file}\""])
+    assert check_config(t) == 1
+    out = capsys.readouterr().out
+    assert "FAIL policy" in out and "cmd lacks {endpoint}" in out
+    f = _check_config_cfg(tmp_path / "f")
+    Path(f["checkpoint"]).unlink()
+    capsys.readouterr()
+    assert check_config(f) == 0
+    out = capsys.readouterr().out
+    assert "OK   policy" in out and "checkpoint:" not in out
+
+
+def test_static_preflight_fake_policy_needs_no_checkpoint(tmp_path, monkeypatch):
+    L = launcher_snapshot(tmp_path, "station-mock", lambda c: Path(c["checkpoint"]).unlink())
+    rec = _record_checks(L, monkeypatch)
+    assert rec["policy_valid"] and "checkpoint" not in rec and "imagecodecs_pin" not in rec
+    assert not (L.session / "config" / "checksums.json").exists()
+    L2 = launcher_snapshot(tmp_path / "b", "mock")                 # legacy bp_server: checkpoint checks as before
+    rec2 = _record_checks(L2, monkeypatch)
+    assert rec2["checkpoint"] and rec2["imagecodecs_pin"] and (L2.session / "config" / "checksums.json").exists()
+
+
+SIM_EPISODES = Path("/tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/deploy_work/d2_work/sim")
+
+
+def _rig_episode():
+    e = __import__("os").environ.get("FD_TEST_RIG_EPISODE")
+    if e:
+        return Path(e)
+    found = sorted(SIM_EPISODES.glob("m60/*/*_demonstration_left")) if SIM_EPISODES.is_dir() else []
+    return found[0] if found else None
+
+
+def test_station_mock_with_fake_policy_reaches_ready_in_a_scripted_run(tmp_path, monkeypatch):
+    """Whole stack as processes (fake bridge/controller, spacemouse mock, replayed rig episode camera, fake policy):
+    no GPU, no checkpoint. Needs a raw rig episode (FD_TEST_RIG_EPISODE or the d2_work sim episode)."""
+    ep = _rig_episode()
+    if ep is None or not (ep / "rig.yaml").exists():
+        pytest.skip("no raw rig episode (set FD_TEST_RIG_EPISODE)")
+    pytest.importorskip("real_env")
+    import os
+
+    def mutate(c):
+        Path(c["checkpoint"]).unlink()
+        c["camera"].update(episode_dir=str(ep), rig_config_path=None, endpoint=f"tcp://localhost:{26702 + OFFSET}",
+                           logger_endpoint=f"tcp://localhost:{25556 + OFFSET}")
+        c["bridge"]["endpoint"] = f"tcp://127.0.0.1:{5565 + OFFSET}"
+        c["controller"]["endpoint"] = f"tcp://localhost:{26010 + OFFSET}"
+        c["inference"]["endpoint"] = f"tcp://0.0.0.0:{18765 + OFFSET}"
+        c["spacemouse"]["endpoint"] = f"tcp://localhost:{15557 + OFFSET}"
+
+    cfg = patched_cfg(tmp_path, "station-mock")
+    mutate(cfg)
+    monkeypatch.setattr(pf, "imagecodecs_pin", lambda p: (True, "stub"))
+    L = Launcher(cfg, interactive=False, script="2:q")
+    rc = L.run()
+    kinds = [e["kind"] for e in L.events]
+    assert "READY" in kinds, [e for e in L.events if e["kind"] in ("abort", "exit", "preflight")][-5:]
+    assert rc == 0 and L.summary["policy"] == {"id": "fake", "kind": "fake"}
+    assert "checkpoint" not in L.summary["preflight"] and L.summary["preflight"]["policy_valid"]["ok"]
+    assert (L.session / "server_ready.json").exists() and not os.path.exists(f"/proc/{json.loads((L.session / 'server_ready.json').read_text())['pid']}")

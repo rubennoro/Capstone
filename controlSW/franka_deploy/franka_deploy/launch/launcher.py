@@ -79,6 +79,67 @@ def load_config(path, profile: str) -> dict:
     return cfg
 
 
+POLICY_KINDS = ("bp_server", "replay", "fake", "command")
+COMMAND_PLACEHOLDERS = ("python", "endpoint", "ready_file", "work_dir", "checkpoint", "prompt_zarr")
+
+
+def resolve_policy(cfg: dict, station=None) -> dict:
+    """The policy slot as one dict {id, kind, python, ready_timeout_s, ...}.
+
+    With a station `run.policy` its group is used. Without one the deploy.yaml keys mean what they always did:
+    `inference.replay` (the --replay-episode flag) -> kind replay, otherwise `checkpoint`/`prompt_zarr` -> bp_server.
+    The `--replay-episode` flag also wins over a station policy (it is an explicit operator choice).
+    """
+    inf, c = cfg.get("inference", {}), cfg
+    rp = inf.get("replay")
+    if rp:
+        return {"id": "deploy.yaml:replay", "kind": "replay", "ready_timeout_s": 60,
+                "episode_index": rp["episode"], "speed_scale": rp.get("speed", 1.0),
+                "start_frame_index": rp.get("start_frame", 0), "zarr": rp.get("zarr")}
+    if station is not None and "policy" in station.groups:
+        pol = station.get("policy")
+        pol.setdefault("id", station.ids.get("policy"))
+        return pol
+    return {"id": "deploy.yaml", "kind": "bp_server", "python": c["python"]["bp"], "checkpoint": c["checkpoint"],
+            "prompt_zarr": c["prompt_zarr"], "device": inf.get("device", "cuda"),
+            "ready_timeout_s": inf.get("ready_timeout_s", 300)}
+
+
+def policy_python(cfg: dict, pol: dict) -> str:
+    """`python` of a policy: a key of cfg.python (bp, realenv) or a path (what `${host.python.bp}` resolves to)."""
+    py = pol.get("python") or cfg["python"]["realenv" if pol.get("kind") in ("replay", "fake") else "bp"]
+    return cfg["python"].get(py, py) if isinstance(py, str) else py
+
+
+def command_template(pol: dict) -> list[str]:
+    cmd = pol.get("cmd")
+    if isinstance(cmd, str):
+        cmd = shlex.split(cmd)
+    return [str(a) for a in (cmd or [])]
+
+
+def policy_problems(cfg: dict, pol: dict) -> list[str]:
+    """Static validation of a resolved policy (no process, no file reads except the checkpoint existence)."""
+    kind = pol.get("kind")
+    if kind not in POLICY_KINDS:
+        return [f"policy {pol.get('id')}: unknown kind {kind!r} (known: {', '.join(POLICY_KINDS)})"]
+    out = []
+    if kind == "command":
+        tpl = command_template(pol)
+        text = " ".join(tpl)
+        out += [f"policy {pol.get('id')}: cmd lacks {{{k}}}" for k in ("endpoint", "ready_file") if "{" + k + "}" not in text]
+        try:
+            _ = [a.format_map({k: "x" for k in COMMAND_PLACEHOLDERS}) for a in tpl]
+        except (KeyError, IndexError, ValueError) as e:
+            out.append(f"policy {pol.get('id')}: cmd has an unknown or malformed placeholder ({e}); "
+                       f"known: {', '.join(COMMAND_PLACEHOLDERS)}")
+    if kind == "bp_server":
+        ok, detail = pf.checkpoint_ok(pol.get("checkpoint") or cfg.get("checkpoint"))
+        if not ok:
+            out.append(f"policy {pol.get('id')}: checkpoint: {detail}")
+    return out
+
+
 def port_of(ep):
     return ep
 
@@ -126,6 +187,7 @@ class Launcher:
     def __init__(self, cfg: dict, interactive: bool | None = None, script: str | None = None):
         self.cfg = cfg
         self.station = station_from_deploy_cfg(cfg)   # None for profiles without `station:`
+        self.policy = resolve_policy(cfg, self.station)
         self.t0 = time.monotonic()
         self.children: dict[str, Child] = {}
         self.events: list[dict] = []
@@ -140,7 +202,8 @@ class Launcher:
         self.session = self.work_root / f"session_{stamp}"
         self.cmd_file = self.session / "commands.txt"
         self.stop_file = self.session / "STOP"
-        self.summary = {"profile": cfg["profile"], "session": str(self.session), "phases": {}, "preflight": {}}
+        self.summary = {"profile": cfg["profile"], "session": str(self.session), "phases": {}, "preflight": {},
+                        "policy": {"id": self.policy.get("id"), "kind": self.policy.get("kind")}}
 
     # ------------------------------------------------------------------ utils
     def log(self, kind, **kw):
@@ -269,14 +332,26 @@ class Launcher:
         eps = [c["bridge"]["endpoint"], c["controller"]["endpoint"], c["camera"]["endpoint"], c["inference"]["endpoint"],
                c["spacemouse"]["endpoint"], c["camera"]["logger_endpoint"]]
         self.check("ports_free", pf.ports_free(eps))
-        self.check("checkpoint", pf.checkpoint_ok(c["checkpoint"]))
-        ok, sha = pf.prompt_zarr_sha(c["prompt_zarr"], c.get("prompt_zarr_sha256"), self.work_root / "cache")
-        self.check("prompt_zarr_sha256", (ok, sha))
-        ck_sha = pf.sha256_file(c["checkpoint"], self.work_root / "cache")
-        pf.write_json(self.session / "config" / "checksums.json", {"checkpoint": str(Path(c["checkpoint"]).resolve()),
-                      "checkpoint_sha256": ck_sha, "prompt_zarr": str(Path(c["prompt_zarr"]).resolve()),
-                      "prompt_zarr_sha256": sha, "prompt_index": c["task"]["prompt_index"]})
-        self.check("imagecodecs_pin", pf.imagecodecs_pin(c["python"]["bp"]))
+        pol, kind = self.policy, self.policy.get("kind")
+        self.check("policy_valid", (not (probs := policy_problems(c, pol)), "; ".join(probs) or f"{pol.get('id')} ({kind})"))
+        if kind == "bp_server":
+            ckpt, zarr = pol.get("checkpoint") or c["checkpoint"], pol.get("prompt_zarr") or c["prompt_zarr"]
+            self.check("checkpoint", pf.checkpoint_ok(ckpt))
+            ok, sha = pf.prompt_zarr_sha(zarr, pol.get("prompt_zarr_sha256", c.get("prompt_zarr_sha256")),
+                                         self.work_root / "cache")
+            self.check("prompt_zarr_sha256", (ok, sha))
+            ck_sha = pf.sha256_file(ckpt, self.work_root / "cache")
+            pf.write_json(self.session / "config" / "checksums.json", {"checkpoint": str(Path(ckpt).resolve()),
+                          "checkpoint_sha256": ck_sha, "prompt_zarr": str(Path(zarr).resolve()),
+                          "prompt_zarr_sha256": sha, "prompt_index": c["task"]["prompt_index"]})
+            self.check("imagecodecs_pin", pf.imagecodecs_pin(policy_python(c, pol)))
+        elif kind == "replay":
+            zp = Path(pol.get("zarr") or pol.get("prompt_zarr") or c["prompt_zarr"])
+            ok, sha = pf.prompt_zarr_sha(str(zp), pol.get("prompt_zarr_sha256", c.get("prompt_zarr_sha256")),
+                                         self.work_root / "cache")
+            self.check("prompt_zarr_sha256", (ok, sha))
+            pf.write_json(self.session / "config" / "checksums.json", {   # no model in a replay: no checkpoint entries
+                "prompt_zarr": str(zp.resolve()), "prompt_zarr_sha256": sha, "prompt_index": c["task"]["prompt_index"]})
         self.check("rig_not_default", pf.rig_not_default(self.rig_path()))
         self.check("agent_hz", pf.agent_hz_ok(c["task"].get("agent_hz", 20)))
         if self.station is not None:
@@ -284,6 +359,44 @@ class Launcher:
             self.check("station_placeholders", pf.station_placeholders(self.station, run_mode_of(c),
                                                                        c.get("allow_placeholders", [])))
             self.check("tooling_sensor_compat", pf.tooling_sensor_compat(self.station))
+
+    def policy_command(self, pol: dict | None = None) -> tuple[list[str], float]:
+        """Command line and ready timeout (s) for a policy kind. Pure: starts nothing."""
+        c, pol = self.cfg, pol or self.policy
+        kind, py = pol.get("kind"), policy_python(self.cfg, pol)
+        endpoint, ready = c["inference"]["endpoint"], str(self.session / "server_ready.json")
+        work = str(self.session / "server")
+        ckpt, zarr = pol.get("checkpoint") or c.get("checkpoint"), pol.get("prompt_zarr") or c.get("prompt_zarr")
+        timeout = float(pol.get("ready_timeout_s", 300))
+        if kind == "bp_server":
+            device = c["inference"].get("device", "cuda")
+            if self.station is not None and "policy" in self.station.groups:
+                device = self.station.get("host.inference_device", device)
+            return [py, "-u", "-m", "franka_deploy.inference.server", "--ckpt", ckpt, "--work-dir", work,
+                    "--dataset-path", zarr, "--endpoint", endpoint, "--device", device, "--ready-file", ready], timeout
+        if kind == "replay":  # open-loop action replay: same topics, the demo's own future instead of a model
+            return [py, "-u", "-m", "franka_deploy.tools.replay_server", "--zarr", pol.get("zarr") or zarr,
+                    "--episode", str(pol.get("episode_index", 0)), "--speed", str(pol.get("speed_scale", 1.0)),
+                    "--exec-h", str(c["task"].get("exec_h", 8)), "--start-frame", str(pol.get("start_frame_index", 0)),
+                    "--endpoint", endpoint, "--ready-file", ready] + ([] if c["task"].get("pause", True) else ["--continuous"]), timeout
+        if kind == "fake":  # constant hold chunks, no GPU and no checkpoint
+            return [py, "-u", "-m", "franka_deploy.mocks.fake_policy_server", "--endpoint", endpoint,
+                    "--ready-file", ready, "--delay", str(pol.get("delay_s", 0.0))], timeout
+        if kind == "command":
+            sub = {"python": py, "endpoint": endpoint, "ready_file": ready, "work_dir": work,
+                   "checkpoint": str(ckpt or ""), "prompt_zarr": str(zarr or "")}
+            return [a.format_map(sub) for a in command_template(pol)], timeout
+        raise Abort(f"unknown policy kind {kind!r} (known: {', '.join(POLICY_KINDS)})")
+
+    def start_policy(self, pol: dict | None = None):
+        pol = pol or self.policy
+        cmd, timeout = self.policy_command(pol)
+        ready = self.session / "server_ready.json"
+        self.start("inference", cmd)
+        self.wait_until("inference", lambda: ready.exists(), timeout, f"policy ready file ({pol.get('kind')})")
+        if pol.get("kind") == "bp_server":
+            self.check("checkpoint_staged", pf.checkpoint_staged(self.session / "server",
+                                                                 pol.get("checkpoint") or self.cfg["checkpoint"]))
 
     def start_all(self):
         c, py = self.cfg, self.cfg["python"]["realenv"]
@@ -328,22 +441,7 @@ class Launcher:
         self.wait_until("camera", lambda: cc.get_latest_images_dict_THWC(4, extra=0), 15, "frames")
         self.check("camera_rate_and_selection", pf.camera_ok(cc))
 
-        inf, ready = c["inference"], self.session / "server_ready.json"
-        rp = inf.get("replay")
-        if rp:  # open-loop action replay (hardware day): same topics, the demo's own future instead of the policy
-            self.start("inference", [py, "-u", "-m", "franka_deploy.tools.replay_server", "--zarr",
-                                     rp.get("zarr") or c["prompt_zarr"], "--episode", str(rp["episode"]),
-                                     "--speed", str(rp.get("speed", 1.0)), "--exec-h", str(c["task"].get("exec_h", 8)),
-                                     "--start-frame", str(rp.get("start_frame", 0)), "--endpoint", inf["endpoint"],
-                                     "--ready-file", str(ready)] + ([] if c["task"].get("pause", True) else ["--continuous"]))
-            self.wait_until("inference", lambda: ready.exists(), 60, "replay server ready file")
-        else:
-            self.start("inference", [c["python"]["bp"], "-u", "-m", "franka_deploy.inference.server", "--ckpt",
-                                     c["checkpoint"], "--work-dir", str(self.session / "server"), "--dataset-path",
-                                     c["prompt_zarr"], "--endpoint", inf["endpoint"], "--device", inf.get("device", "cuda"),
-                                     "--ready-file", str(ready)])
-            self.wait_until("inference", lambda: ready.exists(), inf.get("ready_timeout_s", 300), "warm-up ready file")
-            self.check("checkpoint_staged", pf.checkpoint_staged(self.session / "server", c["checkpoint"]))
+        self.start_policy()
 
         sm = c["spacemouse"]
         if sm.get("mock", False):
@@ -360,7 +458,7 @@ class Launcher:
                 "--width-proprio", t.get("width_proprio", "commanded"), "--v-max", str(t.get("v_max", 0.25)),
                 "--w-max", str(t.get("w_max", 1.0)), "--tap-images-every", str(t.get("tap_images_every", 0)),
                 "--command-file", str(self.cmd_file), "--stop-file", str(self.stop_file), "--no-stdin",
-                "--policy-endpoint", inf["endpoint"].replace("0.0.0.0", "localhost"), "--camera-endpoint", cam["endpoint"],
+                "--policy-endpoint", c["inference"]["endpoint"].replace("0.0.0.0", "localhost"), "--camera-endpoint", cam["endpoint"],
                 "--controller-endpoint", c["controller"]["endpoint"], "--spacemouse-endpoint", sm["endpoint"],
                 "--session-dir", str(self.session / "config"), "--bridge-log", str(logs / "bridge.jsonl"),
                 "--camera-log", str(logs / "camera.log"), "--ready-file", str(tready),
@@ -558,10 +656,22 @@ def check_config(cfg: dict) -> int:
     if problems:
         print("\n".join(problems))
         return 1
-    r = [("dirs_outside_repo", pf.dirs_outside_repo(cfg["work_root"])), ("checkpoint", pf.checkpoint_ok(cfg["checkpoint"])),
-         ("agent_hz", pf.agent_hz_ok(cfg["task"].get("agent_hz", 20)))]
-    zp = Path(cfg["prompt_zarr"])
-    r.append(("prompt_zarr_exists", (zp.is_file(), str(zp))))
+    try:
+        station = station_from_deploy_cfg(cfg)
+    except StationError as e:
+        print(f"FAIL station: {e}")
+        return 1
+    pol = resolve_policy(cfg, station)
+    r = [("dirs_outside_repo", pf.dirs_outside_repo(cfg["work_root"]))]
+    if pol["kind"] == "bp_server":   # the checkpoint and prompt zarr only matter for a real model
+        r.append(("checkpoint", pf.checkpoint_ok(pol.get("checkpoint") or cfg["checkpoint"])))
+    r.append(("agent_hz", pf.agent_hz_ok(cfg["task"].get("agent_hz", 20))))
+    if pol["kind"] in ("bp_server", "replay"):
+        zp = Path(pol.get("zarr") or pol.get("prompt_zarr") or cfg["prompt_zarr"])
+        r.append(("prompt_zarr_exists", (zp.is_file(), str(zp))))
+    if station is not None or pol["kind"] != "bp_server":
+        probs = policy_problems(cfg, pol)
+        r.append(("policy", (not probs, "; ".join(probs) or f"{pol.get('id')} ({pol['kind']})")))
     for k in ("bp", "realenv"):
         r.append((f"python_{k}", (Path(cfg["python"][k]).exists(), cfg["python"][k])))
     bcfg = deep_merge(yaml.safe_load(open(PKG / cfg["bridge"]["config"] if not Path(cfg["bridge"]["config"]).is_absolute()
@@ -581,11 +691,7 @@ def check_config(cfg: dict) -> int:
         rp = cam.get("rig_config_path")
         r.append(("rig_not_default", pf.rig_not_default(rp) if rp and Path(str(rp)).exists()
                   else (False, f"rig config {rp} missing or default")))
-    try:
-        st = station_from_deploy_cfg(cfg)
-    except StationError as e:
-        print(f"FAIL station: {e}")
-        return 1
+    st = station
     if st is not None:
         mode = run_mode_of(cfg)
         crit = {p for p, _ in st.placeholders(critical_only=True)}
