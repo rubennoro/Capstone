@@ -365,7 +365,13 @@ class Station:
         return out
 
     def camera_config(self, endpoint: str, logger_endpoint: str) -> dict:
-        """camera.yaml for peripherals.wireless_camera (receiver side), from the sensor group."""
+        """camera.yaml for peripherals.wireless_camera (receiver side), from the sensor group. This dict IS the
+        receiver config: `python -m franka_deploy.peripherals.wireless_camera --config camera.yaml` reads it as is.
+
+        streams.<s>.fps_hz is the publish rate (BaseCamera camera_configs fps); physical_fps_hz and K are the device's
+        (dejitter grid, v2 hello check). camera_latency_s is BaseCamera's and always 0: the receiver's ClockMap
+        applies clock.latency_s exactly once (the task's sensor.task.camera_latency_s is a different value, the pause
+        wait, see task_args())."""
         s = self.groups["sensor"]
         tr = s["transport"]
         fps = s["publish"]["fps_hz"]
@@ -374,11 +380,12 @@ class Station:
             "video_codec": s["camera_server"]["video_codec"], "protocol": tr["protocol"], "bind_host": tr["bind_host"],
             "ports": _thaw(tr["ports"]), "validate_ack": tr["validate_ack"],
             "require_websocket": tr["require_websocket"], "max_http_buffer_bytes": tr["max_http_buffer_bytes"],
-            "streams": {n: {"width_px": v["width_px"], "height_px": v["height_px"], "fps_hz": fps}
+            "streams": {n: {"width_px": v["width_px"], "height_px": v["height_px"], "fps_hz": fps,
+                            "physical_fps_hz": v["physical_fps_hz"], "K": _thaw(v["K"])}
                         for n, v in s["streams"].items()},
             "publish": _thaw(s["publish"]), "on_size_mismatch": s["on_size_mismatch"],
             "clock": _thaw(s["clock"]), "health": _thaw(s["health"]),
-            "camera_latency_s": s["task"]["camera_latency_s"],
+            "camera_latency_s": 0.0,
         }
 
     def sender_config(self) -> dict:

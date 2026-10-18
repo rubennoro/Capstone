@@ -27,7 +27,7 @@ on_size_mismatch: error
 clock:
   mode: sender_stamp_ping
   ping_hz: 2.0
-  ping_window_s: 20.0
+  ping_window_s: 60.0
   residual_latency_s: {main: 0.0, ultrawide: 0.0}
 health: {max_age_s: 0.30, min_fps_ratio: 0.9, stats_period_s: 1.0}
 sender: {jpeg_quality: 90, max_queue: 4, drop_policy: drop_oldest}

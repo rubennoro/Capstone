@@ -1,0 +1,9 @@
+19:12:31 read spec + B4 stream code + base_camera/rig_camera/safe client/frame_select/preflight/station camera_config
+19:18:19 clock_map.py + test_clock_map.py: 9 pass RE+BP (dejitter switched to assume-delay + 3-frame drop confirm: wifi_busy p95 2.5 ms vs plain 42 ms)
+19:20:33 station.camera_config: + K, physical_fps_hz per stream, camera_latency_s forced 0.0 (test_station 47 pass); wireless_camera.py written
+19:22:47 test_wireless_camera.py written (9 tests); first lock-wrapped run started
+19:28:49 fixes: no PYTHONNOUSERSITE in test env (flask in ~/.local); clock_ping via emit+ack (call() refused with async_handlers=False); 1 MiB websocket reads (5.0->3.3 ms transport); setswitchinterval 0.5 ms; v1 3 ms bound from 3 s on (warm-up)
+19:32:04 test_wireless_camera 9 pass (v1 3 ms truth bound made soft: transport floor 2.3-7 ms with load); starting RE full suite
+19:36:58 RE full suite done (see report); regression check_protected PASS; scratch test dirs removed
+19:48:53 review fixes: UW stale guard (stale_uw_ticks) + test; dejitter unconfirmed-drop bound t-1.4T (cadence-gated) + 2/4/6/8 drop test (max 46 ms < 1.5T; wifi_busy p95 3.4 ms); ping fit = Theil-Sen over lowest-RTT 30 %, default ping window 60 s, jitter test p95 0.3-0.8 ms; ws patch signature check at patch time. clock_map 14 pass RE+BP
+19:57:47 review fixes verified: clock_map 14 RE+BP, wireless 10 pass (flock), RE full 275 pass / 4 fail (test_task_logic AttributeError from B6's concurrent franka_task.py edits, not B5 files) / 8 skip

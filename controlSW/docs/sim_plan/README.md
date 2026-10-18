@@ -74,6 +74,7 @@ the same files.
 - A7: rendered images are offset about 0.5 px (MuJoCo principal point is measured from W/2; OpenCV pixel centres are
   integers). Use cx+0.5, cy+0.5 in the renderer (A1 review finding 1).
 - B6: align the `station-mock` FakeBackend home and F_T_TCP with the station (B2 open question); wire `robot.home_tcp`. Set `run/policy/demo_replay.yaml` python to `${host.python.realenv}` (replay_server's historical env).
+- B6/B8: `iphone_replay_sender` ready-file `start_now_ns` is the slot-0 time but the first tick is slot 2 (B4 review); account for it in Stage 2b replay_gt alignment. App default fps is 60; our sensor yaml requires 30.
 
 ## Status
 
