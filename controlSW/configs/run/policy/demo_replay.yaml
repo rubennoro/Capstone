@@ -4,7 +4,7 @@ kind: replay                                 # tools/replay_server.py: serves th
 episode_index: 0
 speed_scale: 1.0
 start_frame_index: 0
-python: ${host.python.bp}
+python: ${host.python.realenv}                # replay_server's historical env (B6 carry-over)
 ready_timeout_s: 300
 contract: {K: 16, exec_h: 8, uses_prompt: false, reset_max_s: 0.5}
 task: {agent_hz: 20, exec_h: "${policy.contract.exec_h}", inference_timeout_s: 2.0, lookahead_s: 0.1, policy_latency_s: 0.1}
@@ -13,7 +13,7 @@ provenance:
   episode_index: {status: decision, source: "design_track_b.md run/policy"}
   speed_scale: {status: decision, source: "design_track_b.md run/policy"}
   start_frame_index: {status: decision, source: "design_track_b.md run/policy"}
-  python: {status: derived, source: "host group"}
+  python: {status: derived, source: "host group (replay_server ran under python.realenv before B3)"}
   ready_timeout_s: {status: decision, source: "deploy.yaml:41"}
   contract: {status: decision, source: "replay_server chunk length"}
   task: {status: decision, source: "deploy.yaml:21-29; run_task.py:57-61 literals"}

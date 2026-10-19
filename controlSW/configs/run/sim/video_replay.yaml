@@ -4,6 +4,9 @@ image_source: video_replay                   # Stage 2b only (teacher-forced) an
 history_source: replay_gt
 loop: false
 start_delay_s: 2.0
+raw_root: data/raw/2026-10-01                # raw iPhone episodes (relative to the repo root, or absolute)
+episode_index: 0                             # index into raw_root's sorted *firstreal_demonstration* episodes
+episode_dir: null                            # or a raw episode dir name under raw_root / an absolute path (wins)
 provenance:
   "": {status: decision, source: "design_track_b.md finding 2"}
 critical: []

@@ -188,3 +188,121 @@ def tooling_sensor_compat(station) -> tuple[bool, str]:
         return True, "tooling or sensor group not loaded"
     compat = station.get("tooling.sensor_compat", [])
     return sens in compat, f"tooling {tool} / sensor {sens} (sensor_compat: {list(compat)})"
+
+
+# ------------------------------------------------------------------------------------------------ wireless checks
+
+
+def websocket_available(python: str, env: dict | None = None) -> tuple[bool, str]:
+    """`import simple_websocket` in the receiver's python: without it engineio stays on long-polling (design finding 10)."""
+    r = subprocess.run([python, "-c", "import simple_websocket, flask_socketio; print(simple_websocket.__file__)"],
+                       capture_output=True, text=True, timeout=60, env=env or {**os.environ, "PYTHONNOUSERSITE": "1"})
+    if r.returncode == 0:
+        return True, f"simple_websocket + flask_socketio importable ({r.stdout.strip()})"
+    return False, (f"{python}: {r.stderr.strip().splitlines()[-1] if r.stderr.strip() else 'import failed'}; install "
+                   "requirements-wireless.txt (simple-websocket, flask-socketio) in python.realenv")
+
+
+def read_stats(path):
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def wireless_health_eval(first: dict, last: dict, physical_fps: dict, max_age_s: float, socket_streams,
+                         min_fps_ratio: float = 0.9) -> tuple[bool, str]:
+    """Judge two receiver stats snapshots (peripherals/wireless_camera.py stats()) taken a check window apart.
+
+    socket_streams: the streams with their own socket (v1: main + ultrawide; v2: main), whose transport must be
+    websocket. physical_fps: {stream: device fps}; fps_in of each must be >= min_fps_ratio * it. age_s p95 of main
+    <= max_age_s; no reconnect during the window; no size mismatch; no fatal error."""
+    probs, parts = [], []
+    if last.get("fatal"):
+        probs.append(f"receiver fatal: {last['fatal']}")
+    for s in socket_streams:
+        tr = last["streams"][s].get("transport")
+        if tr != "websocket":
+            probs.append(f"{s} transport stuck on {tr or 'nothing (no client)'}: install simple-websocket"
+                         if tr == "polling" else f"{s} transport {tr or 'none (no client connected)'}")
+    for s, fps in physical_fps.items():
+        st, st0 = last["streams"][s], first["streams"][s]
+        fin = float(st.get("fps_in") or 0.0)
+        parts.append(f"{s} {fin:.1f}/{fps:g} fps")
+        if fin < min_fps_ratio * float(fps):
+            probs.append(f"{s} fps_in {fin:.1f} < {min_fps_ratio:g} x {fps:g}")
+        if st.get("reconnects", 0) != st0.get("reconnects", 0):
+            probs.append(f"{s} reconnected during the check ({st0.get('reconnects')} -> {st.get('reconnects')})")
+        if st.get("size_mismatches", 0):
+            probs.append(f"{s} {st['size_mismatches']} size mismatch(es)")
+    age = (last["streams"]["main"].get("age_s") or {}).get("p95")
+    parts.append(f"age p95 {'-' if age is None else f'{1000 * age:.0f} ms'} (max {1000 * max_age_s:.0f})")
+    if age is None or age > max_age_s:
+        probs.append(f"main age p95 {age} s > {max_age_s} s" if age is not None else "no published frames (age unknown)")
+    parts.append(f"transport {'/'.join(str(last['streams'][s].get('transport')) for s in socket_streams)}")
+    parts.append(f"clock {(last.get('clock') or {}).get('mode')}")
+    return (not probs), ("; ".join(probs) + " | " if probs else "") + ", ".join(parts)
+
+
+def wireless_health_ok(stats_path, physical_fps: dict, max_age_s: float, socket_streams, upgrade_timeout_s: float = 5.0,
+                       window_s: float = 2.0, min_fps_ratio: float = 0.9, stats_period_s: float = 1.0,
+                       sleep=None, clock=None) -> tuple[bool, str]:
+    """Link health after the camera is up: within upgrade_timeout_s every socket stream is on websocket, then over a
+    window (>= 2 stats periods) fps/age/reconnects/size mismatches are judged by wireless_health_eval."""
+    import time
+
+    sleep, clock = sleep or time.sleep, clock or time.monotonic
+    t0 = clock()
+    first = None
+    while True:
+        st = read_stats(stats_path)
+        if st and all(st["streams"][s].get("transport") == "websocket" for s in socket_streams):
+            first = st
+            break
+        if clock() - t0 > upgrade_timeout_s:
+            if st is None:
+                return False, f"no receiver stats at {stats_path} within {upgrade_timeout_s} s"
+            return wireless_health_eval(st, st, physical_fps, max_age_s, socket_streams, min_fps_ratio)
+        sleep(0.1)
+    t1 = clock()
+    while clock() - t1 < max(window_s, 2 * stats_period_s) or (read_stats(stats_path) or {}).get("t") == first.get("t"):
+        if clock() - t1 > window_s + 5 * stats_period_s:
+            return False, f"receiver stats at {stats_path} stopped updating"
+        sleep(0.1)
+    return wireless_health_eval(first, read_stats(stats_path) or first, physical_fps, max_age_s, socket_streams,
+                                min_fps_ratio)
+
+
+def clock_eval(first: dict, last: dict, max_rtt_ms: float = 20.0, max_offset_change_s: float = 0.002) -> tuple[bool, str]:
+    """v2 clock sync: min ping RTT < max_rtt_ms and the offset stable within max_offset_change_s between snapshots."""
+    c0, c1 = first.get("clock") or {}, last.get("clock") or {}
+    if c1.get("mode") != "sender_stamp_ping":
+        return True, f"clock mode {c1.get('mode')}: no ping sync to check"
+    rtt, o0, o1 = c1.get("rtt_ms_min"), c0.get("offset_s"), c1.get("offset_s")
+    if rtt is None or o0 is None or o1 is None:
+        return False, f"clock not synced (rtt_ms_min {rtt}, offsets {o0} -> {o1}, pings {c1.get('n_pings')})"
+    d = abs(float(o1) - float(o0))
+    ok = float(rtt) < max_rtt_ms and d <= max_offset_change_s
+    return ok, (f"ping RTT min {float(rtt):.1f} ms (max {max_rtt_ms:g}), offset {1000 * float(o1):.2f} ms, "
+                f"change {1000 * d:.2f} ms (max {1000 * max_offset_change_s:g}), drift {c1.get('drift_ppm')}")
+
+
+def clock_ok(stats_path, window_s: float = 3.0, sleep=None) -> tuple[bool, str]:
+    import time
+
+    sleep = sleep or time.sleep
+    first = read_stats(stats_path)
+    if first is None:
+        return False, f"no receiver stats at {stats_path}"
+    sleep(window_s)
+    return clock_eval(first, read_stats(stats_path) or first)
+
+
+def hello_check(hello_problems, run_mode: str) -> tuple[bool, str]:
+    """v2 hello vs the sensor yaml. Sim: a warning only (the replay sends each episode's own K); real: FAIL."""
+    probs = list(hello_problems or [])
+    if not probs:
+        return True, "hello consistent with the sensor yaml (or v1: no hello)"
+    if run_mode == "sim":
+        return True, f"WARNING (sim, expected for replays with the episode's own K): {probs}"
+    return False, f"hello does not match the sensor yaml: {probs}"

@@ -1,0 +1,124 @@
+19:48:31 read spec + listed files (launcher, preflight, tasks, station, B4 sender, B5 receiver API, tests); plan: launcher wireless/sender/hand slots, preflight checks, task age guard, 6 profiles
+19:54:48 launcher: camera.kind, sender slot, hand child, sim_reset action, allow-sim-reset probe, endpoints(), station home; preflight: websocket/wireless_health/clock/hello; task --max-image-age-s + stale_image; sender first_tick_ns; configs: 6 profiles, video_replay episode keys, demo_replay python realenv; check-config runs for all 8 profiles
+19:58:33 e2e sim-iphone-fake PASS (READY 9.4 s, health main/uw 29.9/30 fps, age p95 121 ms, websocket, 27 policy calls); summary camera_stats now taken at teardown start (final one after sender stop kept as camera_stats_final); script items split only before '<t>:' (JSON sim_reset payloads)
+20:00:34 phase tests (wireless+launcher_station+check_config+preflight, lock, offset 2000): 63 passed. e2e launcher summary:
+B6_E2E {"fps_in": [29.9, 29.9], "publish_fps": 59.8, "age_p95_ms": 118.6, "clock": "arrival_minus_latency", "transport": ["websocket", "websocket"], "reconnects": [0, 0], "stale_ticks": 74, "policy_calls": 27, "holds": 1, "stale_image": 0, "obs_retries": 0, "ready_s": 8.79, "wireless_health_ok": "main 29.9/30 fps, ultrawide 29.9/30 fps, age p95 117 ms (max 300), transport websocket/websocket, clock arrival_minus_latency"}
+B6_KILL {"fps_in": [0.0, 0.0], "publish_fps": 0.0, "age_p95_ms": 112.7, "clock": "arrival_minus_latency", "transport": ["websocket", "websocket"], "reconnects": [0, 0], "stale_ticks": 438, "policy_calls": 10, "holds": 1, "stale_image": 0, "obs_retries": 4, "ready_s": 8.74, "wireless_health_ok": "main 30.9/30 fps, ultrawide 30.9/30 fps, age p95 115 ms (max 300), transport websocket/websocket, clock arrival_minus_latency"}
+  (kill: obs_retries 4 = frame_select's dropped-frame check fired before the age guard; receiver stale_ticks 438; task hold 1 + launcher hold 'sender died'; exit quit 0)
+20:07:51 full RE suite: 290 passed/4 failed (test_task_logic builds the task via __new__: no max_image_age_s attr) -> class default max_image_age_s=None + counters.get; test_task_logic 30 pass; rerunning full suite; check_protected PASS; station validate --all OK
+20:08:03 check-config per profile (as shipped, run in RE on the laptop; CRITICAL list lines omitted, long details cut at 160 chars):
+  [sim-iphone-fake] rc=0
+    OK   dirs_outside_repo: ok
+    OK   agent_hz: agent_update_freq_hz 20 (trained: 20)
+    OK   policy: fake (fake)
+    OK   python_bp: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_bp/bin/python
+    OK   python_realenv: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_realenv/bin/python
+    OK   bridge_backend: fake
+    OK   controller_gripper: fake
+    OK   camera_kind: wireless (B5 receiver, camera.yaml from station.camera_config)
+    OK   websocket_available: simple_websocket + flask_socketio importable (/tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/en
+    OK   sender: video_replay: franka_deploy.stream.iphone_replay_sender present, episode 2026-10-01T21-13-57.489Z_75494_firstreal_demonstration_left
+    OK   station_placeholders: sim mode, 11 critical placeholder/hw value(s): ['robot.desk_end_effector', 'robot.fci.libfranka_version', 'robot.impedance.collision_
+    OK   tooling_sensor_compat: tooling franka_hand_iphumi_iphone16pro / sensor iphone16pro_wifi (sensor_compat: ['iphone16pro_wifi'])
+    NOTE wireless: iphumi_socketio_v1 on 127.0.0.1:{'main': 5555, 'ultrawide': 5556}, clock arrival_minus_latency, max_image_age_s 0.35
+    NOTE home from the station: TCP xyz [0.45, 0.0, 0.25] (max 0.05 m), sim start home_O_T_EE [0.45, 0.0644, 0.5614, 0.0, 1.0, 0.0, 0.0]
+  [sim-iphone] rc=1
+    OK   dirs_outside_repo: ok
+    OK   checkpoint: 2.59 GB
+    OK   agent_hz: agent_update_freq_hz 20 (trained: 20)
+    OK   prompt_zarr_exists: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
+    OK   policy: bp_run001 (bp_server)
+    OK   python_bp: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_bp/bin/python
+    OK   python_realenv: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_realenv/bin/python
+    OK   bridge_backend: mujoco
+    OK   mujoco_import: mujoco 3.3.0 (python.realenv)
+    FAIL mujoco_backend: franka_sim present / MuJoCoBackend (franka_sim/backend.py) missing (A4)
+    OK   controller_gripper: franka_hand
+    FAIL franka_hand_driver: controller gripper driver franka_hand missing (A5)
+    OK   camera_kind: wireless (B5 receiver, camera.yaml from station.camera_config)
+    OK   websocket_available: simple_websocket + flask_socketio importable (/tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/en
+    FAIL sender: render: franka_sim.senders.render_sender not available yet (A7/B8)
+    OK   station_placeholders: sim mode, 11 critical placeholder/hw value(s): ['robot.desk_end_effector', 'robot.fci.libfranka_version', 'robot.impedance.collision_
+    OK   tooling_sensor_compat: tooling franka_hand_iphumi_iphone16pro / sensor iphone16pro_wifi (sensor_compat: ['iphone16pro_wifi'])
+    NOTE hand: endpoint tcp://127.0.0.1:5565 = the bridge: the bridge backend serves hand_cmd/hand_state (A5), no hand child
+    NOTE wireless: iphumi_socketio_v1 on 127.0.0.1:{'main': 5555, 'ultrawide': 5556}, clock arrival_minus_latency, max_image_age_s 0.35
+    NOTE home from the station: TCP xyz [0.45, 0.0, 0.25] (max 0.05 m), sim start home_O_T_EE [0.45, 0.0644, 0.5614, 0.0, 1.0, 0.0, 0.0]
+  [sim-rig-fake] rc=1
+    OK   dirs_outside_repo: ok
+    OK   agent_hz: agent_update_freq_hz 20 (trained: 20)
+    OK   policy: fake (fake)
+    OK   python_bp: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_bp/bin/python
+    OK   python_realenv: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_realenv/bin/python
+    OK   bridge_backend: fake
+    OK   controller_gripper: fake
+    OK   camera_kind: wireless (B5 receiver, camera.yaml from station.camera_config)
+    OK   websocket_available: simple_websocket + flask_socketio importable (/tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/en
+    FAIL sender: rig_raw_replay: franka_deploy.stream.rig_replay_sender not available yet (B7)
+    OK   station_placeholders: sim mode, 12 critical placeholder/hw value(s): ['robot.desk_end_effector', 'robot.fci.libfranka_version', 'robot.impedance.collision_
+    OK   tooling_sensor_compat: tooling franka_hand_iphumi_rig1 / sensor rig1_wifi (sensor_compat: ['rig1_wifi'])
+    NOTE wireless: iphumi_socketio_v2 on 127.0.0.1:{'main': 5555}, clock sender_stamp_ping, max_image_age_s 0.35
+    NOTE home from the station: TCP xyz [0.45, 0.0, 0.25] (max 0.05 m), sim start home_O_T_EE [0.45, 0.0644, 0.5614, 0.0, 1.0, 0.0, 0.0]
+  [sim-rig] rc=1
+    OK   dirs_outside_repo: ok
+    OK   checkpoint: 2.59 GB
+    OK   agent_hz: agent_update_freq_hz 20 (trained: 20)
+    OK   prompt_zarr_exists: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
+    OK   policy: bp_run001 (bp_server)
+    OK   python_bp: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_bp/bin/python
+    OK   python_realenv: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_realenv/bin/python
+    OK   bridge_backend: mujoco
+    OK   mujoco_import: mujoco 3.3.0 (python.realenv)
+    FAIL mujoco_backend: franka_sim present / MuJoCoBackend (franka_sim/backend.py) missing (A4)
+    OK   controller_gripper: franka_hand
+    FAIL franka_hand_driver: controller gripper driver franka_hand missing (A5)
+    OK   camera_kind: wireless (B5 receiver, camera.yaml from station.camera_config)
+    OK   websocket_available: simple_websocket + flask_socketio importable (/tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/en
+    FAIL sender: rig_raw_replay: franka_deploy.stream.rig_replay_sender not available yet (B7)
+    OK   station_placeholders: sim mode, 12 critical placeholder/hw value(s): ['robot.desk_end_effector', 'robot.fci.libfranka_version', 'robot.impedance.collision_
+    OK   tooling_sensor_compat: tooling franka_hand_iphumi_rig1 / sensor rig1_wifi (sensor_compat: ['rig1_wifi'])
+    NOTE hand: endpoint tcp://127.0.0.1:5565 = the bridge: the bridge backend serves hand_cmd/hand_state (A5), no hand child
+    NOTE wireless: iphumi_socketio_v2 on 127.0.0.1:{'main': 5555}, clock sender_stamp_ping, max_image_age_s 0.35
+    NOTE home from the station: TCP xyz [0.45, 0.0, 0.25] (max 0.05 m), sim start home_O_T_EE [0.45, 0.0644, 0.5614, 0.0, 1.0, 0.0, 0.0]
+  [real-iphone] rc=1
+    OK   dirs_outside_repo: ok
+    FAIL checkpoint: /home/jetson/models/run_001/best_slim.ckpt not found
+    OK   agent_hz: agent_update_freq_hz 20 (trained: 20)
+    FAIL prompt_zarr_exists: /home/jetson/models/run_001/firstreal-single.zarr.zip
+    FAIL policy: policy bp_run001: checkpoint: /home/jetson/models/run_001/best_slim.ckpt not found
+    FAIL python_bp: /home/jetson/envs/bp/bin/python
+    FAIL python_realenv: /home/jetson/envs/realenv/bin/python
+    OK   bridge_backend: panda_py
+    OK   controller_gripper: franka_hand
+    FAIL franka_hand_driver: controller gripper driver franka_hand missing (A5)
+    FAIL hand_server: hand child on tcp://localhost:5566: franka_deploy.gripper.hand_server missing (A5)
+    OK   panda_py_hostname: 172.16.0.2
+    FAIL panda_py_versions_pinned: None / None
+    OK   camera_kind: wireless (B5 receiver, camera.yaml from station.camera_config)
+    FAIL station_placeholders: real mode with critical placeholder/hw values (set them, or list them in allow_placeholders): ['robot.desk_end_effector', 'robot.fci.
+    OK   tooling_sensor_compat: tooling franka_hand_iphumi_iphone16pro / sensor iphone16pro_wifi (sensor_compat: ['iphone16pro_wifi'])
+    NOTE panda-py import / FCI connection: hardware-only (not checked)
+    NOTE wireless: iphumi_socketio_v1 on 0.0.0.0:{'main': 5555, 'ultrawide': 5556}, clock arrival_minus_latency, max_image_age_s 0.35
+    NOTE real mode: no sender; the device (iPhone app / rig) streams to the receiver ports
+    NOTE home from the station: TCP xyz [0.45, 0.0, 0.25] (max 0.05 m)
+  [real-rig] rc=1
+    OK   dirs_outside_repo: ok
+    FAIL checkpoint: /home/jetson/models/run_001/best_slim.ckpt not found
+    OK   agent_hz: agent_update_freq_hz 20 (trained: 20)
+    FAIL prompt_zarr_exists: /home/jetson/models/run_001/firstreal-single.zarr.zip
+    FAIL policy: policy bp_run001: checkpoint: /home/jetson/models/run_001/best_slim.ckpt not found
+    FAIL python_bp: /home/jetson/envs/bp/bin/python
+    FAIL python_realenv: /home/jetson/envs/realenv/bin/python
+    OK   bridge_backend: panda_py
+    OK   controller_gripper: franka_hand
+    FAIL franka_hand_driver: controller gripper driver franka_hand missing (A5)
+    FAIL hand_server: hand child on tcp://localhost:5566: franka_deploy.gripper.hand_server missing (A5)
+    OK   panda_py_hostname: 172.16.0.2
+    FAIL panda_py_versions_pinned: None / None
+    OK   camera_kind: wireless (B5 receiver, camera.yaml from station.camera_config)
+    FAIL station_placeholders: real mode with critical placeholder/hw values (set them, or list them in allow_placeholders): ['robot.desk_end_effector', 'robot.fci.
+    OK   tooling_sensor_compat: tooling franka_hand_iphumi_rig1 / sensor rig1_wifi (sensor_compat: ['rig1_wifi'])
+    NOTE panda-py import / FCI connection: hardware-only (not checked)
+    NOTE wireless: iphumi_socketio_v2 on 0.0.0.0:{'main': 5555}, clock sender_stamp_ping, max_image_age_s 0.35
+    NOTE real mode: no sender; the device (iPhone app / rig) streams to the receiver ports
+    NOTE home from the station: TCP xyz [0.45, 0.0, 0.25] (max 0.05 m)
+20:14:54 full RE suite (lock, offset 2000): 294 passed, 8 skipped; /dev/shm rmq_* 0; no stray processes. Done.

@@ -47,7 +47,7 @@ def build_task(a):
         history_source=a.history_source, replay_npz=a.replay_npz, replay_start_now_ns=a.replay_start_now_ns,
         spacemouse_endpoint=a.spacemouse_endpoint, v_max=a.v_max, w_max=a.w_max, settle=not a.no_settle,
         session_dir=a.session_dir, bridge_log=a.bridge_log, camera_log=a.camera_log,
-        home_xyz=a.home_xyz, home_max_dist_m=a.home_max_dist,
+        home_xyz=a.home_xyz, home_max_dist_m=a.home_max_dist, max_image_age_s=a.max_image_age_s,
         controller_timeout_s=a.controller_timeout, command_file=a.command_file, stop_file=a.stop_file,
         read_stdin=not a.no_stdin, tap_dir=a.tap_dir, tap_images_every=a.tap_images_every,
         record_episodes=not a.no_record,
@@ -108,6 +108,9 @@ def parser():
     ap.add_argument("--home-gripper-m", type=float, default=0.08, help="gripper width at home (station tooling.hand.home_width_m)")
     ap.add_argument("--camera-latency-s", type=float, default=0.08, help="camera latency (station sensor.task.camera_latency_s)")
     ap.add_argument("--policy-latency-s", type=float, default=0.1, help="policy latency (station policy.task.policy_latency_s)")
+    ap.add_argument("--max-image-age-s", type=float, default=None,
+                    help="refuse (retryable FrameSelectionError) an observation whose newest main image is older "
+                         "(station sensor.task.max_image_age_s); default: no check")
     return ap
 
 

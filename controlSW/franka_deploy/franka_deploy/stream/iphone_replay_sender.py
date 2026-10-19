@@ -23,7 +23,10 @@ Usage:
   python -m franka_deploy.stream.iphone_replay_sender --episode data/raw/2026-10-01/<ep> --host 127.0.0.1 \\
       [--ports 5555,5556] [--protocol v1|v2] [--fps 30] [--size 960x720] [--jpeg-quality 90] \\
       [--link run/link/wifi_good.yaml] [--truth T.jsonl] [--ready-file F] [--loop] [--start-now-ns N] [--max-s S]
-Ready file (JSON, atomic): {start_now_ns, fps, protocol, episode, size, K_main, K_uw}.
+Ready file (JSON, atomic): {start_now_ns, first_tick_ns, first_slot, fps, protocol, episode, size, K_main, K_uw}.
+start_now_ns = host monotonic ns of episode slot 0 (what --start-now-ns sets); first_tick_ns = host ns of the first
+frame actually sent (slot first_slot, usually 2: no tick before the first UW frame). Align replay_gt with start_now_ns
+(the episode's own time origin), not with the first tick.
 """
 
 from __future__ import annotations
@@ -141,8 +144,11 @@ def run(args) -> dict:
     client.connect(args.connect_timeout)
     start_ns = args.start_now_ns if args.start_now_ns is not None else time.monotonic_ns() + 500_000_000
     if args.ready_file:
-        d = {"start_now_ns": int(start_ns), "fps": args.fps, "protocol": args.protocol, "episode": ep.name,
-             "size": list(size), "K_main": K_main, "K_uw": K_uw}
+        # start_now_ns is the host time of episode slot 0; the first tick sent is slot `slots[0]` (later than slot 0
+        # when the first UW frame comes after it, typically slot 2): first_tick_ns is that tick's host time.
+        d = {"start_now_ns": int(start_ns), "first_tick_ns": int(start_ns + round(float(tt[0]) * 1e9)) if len(tt) else None,
+             "first_slot": int(slots[0]) if len(slots) else None, "fps": args.fps, "protocol": args.protocol,
+             "episode": ep.name, "size": list(size), "K_main": K_main, "K_uw": K_uw}
         tmp = args.ready_file + ".tmp"
         with open(tmp, "w") as f:
             json.dump(d, f)
