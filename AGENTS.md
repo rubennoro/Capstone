@@ -10,7 +10,17 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17)
+## Current state (2026-10-18)
+
+- **Franka simulation evaluator (branch `sim-eval`, 9 local commits, not pushed): PAUSED mid-build.**
+  Resume from [controlSW/docs/sim_plan/STATUS.md](controlSW/docs/sim_plan/STATUS.md).
+  - Built: station config system (`controlSW/configs/`), MuJoCo Panda/FR3 + Franka Hand model with printed fingers and
+    iPhone/rig mount, kinematics, policy plug-in + contract checker, wireless sensor path (iPhone app protocol +
+    rig sender, Wi-Fi emulator, receiver + clock sync), launcher profiles; `sim-iphone-fake` / `sim-rig-fake` run end to end.
+  - Stage 1 result: printed fingers ~10 cm longer than stock + phone on the -y side -> 42-43/45 demos feasible on Panda
+    and FR3; stock-length fingers put the phone into links 5/6. Needs the user's confirmation.
+  - Remaining: A3/B7 reviews, FR3 link-group fix in kinematics.py, arm dynamics (A4), hand (A5), scene (A6),
+    rendering (A7), Stage 1b (A8), eval runner + Stages 2-3 (B8, B9), hardware-day tools/docs (B10).
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -59,6 +69,8 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
+- **First:** resume the sim evaluator from `controlSW/docs/sim_plan/STATUS.md` ("Next actions"); confirm finger
+  extension + phone side.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.

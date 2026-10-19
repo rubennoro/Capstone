@@ -75,6 +75,8 @@ the same files.
   integers). Use cx+0.5, cy+0.5 in the renderer (A1 review finding 1).
 - B6: align the `station-mock` FakeBackend home and F_T_TCP with the station (B2 open question); wire `robot.home_tcp`. Set `run/policy/demo_replay.yaml` python to `${host.python.realenv}` (replay_server's historical env).
 - B6/B8: `iphone_replay_sender` ready-file `start_now_ns` is the slot-0 time but the first tick is slot 2 (B4 review); account for it in Stage 2b replay_gt alignment. App default fps is 60; our sensor yaml requires 30.
+- B8/B9: treat launcher `sender_died` as an episode abort; sim profiles hardcode scratch paths (move to host group).
+- A6: launcher sim_reset request timeout is 0.5 s; make the reset return fast or raise the timeout (B-owned launcher).
 
 ## Status
 
@@ -84,4 +86,9 @@ the same files.
 | W1 | A0 assets: PASS | B1 station: PASS | committed d888546 (RE suite 190 passed / 8 skipped; regression guard PASS) |
 | W2 | A1 model: PASS | B2 constants + launcher: PASS | committed 0da4d34 (B2), 2efc96f (A1); RE suite 215 passed |
 | W3 | A2 kinematics: PASS (+link6 fix) | B3 policy slot: PASS after FIX | committed 8522223 (A2), see log (B3) |
-| W4 | A3 Stage 1 | B4 stream protocol/link/sender | |
+| W4 | A3 Stage 1: built, NOT reviewed (uncommitted) | B4: PASS, 374c1ec | |
+| W5 | A4 (waits on user tooling decision) | B5: PASS, a3d0d95 | |
+| W6 | — | B6: PASS, d3b82cc | |
+| W7 | — | B7: built, review interrupted (uncommitted) | |
+
+**PAUSED 2026-10-18 22:40 EDT: see [STATUS.md](STATUS.md) for the resume point.**
