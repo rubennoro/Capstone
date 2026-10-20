@@ -222,11 +222,14 @@ class Kin:
         def geoms_of(bodies) -> list[int]:
             return [g for g in range(m.ngeom) if m.geom_bodyid[g] in bodies and collidable(g)]
 
-        link7 = body(nm["bodies"]["link7"])
-        chain = [link7]
-        while m.body_parentid[chain[-1]] > 0:
-            chain.append(int(m.body_parentid[chain[-1]]))
-        chain = chain[::-1]                                  # [link0 (base), link1, ..., link7]
+        # link<i> = the body that joint j<i> moves (i = 1..7), link0 = the parent of link1 (the base). Identified by
+        # joint name, not by walking the chain from link7 to the world: the FR3 MJCF has an extra root body above
+        # fr3_link0, which shifted every index by one (link1 = fr3_link0, link7 missing) in the A2 version.
+        jbody = lambda i: int(m.jnt_bodyid[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, nm["joints"][f"j{i}"])])  # noqa: E731
+        chain = [jbody(i) for i in range(1, 8)]
+        chain.insert(0, int(m.body_parentid[chain[0]]))      # [link0 (base), link1, ..., link7]
+        if chain[-1] != body(nm["bodies"]["link7"]):
+            raise RuntimeError("joint j7 does not move the link7 body: model naming changed")
         links = {f"link{i}": geoms_of({b}) for i, b in enumerate(chain)}
         hand_b = subtree(body(nm["bodies"]["hand"]))
         tool_g = [geom(g) for g in nm["geoms"]["tooling"]]
