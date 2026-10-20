@@ -234,7 +234,7 @@ def test_export_world_yaw_warn_and_fix(tmp_path, test_rig):
 
 # ------------------------------------------------------------------------------------------------ F7
 
-@pytest.mark.parametrize("cfg", ["rig_default.yaml", "rig_jetson_imx219_2p1_1p55.yaml"])
+@pytest.mark.parametrize("cfg", ["rig_default.yaml", "rig_jetson_imx219_2p1_1p55.yaml", "rig_jetson_imx219_2p1_b0179.yaml"])
 def test_configs_locked_and_covered(cfg, tmp_path):
     from sensor_rig import doctor as D
     from sensor_rig.rig_config import load_rig

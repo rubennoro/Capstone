@@ -7,7 +7,7 @@ All software below is built and tested with mocks; nothing has run on real hardw
 
 - [ ] **D1. Panda or FR3?** Pins libfranka/panda-py (`controlSW/franka_deploy/scripts/build_libfranka_pandapy.sh --robot`); `check-config --profile jetson` fails until set. Record the robot system version from Desk.
 - [ ] **D2. Gripper actuator:** Feetech STS3215 (recommended, cheap) or Dynamixel XM430.
-- [ ] **D3. Lenses:** confirm the 2.1 mm main + ~1.55 mm fisheye (PURCHASING §1).
+- [x] **D3. Cameras/lenses:** main = Arducam B0180 + 2.1 mm low-distortion lens; ultrawide = Arducam B0179 (175° fixed fisheye, IR-cut version). Decided 2026-10-19 (PURCHASING §1).
 - [ ] **D4. Where the Franka 1 kHz loop runs:** the Jetson first, gated by the go/no-go load test; a small RT PC is the fallback.
 - [ ] **D5. Evaluation settings:** v_max for reported results (0.25 vs 0.5 m/s), the success rule (lift ≥ 3 cm, held ≥ 2 s), which prompt indices, start-pose buckets, N ≥ 20 per condition.
 - [ ] **D6. Commit?** Uncommitted: newer `sensor_rig/` changes, `controlSW/franka_deploy/`, `scripts/regression/`, ROADMAP.md, PURCHASING.md, TODO.md. Run the regression guard first (`scripts/regression/README.md`).

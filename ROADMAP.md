@@ -54,7 +54,7 @@ step.
 
 1. Panda or FR3 (pins libfranka/panda-py).
 2. Gripper actuator (motorized iPhUMI gripper, Feetech or Dynamixel).
-3. Lens purchase: 2.1 mm main + ~1.55 mm fisheye on IMX219 M12 modules.
+3. Lens purchase: 2.1 mm main lens for the B0180. Ultrawide decided 2026-10-19: Arducam B0179 (fixed 175° fisheye, IR-cut version).
 4. Where the 1 kHz loop runs: Jetson first, gated by the go/no-go test; RT PC as fallback.
 5. v_max for the reported evaluation, plus the success rule and prompt indices.
 6. Commit `sensor_rig/` changes, `controlSW/franka_deploy/`, `scripts/regression/`, ROADMAP.md.
@@ -121,10 +121,10 @@ real-env → inference) is the reference and must not change behaviour.
 |---|---|---|---|
 | Compute | Jetson Orin Nano Super dev kit, JetPack 6, NVMe | 6-core A78AE, 8 GB shared, CUDA; no HW video encoder | records only (pose offline); runs inference at deployment |
 | Main camera | Arducam B0180 (IMX219, 4:3, M12) + **2.1 mm low-distortion lens** | 1640×1232 full-FOV @ 30 fps, rolling shutter (~23 ms readout), 82°×67° | iPhone: 1920×1440 @ 60 fps, 68.6°×54.2°. Coverage 1.000 incl. mount tolerances; 938 px/rad ≥ 703 needed |
-| Ultrawide | Arducam B0180 + **~1.55 mm fisheye** (e.g. Commonlands CIL216) | 1640×1232 @ 30 fps → exported at 10 Hz, ~145°×105° | iPhone: 640×480 @ 10 Hz, 102°×85.6°. Coverage 1.000; tags ≥ 20 px |
+| Ultrawide | **Arducam B0179** (IMX219, fixed 175° diagonal fisheye, f ≈ 1.50 mm) | 1640×1232 @ 30 fps → exported at 10 Hz, ~140°×105° | iPhone: 640×480 @ 10 Hz, 102°×85.6°. Coverage 1.000; tags ≥ 20 px |
 | IMU | ICM-42688-P breakout on SPI | 1 kHz, gyro 0.0028 °/s/√Hz, accel ~70 µg/√Hz, 1 µs FIFO stamps | ~3× better than the requirement; bias stability needs an Allan run |
 | Pose | ORB-SLAM3 mono-inertial (UMI fork), offline on laptop; OpenVINS fallback | trajectory at camera rate | iPhone: ARKit 60 Hz, jitter ≤ 0.22 mm / 0.055° (measured) |
-| Cables | 15→22-pin CSI, ≤ 30 cm | | |
+| Cables | 15→22-pin CSI, ≤ 30 cm (main); 22→22-pin included with the B0179 | | |
 
 Avoid: a main lens > 2.3 mm (coverage 0.955 at 2.5 mm), an ultrawide > 1.75 mm, the 1280×720@60 mode (crops the
 view), Camera Module 3 / IMX708 on Jetson (fragile drivers).

@@ -91,7 +91,7 @@ def test_first_plugin_commands_run(tmp_path):
     cwd.mkdir()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    var = {"RIG": str(PROJECT / "sensor_rig" / "configs" / "rig_jetson_imx219_2p1_1p55.yaml"),
+    var = {"RIG": str(PROJECT / "sensor_rig" / "configs" / "rig_jetson_imx219_2p1_b0179.yaml"),
            "RIG_V1": str(tmp_path / "rig_v1.yaml"), "RAW": str(tmp_path / "raw"),
            "LAPTOP_RAW": str(tmp_path / "laptop_raw"), "EXPORT": str(tmp_path / "export")}
     env = dict(os.environ, PYTHONPATH=str(PROJECT), PYTHONUNBUFFERED="1",

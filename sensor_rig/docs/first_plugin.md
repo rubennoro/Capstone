@@ -3,7 +3,7 @@
 The procedure for the day the parts arrive. Do the steps in order; each one says what PASS looks like and what to do
 when it fails. Everything up to step 10 runs on the Jetson (over SSH, inside `tmux`); steps 11–13 run on the laptop.
 
-Hardware: Jetson Orin Nano (JetPack 6) with NVMe; 2× IMX219 (main 2.1 mm, ultrawide ~1.55 mm fisheye) on the CSI
+Hardware: Jetson Orin Nano (JetPack 6) with NVMe; 2× IMX219 (main: Arducam B0180 + 2.1 mm lens; ultrawide: Arducam B0179, fixed 175° fisheye) on the CSI
 connectors (CAM0 = main, CAM1 = ultrawide); ICM-42688-P on SPI1 (pins 19 MOSI, 21 MISO, 23 SCK, 24 CS0, 3.3 V,
 GND); for step 7, an LED with a 330 Ω resistor on header pin 7.
 
@@ -12,7 +12,7 @@ temporary paths), so they stay correct. Variables used throughout:
 
 <!-- test: vars -->
 ```bash
-RIG=~/Capstone/sensor_rig/sensor_rig/configs/rig_jetson_imx219_2p1_1p55.yaml   # nominal template for these lenses
+RIG=~/Capstone/sensor_rig/sensor_rig/configs/rig_jetson_imx219_2p1_b0179.yaml   # nominal template for these lenses
 RIG_V1=~/rig_v1.yaml                   # calibrated rig.yaml (step 9)
 RAW=/mnt/nvme/raw                      # raw root on the Jetson
 LAPTOP_RAW=~/Capstone/data/rig_raw     # copy of the raw root on the laptop (step 11)

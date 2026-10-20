@@ -42,7 +42,8 @@ follow-ups for its steps.
   at logged `time.monotonic_ns()` times and compares them with the frame `t_ns`. That gives the true capture-to-stamp offset. Put it in
   `cameras.<c>.time.offset_prior_ns` in rig.yaml (sign: `t_capture = t_stamp + offset`, so it is negative when stamps
   are late).
-- Start from `configs/rig_jetson_imx219_2p1_1p55.yaml` (the charter lenses; nominal intrinsics, coverage 1.0). It
+- Start from `configs/rig_jetson_imx219_2p1_b0179.yaml` (B0180 + 2.1 mm main, B0179 175° ultrawide; nominal
+  intrinsics, coverage 1.0). The ultrawide's focus is fixed at the factory: do not try to refocus it. It
   locks AE/AWB with a fixed exposure (3 ms) and gain (4.0): tune these two numbers once under the lab lighting
   (brightest exposure <= 4 ms without clipping the tags), then keep them for all sessions.
 - Confirm the exposure/gain locks: with `aelock`/`awblock` true and a fixed `exposure_time_range_ns`, brightness must
@@ -129,7 +130,8 @@ cooler, 5 A supply, SSD for the raw root), in this order.
   - With `exposure_us` / `analogue_gain` / `colour_gains` set, covering half the lens must change neither brightness
     nor colour. Frame metadata `ExposureTime` / `AnalogueGain` (`frames_meta.csv`) must stay constant.
   - Focus: for a CM3, `LensPosition` in the metadata must stay at the configured dioptres and never move. For M12
-    lenses, focus at the working distance (~0.3 m) with `rpicam-hello`, then glue the thread.
+    lenses, focus at the working distance (~0.3 m) with `rpicam-hello`, then glue the thread. (On the Jetson rig only
+    the B0180 main lens is focused; the B0179 ultrawide is fixed-focus from the factory.)
 - Colour order: a red object must be red in a recorded JPEG (`cam_main/data/*.jpg`). The backend assumes "RGB888" =
   [B, G, R].
 - Two cameras + IMU: restart the recorder 5 times. Both cameras must come up each time, with the `model` check

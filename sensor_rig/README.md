@@ -338,7 +338,8 @@ cameras (`rig-validate` prints it):
 | ~120° fisheye ultrawide | 0.84 |
 | ~140° fisheye ultrawide | 0.996 |
 | ≥ 90° main / ~160° fisheye (`rig_default.yaml` placeholders) | 1.0 / 1.0 |
-| 2.1 mm main / 1.55 mm fisheye (`configs/rig_jetson_imx219_2p1_1p55.yaml`, the charter parts, nominal) | 1.0 / 1.0 |
+| 2.1 mm main / 1.55 mm fisheye (`configs/rig_jetson_imx219_2p1_1p55.yaml`, the original plan, nominal) | 1.0 / 1.0 |
+| 2.1 mm main / B0179 175° fisheye, f ≈ 1.50 mm (`configs/rig_jetson_imx219_2p1_b0179.yaml`, the chosen parts, nominal; 1.0 for f 1.30–1.69 mm) | 1.0 / 1.0 |
 
 Below ~0.98 the exported images get black borders the policy never saw in iPhone data.
 

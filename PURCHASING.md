@@ -4,7 +4,9 @@ What to buy so that the software in `sensor_rig/` (data collection) and `control
 on real hardware.
 
 - **Where the specs come from:** derived in [sensor_rig/docs/planning/SPEC_sensors.md](sensor_rig/docs/planning/SPEC_sensors.md)
-  §3 and §5. The software assumes exactly these specs (`configs/rig_jetson_imx219_2p1_1p55.yaml`).
+  §3 and §5. The software assumes exactly these specs (`configs/rig_jetson_imx219_2p1_b0179.yaml`).
+- **2026-10-19 change:** the ultrawide is now an **Arducam B0179** (fixed 175° fisheye) instead of a B0180 + 1.55 mm
+  fisheye. Coverage check: 1.000 for any f between 1.30 and 1.69 mm (175° diagonal implies ≈ 1.50 mm).
 - **Prices** are approximate list prices from the spec research (2026). **Check stock, price and compatibility
   before ordering.**
 - **Already owned?** Skip it. Items we may already have are marked *(if not owned)*.
@@ -15,14 +17,14 @@ on real hardware.
 |---|---|---|---|---|
 | 1 | NVIDIA **Jetson Orin Nano Super Developer Kit** *(if not owned)* | JetPack 6.x; includes the power supply | the single computer: recording, and inference at deployment | ~$249 |
 | 1 | **NVMe SSD**, M.2 2280, 256–512 GB *(if not owned)* | PCIe; mounts in the dev kit | boots JetPack; records ~20 MB/s of JPEG | $25–40 |
-| 2 | **Arducam B0180** IMX219 camera module (M12 lens mount, RPi-v2 pinout) | IMX219 (stock JetPack 6 driver); **M12 mount so the lens can be swapped** | main + ultrawide cameras. Stick to IMX219: other sensors have fragile JetPack 6 drivers | $15–25 each |
+| 1 | **Arducam B0180** IMX219 camera module (M12 lens mount, RPi-v2 pinout) | IMX219 (stock JetPack 6 driver); **M12 mount so the lens can be swapped** | main camera. Stick to IMX219: other sensors (e.g. AR0822) have no stock JetPack 6 driver | $15–25 |
+| 1 | **Arducam B0179** IMX219 wide-angle module for Jetson (175° diagonal M12 fisheye, lens fixed; 22-pin cable included) | **IR-cut version** (the listing says both "NoIR" and "IR-cut": check before ordering); 175° diagonal, i.e. f ≈ 1.3–1.69 mm, never > 1.75 mm | ultrawide camera: finger tags (gripper width) + pose tracking; covers the iPhone ultrawide view 100 % (~140°×105°) | $25–40 |
 | 1 | **M12 2.1 mm low-distortion lens**, 1/4" image circle, IR-cut (Arducam 1/4" 2.1 mm < 1 % series, or Commonlands CIL821) | focal length **2.0–2.3 mm**, never > 2.3 mm | main camera: covers the iPhone main view 100 % with mount tolerance (82°×67°) | $10–30 |
-| 1 | **M12 ~1.55 mm fisheye lens** (f-theta), IR-cut (Commonlands **CIL216** 1.55 mm f/2.2, or The Pi Hut 1.56 mm M12 fisheye) | focal length **1.45–1.69 mm**, never > 1.75 mm; image circle ≥ sensor height | ultrawide camera: finger tags (gripper width) + pose tracking; covers the iPhone ultrawide view 100 % (~145°×105°) | $15–40 |
-| 2 | **CSI ribbon cable, 15-pin (camera) → 22-pin (Jetson), 0.5 mm pitch, 15–30 cm** | **≤ 30 cm** (longer is unreliable for MIPI) | cameras to the dev kit's CAM0/CAM1 | $3–6 each |
+| 1 | **CSI ribbon cable, 15-pin (camera) → 22-pin (Jetson), 0.5 mm pitch, 15–30 cm** | **≤ 30 cm** (longer is unreliable for MIPI) | B0180 main to CAM0 (the B0179 ships with its own 22-pin cable for CAM1; buy a ≤ 30 cm one if it is longer) | $3–6 |
 | 1 | **ICM-42688-P IMU breakout** with SPI pins exposed (e.g. the open-hardware SUSTAINA-OP module or any SPI breakout) | **SPI** (not I²C-only), 3.3 V logic; INT1 and FSYNC broken out preferred | pose tracking (VIO) and timing. The driver is written for this exact chip | $10–20 |
 | 1 set | Female-female jumper wires (Dupont), 10–20 cm, and a short pin header | 3.3 V, SCK/MOSI/MISO/CS, GND to header pins 17/19/21/23/24/25 | IMU wiring | $5 |
 | 1 | **Rigid camera + IMU bracket** (3D-printed PETG, or machined aluminium) | **lens centres within ±3 mm of the iPhone 16 Pro lens positions** on the gripper; IMU rigidly attached | a remap can fix rotation but not position, so this decides whether the views match the training data | filament / shop time |
-| 1 | Lens-focus locking: low-strength thread locker or UV glue | | lock the focus once set; focus must not drift | $5 |
+| 1 | Lens-focus locking: low-strength thread locker or UV glue | | lock the main lens focus once set; focus must not drift (the B0179 comes fixed) | $5 |
 
 **Powering the gripper-mounted Jetson while collecting (pick one, decision D7 in [TODO.md](TODO.md)):**
 

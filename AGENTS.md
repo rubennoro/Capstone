@@ -72,7 +72,7 @@ Running status between working sessions. Update it at the end of each conversati
 - **First:** resume the sim evaluator from `controlSW/docs/sim_plan/STATUS.md` ("Next actions"); confirm finger
   extension + phone side.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
-   - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
+   - Decide: Panda vs FR3; gripper actuator; buy cameras (B0180 + 2.1 mm main lens; B0179 175° ultrawide, IR-cut version: decided 2026-10-19); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.
    - Hardware day:
      - data collection: `sensor_rig/docs/first_plugin.md`;
