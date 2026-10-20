@@ -1,10 +1,18 @@
 schema: run.sim/v1
 id: rig_raw_replay
-image_source: rig_raw_replay                 # replays a raw rig episode through RigStreamSender (mock backend)
-raw_episode_dir: null
+image_source: rig_raw_replay                 # replays a raw rig episode through RigStreamSender (mock backend, rig_replay_sender)
+history_source: replay_gt
+raw_episode_dir: null                        # a raw rig episode (one with rig.yaml); null = generate (cached) from `generate`
+generate:                                    # simulate_raw_from_iphone(iPhone episode, sim_rig.yaml): a short rig episode
+  raw_root: data/raw/2026-10-01              # raw iPhone episodes (relative to the repo root, or absolute)
+  episode_index: 0                           # index into raw_root's sorted *firstreal_demonstration* episodes
+  episode_dir: 2026-10-01T21-39-22.626Z_49242_firstreal_demonstration_left   # wins over episode_index; its main K = the virtual K (1406.34)
+  n_frames: 300                              # first N iPhone main slots (60 Hz): a 5 s clip, looped by the sender
+  main_fps_hz: 30                            # simulated rig main fps (halves the clip size; the sender sends 30 fps anyway)
 loop: false
 start_delay_s: 2.0
 provenance:
   "": {status: decision, source: "design_track_b.md Senders (rig_replay_sender)"}
-  raw_episode_dir: {status: placeholder, source: "REPLACE: a raw rig episode (deploy.yaml:63 mock episode_dir)"}
+  raw_episode_dir: {status: decision, source: "B7: null = generated from `generate` under <work_root>/cache/rig_episodes"}
+  generate: {status: decision, source: "B7: short clip of one firstreal demo (disk is tight); demo 49242 has main K = 1406.34 (sim_rig virtual reference)"}
 critical: []

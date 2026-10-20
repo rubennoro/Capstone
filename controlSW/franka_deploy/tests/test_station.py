@@ -263,7 +263,7 @@ EXPECTED_CRITICAL_IPHONE = [
     "sensor.clock.latency_s.main", "sensor.clock.latency_s.ultrawide",
     "scene.workspace.min_m", "scene.workspace.max_m",
 ]
-EXPECTED_CRITICAL_RIG_EXTRA = ["sensor.rig_config_path", "sensor.streams.main.K", "sensor.streams.ultrawide.K"]
+EXPECTED_CRITICAL_RIG_EXTRA = ["sensor.rig_config_path"]   # rig streams.*.K are derived (= the iPhone virtual K the rig remaps to), no longer placeholders
 
 
 def test_critical_placeholders_iphone_exact():

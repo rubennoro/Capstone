@@ -20,6 +20,7 @@ GROUPS = [
     ("sensor_rig.export.cli_export", "export, validate"),
     ("sensor_rig.process.session", "process-session"),
     ("sensor_rig.sim.cli", "sim"),
+    ("sensor_rig.stream.cli", "stream-send"),
     ("sensor_rig.calib.stamp_offset", "stamp-offset"),
     ("sensor_rig.calib.cli", "calib-import, calib-check, calib-align, calib-tcp, rig-validate, bench-remap"),
 ]

@@ -66,7 +66,7 @@ profiles:
   # ---------------------------------------------------------------------------------------------- B6 station profiles
   # Wireless sensor path: camera.kind wireless = the B5 receiver (camera.yaml from the station sensor group). In sim
   # profiles a `sender` child imitates the sensor over run.link (run.sim.image_source picks it: video_replay = the
-  # iPhone replay sender, rig_raw_replay = B7, render = A7/B8). The home (home.xyz/max_dist_m, and for the sim backends
+  # iPhone replay sender, rig_raw_replay = the rig replay sender (a simulated raw rig episode, cached under work_root/cache), render = A7/B8). The home (home.xyz/max_dist_m, and for the sim backends
   # home.pose + the bridge start pose) comes from the station (robot.home_tcp). Paths: the pc_laptop host values.
   sim-iphone-fake: &sim_iphone_fake           # no MuJoCo, no GPU, no Track A: FakeBackend + fake gripper + fake policy
     station: {robot: panda, tooling: franka_hand_iphumi_iphone16pro, sensor: iphone16pro_wifi, scene: block_raise_table, host: pc_laptop}
@@ -76,10 +76,10 @@ profiles:
     allow_placeholders: []
     work_root: /home/ruben/franka_runs        # = station/host/pc_laptop.yaml
     python:
-      bp: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_bp/bin/python
-      realenv: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/env_realenv/bin/python
+      bp: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/env_bp/bin/python
+      realenv: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/env_realenv/bin/python
     checkpoint: /home/ruben/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
-    prompt_zarr: /tmp/claude-1000/-home-ruben-Capstone/5ee0411f-3d2e-4964-b2ee-0d8c8e48aa78/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
+    prompt_zarr: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
     disk_budget_gb: 1.5
     user_site_children: [camera, sender]      # laptop: flask lives in ~/.local (the scratch envs lack it)
     camera: {kind: wireless, config: null, rig_config_path: null, video: false, overrides: []}
@@ -92,7 +92,7 @@ profiles:
     station_set: ["sensor.transport.bind_host=127.0.0.1", "tooling.hand.endpoint=tcp://127.0.0.1:5565"]   # hand = bridge
     bridge: {override: {backend: {type: mujoco}}, allow_inject: true, allow_sim_reset: true}
     controller: {override: {gripper: {type: franka_hand}}}
-  sim-rig-fake:                               # the rig equivalent of sim-iphone-fake (sender: B7 rig_replay_sender)
+  sim-rig-fake:                               # the rig equivalent of sim-iphone-fake (sender: rig_replay_sender, runs sensor_rig RigStreamSender on a simulated raw rig episode over wifi_good_skew)
     <<: *sim_iphone_fake
     station: {robot: panda, tooling: franka_hand_iphumi_rig1, sensor: rig1_wifi, scene: block_raise_table, host: pc_laptop}
     run: {policy: fake, link: wifi_good_skew, criteria: block_raise, sim: rig_raw_replay}

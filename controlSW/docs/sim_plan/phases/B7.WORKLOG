@@ -1,0 +1,14 @@
+20:28:29 read spec + files; B7.WORKLOG started; plan: sender.py+cli.py, rig_replay_sender (resolves/generates episode from config sim section), launcher omits --episode if unset
+20:29:43 wrote sensor_rig/stream/sender.py, stream/cli.py, cli.py GROUPS line
+20:32:09 tests/test_stream_sender.py written (9 tests)
+20:33:45 wrote stream/rig_replay_sender.py (LinkTransport over StreamClient+LinkEmulator, episode generate/cache, ready/truth)
+20:34:27 launcher sender_command rig branch (omit --episode when raw_episode_dir null; --cache-dir); rig_raw_replay.yaml generate section
+20:35:34 wrote tests/test_rig_stream.py; first run of stamp/CLI tests in progress (FD_TEST_CACHE=scratchpad/rig_cache)
+20:36:33 stamp test PASS: wifi_good_skew rig stamp err p50 0.097 / p95 0.150 ms (main and ultrawide, n~326 after 5 s warm-up), seq_gaps 0, sender dropped 0 max_queue_len 2; hello K differs from station yaml (placeholder K 548.7/405 vs virtual 703.2/421.5) -> test overrides receiver K, reported; fixing CLI test (fps_in windowed), running e2e
+20:37:21 deploy.yaml comments updated (sim-rig-fake needed no functional change)
+20:38:14 test_rig_stream.py 5 passed (90 s). e2e sim-rig-fake: READY 18.5 s (incl. first-run episode generation, sweep load), fps_in 31/31, health main/uw 29.9/30, age p95 92 ms, clock sender_stamp_ping offset 12.346 s rtt_min 0.86 ms, policy_calls 32, holds 1, stale_image 0, obs_retries 0, ports/shm clean, exit quit 0; hello warns K vs station yaml (sim only). Next: full IP + RE suites
+20:46:42 sensor_rig full suite (IP): 422 passed, 3 skipped
+22:26:09 RE full suite: 298 passed, 8 skipped, 1 failed (test_stream_client v1_pacing: uw 89 vs main 88 frames, B4 test, load flake); rerun alone x2: 7 passed. Acceptance done.
+22:13:31 K fix: rig1_wifi.yaml K = iPhone deploy K (+provenance); sender already derives hello K from rig virtual cam (verified == 703.1714/388.5231 for all rig configs); test_hello_K_vs_station_yaml rewritten; _camera_yaml_with_sender_K no longer overrides K; v1_pacing test tolerates uw-main +-1
+22:30:21 test_station EXPECTED_CRITICAL_RIG_EXTRA drops streams.K (now status derived)
+22:47:23 RE full suite 293 passed 10 skipped 4 errors (test_wireless_camera v1 load flake, concurrent unflocked suite); file rerun 10 passed; test_rig_stream (incl. sim-rig-fake e2e) and test_stream_client passed in that full run

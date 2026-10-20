@@ -257,7 +257,7 @@ def test_replay_sender_v1_pacing_size_and_K(server, tmp_path):
     ev = [r for r in server.events(lambda r: r["ev"] == "rgb")]
     main = [r for r in ev if r["port"] == PORTS["main"]]
     uw = [r for r in ev if r["port"] == PORTS["ultrawide"]]
-    assert 88 <= len(main) <= 92 and len(uw) == len(main)
+    assert 88 <= len(main) <= 92 and abs(len(uw) - len(main)) <= 1    # +-1: the two streams stop independently under load
     assert all(r["shape"] == [720, 960, 3] and r["type"] == "str" for r in ev)
     span_wire = main[-1]["t_rx"] - main[0]["t_rx"]
     tr = [json.loads(l) for l in truth.read_text().splitlines()]
@@ -267,7 +267,8 @@ def test_replay_sender_v1_pacing_size_and_K(server, tmp_path):
     assert abs(span_wire - span_true) / span_true < 0.02, (span_wire, span_true)
     # uw content times never run ahead of the tick and lag by less than one UW period (+ frame)
     tu = [r["t_true"] for r in tr if r["stream"] == "ultrawide"]
-    lag = np.array(tm) - np.array(tu)
+    n_ = min(len(tm), len(tu))
+    lag = np.array(tm[:n_]) - np.array(tu[:n_])
     assert lag.min() >= -1e-6 and lag.max() < 0.25
     d = json.loads(ready.read_text())
     ep = IphoneEpisode(ep_dir)

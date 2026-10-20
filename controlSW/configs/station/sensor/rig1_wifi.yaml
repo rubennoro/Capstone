@@ -9,19 +9,19 @@ transport:
   validate_ack: "server got it!"
   require_websocket: true
   max_http_buffer_bytes: 10485760
-streams:                                     # K: placeholders from the lens datasheets; the rig_config_path file is the truth
+streams:                                     # K: the VIRTUAL iPhone K at 960x720 (the rig remaps both cameras to it); same as iphone16pro_wifi.yaml
   main:
     width_px: 960
     height_px: 720
     physical_fps_hz: 30
     jpeg_quality: 0.9
-    K: [[548.7, 0, 480.0], [0, 548.7, 360.0], [0, 0, 1]]
+    K: [[703.1714, 0, 476.3752], [0, 703.1714, 361.3600], [0, 0, 1]]
   ultrawide:
     width_px: 960
     height_px: 720
     physical_fps_hz: 30
     jpeg_quality: 0.9
-    K: [[405.0, 0, 480.0], [0, 405.0, 360.0], [0, 0, 1]]
+    K: [[388.5231, 0, 480.6903], [0, 388.5231, 359.7618], [0, 0, 1]]
 publish: {fps_hz: 60, mode: fixed_rate}
 on_size_mismatch: error
 clock:
@@ -38,7 +38,7 @@ provenance:
   rig_config_path: {status: hw, source: "deploy.yaml:33 camera.rig_config_path; produced by rig calibration"}
   transport: {status: decision, source: "design_track_b.md rig1_wifi (protocol v2, main port only)"}
   transport.ports: {status: decision, source: "INTERFACES.md section 2"}
-  streams: {status: placeholder, source: "IMX219 1.12 um pixel binned to 960x720, lens 2.1 mm (main) / ~1.55 mm fisheye (UW, pinhole approximation); PURCHASING.md"}
+  streams: {status: derived, source: "rig config virtual_cameras.*.reference scaled to deploy 960x720 (main 1406.3428@1920x1440, UW 259.01538@640x480); equals iphone16pro_wifi.yaml K; the sender hello derives K from the rig config, so a mismatch is caught by the receiver hello check. Physical lens K is not used on the wire."}
   streams.main.physical_fps_hz: {status: decision, source: "design_track_b.md"}
   streams.ultrawide.physical_fps_hz: {status: decision, source: "design_track_b.md"}
   streams.main.jpeg_quality: {status: decision, source: "sender.jpeg_quality 90 on a 0-1 scale"}

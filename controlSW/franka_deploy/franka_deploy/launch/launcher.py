@@ -4,7 +4,7 @@ Start order (each with a readiness check + timeout; any failure aborts and tears
   bridge -> [hand] -> controller -> camera [-> sender] -> inference (READY after warm-up) -> spacemouse -> task.
   camera.kind rig_local (default): RigCamera; wireless: the B5 receiver (peripherals/wireless_camera.py, camera.yaml =
   station.camera_config()). Sim profiles add a `sender` child that imitates the sensor over the run's emulated link
-  (run.sim.image_source: video_replay -> stream.iphone_replay_sender; rig_raw_replay -> B7; render -> A7/B8); its death
+  (run.sim.image_source: video_replay -> stream.iphone_replay_sender; rig_raw_replay -> stream.rig_replay_sender; render -> A7/B8); its death
   is not fatal (like a phone dropping off Wi-Fi: the receiver goes stale and the task's image-age guard holds).
   `hand` (franka_deploy.gripper.hand_server, A5) runs when the gripper is franka_hand on an endpoint other than the
   bridge's (real hardware, 5566).
@@ -578,7 +578,11 @@ class Launcher:
             q = main.get("jpeg_quality", 0.9)
             return [py, "-u", "-m", mod, "--episode", str(ep), *common, "--size", f"{main['width_px']}x{main['height_px']}",
                     "--jpeg-quality", str(int(round(100 * q)) if q <= 1 else int(q))]
-        extra = ["--episode", str(st.get("sim.raw_episode_dir"))] if src == "rig_raw_replay" else []
+        extra = []
+        if src == "rig_raw_replay":   # a raw rig episode: sim.raw_episode_dir, else generated once from an iPhone episode (cached)
+            if st.get("sim.raw_episode_dir", None):
+                extra += ["--episode", str(st.get("sim.raw_episode_dir"))]
+            extra += ["--cache-dir", str(self.work_root / "cache" / "rig_episodes")]
         return [py, "-u", "-m", mod, "--config", str(cfgd / "sender.yaml"), *extra, *common]
 
     # ------------------------------------------------------------------ phases
