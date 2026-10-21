@@ -447,6 +447,9 @@ class Launcher:
         st = self.station
         # precedence: bridge.yaml < station fragment < deploy.yaml bridge.override (the same for the controller)
         bridge, overrides = build_bridge_cfg(c, st)
+        if st is not None and bridge.get("backend", {}).get("type") == "mujoco":
+            # the MuJoCo backend builds the SAME station (robot, tooling, sensor) as this session, not its default profile
+            bridge["backend"].setdefault("mujoco", {})["station"] = str(cfgd / "station_resolved.yaml")
         (cfgd / "bridge.yaml").write_text(yaml.safe_dump(bridge))
         ctrl, o2 = build_controller_cfg(c, st)
         overrides += o2
@@ -746,7 +749,7 @@ class Launcher:
             self.wait_until("sender", lambda: sready.exists(), float(cam.get("sender_ready_timeout_s", 60)), "sender ready file")
         self.wait_until("camera", lambda: cc.get_latest_images_dict_THWC(4, extra=0),
                         float(cam.get("frames_timeout_s", 15 if not wireless or self.image_source() else 60)), "frames")
-        self.check("camera_rate_and_selection", pf.camera_ok(cc))
+        self.check("camera_rate_and_selection", self._camera_ok_retry(cc, float(cam.get("camera_ok_retry_s", 10.0))))
         if wireless:
             self.wireless_checks()
 
@@ -782,8 +785,49 @@ class Launcher:
                     tcmd += [flag, str(ta[key])]
         if cam.get("video", False):
             tcmd += ["--video-logger-endpoint", cam["logger_endpoint"]]
+        tcmd += self.task_replay_args()
         self.start("task", tcmd)
         self.wait_until("task", lambda: tready.exists(), 60, "task ready file")
+
+    def task_replay_args(self) -> list[str]:
+        """Extra task flags from deploy.yaml `task:` (B8 Stage 2b): `history_source: replay_gt` + `replay_npz: PATH` make
+        the task teacher-force the demo's pose/width history; the replay clock start is read from the sender ready file
+        (video_replay: start_now_ns = slot 0; rig_raw_replay: first_tick_ns = the first main frame = slot 0).
+        `extra_args: [..]` is appended verbatim."""
+        t, out = self.cfg["task"], []
+        if t.get("history_source", "commanded") == "replay_gt":
+            if not t.get("replay_npz"):
+                raise Abort("task.history_source replay_gt needs task.replay_npz")
+            if self.image_source() is None:
+                raise Abort("task.history_source replay_gt needs a sim sender (run.sim video_replay / rig_raw_replay)")
+            rd = json.loads((self.session / "sender_ready.json").read_text())
+            key = "first_tick_ns" if self.image_source() == "rig_raw_replay" else "start_now_ns"
+            import numpy as np
+
+            z = dict(np.load(t["replay_npz"]))
+            if rd.get("loop_span_ns"):      # the sender's loop period (the npz may leave span_ns to the sender)
+                z["span_ns"] = np.array(int(rd["loop_span_ns"]), np.int64)
+            z.setdefault("origin_ns", np.array(0, np.int64))
+            npz = self.session / "config" / "replay_gt.npz"
+            np.savez(npz, **z)
+            out += ["--history-source", "replay_gt", "--replay-npz", str(npz), "--replay-start-now-ns", str(int(rd[key]))]
+            self.summary["replay_gt"] = {"npz": str(npz), "start_now_ns": int(rd[key]), "span_ns": int(z["span_ns"]),
+                                         "origin_ns": int(z["origin_ns"]), "source_key": key}
+        return out + [str(x) for x in t.get("extra_args", [])]
+
+    def _camera_ok_retry(self, cc, timeout_s: float):
+        """pf.camera_ok needs a 30-packet snapshot (0.5 s at 60 Hz); right after the first frames arrive it can see 28-29
+        (B8: a flaky launcher_error with a loaded machine). Retry the snapshot error until it is ready, then run the check."""
+        from franka_deploy.peripherals.safe_camera_client import FrameSnapshotError
+
+        t0 = time.monotonic()
+        while True:
+            try:
+                return pf.camera_ok(cc)
+            except FrameSnapshotError as e:
+                if time.monotonic() - t0 > timeout_s or self.interrupted:
+                    return False, f"camera snapshot: {e}"
+                time.sleep(0.1)
 
     def wireless_checks(self):
         """After the camera is up: link health (websocket, fps, age, reconnects, sizes), v2 clock sync and hello."""

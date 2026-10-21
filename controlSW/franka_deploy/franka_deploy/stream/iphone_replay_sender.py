@@ -23,7 +23,8 @@ Usage:
   python -m franka_deploy.stream.iphone_replay_sender --episode data/raw/2026-10-01/<ep> --host 127.0.0.1 \\
       [--ports 5555,5556] [--protocol v1|v2] [--fps 30] [--size 960x720] [--jpeg-quality 90] \\
       [--link run/link/wifi_good.yaml] [--truth T.jsonl] [--ready-file F] [--loop] [--start-now-ns N] [--max-s S]
-Ready file (JSON, atomic): {start_now_ns, first_tick_ns, first_slot, fps, protocol, episode, size, K_main, K_uw}.
+Ready file (JSON, atomic): {start_now_ns, first_tick_ns, first_slot, fps, protocol, episode, size, K_main, K_uw, loop_span_ns}.
+loop_span_ns = the loop period (host ns per lap, B8 replay_gt).
 start_now_ns = host monotonic ns of episode slot 0 (what --start-now-ns sets); first_tick_ns = host ns of the first
 frame actually sent (slot first_slot, usually 2: no tick before the first UW frame). Align replay_gt with start_now_ns
 (the episode's own time origin), not with the first tick.
@@ -148,7 +149,8 @@ def run(args) -> dict:
         # when the first UW frame comes after it, typically slot 2): first_tick_ns is that tick's host time.
         d = {"start_now_ns": int(start_ns), "first_tick_ns": int(start_ns + round(float(tt[0]) * 1e9)) if len(tt) else None,
              "first_slot": int(slots[0]) if len(slots) else None, "fps": args.fps, "protocol": args.protocol,
-             "episode": ep.name, "size": list(size), "K_main": K_main, "K_uw": K_uw}
+             "episode": ep.name, "size": list(size), "K_main": K_main, "K_uw": K_uw,
+             "loop_span_ns": int(round((float(tt[-1]) + 1.0 / args.fps) * 1e9)) if len(tt) else None}   # B8: replay_gt
         tmp = args.ready_file + ".tmp"
         with open(tmp, "w") as f:
             json.dump(d, f)

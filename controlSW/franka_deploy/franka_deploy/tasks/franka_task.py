@@ -93,6 +93,7 @@ class FrankaPromptTask(iPhumiARX5Task):
         self.width_proprio = width_proprio
         self.history_source = history_source
         self._replay = None
+        self._replay_start = None
         if history_source == "replay_gt":  # TEST ONLY: feed the demo's pose+width history (replay harness)
             assert replay_npz and replay_start_now_ns is not None, "replay_gt needs replay_npz + replay_start_now_ns"
             z = np.load(replay_npz)
@@ -341,6 +342,7 @@ class FrankaPromptTask(iPhumiARX5Task):
         self._prompted = False
         self.policy_history_actions = {}
         self.policy_start_eef_xyz_wxyz = None
+        self._replay_start = None
         now = time.monotonic()
         if now < getattr(self, "_next_reset_try", 0.0):
             return
@@ -505,6 +507,13 @@ class FrankaPromptTask(iPhumiARX5Task):
             return EpisodeStatus.RUNNING
         if self.history_source == "replay_gt":
             hist = self._replay_history(self._obs_info["main_ts"])
+            # B8: teacher forcing also covers the model's *_wrt_start input. The robot does not follow the demo, so
+            # its own wrt_start would be meaningless: use the demo pose history relative to the demo pose at the
+            # oldest observation of the first call (what get_observations uses as the start pose, poses[0]).
+            if self._replay_start is None:
+                self._replay_start = np.asarray(hist["action0_eef_xyz_wxyz"][0], float).copy()
+            obs["robot0_eef_xyz_wxyz_wrt_start"] = get_relative_poses(
+                np.asarray(hist["action0_eef_xyz_wxyz"], float), self._replay_start)
         elif self.width_proprio == "measured":
             hist = dict(hist)
             hist["action0_gripper_width"] = np.asarray(obs["robot0_gripper_width"], float).copy()

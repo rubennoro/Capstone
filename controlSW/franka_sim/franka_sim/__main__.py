@@ -74,6 +74,9 @@ def _register_builtins() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     _register_builtins()
+    from franka_sim.eval import cli as _eval_cli  # B8 (Track B): registers `eval`; lazy, no mujoco at import
+
+    _eval_cli.register()
     return cli.main(argv)
 
 

@@ -18,7 +18,7 @@ time (rig time offsets applied) in THIS host's monotonic clock, seconds (the ora
 Ready file (--ready-file, JSON, atomic, written before streaming): {start_now_ns, first_tick_ns, fps, protocol, episode,
 K_main, K_uw}. start_now_ns = host monotonic ns that the episode's earliest recorded stamp maps to (replay origin);
 first_tick_ns = host monotonic ns of the first main frame's capture time (the first packet sent is the next frame:
-RigFrameSource.start consumes the first pair).
+RigFrameSource.start consumes the first pair). loop_span_ns = the loop period (B8 replay_gt).
 
 Usage:
   python -m franka_deploy.stream.rig_replay_sender [--episode RAW_EP | --config sender.yaml] --host 127.0.0.1
@@ -157,6 +157,16 @@ def _write_ready(path: str, d: dict) -> None:
     os.replace(tmp, path)
 
 
+def _loop_span_ns(ep) -> int:
+    """MockCamera.replay's loop period (host ns per lap): latest stamp of any camera - origin + the largest median dt."""
+    import numpy as np
+
+    ts = [np.asarray(ep.camera_times(c), dtype=np.int64) for c in ("main", "ultrawide")]
+    ts = [t for t in ts if len(t)]
+    origin = min(int(t[0]) for t in ts)
+    return int(max(int(t[-1]) for t in ts) - origin + max(int(np.median(np.diff(t))) if len(t) > 1 else 0 for t in ts))
+
+
 def run(args) -> dict:
     from sensor_rig.raw_episode import RawEpisode
 
@@ -184,7 +194,8 @@ def run(args) -> dict:
         t0_cap = int(rig.capture_time_ns(rig.virtual["main"].source, int(t_main[0])))
         _write_ready(args.ready_file, {
             "start_now_ns": int(start_ns), "first_tick_ns": int(start_ns + t0_cap - origin), "fps": args.fps,
-            "protocol": "v2", "episode": ep.name, "K_main": K["main"], "K_uw": K["ultrawide"]})
+            "protocol": "v2", "episode": ep.name, "K_main": K["main"], "K_uw": K["ultrawide"],
+            "loop_span_ns": _loop_span_ns(ep)})
     signal.signal(signal.SIGTERM, lambda *_: sender.stop())
     try:
         stats = sender.run(args.max_s)

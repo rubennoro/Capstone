@@ -1,0 +1,19 @@
+21:44:33 B8 start: read spec/docs
+21:46:59 read launcher/task/stage1/tools; design: criteria.py, report.py, predict_demos.py, stage1/2a/2b, runner, cli; launcher needs task.history_source passthrough
+21:48:55 franka_task.py: replay_gt now also overrides *_wrt_start (start = demo pose at oldest obs of first call)
+21:49:21 launcher.task_replay_args (task.history_source/replay_npz/extra_args); ready files + loop_span_ns (iphone, rig)
+21:51:50 predict_demos.py + tests/test_predict_demos.py (3 pass, real bp_server test launched)
+21:52:48 criteria.py, eval/__init__, cli.py, one-line registration in franka_sim/__main__.py main()
+21:54:17 report.py written; real bp_server predict test PASSED (1 passed in 31.8 s, demo 0, prompt 1)
+21:55:59 stage1.py, stage2a.py, runner.py working: eval --stage 1 (18s) and 2a demo_replay (30s) PASS on sim-iphone-fake demos 0,1 --quick
+21:57:40 launcher: task_replay_args writes <session>/config/replay_gt.npz with span_ns from sender ready loop_span_ns; summary['replay_gt']
+21:58:27 stage2b.py written; first run: sim-iphone-fake fake policy demo 0
+21:59:32 2b fake/iphone demo0 PASS (stamp p95 15.3 ms main; uw 97 ms = held frames); acceptance runs started in bg (b8_accept.sh -> b8out/acc)
+22:01:59 tests: test_eval_criteria.py 6 passed; test_eval_stage2a.py 4 passed (58 s)
+22:02:19 iphone acceptance (stage all, demo_replay, demos 0,1, full grid) all PASS; stamp p95 main 19.4 ms; rig acceptance running; queued bp_run001 2b for both profiles (b8_bp2b.sh)
+22:05:01 rig acceptance: 2a FAIL margin 1.1 deg (check_traj keeps 0.02 rad margin; Stage 1 re-solves with criterion margin) -> check_chunks now re-solves weak frames with Ctx.solve (same solver as stage1); rerun 2a rig after bp2b runs
+22:05:53 bp2b run 1: iphone INCOMPLETE (torch in ~/.local hidden by NOUSERSITE -> derive_deploy adds user_site_children inference), rig INCOMPLETE FrameSnapshotError 29/30 packets (rerun to check flakiness); relaunched b8_bp2b.sh
+22:08:51 launcher: _camera_ok_retry (FrameSnapshotError 28/30 packets race right after the first frames; seen twice with bp server startups)
+22:20:04 bp iphone 2b: stream backlog up to 15 s during model load (arrival stamps cannot see it) -> stamp gate over the policy window, whole-stream max reported, t_c=12 s for server policies
+22:29:20 coordinator items: test_predict_demos skips module when codec missing (RE); launcher snapshot sets bridge backend.mujoco.station=<session>/config/station_resolved.yaml. rig 2a margin now 9.99999 (>=10 FAIL by float)
+23:01:12 DONE: sim criteria+2a 10 passed; runner 4 passed; RE deploy suite 312 passed 11 skipped; protected PASS; regression 11 passed. Gate tables: acc logs b8out/acc_sim-*-fake.log, f_rig.log
