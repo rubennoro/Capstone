@@ -100,3 +100,43 @@ law; the panda-py source was not available offline. Verify each item against the
 - [ ] Phone/cradle vs links 5/6: on both arms the sim's q7 rotation hits a self-collision before the q7 limit (the sim
       reflexes on it; MuJoCo itself does not collide the tooling with link 6). Check the real clearance before
       large q7 motions.
+
+## 7. Franka Hand (A5: `gripper/hand_server.py` LibfrankaHand, `gripper/franka_hand.py`, sim `franka_sim/hand_sim.py`)
+
+`LibfrankaHand` is unexecuted until these pass. Run `python -m franka_deploy.gripper.hand_server --endpoint
+tcp://localhost:5566 --backend libfranka --hostname <fci>` alone first and drive it with a `BridgeClient`
+(`hand_cmd` / `hand_state`); then the controller with `gripper.type: franka_hand`.
+
+- [ ] Names in the pinned panda-py: `panda_py.libfranka.Gripper(hostname)`, `homing()`, `move(width, speed)`,
+      `grasp(width, speed, force, epsilon_inner, epsilon_outer)`, `stop()`, `read_once()` -> `.width`,
+      `.is_grasped`, `.max_width`.
+- [ ] GIL: does panda-py release the GIL during the blocking `Gripper` calls? Check that `hand_state` replies stay
+      < 5 ms while a `move` runs. If not, the REP loop stalls for the call time: the driver then counts
+      `rpc_timeouts`/`stale_reads` (the controller is unaffected) and hand_server needs the device in a subprocess.
+- [ ] `stop()` from another thread mid-`grasp` and mid-`move`: does the blocked call return at once (False)? A new
+      `hand_cmd` while busy relies on it (latest wins); the worker waits for the stop before the next command.
+- [ ] `read_once()` rate while idle and while a command runs (the state thread polls at 50 Hz; `gap_vel_m_s` is a
+      finite difference of it).
+- [ ] Homing after power-on: needed before `move`/`grasp` give correct widths? hand_server homes at start unless
+      `--no-homing`; record how long it takes (the launcher waits 20 s for `hand_state`).
+- [ ] Grasp semantics vs the sim: with no object, does `grasp` close to 0 or stop at `width - epsilon_inner` (the sim
+      and FakeHand stop at `width - epsilon_inner`)? With an object narrower than `width - epsilon_inner`, does it
+      still close onto it? This decides whether a small `epsilon_inner` can miss the eraser entirely.
+- [ ] Grasp force: is libfranka's `force` per finger or total? The sim applies a tendon force of -2F (F per finger);
+      measure the squeeze (force gauge between the pads) at `force_n` 30.
+- [ ] Epsilons for the eraser: with `width_map.b` 0.0431 the policy grasps when the training width drops below 0.064
+      (gap ~0.018-0.021) and the 20 mm side stops the pads at gap ~0.012 (sim pad offset 0.008), so
+      `tooling.hand.grasp_epsilon_inner_m` must be >= ~0.009; the station uses 0.015 (no-object close stops >= 3 mm
+      above 0). `grasp_epsilon_outer_m` 0.08.
+- [ ] Width map: measure `train = a * gap + b` with `fdcal width` (tag separation from the ultrawide vs
+      `read_once().width` over the stroke) and enter `tooling.width_map.a/b`. Current values: a 1.0 (placeholder),
+      b 0.0431 (derived: = `train_closed_m`, the tag separation at gap 0). With them the sim holds the 20 mm eraser
+      at train ~0.055, inside the data's hold widths (0.046-0.062). Also measure the pad offset (pad separation at
+      gap 0; sim `model.PAD_OFFSET_M` 0.008, or `tooling.finger_adapter.pad_offset_m`).
+- [ ] Re-grasp: while GRASPING, a hand that is idle and not holding (grasp_failed, hand_server restarted mid-hold)
+      gets up to `policy.max_regrasps` (2) new grasps 0.25 s apart; check this does not cycle the fingers on hardware.
+- [ ] Shutdown while holding: hand_server `close()` (SIGINT/SIGTERM) stops only a RUNNING command; a finished grasp
+      that is holding is left alone (no `stop()`), so the eraser stays in the fingers rather than dropping. Check that
+      the hand keeps its grasp force after the hand_server process exits, and use the Desk/`homing` to release.
+- [ ] Hysteresis on hardware: `gripper.policy.close_below_train_m` 0.064 / `open_above_train_m` 0.070 (from the
+      firstreal-single widths); no chatter while the policy holds, exactly one release.

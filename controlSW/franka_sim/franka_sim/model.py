@@ -47,6 +47,10 @@ HAND_IN_LINK7 = (0.0, 0.0, FLANGE_Z_M, 0.9238795, 0.0, 0.0, -0.3826834)
 CV_TO_MJ = np.diag([1.0, -1.0, -1.0])            # R_mj = R_cv @ CV_TO_MJ (and back: R_cv = R_mj @ CV_TO_MJ)
 UW_PLACEHOLDER = np.array([[1, 0, 0, 0], [0, 1, 0, 0.012], [0, 0, 1, 0], [0, 0, 0, 1]], float)  # UW 12 mm below main
 TAG_SIZE_M = 0.016
+# Inner-face separation of the printed pads at finger gap 0 (pad separation = gap + PAD_OFFSET_M). Placeholder (CAD
+# pending): it was tied to width_map.b until the A5 review showed b is the TRAINING width at gap 0 (~0.0431, tag
+# separation), not a geometry offset. Override with tooling.finger_adapter.pad_offset_m.
+PAD_OFFSET_M = 0.008
 MIN_CLEARANCE_M = 0.010
 STOCK_PAD_CLASS = re.compile(r"fingertip_pad_collision_\d")
 
@@ -230,8 +234,26 @@ def _finger_mesh_inner_y(m, body: str) -> float:
     return ymin
 
 
+def grip_contact(simc: dict) -> dict:
+    """solref/solimp of the finger pads and the eraser (A5). MuJoCo's defaults (solref 0.02 s, solimp 0.9/0.95) let a
+    15 g box under a 2 x 30 N squeeze sink ~2 mm into each pad and creep out of the grasp within 2 s; a stiff contact
+    (time constant 2 x timestep, the documented minimum; solimp 0.95/0.99) holds it with 30.0 N per pad and < 0.2 mm
+    drop. Override with run/sim keys grip_solref / grip_solimp."""
+    ts = float(simc.get("timestep_s", 0.002))
+    solref = [float(x) for x in (simc.get("grip_solref") or [2.0 * ts, 1.0])]
+    solimp = [float(x) for x in (simc.get("grip_solimp") or [0.95, 0.99, 0.001, 0.5, 2.0])]
+    if len(solref) != 2:
+        raise ValueError(f"run/sim grip_solref must have 2 values (timeconst, dampratio), got {solref}")
+    if len(solimp) == 3:                       # MjSpec needs all 5: pad with MuJoCo's defaults (width, power)
+        solimp += [0.5, 2.0]
+    if len(solimp) != 5:
+        raise ValueError(f"run/sim grip_solimp must have 3 or 5 values (dmin, dmax, width[, midpoint, power]), "
+                         f"got {solimp}")
+    return {"solref": solref, "solimp": solimp}
+
+
 def _box(body, name: str, size_full, T: np.ndarray, rgba, *, collide: bool, mass: float | None = None,
-         friction=None, condim: int | None = None, group: int = 0):
+         friction=None, condim: int | None = None, group: int = 0, solref=None, solimp=None):
     import mujoco
 
     g = body.add_geom()
@@ -252,6 +274,10 @@ def _box(body, name: str, size_full, T: np.ndarray, rgba, *, collide: bool, mass
         g.friction = np.r_[f, [0.005, 0.0001][len(f) - 1:]][:3] if len(f) < 3 else f[:3]
     if condim is not None:
         g.condim = condim
+    if solref is not None:
+        g.solref = [float(x) for x in solref]
+    if solimp is not None:
+        g.solimp = [float(x) for x in solimp]
     return g
 
 
@@ -337,7 +363,11 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
 
     # -- 3. printed finger adapters (finger frame: y = closing side outward, z = approach)
     fa, wm = tool["finger_adapter"], tool["width_map"]
-    b = float(wm["b"])
+    grip_sol = grip_contact(simc)
+    b = float(fa.get("pad_offset_m", PAD_OFFSET_M))          # pad offset (geometry), NOT width_map.b (training units)
+    info["pad_offset_m"] = b
+    info["pad_offset_source"] = ("tooling.finger_adapter.pad_offset_m" if "pad_offset_m" in fa
+                                 else "model.PAD_OFFSET_M placeholder (CAD pending)")
     px, pt, pl = (float(v) for v in fa["pad_size_m"])
     pad_c = np.array([0.0, b / 2 + pt / 2, tip_z + float(fa["extension_m"]) - pl / 2])
     info["stock_finger_mesh_collision_off"] = bool(mesh_inner_y < b / 2)
@@ -358,7 +388,7 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
                                                      and g.type == mujoco.mjtGeom.mjGEOM_MESH):
                 g.contype = g.conaffinity = 0
         _box(body, f"pad_{side}", [px, pt, pl], make_T(None, pad_c), [0.15, 0.15, 0.15, 1], collide=True,
-             friction=fa["friction"], condim=4)
+             friction=fa["friction"], condim=4, **grip_sol)
         # tag patch on the camera-facing pad face (see report: the literal "outer face" is invisible to the camera)
         hT = _body_in(m0, d0, fb, names["bodies"]["hand"])
         dir_f = hT[:3, :3].T @ cam_dir_h                   # camera direction in this finger's frame (+-x)
@@ -464,7 +494,7 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
         jn = eb.add_freejoint()
         jn.name = "eraser_free"
         _box(eb, "eraser", es, np.eye(4), [0.9, 0.3, 0.3, 1], collide=True, mass=float(er["mass_kg"]),
-             friction=er["friction"], condim=4)
+             friction=er["friction"], condim=4, **grip_sol)
         home_xy = np.asarray(robot["home_tcp"]["xyz_m"], float)[:2]
         eraser_qpos = [home_xy[0], home_xy[1], top + es[2] / 2, 1, 0, 0, 0]
         names["bodies"].update(table="table", object="eraser")
@@ -476,7 +506,9 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
     # -- keyframe "home": station home q, hand at home width, eraser at its default pose
     for k in list(arm.keys):
         k.delete()
-    gap0 = float(tool["hand"]["home_width_m"]) / 2
+    # home_width_m is a TRAINING width (run_task.py arx5_home_gripper_pos_m): the key gap is WidthMap.gap of it
+    gap0 = float(np.clip((float(tool["hand"]["home_width_m"]) - float(wm["b"])) / float(wm["a"]),
+                         float(wm["gap_min_m"]), float(wm["gap_max_m"]))) / 2
     key = arm.add_key()
     key.name = "home"
     key.qpos = list(robot["home_q_rad"]) + [gap0, gap0] + eraser_qpos
@@ -501,6 +533,7 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
         "tau_max_nm": np.array(tau, float),
         "mjcf_range_rad": np.array([model.jnt_range[model.joint(names["joints"][f"j{i}"]).id] for i in range(1, 8)]),
         "hand_force_max_n": f_hand,
+        "pad_offset_m": float(info["pad_offset_m"]),
         "gap_max_m": float(wm["gap_max_m"]),
     }
     return SimModel(model=model, spec=arm, names=names, F_T_TCP=F_T_TCP, EE_T_TCP=EE_T_TCP, limits=limits,

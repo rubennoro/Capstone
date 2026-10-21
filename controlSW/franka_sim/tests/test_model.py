@@ -101,7 +101,7 @@ def test_hand_and_tcp_identical_for_panda_and_fr3():
 
 
 @pytest.mark.parametrize("gap", [0.0, 0.04, 0.08])
-def test_pad_separation_is_gap_plus_b(built, gap):
+def test_pad_separation_is_gap_plus_pad_offset(built, gap):
     st, sm = built
     d = M.forward_at(sm, gap_m=gap)
     m = sm.model
@@ -112,7 +112,7 @@ def test_pad_separation_is_gap_plus_b(built, gap):
     sep = abs(xl[0] - xr[0]) - t                        # inner-face separation along the TCP x (closing) axis
     q = sum(d.qpos[m.jnt_qposadr[M._id(m, "joint", j)]] for j in sm.names["fingers"].values())
     assert abs(q - gap) < 1e-12
-    assert abs(sep - (gap + st.get("tooling.width_map.b"))) < 1e-6
+    assert abs(sep - (gap + sm.limits["pad_offset_m"])) < 1e-6        # pad geometry offset, not width_map.b
     assert abs(xl[1]) < 1e-12 and abs(xr[1]) < 1e-12 and abs(xl[2]) < 1e-12   # TCP = pad-centre midpoint
     assert abs(xl[0] + xr[0]) < 1e-12
 

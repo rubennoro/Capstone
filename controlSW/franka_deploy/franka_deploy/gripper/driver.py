@@ -160,6 +160,10 @@ class DynamixelGripper(GripperDriver):  # pragma: no cover - hardware
 
 
 def make_gripper(cfg: dict) -> GripperDriver:
+    if cfg.get("type") == "franka_hand":   # Franka Hand (A5): non-blocking I-HAND client; no servo calibration
+        from franka_deploy.gripper.franka_hand import FrankaHandDriver
+
+        return FrankaHandDriver.from_config(cfg)
     cal = WidthCalibration.from_config(cfg["calibration"])
     kind = cfg.get("type", "fake")
     kw = {k: cfg[k] for k in ("squeeze_delta_m", "squeeze_below_m", "current_limit", "min_width_m", "max_width_m")

@@ -17,6 +17,7 @@ bridge.yaml (``backend``; the launcher's sim profiles set ``type: mujoco``):
     max_catchup_steps: 10
     physics: {}              # run/sim physics overrides (payload_error_kg, reflex, ...)
     viewer: false            # mujoco.viewer passive window (needs a display)
+    hand: true               # Franka Hand on hand_cmd / hand_state (franka_sim.hand_sim, A5); false = A4 PD hold
     impedance / damping_ratio / nullspace_stiffness / filter_coeff / collision: overrides of panda_py
 
 Usage: backend = MuJoCoBackend.from_config(cfg["backend"], home_O_T_EE)   (via franka_deploy make_backend)
@@ -69,14 +70,19 @@ def load_station_spec(spec=None, robot: str | None = None):
 
 
 class MuJoCoBackend(Backend):
-    extra_topics: tuple = ()          # A5/A6 add hand_*/sim_*
+    extra_topics: tuple = ("hand_cmd", "hand_state")     # A5 (Franka Hand, I-HAND); A6 appends sim_*
 
     def __init__(self, sm, core_cfg: dict, q_init, rate_hz: float = 1000.0, max_catchup_steps: int = 10,
-                 viewer: bool = False):
+                 viewer: bool = False, tooling: dict | None = None, hand: bool = True):
+        from franka_sim.hand_sim import HandSim
         from franka_sim.simcore import SimCore
 
         self.sm = sm
         self.core = SimCore(sm, core_cfg, q_init)
+        # Franka Hand: libfranka move/grasp semantics on the finger tendon (A5); without it SimCore's PD hold stays
+        self.hand = HandSim(self.core, tooling) if hand else None
+        if self.hand is not None:
+            self.core.hand_ctrl = self.hand.ctrl
         self.rate = float(rate_hz)
         self.steps_per_tick = max(1, int(round(1.0 / (self.rate * self.core.control_dt))))
         self.max_catchup = int(max_catchup_steps)
@@ -130,7 +136,8 @@ class MuJoCoBackend(Backend):
         print(f"[mujoco] robot={sm.robot} station={dict(station.ids)} rate_hz={mj.get('rate_hz', 1000)} "
               f"q_init={np.round(np.asarray(q_init, float), 4).tolist()}", flush=True)
         return cls(sm, core_cfg, q_init, rate_hz=float(mj.get("rate_hz", 1000.0)),
-                   max_catchup_steps=int(mj.get("max_catchup_steps", 10)), viewer=bool(mj.get("viewer", False)))
+                   max_catchup_steps=int(mj.get("max_catchup_steps", 10)), viewer=bool(mj.get("viewer", False)),
+                   tooling=station.get("tooling", None), hand=bool(mj.get("hand", True)))
 
     # ---------------------------------------------------------------------------------------------- the loop
 
@@ -139,8 +146,10 @@ class MuJoCoBackend(Backend):
         s = self.core.state()
         s.pop("tau_ext", None)                  # get_state keys = FakeBackend's + sim_t
         s["t"] = time.monotonic()
+        hs = self.hand.state(s["t"]) if self.hand is not None else None
         with self._lock:
             self._state = s
+            self._hand_state = hs
 
     def _loop(self) -> None:
         dt = 1.0 / self.rate
@@ -236,6 +245,14 @@ class MuJoCoBackend(Backend):
         self._snapshot()
 
     def handle_extra(self, topic, data):
+        """I-HAND topics, served from the bridge's REP thread without _core_lock (HandSim has its own lock; the
+        command is applied at the next control step and the state is the loop's last snapshot)."""
+        if self.hand is not None:
+            if topic == "hand_cmd":
+                return self.hand.command(data)
+            if topic == "hand_state":
+                with self._lock:
+                    return dict(self._hand_state)
         raise ValueError(f"unknown request {topic!r}")
 
     def sim_tick(self, bridge) -> None:

@@ -91,7 +91,7 @@ def test_values_requested_by_spec():
     st = load_station(IPHONE)
     wm = st.get("tooling.width_map")
     assert (wm["a"], wm["b"], wm["train_closed_m"], wm["train_min_m"], wm["train_max_m"], wm["coverage_required_m"]) == (
-        1.0, 0.008, 0.0431, 0.0447, 0.0844, 0.080)
+        1.0, 0.0431, 0.0431, 0.0447, 0.0844, 0.080)
     assert st.get("criteria.success") == {"lift_min_m": 0.05, "hold_s": 2.0, "timeout_s": 60, "slip_tol_m": 0.002}
     assert st.get("tooling.hand.port") == 5566
     assert st.get("robot.home_tcp") == {"xyz_m": [0.45, 0.0, 0.25], "max_dist_m": 0.05}
@@ -259,7 +259,7 @@ def test_fingerprint_stable_and_sensitive():
 
 EXPECTED_CRITICAL_IPHONE = [
     "robot.desk_end_effector", "robot.fci.libfranka_version", "robot.impedance.collision_thresholds",
-    "tooling.width_map.a", "tooling.width_map.b", "tooling.F_T_TCP", "tooling.payload.mass_kg",
+    "tooling.width_map.a", "tooling.F_T_TCP", "tooling.payload.mass_kg",   # width_map.b: derived (A5 review)
     "sensor.clock.latency_s.main", "sensor.clock.latency_s.ultrawide",
     "scene.workspace.min_m", "scene.workspace.max_m",
 ]
@@ -329,7 +329,7 @@ def test_controller_fragment_equals_franka_cartesian():
     assert np.array_equal(np.array(f["F_T_TCP"], float), np.array(c["F_T_TCP"], float))
     g = f["gripper"]
     assert g["type"] == "franka_hand" and g["endpoint"] == "tcp://localhost:5566"
-    assert (g["width_map"]["a"], g["width_map"]["b"]) == (1.0, 0.008)
+    assert (g["width_map"]["a"], g["width_map"]["b"]) == (1.0, 0.0431)          # b = train_closed_m (A5 review)
     assert load_station({"station": {"tooling": "franka_hand_iphumi_rig1"}}).controller_fragment()["F_T_TCP"] == f["F_T_TCP"]
 
 

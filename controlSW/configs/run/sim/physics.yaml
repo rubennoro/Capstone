@@ -8,8 +8,12 @@ impratio: 10.0
 cone: elliptic
 payload_error_kg: 0.0
 use_station_F_T_TCP: false               # true: put the tcp site at tooling.F_T_TCP (when not a placeholder)
+grip_solref: [0.002, 1.0]                # finger-pad contact softness (model.py default [2*timestep, 1])
+grip_solimp: [0.95, 0.99, 0.001, 0.5, 2.0] # model.py default (MuJoCo needs 5 values)
 reflex: {contact: true, velocity: true, joint_limit: true}
 provenance:
   "": {status: decision, source: "design_track_b.md run/sim physics"}
   use_station_F_T_TCP: {status: placeholder, source: "CAD pending (derived from the finger geometry until calibrated)"}
+  grip_solref: {status: decision, source: "model.py default 2*timestep, 1 (A5 hand tuning knob)"}
+  grip_solimp: {status: decision, source: "model.py default 0.95, 0.99, 0.001, 0.5, 2.0 (A5 hand tuning knob)"}
 critical: []

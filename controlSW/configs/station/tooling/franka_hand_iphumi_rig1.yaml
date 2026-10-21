@@ -7,7 +7,7 @@ hand:
   speed_m_s: 0.10
   force_n: 30.0
   force_max_n: 70.0
-  grasp_epsilon_inner_m: 0.01
+  grasp_epsilon_inner_m: 0.015
   grasp_epsilon_outer_m: 0.08
   home_width_m: 0.08
   port: 5566                                 # hand_server (real Franka Hand, libfranka Gripper); in sim the bridge serves it
@@ -15,7 +15,7 @@ hand:
 finger_adapter: {printed: iphumi_finger_v1, extension_m: 0.0, pad_size_m: [0.02, 0.008, 0.03], friction: 1.0}
 width_map:                                   # train = a * gap + b
   a: 1.0
-  b: 0.008
+  b: 0.0431                                  # = train_closed_m: training width at gap 0 (A5 review)
   gap_min_m: 0.0
   gap_max_m: 0.080
   coverage_required_m: 0.080
@@ -47,13 +47,14 @@ provenance:
   hand: {status: datasheet, source: "Franka Hand datasheet (stroke 0.080 m, 70 N max continuous); speed/force: decision"}
   hand.speed_m_s: {status: decision, source: "design_track_b.md tooling example"}
   hand.force_n: {status: decision, source: "design_track_b.md tooling example"}
-  hand.grasp_epsilon_inner_m: {status: decision, source: "design_track_b.md tooling example"}
+  hand.grasp_epsilon_inner_m: {status: derived, source: "A5: policy grasps at train 0.061-0.064 = gap 0.018-0.021 (b 0.0431); the 20 mm eraser stops the pads at gap 0.012 (pad offset 0.008) -> eps >= 0.009; 0.015 keeps >= 3 mm for the no-object close"}
   hand.grasp_epsilon_outer_m: {status: decision, source: "design_track_b.md tooling example"}
   hand.home_width_m: {status: decision, source: "run_task.py:92 arx5_home_gripper_pos_m=0.08"}
   hand.port: {status: decision, source: "INTERFACES.md section 2 (5566 hand_server)"}
   hand.endpoint: {status: derived, source: "from hand.port"}
   finger_adapter: {status: placeholder, source: "iphumi_finger_v1 print; not measured on the Franka Hand"}
   width_map: {status: placeholder, source: "PLAN.md width map default a=1.0 b=0.008; measure with fdcal width on hardware"}
+  width_map.b: {status: derived, source: "= train_closed_m at gap 0 (A5 review); measure with fdcal width"}
   width_map.gap_min_m: {status: datasheet, source: "Franka Hand"}
   width_map.gap_max_m: {status: datasheet, source: "Franka Hand"}
   width_map.coverage_required_m: {status: decision, source: "PLAN.md (= stroke; fdcal default 0.085 is above the stroke)"}

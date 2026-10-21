@@ -98,7 +98,7 @@ def test_backend_api_reflex_move_and_stats_keys():
         ls = b.loop_stats()
         assert {"n", "p50_ms", "p99_ms", "cycle_hist_us", "sim_lag_ms_max", "steps_per_wake_max", "rt_resyncs",
                 "realtime_factor"} <= set(ls)
-        assert b.extra_topics == ()
+        assert b.extra_topics[:2] == ("hand_cmd", "hand_state")        # A5; A6 appends sim_*
         with pytest.raises(ValueError):
             b.handle_extra("nope", None)
     finally:
