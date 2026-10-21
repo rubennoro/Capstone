@@ -1,0 +1,438 @@
+{
+ "what": "SimCore impedance characterization (gonogo --motion steps profile + ideal 2 cm steps)",
+ "law": "panda-py CartesianImpedance as documented (simcore.py; verify-on-hardware)",
+ "rows": [
+  {
+   "robot": "panda",
+   "translational_n_m": 600.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.0,
+   "gonogo_steps": {
+    "lag_ms": 116.0,
+    "residual_after_lag_mm": 0.4549,
+    "track_err_mm_max": 8.6921,
+    "steady_err_mm_median": 0.0121,
+    "steady_err_mm_max": 0.1769,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 26.48,
+     "settle_5pct_ms": 1122,
+     "steady_err_mm": 0.0216
+    },
+    "y": {
+     "overshoot_pct": 15.95,
+     "settle_5pct_ms": 504,
+     "steady_err_mm": 0.0003
+    },
+    "z": {
+     "overshoot_pct": 13.99,
+     "settle_5pct_ms": 541,
+     "steady_err_mm": 0.0019
+    }
+   },
+   "expected_payload_offset_mm": 0.0,
+   "wall_s": 8.0
+  },
+  {
+   "robot": "panda",
+   "translational_n_m": 600.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.3,
+   "gonogo_steps": {
+    "lag_ms": 121.0,
+    "residual_after_lag_mm": 4.9154,
+    "track_err_mm_max": 11.7659,
+    "steady_err_mm_median": 4.9052,
+    "steady_err_mm_max": 4.949,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 26.23,
+     "settle_5pct_ms": 1115,
+     "steady_err_mm": 0.0105
+    },
+    "y": {
+     "overshoot_pct": 15.95,
+     "settle_5pct_ms": 504,
+     "steady_err_mm": 0.0005
+    },
+    "z": {
+     "overshoot_pct": 13.53,
+     "settle_5pct_ms": 544,
+     "steady_err_mm": 0.0005
+    }
+   },
+   "expected_payload_offset_mm": 4.905,
+   "wall_s": 9.6
+  },
+  {
+   "robot": "panda",
+   "translational_n_m": 800.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.0,
+   "gonogo_steps": {
+    "lag_ms": 97.0,
+    "residual_after_lag_mm": 0.5461,
+    "track_err_mm_max": 7.4706,
+    "steady_err_mm_median": 0.0059,
+    "steady_err_mm_max": 0.0675,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 27.35,
+     "settle_5pct_ms": 980,
+     "steady_err_mm": 0.0026
+    },
+    "y": {
+     "overshoot_pct": 16.52,
+     "settle_5pct_ms": 437,
+     "steady_err_mm": 0.0002
+    },
+    "z": {
+     "overshoot_pct": 15.0,
+     "settle_5pct_ms": 471,
+     "steady_err_mm": 0.0005
+    }
+   },
+   "expected_payload_offset_mm": 0.0,
+   "wall_s": 7.1
+  },
+  {
+   "robot": "panda",
+   "translational_n_m": 800.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.3,
+   "gonogo_steps": {
+    "lag_ms": 103.0,
+    "residual_after_lag_mm": 3.693,
+    "track_err_mm_max": 9.5657,
+    "steady_err_mm_median": 3.6787,
+    "steady_err_mm_max": 3.6908,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 27.14,
+     "settle_5pct_ms": 976,
+     "steady_err_mm": 0.0113
+    },
+    "y": {
+     "overshoot_pct": 16.5,
+     "settle_5pct_ms": 437,
+     "steady_err_mm": 0.0004
+    },
+    "z": {
+     "overshoot_pct": 14.64,
+     "settle_5pct_ms": 472,
+     "steady_err_mm": 0.0043
+    }
+   },
+   "expected_payload_offset_mm": 3.679,
+   "wall_s": 6.8
+  },
+  {
+   "robot": "panda",
+   "translational_n_m": 1000.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.0,
+   "gonogo_steps": {
+    "lag_ms": 96.0,
+    "residual_after_lag_mm": 0.5305,
+    "track_err_mm_max": 6.6462,
+    "steady_err_mm_median": 0.0037,
+    "steady_err_mm_max": 0.0541,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 27.88,
+     "settle_5pct_ms": 881,
+     "steady_err_mm": 0.0037
+    },
+    "y": {
+     "overshoot_pct": 16.89,
+     "settle_5pct_ms": 392,
+     "steady_err_mm": 0.0002
+    },
+    "z": {
+     "overshoot_pct": 15.67,
+     "settle_5pct_ms": 422,
+     "steady_err_mm": 0.0011
+    }
+   },
+   "expected_payload_offset_mm": 0.0,
+   "wall_s": 6.1
+  },
+  {
+   "robot": "panda",
+   "translational_n_m": 1000.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.3,
+   "gonogo_steps": {
+    "lag_ms": 91.0,
+    "residual_after_lag_mm": 2.9633,
+    "track_err_mm_max": 8.1751,
+    "steady_err_mm_median": 2.9429,
+    "steady_err_mm_max": 2.9547,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 27.76,
+     "settle_5pct_ms": 877,
+     "steady_err_mm": 0.0021
+    },
+    "y": {
+     "overshoot_pct": 16.87,
+     "settle_5pct_ms": 391,
+     "steady_err_mm": 0.0005
+    },
+    "z": {
+     "overshoot_pct": 15.4,
+     "settle_5pct_ms": 424,
+     "steady_err_mm": 0.0033
+    }
+   },
+   "expected_payload_offset_mm": 2.943,
+   "wall_s": 6.7
+  },
+  {
+   "robot": "fr3",
+   "translational_n_m": 600.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.0,
+   "gonogo_steps": {
+    "lag_ms": 114.0,
+    "residual_after_lag_mm": 0.544,
+    "track_err_mm_max": 8.7293,
+    "steady_err_mm_median": 0.0636,
+    "steady_err_mm_max": 0.6175,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 34.79,
+     "settle_5pct_ms": 1267,
+     "steady_err_mm": 0.0354
+    },
+    "y": {
+     "overshoot_pct": 21.8,
+     "settle_5pct_ms": 520,
+     "steady_err_mm": 0.0003
+    },
+    "z": {
+     "overshoot_pct": 23.57,
+     "settle_5pct_ms": 590,
+     "steady_err_mm": 0.0011
+    }
+   },
+   "expected_payload_offset_mm": 0.0,
+   "wall_s": 8.4
+  },
+  {
+   "robot": "fr3",
+   "translational_n_m": 600.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.3,
+   "gonogo_steps": {
+    "lag_ms": 114.0,
+    "residual_after_lag_mm": 4.9311,
+    "track_err_mm_max": 11.8102,
+    "steady_err_mm_median": 4.9066,
+    "steady_err_mm_max": 5.1251,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 34.0,
+     "settle_5pct_ms": 1265,
+     "steady_err_mm": 0.0124
+    },
+    "y": {
+     "overshoot_pct": 21.69,
+     "settle_5pct_ms": 519,
+     "steady_err_mm": 0.0007
+    },
+    "z": {
+     "overshoot_pct": 23.33,
+     "settle_5pct_ms": 599,
+     "steady_err_mm": 0.0064
+    }
+   },
+   "expected_payload_offset_mm": 4.905,
+   "wall_s": 7.1
+  },
+  {
+   "robot": "fr3",
+   "translational_n_m": 800.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.0,
+   "gonogo_steps": {
+    "lag_ms": 96.0,
+    "residual_after_lag_mm": 0.6314,
+    "track_err_mm_max": 7.5729,
+    "steady_err_mm_median": 0.0301,
+    "steady_err_mm_max": 0.2091,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 34.47,
+     "settle_5pct_ms": 1097,
+     "steady_err_mm": 0.0434
+    },
+    "y": {
+     "overshoot_pct": 21.83,
+     "settle_5pct_ms": 451,
+     "steady_err_mm": 0.0
+    },
+    "z": {
+     "overshoot_pct": 23.63,
+     "settle_5pct_ms": 511,
+     "steady_err_mm": 0.0066
+    }
+   },
+   "expected_payload_offset_mm": 0.0,
+   "wall_s": 6.2
+  },
+  {
+   "robot": "fr3",
+   "translational_n_m": 800.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.3,
+   "gonogo_steps": {
+    "lag_ms": 102.0,
+    "residual_after_lag_mm": 3.6911,
+    "track_err_mm_max": 9.6658,
+    "steady_err_mm_median": 3.6784,
+    "steady_err_mm_max": 3.747,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 33.87,
+     "settle_5pct_ms": 1096,
+     "steady_err_mm": 0.0039
+    },
+    "y": {
+     "overshoot_pct": 21.74,
+     "settle_5pct_ms": 450,
+     "steady_err_mm": 0.0003
+    },
+    "z": {
+     "overshoot_pct": 23.28,
+     "settle_5pct_ms": 516,
+     "steady_err_mm": 0.0055
+    }
+   },
+   "expected_payload_offset_mm": 3.679,
+   "wall_s": 11.1
+  },
+  {
+   "robot": "fr3",
+   "translational_n_m": 1000.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.0,
+   "gonogo_steps": {
+    "lag_ms": 98.0,
+    "residual_after_lag_mm": 0.6159,
+    "track_err_mm_max": 6.7165,
+    "steady_err_mm_median": 0.0188,
+    "steady_err_mm_max": 0.1794,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 34.14,
+     "settle_5pct_ms": 980,
+     "steady_err_mm": 0.0307
+    },
+    "y": {
+     "overshoot_pct": 21.82,
+     "settle_5pct_ms": 404,
+     "steady_err_mm": 0.0
+    },
+    "z": {
+     "overshoot_pct": 23.61,
+     "settle_5pct_ms": 458,
+     "steady_err_mm": 0.0028
+    }
+   },
+   "expected_payload_offset_mm": 0.0,
+   "wall_s": 16.1
+  },
+  {
+   "robot": "fr3",
+   "translational_n_m": 1000.0,
+   "rotational_nm_rad": 40.0,
+   "damping_ratio": 1.0,
+   "payload_error_kg": 0.3,
+   "gonogo_steps": {
+    "lag_ms": 90.0,
+    "residual_after_lag_mm": 2.9679,
+    "track_err_mm_max": 8.2825,
+    "steady_err_mm_median": 2.9427,
+    "steady_err_mm_max": 3.002,
+    "steady_samples": 603,
+    "safety_clamps": 0,
+    "reflex": null
+   },
+   "step_2cm": {
+    "x": {
+     "overshoot_pct": 33.86,
+     "settle_5pct_ms": 978,
+     "steady_err_mm": 0.0299
+    },
+    "y": {
+     "overshoot_pct": 21.75,
+     "settle_5pct_ms": 403,
+     "steady_err_mm": 0.0002
+    },
+    "z": {
+     "overshoot_pct": 23.36,
+     "settle_5pct_ms": 461,
+     "steady_err_mm": 0.0073
+    }
+   },
+   "expected_payload_offset_mm": 2.943,
+   "wall_s": 16.5
+  }
+ ]
+}

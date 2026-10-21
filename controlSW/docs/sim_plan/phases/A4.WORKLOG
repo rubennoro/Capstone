@@ -1,0 +1,11 @@
+2026-10-20T21:44:24-04:00 step0: started A4; read spec + README
+2026-10-20T21:45:44-04:00 step1: read all spec files; panda-py source NOT available offline -> implementing documented law (verify-on-hardware)
+2026-10-20T21:50:08-04:00 step2: design: mj_step2->mj_step1 order (kinematics current after each control step), gravity via subtree-COM formula, reflex checks in active modes; writing simcore.py
+2026-10-20T21:56:21-04:00 step3: simcore.py, backend.py written; backends.py (mujoco factory, PandaPy error derivation), franka_bridge.py (extra_topics, sim_tick), gonogo.py (wait_ready 10 s, --no-loop-gate, --spawn-endpoint) patched. Finding: step overshoot 15-34% inherent to D=2 zeta sqrt(K) with Lambda 4.6-8.3 kg (zeta_eff 0.35-0.47)
+2026-10-20T22:03:06-04:00 step4: test_simcore.py 23 passed (both arms). Findings: MuJoCo filterparent drops tooling-vs-link6 (+link7-vs-pads) contacts -> SimCore checks those pairs by mj_geomDistance; real tooling hits link5/6 before the q7 limit on both arms (limit test uses a shrunk-tooling station override). Step overshoot x/y/z panda 27/17/15 %, fr3 34/22/24 %
+2026-10-20T22:08:36-04:00 step5: characterize.py + __main__ registration (additive block after A3's stage1). Finding: gonogo-steps lag on the documented law is 90-121 ms (K 600-1000), above the spec's [5,80] ms; steady err ~0.01 mm (dm=0) / m g/K (dm=0.3)
+2026-10-20T22:10:35-04:00 step6: phase tests pass (franka_sim 28, franka_deploy 34). RT panda p99 1.066 ms fr3 1.062 ms, 0 resyncs (load ~14); gonogo sim lag 98 ms steady 0.017 mm
+2026-10-20T22:27:47-04:00 step7: full RE franka_deploy suite 312 passed / 11 skipped / 1 failed (B-owned untracked test_predict_demos: imagecodecs_jpegxl missing in RE, not A4); franka_sim suite 137 passed / 2 skipped (stage1 deselected); regression guard PASS; characterization_baseline.json written. DONE
+2026-10-20T22:42:51-04:00 fix0: review FIX received (4 items)
+2026-10-20T22:43:29-04:00 fix1-4: PandaPy last_motion_errors only while running and changed since start (+2 regression tests, fake keeps last), SimCore limits = station within MJCF (+test), move_joints snapshot, rt_resyncs reported, LAG_MAX_MS 150
+2026-10-20T22:53:17-04:00 fix5: re-run under lock: franka_sim phase 30 passed (rt p99 panda 1.023 / fr3 1.017 ms, 0 resyncs), deploy phase 36 passed, full RE 312 passed / 11 skipped / 0 failed. FIX done

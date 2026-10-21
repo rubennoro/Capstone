@@ -38,6 +38,19 @@ def _register_builtins() -> None:
     cli.register("model", add_model, run_model,
                  help="build the station model; print frames (F_T_TCP, cameras, tags), payload and clearance")
 
+    def add_characterize(p):
+        from franka_sim import characterize
+
+        characterize.add_arguments(p)
+
+    def run_characterize(args):
+        from franka_sim import characterize
+
+        return characterize.run(args)
+
+    cli.register("characterize", add_characterize, run_characterize,
+                 help="sim impedance tracking table (gonogo steps profile, stiffness x payload error) -> JSON")
+
 
 def main(argv: list[str] | None = None) -> int:
     _register_builtins()

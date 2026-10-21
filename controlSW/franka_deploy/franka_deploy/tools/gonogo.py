@@ -18,12 +18,14 @@ evaluate: GO only if all hold
   min control success rate (per second, worst) >= 0.99,
   loop p99.9 < 0.5 ms: overall p99.9 of the per-cycle compute time (FakeBackend cycle histogram) or, when the
     backend reports none, of the cyclictest histogram; no loop timing at all = NO-GO.
+    --no-loop-gate: the loop timing is reported but not gated (meaningless for the Python MuJoCo sim backend).
 Also reported (not gated): worst-second p99.9, request service p99, client RTT p99.9 / misses, tracking (lag
 tau, steady-state error e, max error; from trace.npz), tegrastats max temperatures and RAM.
 
     python -m franka_deploy gonogo run --out DIR [--config configs/bridge.yaml] [--duration-s 1800] [--hold-s 30]
-        [--amp-m 0.02] [--stress] [--tegrastats] [--cyclictest] [--load-cmd "..."]...
-    python -m franka_deploy gonogo evaluate DIR
+        [--amp-m 0.02] [--stress] [--tegrastats] [--cyclictest] [--load-cmd "..."]... [--no-loop-gate]
+    python -m franka_deploy gonogo evaluate DIR [--no-loop-gate]
+The bridge (spawned or external) is ready once get_state answers (polled for up to 10 s).
 """
 
 from __future__ import annotations
@@ -157,14 +159,14 @@ def tracking_stats(t, cmd, fk, max_lag_s=0.2) -> dict:
 
 
 # ---------------------------------------------------------------- evaluate
-def evaluate(out_dir, criteria=CRITERIA) -> dict:
+def evaluate(out_dir, criteria=CRITERIA, loop_gate: bool = True) -> dict:
     d = Path(out_dir)
     ev = _jsonl(d / "bridge.jsonl")
     stats = [e for e in ev if e.get("kind") == "stats" and e.get("state") in ("running", "hold")]
     reflexes = [e for e in ev if e.get("kind") == "reflex"]
     wd_stops = [e for e in ev if e.get("kind") == "watchdog_stop"]
     wd_holds = [e for e in ev if e.get("kind") == "watchdog_hold"]
-    rep = {"out_dir": str(d), "criteria": criteria, "seconds": len(stats), "reflexes": len(reflexes),
+    rep = {"out_dir": str(d), "criteria": criteria, "loop_gate": loop_gate, "seconds": len(stats), "reflexes": len(reflexes),
            "watchdog_stops": len(wd_stops), "watchdog_holds": len(wd_holds), "reasons": []}
     succ = [float(s.get("min_success", 1.0)) for s in stats]
     rep["min_success_rate"] = min(succ) if succ else None
@@ -212,7 +214,9 @@ def evaluate(out_dir, criteria=CRITERIA) -> dict:
         rep["reasons"].append(f"{len(wd_stops)} watchdog stop(s)")
     if succ and min(succ) < criteria["min_success_rate"]:
         rep["reasons"].append(f"min success rate {min(succ):.4f} < {criteria['min_success_rate']}")
-    if rep["loop"] is None:
+    if not loop_gate:
+        pass                       # reported above, not gated (--no-loop-gate)
+    elif rep["loop"] is None:
         rep["reasons"].append("no loop timing (backend reports no cycle times and no cyclictest.txt)")
     elif not rep["loop"]["p999_ms"] < criteria["loop_p999_ms"]:
         rep["reasons"].append(f"loop p99.9 {rep['loop']['p999_ms']:.3f} ms >= {criteria['loop_p999_ms']} ms")
@@ -243,6 +247,29 @@ def _stop_all(procs: dict, timeout=10):
         log.close()
 
 
+def wait_ready(endpoint: str, timeout_s: float = 10.0, procs: dict | None = None, out: Path | None = None) -> float:
+    """Poll the bridge's get_state until it answers (the MuJoCo backend needs a few seconds to build its model).
+    Returns the wait (s); raises RuntimeError on timeout or when the spawned bridge exits."""
+    from franka_deploy.bridge.link import BridgeClient
+
+    t0 = time.monotonic()
+    cli = BridgeClient(endpoint, timeout_s=0.5)
+    try:
+        while True:
+            try:
+                cli.request("get_state", timeout_s=0.5)
+                return time.monotonic() - t0
+            except Exception as e:
+                err = e
+            if procs and "bridge" in procs and procs["bridge"][0].poll() is not None:
+                raise RuntimeError(f"bridge exited during startup (see {out}/bridge.log)")
+            if time.monotonic() - t0 > timeout_s:
+                raise RuntimeError(f"bridge {endpoint} not ready after {timeout_s:.0f} s: {err}")
+            time.sleep(0.1)
+    finally:
+        cli.close()
+
+
 def run(a) -> int:
     from franka_deploy.bridge.link import BridgeClient
 
@@ -253,7 +280,7 @@ def run(a) -> int:
     env = dict(os.environ)
     try:
         if a.endpoint is None:
-            endpoint = "tcp://127.0.0.1:5599"
+            endpoint = a.spawn_endpoint
             bcmd = [sys.executable, "-u", "-m", "franka_deploy.bridge.franka_bridge", "--config", a.config,
                     "--endpoint", endpoint, "--log-jsonl", str(out / "bridge.jsonl")]
             if a.bridge_core is not None and shutil.which("taskset"):
@@ -261,7 +288,6 @@ def run(a) -> int:
             if a.bridge_rtprio and shutil.which("chrt"):
                 bcmd = ["chrt", "-f", str(a.bridge_rtprio)] + bcmd
             _spawn("bridge", bcmd, out, procs, env)
-            time.sleep(1.5)
         else:
             endpoint = a.endpoint
             notes.append("external bridge: its --log-jsonl must be <out>/bridge.jsonl for evaluate")
@@ -288,6 +314,7 @@ def run(a) -> int:
                 notes.append("cyclictest not installed: no wake-up latency histogram")
         for i, c in enumerate(a.load_cmd or []):
             _spawn(f"load{i}", shlex.split(c), out, procs, env)
+        notes.append(f"bridge ready after {wait_ready(endpoint, 10.0, procs, out):.2f} s")
         for n, (p, _) in procs.items():
             if p.poll() is not None and n not in ("cyclictest",):
                 raise RuntimeError(f"{n} exited during startup (see {out}/{n}.log)")
@@ -353,7 +380,7 @@ def run(a) -> int:
     finally:
         _stop_all(procs)
         (out / "run_meta.json").write_text(json.dumps({"args": vars(a), "notes": notes}, indent=1, default=str))
-    rep = evaluate(out)
+    rep = evaluate(out, loop_gate=not a.no_loop_gate)
     (out / "gonogo.json").write_text(json.dumps(rep, indent=1))
     print(json.dumps({k: rep.get(k) for k in ("go", "reasons", "seconds", "reflexes", "min_success_rate", "loop", "tracking")},
                      indent=1))
@@ -383,12 +410,16 @@ def main(argv=None) -> int:
     r.add_argument("--tegrastats", action="store_true")
     r.add_argument("--cyclictest", action="store_true")
     r.add_argument("--load-cmd", action="append")
+    r.add_argument("--spawn-endpoint", default="tcp://127.0.0.1:5599", help="endpoint of the bridge this run spawns")
+    r.add_argument("--no-loop-gate", action="store_true",
+                   help="report the loop timing but do not gate on it (Python MuJoCo sim backend)")
     e = sub.add_parser("evaluate")
     e.add_argument("out")
+    e.add_argument("--no-loop-gate", action="store_true")
     a = ap.parse_args(argv)
     if a.cmd == "run":
         return run(a)
-    rep = evaluate(a.out)
+    rep = evaluate(a.out, loop_gate=not a.no_loop_gate)
     print(json.dumps(rep, indent=1))
     return 0 if rep["go"] else 1
 

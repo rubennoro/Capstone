@@ -69,3 +69,34 @@ arm. Do them in order, with the external activation device (user stop) in hand a
 - [ ] Task with `anchor: target`, pause mode, exec_h 8, inference timeout 2 s. Watch the per-call
       `info_anchor_dev_m` in the tap: > 2 cm → fallback + reseed, > 5 cm → hold.
 - [ ] Stop paths: stop file or command-file key → hold ≤ 0.1 s, and the hardware user stop.
+
+## 6. Sim fidelity checks (A4: `franka_sim` SimCore / MuJoCoBackend)
+
+The sim (`controlSW/franka_sim/franka_sim/simcore.py`) implements panda-py's CartesianImpedance from its documented
+law; the panda-py source was not available offline. Verify each item against the pinned panda-py and the arm.
+
+- [ ] CartesianImpedance law (verify-on-hardware): per 1 ms, `tau_task = J^T (-K e - D J dq)` with
+      `D = 2 * damping_ratio * sqrt(K)` elementwise (not mass-normalised), orientation error `e_r = -R vec(q^-1 q_d)`
+      (q_d sign-flipped to the same hemisphere), null space `(I - J^T pinv(J^T)) (k_ns (q_ns - q) - 2 sqrt(k_ns) dq)`
+      with `q_ns` = q at controller start and an undamped pinv, plus Coriolis; torque rate limit 1 Nm/ms. If panda-py
+      uses a damped pseudo-inverse (franka_example_controllers uses lambda 0.2), set `backend.mujoco.pinv_damping`.
+- [ ] Target filter: `p_d <- fc p_t + (1 - fc) p_d` and slerp with `filter_coeff` every 1 ms (1.0 = no filter).
+- [ ] Step response vs the sim baseline (`franka_sim/configs/characterization_baseline.json`, `python -m franka_sim
+      characterize`): run §2's 2 cm steps at 600/800/1000 N/m and compare lag and overshoot. The sim gives 15-35 %
+      overshoot on ideal 2 cm steps and a gonogo-steps lag of ~90-120 ms (effective damping ratio 1/sqrt(Lambda) with
+      Lambda 4.6-8.3 kg); real joint friction will damp more.
+- [ ] Error derivation in `PandaPyBackend.get_state` (`derive_panda_error`): a reflex gives `robot_mode` Reflex; check the
+      exact `robot_mode` value (`.name` / `str`), that `current_errors` / `last_motion_errors` print as `[]` when empty
+      (else adapt `_errors_text`), and that after a user stop or a dead controller thread `robot_mode` leaves Move
+      (the "controller stopped unexpectedly" rule, 0.5 s grace after `start`). `recover()` clears the error after
+      `automatic_error_recovery`.
+- [ ] Desk end-effector setting = `robot.desk_end_effector` in the station (`none` -> the bridge commands the flange;
+      `franka_hand` -> F_T_NE / NE_T_EE apply and `ee_is_tcp` / EE_T_TCP must follow).
+- [ ] Collision thresholds: `robot.impedance.collision_thresholds` / `backend.panda_py.collision` match what
+      `set_collision_behavior` received (the sim uses the upper torque/force thresholds, else the libfranka defaults
+      tau [20,20,18,18,16,14,12] Nm, F [20,20,20,25,25,25]).
+- [ ] Payload: Desk/`setLoad` mass and CoM vs the weighed tooling; the sim's `physics.payload_error_kg` (configured -
+      true) shows a wrong payload as a z offset of about m g / K_z (3.7 mm per 0.3 kg at 800 N/m).
+- [ ] Phone/cradle vs links 5/6: on both arms the sim's q7 rotation hits a self-collision before the q7 limit (the sim
+      reflexes on it; MuJoCo itself does not collide the tooling with link 6). Check the real clearance before
+      large q7 motions.

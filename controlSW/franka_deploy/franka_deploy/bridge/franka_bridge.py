@@ -8,6 +8,7 @@ Requests (franka_deploy.bridge.link, REQ/REP, one reply each):
   recover                clear a reflex / stopped state -> "idle" (explicit operator command only)
   stop                   stop the controller -> "stopped"
   inject_reflex          test only (enabled with --allow-inject)
+  <extra topic>          any topic in backend.extra_topics -> backend.handle_extra(topic, data) (MuJoCo sim)
 Watchdog (while running): no set_target for > watchdog_hold_s (0.2) -> "hold" (keep the last safe target);
 > watchdog_stop_s (2.0) -> backend.stop(), "stopped" (needs recover/start). Reflex (backend error) -> "reflex";
 never recovered automatically. Per-second stats line: request counts, hop service time, safety counters,
@@ -123,10 +124,14 @@ class FrankaBridge:
                 raise RuntimeError("inject_reflex disabled")
             self.backend.inject_reflex(data or "cartesian_reflex (injected)")
             return {"state": self.state}
+        if topic in getattr(self.backend, "extra_topics", ()):   # backend-specific topics (MuJoCo: hand_*, sim_*)
+            return self.backend.handle_extra(topic, data)
         raise ValueError(f"unknown request {topic!r}")
 
     def tick(self):
         now = time.monotonic()
+        if hasattr(self.backend, "sim_tick"):   # sim backends only (A6 logs sim state from here)
+            self.backend.sim_tick(self)
         st = self.backend.get_state()
         if st["error"] and self.state != "reflex":
             self.state = "reflex"

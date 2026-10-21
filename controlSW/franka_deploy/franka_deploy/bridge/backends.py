@@ -172,8 +172,51 @@ class FakeBackend(Backend):
         self._th.join(1.0)
 
 
-class PandaPyBackend(Backend):  # pragma: no cover - hardware only, never executed in this repo's tests
-    """panda-py CartesianImpedance backend. Hardware only (see docs/panda_py_checklist.md).
+def _errors_text(errs) -> str:
+    """Non-empty description of a libfranka ``franka::Errors`` value (panda-py RobotState.last_motion_errors /
+    current_errors), "" when it holds no error. Accepts what the binding may expose: a falsy/None value, a string
+    such as "[]" / "[joint_reflex]" (libfranka's operator std::string), or an object with bool flag attributes."""
+    if errs is None or errs is False:
+        return ""
+    if isinstance(errs, str):
+        t = errs.strip()
+        return "" if t in ("", "[]", "None") else t
+    flags = [k for k in dir(errs) if not k.startswith("_") and isinstance(getattr(errs, k, None), bool)]
+    if flags:
+        return ", ".join(k for k in flags if getattr(errs, k))
+    if isinstance(errs, (list, tuple, set)):
+        return ", ".join(str(e) for e in errs)
+    t = str(errs).strip()
+    return "" if t in ("", "[]", "None") or " object at 0x" in t else t
+
+
+def derive_panda_error(state, controller_expected: bool, started_s_ago: float = 1e9, grace_s: float = 0.5,
+                       last_at_start: str = ""):
+    """Bridge error string from a panda-py / libfranka RobotState, or None.
+
+    reflex mode (robot_mode Reflex) > non-empty current_errors > last_motion_errors > the controller thread having
+    stopped unexpectedly (a controller was started more than ``grace_s`` ago but robot_mode is no longer Move).
+    libfranka keeps last_motion_errors after automaticErrorRecovery until the next motion starts, so that field only
+    counts while a controller is expected to run and when it differs from its value at start() (``last_at_start``);
+    otherwise a stale value would re-latch the error after recover() and at bridge boot, and start() could never run."""
+    mode = getattr(state, "robot_mode", None)
+    mode_s = str(getattr(mode, "name", mode))
+    cur = _errors_text(getattr(state, "current_errors", None))
+    last = _errors_text(getattr(state, "last_motion_errors", None))
+    if "reflex" in mode_s.lower():
+        return f"reflex (robot_mode {mode_s}): {cur or last or 'no error flags'}"
+    if cur:
+        return f"current_errors: {cur}"
+    if last and controller_expected and last != last_at_start:
+        return f"last_motion_errors: {last}"
+    if controller_expected and started_s_ago > grace_s and "move" not in mode_s.lower():
+        return f"controller stopped unexpectedly (robot_mode {mode_s})"
+    return None
+
+
+class PandaPyBackend(Backend):
+    """panda-py CartesianImpedance backend. Hardware only (see docs/panda_py_checklist.md); the hardware calls are
+    excluded from coverage, the error derivation is tested with a fake ``panda_py`` module (tests/test_sim_backend_stack.py).
 
     Pins: NOT fixed yet (decision B0: Panda vs FR3 and its system version). panda-py must be built against the
     libfranka version that matches the robot's system version per Franka's compatibility table (Panda / system 4.x
@@ -181,11 +224,12 @@ class PandaPyBackend(Backend):  # pragma: no cover - hardware only, never execut
     configs/bridge.yaml (backend.panda_py_version / libfranka_version) once chosen. aarch64 (Jetson): source build.
     The parameter names below are from panda-py's documented API and must be re-checked against the pinned version.
     panda-py names used: panda_py.Panda(hostname), Panda.get_state() -> franka.RobotState (O_T_EE column-major 16,
-    q, dq, O_F_ext_hat_K, control_command_success_rate, robot_mode), Panda.start_controller(ctrl),
-    Panda.stop_controller(), Panda.recover(), Panda.move_to_joint_position(q, speed_factor),
-    Panda.get_robot().set_collision_behavior(...), Panda.get_robot().set_EE(NE_T_EE),
+    q, dq, O_F_ext_hat_K, control_command_success_rate, robot_mode, current_errors, last_motion_errors),
+    Panda.start_controller(ctrl), Panda.stop_controller(), Panda.recover(), Panda.move_to_joint_position(q,
+    speed_factor), Panda.get_robot().set_collision_behavior(...), Panda.get_robot().set_EE(NE_T_EE),
     controllers.CartesianImpedance(impedance=6x6, damping_ratio, nullspace_stiffness, filter_coeff),
     CartesianImpedance.set_control(position (3,), orientation xyzw (4,)).
+    error: derived on every get_state (derive_panda_error); latched until recover() (automatic_error_recovery).
     """
 
     def __init__(self, hostname: str, impedance=None, damping_ratio: float = 1.0, nullspace_stiffness: float = 0.5,
@@ -196,39 +240,52 @@ class PandaPyBackend(Backend):  # pragma: no cover - hardware only, never execut
         self.panda_py, self.controllers = panda_py, controllers
         self.panda = panda_py.Panda(hostname)
         robot = self.panda.get_robot()
-        if collision is not None:
+        if collision is not None:  # pragma: no cover - hardware call
             robot.set_collision_behavior(*collision)
-        if NE_T_EE is not None:
+        if NE_T_EE is not None:  # pragma: no cover - hardware call
             robot.set_EE(np.asarray(NE_T_EE, float).T.flatten().tolist())
         self.ctrl = controllers.CartesianImpedance(impedance=np.asarray(impedance) if impedance is not None else None,
                                                    damping_ratio=damping_ratio, nullspace_stiffness=nullspace_stiffness,
                                                    filter_coeff=filter_coeff)
         self.error = None
+        self._ctrl_running = False
+        self._t_started = 0.0
+        self._last_at_start = ""
 
     def start(self):
+        if self.error:
+            raise RuntimeError(f"cannot start: reflex active ({self.error}); recover first")
+        self._last_at_start = _errors_text(getattr(self.panda.get_state(), "last_motion_errors", None))
         self.panda.start_controller(self.ctrl)
+        self._ctrl_running, self._t_started = True, time.monotonic()
 
-    def set_target(self, T):
+    def set_target(self, T):  # pragma: no cover - hardware call
         q = Rotation.from_matrix(T[:3, :3]).as_quat()
         self.ctrl.set_control(np.asarray(T[:3, 3]), q)
 
     def get_state(self):
         s = self.panda.get_state()
+        if self.error is None:
+            self.error = derive_panda_error(s, self._ctrl_running, time.monotonic() - self._t_started,
+                                            last_at_start=self._last_at_start)
         T = np.asarray(s.O_T_EE).reshape(4, 4).T
         return {"O_T_EE": T, "q": np.asarray(s.q), "dq": np.asarray(s.dq), "O_F_ext": np.asarray(s.O_F_ext_hat_K),
                 "mode": str(s.robot_mode), "success_rate": float(s.control_command_success_rate),
                 "error": self.error, "t": time.monotonic()}
 
-    def move_joints(self, q, speed=0.2):
+    def move_joints(self, q, speed=0.2):  # pragma: no cover - hardware call
+        self._ctrl_running = False
         self.panda.stop_controller()
         self.panda.move_to_joint_position(list(q), speed_factor=speed)
-        self.panda.start_controller(self.ctrl)
+        self.start()
 
     def stop(self):
+        self._ctrl_running = False
         self.panda.stop_controller()
 
     def recover(self):
-        self.panda.recover()
+        self._ctrl_running = False
+        self.panda.recover()          # libfranka automaticErrorRecovery
         self.error = None
 
 
@@ -238,4 +295,11 @@ def make_backend(cfg: dict, home_O_T_EE: np.ndarray) -> Backend:
         return FakeBackend(home_O_T_EE, tau_s=cfg.get("tau_s", 0.03), bias_m=cfg.get("bias_m", (0, 0, 0)))
     if kind == "panda_py":
         return PandaPyBackend(**cfg["panda_py"])
+    if kind == "mujoco":   # franka_sim (controlSW/franka_sim on PYTHONPATH) + mujoco; imported only here
+        try:
+            from franka_sim.backend import MuJoCoBackend
+        except ImportError as e:
+            raise RuntimeError(f"backend type 'mujoco' needs controlSW/franka_sim on PYTHONPATH and the mujoco package "
+                               f"({type(e).__name__}: {e})") from e
+        return MuJoCoBackend.from_config(cfg, home_O_T_EE)
     raise ValueError(f"unknown backend {kind!r}")

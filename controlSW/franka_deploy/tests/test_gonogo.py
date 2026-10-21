@@ -108,3 +108,30 @@ def test_motion_profiles_and_tracking_stats():
     st = gonogo.tracking_stats(t, cmd, fk)
     assert abs(st["steady_err_mm_median"] - 1.0) < 0.05
     assert 20 <= st["lag_ms"] <= 40
+
+
+def test_no_loop_gate_reports_but_does_not_gate(tmp_path):
+    slow = np.full(1000, 0.9e-3)                          # p99.9 = 0.9 ms: NO-GO with the gate
+    d = _write(tmp_path / "ng", [_stats_line(cycles_s=slow) for _ in range(10)])
+    rep = gonogo.evaluate(d)
+    assert not rep["go"] and rep["loop_gate"] is True
+    rep = gonogo.evaluate(d, loop_gate=False)
+    assert rep["go"], rep["reasons"]
+    assert rep["loop_gate"] is False and rep["loop"]["p999_ms"] >= 0.9   # still reported
+    no_t = _stats_line()
+    no_t["loop"] = {}
+    assert gonogo.evaluate(_write(tmp_path / "nt", [no_t] * 5), loop_gate=False)["go"]
+    assert gonogo.main(["evaluate", str(d), "--no-loop-gate"]) == 0
+
+
+def test_wait_ready_times_out_on_dead_endpoint():
+    import time
+
+    t0 = time.monotonic()
+    try:
+        gonogo.wait_ready("tcp://127.0.0.1:%d" % (25671 + int(os.environ.get("FD_TEST_PORT_OFFSET", "0"))), timeout_s=1.0)
+    except RuntimeError as e:
+        assert "not ready" in str(e)
+    else:
+        raise AssertionError("wait_ready returned for a dead endpoint")
+    assert 1.0 <= time.monotonic() - t0 < 3.0
