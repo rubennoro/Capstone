@@ -55,7 +55,8 @@ def env():
 def sim_bridge_cfg(work: Path, robot: str = "panda") -> Path:
     bcfg = yaml.safe_load(open(PKG_ROOT / "configs" / "bridge.yaml"))
     bcfg["backend"]["type"] = "mujoco"
-    bcfg["backend"]["mujoco"] = {"station": "sim-iphone", "robot": robot}
+    bcfg["backend"]["mujoco"] = {"station": "sim-iphone", "robot": robot,
+                                 "state_endpoint": f"tcp://127.0.0.1:{5570 + 1000 + OFFSET + 22}"}   # A6 PUB, own port
     p = work / "bridge.yaml"
     p.write_text(yaml.safe_dump(bcfg))
     return p
@@ -224,7 +225,8 @@ def test_make_backend_mujoco_in_process():
     if str(SIM_ROOT) not in sys.path:
         sys.path.append(str(SIM_ROOT))
     home = np.array([[1.0, 0, 0, 0.45], [0, -1.0, 0, 0.0], [0, 0, -1.0, 0.45], [0, 0, 0, 1]])
-    b = B.make_backend({"type": "mujoco", "mujoco": {"station": "sim-iphone"}}, home)
+    b = B.make_backend({"type": "mujoco", "mujoco": {"station": "sim-iphone",
+                                                     "state_endpoint": f"tcp://127.0.0.1:{5570 + 1000 + OFFSET + 23}"}}, home)
     try:
         assert type(b).__name__ == "MuJoCoBackend"
         assert np.linalg.norm(b.get_state()["O_T_EE"][:3, 3] - home[:3, 3]) < 1e-3

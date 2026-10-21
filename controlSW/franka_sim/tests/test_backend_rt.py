@@ -23,8 +23,11 @@ from franka_sim.backend import MuJoCoBackend, load_station_spec  # noqa: E402
 HOME = np.array([[1.0, 0, 0, 0.45], [0, -1.0, 0, 0.0], [0, 0, -1.0, 0.45], [0, 0, 0, 1]])   # bridge.yaml default
 
 
+STATE_EP = f"tcp://127.0.0.1:{5570 + 1000 + int(os.environ.get('FD_TEST_PORT_OFFSET', '0')) + 20}"   # A6 PUB, own port
+
+
 def cfg(robot: str, **mj) -> dict:
-    return {"type": "mujoco", "mujoco": {"station": "sim-iphone", "robot": robot, **mj}}
+    return {"type": "mujoco", "mujoco": {"station": "sim-iphone", "robot": robot, "state_endpoint": STATE_EP, **mj}}
 
 
 @pytest.mark.parametrize("robot", ["panda", "fr3"])
@@ -98,7 +101,7 @@ def test_backend_api_reflex_move_and_stats_keys():
         ls = b.loop_stats()
         assert {"n", "p50_ms", "p99_ms", "cycle_hist_us", "sim_lag_ms_max", "steps_per_wake_max", "rt_resyncs",
                 "realtime_factor"} <= set(ls)
-        assert b.extra_topics[:2] == ("hand_cmd", "hand_state")        # A5; A6 appends sim_*
+        assert b.extra_topics == ("hand_cmd", "hand_state", "sim_reset", "sim_state")     # A5 + A6
         with pytest.raises(ValueError):
             b.handle_extra("nope", None)
     finally:

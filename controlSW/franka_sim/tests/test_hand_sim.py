@@ -8,6 +8,7 @@ no object, blocked move, stop, the 20 mm eraser vs eps_inner, and the MuJoCoBack
 from __future__ import annotations
 
 import json
+import os
 import time
 
 import numpy as np
@@ -247,7 +248,8 @@ def test_backend_hand_topics_and_state_keys():
     from franka_sim.backend import MuJoCoBackend
 
     home = np.array([[1.0, 0, 0, 0.45], [0, -1.0, 0, 0.0], [0, 0, -1.0, 0.45], [0, 0, 0, 1]])
-    b = MuJoCoBackend.from_config({"type": "mujoco", "mujoco": {"station": "sim-iphone"}}, home)
+    ep = f"tcp://127.0.0.1:{5570 + 1000 + int(os.environ.get('FD_TEST_PORT_OFFSET', '0')) + 21}"   # A6 PUB, own port
+    b = MuJoCoBackend.from_config({"type": "mujoco", "mujoco": {"station": "sim-iphone", "state_endpoint": ep}}, home)
     try:
         assert set(b.extra_topics) >= {"hand_cmd", "hand_state"} and b.core.hand_ctrl == b.hand.ctrl
         fk = FakeBackend(home)

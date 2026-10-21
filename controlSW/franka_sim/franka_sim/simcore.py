@@ -177,6 +177,7 @@ class SimCore:
         mujoco.mj_forward(m, self.d)
         self._hand_L = float(self.d.ten_length[self._tendon])     # finger hold target (A5 replaces the hold)
         self.hand_ctrl = None                                     # optional callable(core) -> tendon force (A5)
+        self.contact_probe = None                                 # optional callable(core) after mj_step2 (A6 scene.ContactProbe)
         self._jp, self._jr = np.zeros((3, m.nv)), np.zeros((3, m.nv))
         self._J, self._chol = np.zeros((6, 7)), np.zeros((6, 6))
         self._lam_eye = (self.pinv_damping ** 2 if self.pinv_damping > 0 else 1e-10) * np.eye(6)
@@ -394,6 +395,8 @@ class SimCore:
         for _ in range(self.n_substeps - 1):
             mujoco.mj_step1(m, d)
             mujoco.mj_step2(m, d)
+        if self.contact_probe is not None:          # d.contact and d.efc_force still match here (A6 contact forces)
+            self.contact_probe(self)
         tau_ext = d.qfrc_constraint[self._dadr] + d.qfrc_applied[self._dadr]
         mujoco.mj_step1(m, d)                       # kinematics, collisions and bias forces of the new state
         xf = d.xfrc_applied[self._arm_bodies]

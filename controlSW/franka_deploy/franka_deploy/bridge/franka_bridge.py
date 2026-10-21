@@ -8,6 +8,7 @@ Requests (franka_deploy.bridge.link, REQ/REP, one reply each):
   recover                clear a reflex / stopped state -> "idle" (explicit operator command only)
   stop                   stop the controller -> "stopped"
   inject_reflex          test only (enabled with --allow-inject)
+  sim_reset              MuJoCo only (A6): move the eraser; enabled with --allow-sim-reset (or --allow-inject)
   <extra topic>          any topic in backend.extra_topics -> backend.handle_extra(topic, data) (MuJoCo sim)
 Watchdog (while running): no set_target for > watchdog_hold_s (0.2) -> "hold" (keep the last safe target);
 > watchdog_stop_s (2.0) -> backend.stop(), "stopped" (needs recover/start). Reflex (backend error) -> "reflex";
@@ -42,7 +43,8 @@ def pose7_to_T(p):
 
 
 class FrankaBridge:
-    def __init__(self, cfg: dict, endpoint: str, allow_inject: bool = False, log_jsonl: str | None = None):
+    def __init__(self, cfg: dict, endpoint: str, allow_inject: bool = False, log_jsonl: str | None = None,
+                 allow_sim_reset: bool = False):
         self.cfg = cfg
         self.sock = BridgeServerSocket(endpoint)
         self.endpoint = endpoint
@@ -52,6 +54,7 @@ class FrankaBridge:
         self.hold_s = float(cfg.get("watchdog_hold_s", 0.2))
         self.stop_s = float(cfg.get("watchdog_stop_s", 2.0))
         self.allow_inject = allow_inject
+        self.allow_sim_reset = allow_sim_reset
         self.state = "idle"
         self.last_target_t = None
         self.events: list[dict] = []
@@ -124,6 +127,16 @@ class FrankaBridge:
                 raise RuntimeError("inject_reflex disabled")
             self.backend.inject_reflex(data or "cartesian_reflex (injected)")
             return {"state": self.state}
+        if topic == "sim_reset" and topic in getattr(self.backend, "extra_topics", ()):
+            if not (self.allow_sim_reset or self.allow_inject):
+                raise RuntimeError("sim_reset disabled (--allow-sim-reset)")
+            try:
+                rep = self.backend.handle_extra(topic, data)
+            except Exception as e:
+                self.log("sim_reset_refused", data=data, error=str(e))
+                raise
+            self.log("sim_reset", data=data, reply=rep)
+            return rep
         if topic in getattr(self.backend, "extra_topics", ()):   # backend-specific topics (MuJoCo: hand_*, sim_*)
             return self.backend.handle_extra(topic, data)
         raise ValueError(f"unknown request {topic!r}")
@@ -194,13 +207,15 @@ def main(argv=None):
     ap.add_argument("--config", required=True)
     ap.add_argument("--endpoint", default=None)
     ap.add_argument("--allow-inject", action="store_true")
+    ap.add_argument("--allow-sim-reset", action="store_true", help="serve sim_reset (MuJoCo backend, A6)")
     ap.add_argument("--log-jsonl", default=None, help="append events + per-second stats as JSON lines")
     ap.add_argument("--bias", type=float, nargs=3, default=None, help="FakeBackend bias override (m)")
     a = ap.parse_args(argv)
     cfg = yaml.safe_load(open(a.config))
     if a.bias is not None:
         cfg.setdefault("backend", {})["bias_m"] = a.bias
-    FrankaBridge(cfg, a.endpoint or cfg.get("endpoint", "tcp://127.0.0.1:5565"), a.allow_inject, a.log_jsonl).run()
+    FrankaBridge(cfg, a.endpoint or cfg.get("endpoint", "tcp://127.0.0.1:5565"), a.allow_inject, a.log_jsonl,
+                 allow_sim_reset=a.allow_sim_reset).run()
 
 
 if __name__ == "__main__":

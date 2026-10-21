@@ -15,6 +15,9 @@ Outputs DIR/report.json and DIR/report.html:
   score = share of proprio/action values outside the training normalizer's [min, max].
 - execution: tracking error |safe target (or commanded) - FK|, clamps by cause, chunk scale, settle waits, inference
   and capture->reply latency p50/p95, holds and faults per hour.
+- sim ground truth (A6, additive): episodes with bridge.jsonl sim lines (MuJoCo) get ``sim_gt`` from
+  franka_sim.ground_truth.evaluate_episode and the report a separate ``sim_success_rate``; human labels still decide
+  ``outcome`` and the label-based rates.
 """
 
 from __future__ import annotations
@@ -64,6 +67,26 @@ def outcome(ep):
     if ann and ann.get("success") is not None and ann.get("source") == "manual":
         return "success" if ann["success"] else "failure"
     return {"y": "success", "n": "failure"}.get(lab, "unlabeled")
+
+
+def sim_gt(d):
+    """franka_sim.ground_truth.evaluate_episode(d), or None (no sim lines, franka_sim not importable, or it failed)."""
+    try:
+        from franka_sim.ground_truth import evaluate_episode
+    except ImportError:
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "franka_sim")
+        if not os.path.isfile(os.path.join(root, "franka_sim", "ground_truth.py")):
+            return None
+        sys.path.append(os.path.normpath(root))
+        try:
+            from franka_sim.ground_truth import evaluate_episode
+        except Exception:
+            return None
+    try:
+        return evaluate_episode(d)
+    except Exception as e:
+        print(f"[eval] sim_gt of {d} failed: {e!r}", file=sys.stderr)
+        return None
 
 
 def load_normalizer_ranges(path):
@@ -160,6 +183,9 @@ def episode_metrics(d, demos10, demo_names, baseline_m, train_names, norm_rng, h
         ep["phases"] = ph
         sc = tr["ann_chunk_scale"] if "ann_chunk_scale" in tr.files else None
         ep["speed"] = M.speed_profile(tt, fk[:, :3], sc)
+    gt = sim_gt(d)
+    if gt is not None:
+        ep["sim_gt"] = gt
     ep["outcome"] = outcome(ep)
     return ep
 
@@ -172,6 +198,11 @@ def summarize(eps):
     k = sum(e["outcome"] == "success" for e in scored)
     p, lo, hi = M.wilson(k, len(scored))
     rep["success_rate"] = {"k": k, "n": len(scored), "p": p, "ci95": [lo, hi]}
+    sim = [e for e in eps if e.get("sim_gt") and e["sim_gt"].get("success") is not None]
+    if sim:                                     # physics truth, separate from the labels (A6)
+        ks = sum(bool(e["sim_gt"]["success"]) for e in sim)
+        p, lo, hi = M.wilson(ks, len(sim))
+        rep["sim_success_rate"] = {"k": ks, "n": len(sim), "p": p, "ci95": [lo, hi], "source": "bridge.jsonl sim lines"}
     conds = defaultdict(lambda: defaultdict(list))
     for e in scored:
         c = dict(e["conditions"])
@@ -209,6 +240,8 @@ def write_html(path, rep, eps, baseline):
          f"<p>{rep['n_episodes']} episodes; outcomes {html.escape(json.dumps(rep['outcomes']))}. "
          f"Policy success {sr['k']}/{sr['n']} = {sr['p']:.2f} (Wilson 95 % [{sr['ci95'][0]:.2f}, {sr['ci95'][1]:.2f}]); "
          f"system faults excluded.</p>",
+         (f"<p>Sim ground truth (bridge.jsonl, not the labels): {rep['sim_success_rate']['k']}/{rep['sim_success_rate']['n']} "
+          f"= {rep['sim_success_rate']['p']:.2f}.</p>" if rep.get("sim_success_rate") else ""),
          f"<p>Demo baseline (leave-one-out nearest DTW, median): {baseline * 1000:.1f} mm. "
          f"Rollout nearest-demo DTW / baseline (median): {rep['similarity_ratio_median']}.</p>",
          "<h2>Success by condition</h2><table>" + row(["condition", "value", "k/n", "p", "95 % CI"], "th")]
@@ -218,7 +251,7 @@ def write_html(path, rep, eps, baseline):
     h.append("</table><h2>Episodes</h2><table>" + row(["episode", "label", "outcome", "dur s", "calls", "nearest DTW mm",
                                                        "ratio", "prompt rank", "lift cm", "grasp w mm", "track p95 mm",
                                                        "clamps (joint/within/micro)", "scale max", "c2r p95 s", "OOD frac",
-                                                       "consistency mm"], "th"))
+                                                       "consistency mm", "sim_gt"], "th"))
     for e in eps:
         s, sim, pf, ph = e["summary"], e.get("similarity") or {}, e.get("prompt_fidelity") or {}, e.get("phases") or {}
         cl = e["clamps"]
@@ -232,7 +265,8 @@ def write_html(path, rep, eps, baseline):
                       f"{(e.get('chunk_scale') or {}).get('max', float('nan')):.2f}",
                       f"{(e.get('latency') or {}).get('capture_to_reply_p95', float('nan')):.3f}",
                       f"{(e.get('ood') or {}).get('frac_outside', float('nan')):.3f}",
-                      f"{(e.get('chunk_consistency_m') or float('nan')) * 1000:.1f}"]))
+                      f"{(e.get('chunk_consistency_m') or float('nan')) * 1000:.1f}",
+                      {True: "y", False: "n"}.get((e.get("sim_gt") or {}).get("success"), "-")]))
     h.append("</table><h2>Execution</h2><pre>" + html.escape(json.dumps(rep["execution"], indent=1)) + "</pre>")
     open(path, "w").write("\n".join(h))
 

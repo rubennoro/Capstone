@@ -66,7 +66,8 @@ class HandStack:
         self.work = work
         bcfg = yaml.safe_load(open(PKG_ROOT / "configs" / "bridge.yaml"))
         bcfg["backend"]["type"] = "mujoco"
-        bcfg["backend"]["mujoco"] = {"station": "sim-iphone", "robot": robot}
+        bcfg["backend"]["mujoco"] = {"station": "sim-iphone", "robot": robot,
+                                     "state_endpoint": f"tcp://127.0.0.1:{5570 + 1000 + OFFSET + 24}"}   # A6 PUB, own port
         (work / "bridge.yaml").write_text(yaml.safe_dump(bcfg))
         ccfg = yaml.safe_load(open(PKG_ROOT / "configs" / "franka_cartesian.yaml"))
         ccfg["bridge_endpoint"] = BRIDGE

@@ -108,6 +108,21 @@ class HandSim:
         s["t"] = float(t_mono)
         return s
 
+    def reset(self, gap_m: float, core=None) -> None:
+        """A6 sim_reset: drop any command and hold at gap_m (mode idle, last_result "reset"). The caller has put the finger
+        joints at gap_m / 2 (under the core lock)."""
+        g = float(gap_m)
+        with self._lock:
+            self._pending = None
+            self._cmd = None
+            self.mode, self.last_result, self.grasped = "idle", "reset", False
+            self._t_err, self._F = 0.0, 0.0
+            self._target = self._hold = self._ref = g
+            self._ref_v = self._ref_a = 0.0
+            self._state = self._make_state(core) if core is not None else {**self._state, "gap_m": g, "gap_vel_m_s": 0.0,
+                                                                              "busy": False, "mode": "idle", "grasped": False,
+                                                                              "last_result": "reset"}
+
     # ------------------------------------------------------------------------------ control step (A4 hook)
     def _finish(self, result: str, mode: str, hold: float) -> None:
         self.last_result, self.mode = result, mode
