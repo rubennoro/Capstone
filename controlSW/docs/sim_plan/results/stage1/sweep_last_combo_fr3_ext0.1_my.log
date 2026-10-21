@@ -1,0 +1,8 @@
+45 demos; grasp from phases: 45
+[0s] fr3 ext=0.1 side=-y
+  coarse 280 placements in 315 s; best 44/45 feasible
+  {"n_feasible": 43, "worst_joint_margin_feasible_deg": 13.16560060308711, "worst_tooling_clearance_m": 0.009643150847364402, "clamp_fraction": 0.08589514955221712}
+robot  ext_mm side  feasible tool_clr_mm clr_feas_mm marg_feas marg_all  clamp t>vmax tcp_t>v  slowdown cone> cone_frac cone_maxdeg box> dq<=1  placement (gx, gy, yaw)
+fr3       100   -y   43/45           9.6        15.5      13.2      1.1  0.086  0.051   0.076  1.00/1.00    37     0.244        86.2   12    19 (0.50, 0.00, 315)
+columns: tool_clr = worst tooling clearance over all demos, clr_feas / marg_feas = over feasible demos, marg_all = worst joint margin over all demos (incl. infeasible); clamp = SafetyFilter clamp fraction and t>vmax = time above v_max, both on the flange path; tcp_t>v = time above v_max on the TCP path (dataset statistic); cone> / box> = demos with any frame over the bridge cone (60.0 deg) / outside the box; cone_frac = mean fraction of frames over the cone; gates cone=False box=False
+recommended design: extension 0.1 m, camera side -y; robot-agnostic (>= 95 % on every robot): True; feasible fraction by robot {"fr3": 0.956}; best per robot {"fr3": {"extension_m": 0.1, "camera_side": "-y", "n_feasible": 43, "n_feasible_dq_ok": 19, "worst_joint_margin_feasible_deg": 13.16560060308711, "worst_joint_margin_all_demos_deg": 1.1459155902616476, "worst_tooling_clearance_m": 0.009643150847364402, "clamp_fraction": 0.08589514955221712, "placement": {"gx": 0.5, "gy": 0.0, "yaw_deg": 315.0}}}

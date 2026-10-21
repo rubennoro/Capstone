@@ -1,14 +1,21 @@
 """``python -m franka_sim <cmd>``: registers the built-in commands (lazily imported) and dispatches.
 
 Usage: ``python -m franka_sim --help`` | ``python -m franka_sim check-assets``
-       | ``python -m franka_sim model --profile sim-iphone [--robot fr3] [--clearance]``.
+       | ``python -m franka_sim model --profile sim-iphone [--robot fr3] [--clearance]``
+       | ``python -m franka_sim stage1 --zarr Z --ids robot=panda,... --out DIR``.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 
-from franka_sim import cli
+if __name__ == "__main__" and sys.argv[1:2] == ["stage1"]:
+    # Before numpy loads BLAS: one thread per stage1 worker process (stage1_replay.limit_threads; A3 review 8).
+    for _k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        os.environ.setdefault(_k, "1")
+
+from franka_sim import cli  # noqa: E402
 
 
 def _register_builtins() -> None:
@@ -37,6 +44,19 @@ def _register_builtins() -> None:
 
     cli.register("model", add_model, run_model,
                  help="build the station model; print frames (F_T_TCP, cameras, tags), payload and clearance")
+
+    def add_stage1(p):
+        from franka_sim import stage1_replay
+
+        stage1_replay.add_arguments(p)
+
+    def run_stage1(args):
+        from franka_sim import stage1_replay
+
+        return stage1_replay.run(args)
+
+    cli.register("stage1", add_stage1, run_stage1,
+                 help="offline kinematic feasibility of the recorded demos (placement, home, finger extension, camera side)")
 
     def add_characterize(p):
         from franka_sim import characterize

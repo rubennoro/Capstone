@@ -1,0 +1,35 @@
+45 demos; grasp from phases: 45
+[0s] panda ext=0.0 side=+y
+  coarse 280 placements in 137 s; best 36/45 feasible
+  {"n_feasible": 31, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": -0.022128937829492403, "clamp_fraction": 0.10066977527319669}
+[298s] panda ext=0.0 side=-y
+  coarse 280 placements in 81 s; best 10/45 feasible
+  {"n_feasible": 8, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": -0.059297332533864155, "clamp_fraction": 0.10066977527319669}
+[464s] panda ext=0.05 side=+y
+  coarse 280 placements in 150 s; best 41/45 feasible
+  {"n_feasible": 40, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": 0.006162945153952627, "clamp_fraction": 0.09230803082519136}
+[751s] panda ext=0.05 side=-y
+  coarse 280 placements in 86 s; best 11/45 feasible
+  {"n_feasible": 9, "worst_joint_margin_feasible_deg": 10.097576589380843, "worst_tooling_clearance_m": -0.01212523769261286, "clamp_fraction": 0.09230803082519136}
+[980s] panda ext=0.1 side=+y
+  coarse 280 placements in 245 s; best 42/45 feasible
+  {"n_feasible": 41, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": 0.037397203494085894, "clamp_fraction": 0.08589514955221712}
+[1399s] panda ext=0.1 side=-y
+  coarse 280 placements in 275 s; best 44/45 feasible
+  {"n_feasible": 43, "worst_joint_margin_feasible_deg": 17.569353364664728, "worst_tooling_clearance_m": 0.023755044775089124, "clamp_fraction": 0.08589514955221712}
+[1864s] fr3 ext=0.0 side=+y
+  coarse 280 placements in 149 s; best 37/45 feasible
+  {"n_feasible": 37, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": -0.03156887322567792, "clamp_fraction": 0.10066977527319669}
+[2156s] fr3 ext=0.0 side=-y
+  coarse 280 placements in 96 s; best 27/45 feasible
+  {"n_feasible": 27, "worst_joint_margin_feasible_deg": 12.875901666402985, "worst_tooling_clearance_m": -0.061909638812141364, "clamp_fraction": 0.10066977527319669}
+[2364s] fr3 ext=0.05 side=+y
+  coarse 280 placements in 184 s; best 38/45 feasible
+  {"n_feasible": 37, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": -0.00037502532819814555, "clamp_fraction": 0.09230803082519136}
+[2679s] fr3 ext=0.05 side=-y
+  coarse 280 placements in 113 s; best 24/45 feasible
+  {"n_feasible": 25, "worst_joint_margin_feasible_deg": 9.99999999999999, "worst_tooling_clearance_m": -0.012628103809691198, "clamp_fraction": 0.09230803082519136}
+[2889s] fr3 ext=0.1 side=+y
+  coarse 280 placements in 245 s; best 43/45 feasible
+  {"n_feasible": 40, "worst_joint_margin_feasible_deg": 10.000000000000002, "worst_tooling_clearance_m": 0.034637367961077574, "clamp_fraction": 0.08589514955221712}
+[3286s] fr3 ext=0.1 side=-y

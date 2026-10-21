@@ -1,11 +1,40 @@
 schema: run.sim/v1
 id: stage1
-n_grid: [7, 7]
+n_grid: [5, 7]                 # x 0.10 m, y 0.133 m steps; 5x5 over y +-0.30 put the Panda optimum on the grid edge (A3 review 7)
+x_range_m: [0.30, 0.70]
+y_range_m: [-0.40, 0.40]          # widened from +-0.30 to the bridge workspace box (scene workspace y +-0.40)
 yaw_step_deg: 45
 coarse_hz: 10
 n_fine_top_k: 5
 ik_tol_m: 0.001
 ik_tol_deg: 0.5
+n_sg_window: 11                  # Savitzky-Golay window (frames, 60 Hz) for dq/ddq/jerk
+n_sg_order: 3
+tooling_clearance_min_m: 0.010 # A1 MIN_CLEARANCE_M
+jump_dq_ratio: 10.0            # per-frame |dq|/dt / dq_max above this = IK branch jump (a real fast pass is reported as peak_dq_ratio)
+filter_hz: 200.0               # SafetyFilter replay rate
+dist_cap_m: 0.10               # distance queries are capped here
+n_init_seeds: 16               # multistart seeds at the grasp frame
+n_null_iters: 5                  # null-space joint-centering steps after each IK
+n_screen_every: 5                # coarse tier 1 runs every 5th demo on all placements
+n_coarse_full: 30              # coarse tier 2 runs all demos on the best 30 placements
+n_grasp_branches: 3            # distinct grasp-frame IK branches tracked per demo; the best whole-demo result is kept
+branch_sep_rad: 0.10           # two grasp solutions are one branch when no joint differs by more than this
+gate_cone: false               # make "flange z over the bridge cone" a feasibility gate (default off: cone value is a user decision)
+gate_cone_fraction_max: 0.0    # with gate_cone: allowed fraction of frames over scene.workspace.cone_max_deg
+gate_box: false                # same for the bridge workspace box
+gate_box_fraction_max: 0.0
 provenance:
   "": {status: decision, source: "design_track_b.md run/sim stage1"}
+  n_grid: {status: decision, source: "A3fix: 5x7 over the widened y range (spec default 7x7) for sweep wall time, 2026-10-19"}
+  x_range_m: {status: decision, source: "A3.md default gx 0.30-0.70"}
+  y_range_m: {status: decision, source: "A3fix: widened from the A3.md default -0.30..0.30 to the scene workspace box y (A3 review 7)"}
+  n_sg_window: {status: decision, source: "A3 executor: 11 frames = 183 ms at 60 Hz"}
+  tooling_clearance_min_m: {status: decision, source: "A3.md acceptance (0.010 m = model.MIN_CLEARANCE_M)"}
+  jump_dq_ratio: {status: decision, source: "A3 executor: 3x flagged real near-singular wrist passes; 10x is a branch flip"}
+  filter_hz: {status: decision, source: "A3.md leaky bucket at 200 Hz"}
+  n_screen_every: {status: decision, source: "A3 executor: two-tier coarse search for wall time"}
+  n_grasp_branches: {status: decision, source: "A3fix (review finding 1): order-independent grasp-branch choice"}
+  gate_cone: {status: decision, source: "A3fix (review finding 4): reported always, gated only on request; the user decides the cone value"}
+  gate_box: {status: decision, source: "A3fix (review finding 4)"}
 critical: []

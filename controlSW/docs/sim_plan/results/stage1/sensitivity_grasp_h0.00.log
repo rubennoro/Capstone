@@ -1,0 +1,12 @@
+45 demos; grasp from phases: 45
+[0s] panda ext=0.1 side=-y
+  coarse 280 placements in 285 s; best 43/45 feasible
+  {"n_feasible": 43, "worst_joint_margin_feasible_deg": 17.58698477295777, "worst_tooling_clearance_m": 0.024006689599392356, "clamp_fraction": 0.08589514955221712}
+[529s] fr3 ext=0.1 side=-y
+  coarse 280 placements in 355 s; best 43/45 feasible
+  {"n_feasible": 43, "worst_joint_margin_feasible_deg": 10.324973377387579, "worst_tooling_clearance_m": 0.010285269587280568, "clamp_fraction": 0.08589514955221712}
+robot  ext_mm side  feasible tool_clr_mm clr_feas_mm marg_feas marg_all  clamp t>vmax tcp_t>v  slowdown cone> cone_frac cone_maxdeg box> dq<=1  placement (gx, gy, yaw)
+panda     100   -y   43/45          24.0        24.0      17.6      1.3  0.086  0.051   0.076  1.00/1.00    37     0.244        86.2    2    35 (0.70, 0.27, 90)
+fr3       100   -y   43/45          10.3        10.3      10.3     10.3  0.086  0.051   0.076  1.00/1.00    37     0.244        86.2    2    36 (0.70, 0.27, 90)
+columns: tool_clr = worst tooling clearance over all demos, clr_feas / marg_feas = over feasible demos, marg_all = worst joint margin over all demos (incl. infeasible); clamp = SafetyFilter clamp fraction and t>vmax = time above v_max, both on the flange path; tcp_t>v = time above v_max on the TCP path (dataset statistic); cone> / box> = demos with any frame over the bridge cone (60.0 deg) / outside the box; cone_frac = mean fraction of frames over the cone; gates cone=False box=False
+recommended design: extension 0.1 m, camera side -y; robot-agnostic (>= 95 % on every robot): True; feasible fraction by robot {"panda": 0.956, "fr3": 0.956}; best per robot {"fr3": {"extension_m": 0.1, "camera_side": "-y", "n_feasible": 43, "n_feasible_dq_ok": 36, "worst_joint_margin_feasible_deg": 10.324973377387579, "worst_joint_margin_all_demos_deg": 10.324973377387579, "worst_tooling_clearance_m": 0.010285269587280568, "clamp_fraction": 0.08589514955221712, "placement": {"gx": 0.7, "gy": 0.2666666666666666, "yaw_deg": 90.0}}, "panda": {"extension_m": 0.1, "camera_side": "-y", "n_feasible": 43, "n_feasible_dq_ok": 35, "worst_joint_margin_feasible_deg": 17.58698477295777, "worst_joint_margin_all_demos_deg": 1.319915204232387, "worst_tooling_clearance_m": 0.024006689599392356, "clamp_fraction": 0.08589514955221712, "placement": {"gx": 0.7, "gy": 0.2666666666666666, "yaw_deg": 90.0}}}
