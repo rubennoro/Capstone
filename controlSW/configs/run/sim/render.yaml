@@ -2,6 +2,15 @@ schema: run.sim/v1
 id: render
 image_source: render
 render_fps_hz: 30
+stage3:                                      # Stage 3 closed loop (eval.stage3.DEFAULTS are the code defaults)
+  n_episodes_per_pose: 3
+  poses: {center: home, offsets_m: [[0.0, 0.0], [0.03, 0.0], [-0.03, 0.02]], yaw_deg: [0.0, 15.0, -15.0]}   # center: home | stage1 (--stage1 DIR)
+  reset_timeout_s: 3.0
+  home_timeout_s: 15.0
+  settle_s: 0.5
+  start_retries_n: 3
+  finger_geom_patterns: [pad_, tag_, finger]
+  ignore_contact_pairs: [[eraser, table]]
 provenance:
   "": {status: decision, source: "design_track_b.md run/sim (images follow the sim in closed loop)"}
 critical: []

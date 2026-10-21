@@ -1,0 +1,14 @@
+schema: run.sweeps/v1
+id: block_raise_smoke
+stage: "3"
+axes:
+  - {group: link, ids: [ideal, wifi_good]}
+  - {group: policy, ids: [fake, demo_replay]}
+max_runs: 4
+seed: 0
+n_episodes: 1                                # episodes per pose
+n_poses: 1
+resume: true
+provenance:
+  "": {status: decision, source: "B9.md: 2x2 smoke sweep that resumes (stage 3, 1 episode x 1 pose)"}
+critical: []

@@ -29,13 +29,24 @@ for _p in (DEPLOY_PKG,):
     if str(_p) not in sys.path:
         sys.path.append(str(_p))
 
-from franka_deploy.station import load_station  # noqa: E402
+from franka_deploy.station import StationError, load_station  # noqa: E402
 from franka_deploy.launch import launcher as L  # noqa: E402
 from franka_deploy.paths import REPO_ROOT  # noqa: E402
 
-STAGES = ("1", "2a", "2b")
+STAGES = ("1", "2a", "2b")                                      # what "--stage all" runs
+ALL_STAGES = STAGES + ("3",)                                    # Stage 3 (closed loop) is always asked for explicitly
+EXIT_PASS, EXIT_INCOMPLETE, EXIT_USAGE, EXIT_FAIL = 0, 1, 2, 3   # 2 = usage / config error (as argparse), never a verdict
+STATION_ID_GROUPS = ("robot", "tooling", "sensor", "scene", "host")
 STATION_GROUPS = ("robot", "tooling", "sensor", "scene", "host", "criteria", "sim")   # groups Stage 1 / the sim model load
 DEFAULT_DEPLOY = DEPLOY_PKG / "configs" / "deploy.yaml"
+
+
+def usage_error(msg: str):
+    """A usage / configuration error: message on stderr, exit code 2 (1 means INCOMPLETE, 3 FAIL)."""
+    import sys as _sys
+
+    print(f"eval: error: {msg}", file=_sys.stderr)
+    raise SystemExit(EXIT_USAGE)
 
 
 class StageIncomplete(Exception):
@@ -56,6 +67,7 @@ class Run:
     out: Path
     seed: int = 0
     notes: list = field(default_factory=list)
+    tag: str = ""            # extra run-dir identity that is not a station set (e.g. the Stage 3 stub scenario)
 
     @property
     def profile(self) -> str:
@@ -93,7 +105,7 @@ class Run:
         return [s for s in self.sets if str(s).partition("=")[0].partition(".")[0] in groups]
 
     def run_dir(self, stage: str) -> Path:
-        h = hashlib.sha256("|".join(self.user_sets).encode()).hexdigest()[:8]
+        h = hashlib.sha256("|".join(self.user_sets + ([f"tag={self.tag}"] if self.tag else [])).encode()).hexdigest()[:8]
         return self.out / f"{stage}_{self.policy.get('id')}_{self.station.fingerprint()[:8]}_{h}"
 
     def demo_list(self):
@@ -101,29 +113,39 @@ class Run:
         return [int(x) for x in a.demos.split(",")] if getattr(a, "demos", None) else None
 
 
-def resolve(args) -> Run:
+def resolve(args, run_overrides: dict | None = None, extra_sets=None) -> Run:
+    """Profile + policy + sets -> Run. ``run_overrides`` = {group: id} (a run group such as link / policy / sim, or a station
+    group such as robot / sensor), ``extra_sets`` = more ``group.path=value`` overrides (sweep points); both count as user
+    sets for the run-dir hash. Callers that pass neither get exactly the old behaviour."""
     cfg = L.load_config(args.deploy_config or DEFAULT_DEPLOY, args.profile)
     if "station" not in cfg:
-        raise SystemExit(f"profile {args.profile!r} has no station: eval needs a station profile (sim-*)")
+        usage_error(f"profile {args.profile!r} has no station: eval needs a station profile (sim-*)")
     run_ids = dict(cfg.get("run", {}))
+    station_ids = dict(cfg["station"])
     if args.policy:
         run_ids["policy"] = args.policy
-    user_sets = list(getattr(args, "set", None) or [])
+    for g, i in (run_overrides or {}).items():
+        (station_ids if g in STATION_ID_GROUPS else run_ids)[g] = i
+    cfg["station"] = station_ids
+    user_sets = list(getattr(args, "set", None) or []) + [str(x) for x in (extra_sets or [])]
     sets = list(cfg.get("station_set", [])) + user_sets
-    station = load_station({"station": cfg["station"], "run": run_ids}, sets=sets)
+    try:
+        station = load_station({"station": station_ids, "run": run_ids}, sets=sets)
+    except StationError as e:
+        usage_error(str(e))
     cfg["station_set"] = sets
-    if args.policy:
+    if args.policy or run_overrides:
         cfg["run"] = run_ids
     policy = L.resolve_policy(cfg, station)
     out = Path(args.out).resolve()
     try:
         if out.is_relative_to(REPO_ROOT):
-            raise SystemExit(f"refusing to write inside the repo: {out}")
+            usage_error(f"refusing to write inside the repo: {out}")
     except AttributeError:      # pragma: no cover
         pass
     out.mkdir(parents=True, exist_ok=True)
     return Run(args=args, cfg=cfg, station=station, policy=policy, ids=dict(cfg["station"]), run_ids=run_ids, sets=sets,
-               user_sets=user_sets, out=out, seed=int(getattr(args, "seed", 0) or 0))
+               user_sets=user_sets, out=out, seed=int(getattr(args, "seed", 0) or 0), tag=str(getattr(args, "sim_stub", None) or ""))
 
 
 def child_env(extra: dict | None = None) -> dict:
@@ -147,7 +169,7 @@ def write_policy_yaml(R: Run, path: Path) -> Path:
     return path
 
 
-STAGE_FN = {"1": "stage1", "2a": "stage2a", "2b": "stage2b"}
+STAGE_FN = {"1": "stage1", "2a": "stage2a", "2b": "stage2b", "3": "stage3"}
 
 
 def run_one_stage(R: Run, stage: str, results: dict) -> dict:
@@ -178,6 +200,14 @@ def run_one_stage(R: Run, stage: str, results: dict) -> dict:
     del R.notes[n_notes0:]
     metrics.setdefault("protocol", R.protocol)
     ev = crit.evaluate(R.criteria, metrics, stage)
+    sec = crit.STAGE_SECTION.get(stage, "")
+    ph = sorted(p for p, _ in R.station.placeholders()
+                if p.startswith(("criteria.limits.", "criteria.success.", f"criteria.{sec}.")))
+    if ph:
+        notes.append("criteria values that are open user decisions (placeholders): " + ", ".join(ph))
+    if metrics.get("incomplete_reason"):       # a stage that stopped early: whatever it measured is listed, the verdict is INCOMPLETE
+        ev["verdict"] = "INCOMPLETE"
+        notes.append(f"INCOMPLETE: {metrics['incomplete_reason']}")
     rep = rpt.make_report(stage=stage, policy_id=R.policy.get("id"), policy_kind=R.policy.get("kind"), profile=R.profile,
                           sensor=R.sensor, robot=R.ids.get("robot"), station_fingerprint=R.station.fingerprint(),
                           image_source=R.image_source, seed=R.seed, started=started, duration_s=time.time() - t0,
@@ -194,7 +224,18 @@ def run_one_stage(R: Run, stage: str, results: dict) -> dict:
     return rep
 
 
+def exit_code(verdicts) -> int:
+    """0 = every stage PASS; 3 = at least one FAIL; 1 = no FAIL but at least one INCOMPLETE (a FAIL is a definite result, so
+    it wins over a stage that could not finish); 2 is reserved for usage / config errors (``usage_error``)."""
+    v = list(verdicts)
+    return EXIT_FAIL if "FAIL" in v else EXIT_INCOMPLETE if "INCOMPLETE" in v else EXIT_PASS
+
+
 def run(args) -> int:
+    if getattr(args, "sweep", None):
+        from franka_sim.eval import sweeps
+
+        return sweeps.run_sweep(args)
     R = resolve(args)
     stages = list(STAGES) if args.stage == "all" else [args.stage]
     results: dict = {}
@@ -202,5 +243,4 @@ def run(args) -> int:
     for st in stages:
         reps.append(run_one_stage(R, st, results))
     rpt.write_summary(R.out)
-    # exit code: 0 for PASS or FAIL (a verdict was produced), 1 when a stage was INCOMPLETE
-    return 1 if any(r["verdict"] == "INCOMPLETE" for r in reps) else 0
+    return exit_code(r["verdict"] for r in reps)

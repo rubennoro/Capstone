@@ -60,9 +60,37 @@ def test_k_threshold_dicts_fan_out_and_substage_keys():
     assert set(ev["gates"]) == {"stage2.chunk_reachable_fraction_min", "stage2.chunk_joint_margin_deg_min",
                                 "stage2.pred_vs_demo_pos_err_mm_p95_k4_max", "stage2.pred_vs_demo_pos_err_mm_p95_k8_max",
                                 "stage2.pred_vs_demo_pos_err_mm_p95_k15_max"}
-    b = C.evaluate(CRIT, {"live_vs_offline_pos_err_mm_p95": 3, "frame_selection_errors": 0, "cam_stamp_err_ms_p95": 10,
-                          "protocol": "v1"}, "2b")
-    assert b["verdict"] == "PASS" and len(b["gates"]) == 3
+    m2b = {"live_vs_offline_pos_err_mm_p50_k15": 4.0, "live_vs_offline_pos_err_mm_p95_k15": 20.0, "n_pairs": 60,
+           "frame_selection_errors": 0, "cam_stamp_err_ms_p95": 10, "protocol": "v1"}
+    b = C.evaluate(CRIT, m2b, "2b")
+    assert b["verdict"] == "PASS" and len(b["gates"]) == 5, b["gates"].keys()
+    assert "stage2.live_vs_offline_pos_err_mm_p50_k15_max" in b["gates"] and "stage2.n_pairs_at_least" in b["gates"]
+    # p95 beyond the bound fails; p50 beyond fails; too few pairs is INCOMPLETE, never FAIL and never PASS
+    assert C.evaluate(CRIT, {**m2b, "live_vs_offline_pos_err_mm_p95_k15": 26.0}, "2b")["verdict"] == "FAIL"
+    assert C.evaluate(CRIT, {**m2b, "live_vs_offline_pos_err_mm_p50_k15": 5.5}, "2b")["verdict"] == "FAIL"
+    few = C.evaluate(CRIT, {**m2b, "n_pairs": 11}, "2b")
+    assert few["verdict"] == "INCOMPLETE" and few["gates"]["stage2.n_pairs_at_least"]["pass"] is None
+    assert C.evaluate(CRIT, {**m2b, "n_pairs": 11, "live_vs_offline_pos_err_mm_p95_k15": 99}, "2b")["verdict"] == "FAIL"
+
+
+def test_stage3_gate_names_and_lag_gate_semantics():
+    m3 = {"collisions": 0, "reflex": 0, "tracking_err_mm_p95": 1.0, "gripper_width_lag_steps_p95": 0,
+          "inference_latency_s_p95": 0.1, "receiver_age_s_p95": 0.1, "stale_image_errors": 0, "obs_motion_mm_p95": 1.0}
+    ev = C.evaluate(CRIT, m3, "3")
+    assert ev["verdict"] == "PASS", ev["gates"]          # a lag of 0 used to FAIL (key without a suffix meant ==)
+    assert set(ev["gates"]) == {f"stage3.{k}_max" for k in ("collisions", "reflex", "tracking_err_mm_p95", "inference_latency_s_p95",
+                                "receiver_age_s_p95", "stale_image_errors", "obs_motion_mm_p95", "gripper_width_lag_steps_p95")}
+    assert C.evaluate(CRIT, {**m3, "reflex": 1}, "3")["verdict"] == "FAIL"
+
+
+def test_criteria_placeholders_are_marked():
+    from franka_deploy.station import load_station
+    st = load_station({"station": {"robot": "panda", "tooling": "franka_hand_iphumi_iphone16pro", "sensor": "iphone16pro_wifi",
+                                   "scene": "block_raise_table", "host": "pc_laptop"},
+                       "run": {"policy": "fake", "link": "ideal", "criteria": "block_raise", "sim": "video_replay"}})
+    ph = {p for p, _ in st.placeholders() if p.startswith("criteria.")}
+    assert {"criteria.limits.v_max_m_s", "criteria.success.lift_min_m", "criteria.success.timeout_s",
+            "criteria.stage2.n_pairs_at_least", "criteria.stage2.live_vs_offline_pos_err_mm_p95_max.k15"} <= ph
 
 
 def test_real_criteria_stage1_and_unknown_stage():

@@ -137,6 +137,8 @@ def run(args) -> dict:
           f"size {size}; UW emulates the app: held at main ticks from {len(ep.uw_slots())} recorded UW frames "
           f"(app streams real UW at camera fps)", file=sys.stderr)
     link = LinkConfig.from_yaml(args.link) if args.link else None
+    lat_main = float(args.capture_latency_s)
+    lat_uw = lat_main if args.capture_latency_uw_s is None else float(args.capture_latency_uw_s)
     stream_ports = {"main": ports[0], "ultrawide": ports[1] if len(ports) > 1 else ports[0] + 1}
     meta = {"fps_hz": args.fps, "streams": {"main": {"w": size[0], "h": size[1]}, "ultrawide": {"w": size[0], "h": size[1]}},
             "K": {"main": K_main, "ultrawide": K_uw}}
@@ -172,17 +174,25 @@ def run(args) -> dict:
                     break
                 ti, mj, uj, kk = item
                 t_target = start_ns / 1e9 + loop * period + float(tt[ti])
-                dt = t_target - time.monotonic()
-                if dt > 0:
-                    time.sleep(dt)
-                else:
-                    late_max = max(late_max, -dt)
                 seq = sent
                 t_uw_true = t_target - float(tt[ti] - uw_t[ti])
                 if args.protocol == "v1":
-                    client.send_v1("main", mj, t_target, seq)
-                    client.send_v1("ultrawide", uj, t_uw_true, seq)
+                    # v1 has no stamps: the receiver dates a frame by arrival minus the app's capture latency. Model that
+                    # pipeline here: a frame captured at t_target (truth) leaves the phone capture_latency later.
+                    for lat, stream, jpg, t_true in sorted(
+                            [(lat_main, "main", mj, t_target), (lat_uw, "ultrawide", uj, t_uw_true)], key=lambda x: x[0]):
+                        dt = t_target + lat - time.monotonic()
+                        if dt > 0:
+                            time.sleep(dt)
+                        else:
+                            late_max = max(late_max, -dt)
+                        client.send_v1(stream, jpg, t_true, seq)
                 else:
+                    dt = t_target - time.monotonic()
+                    if dt > 0:
+                        time.sleep(dt)
+                    else:
+                        late_max = max(late_max, -dt)
                     client.send_v2(mj, uj, t_target, t_uw_true, seq, w=size[0], h=size[1])
                 sent += 1
                 t_first_sent = t_first_sent or t_target
@@ -209,6 +219,11 @@ def main(argv=None) -> int:
     ap.add_argument("--size", default="960x720")
     ap.add_argument("--jpeg-quality", type=int, default=90)
     ap.add_argument("--link", default=None, help="run/link/*.yaml (default: no emulation)")
+    ap.add_argument("--capture-latency-s", type=float, default=0.0,
+                    help="v1 only: the app's capture->send pipeline (main stream): frames leave this long after their capture time "
+                         "(truth keeps the capture time). Set from the sensor's clock.latency_s when its clock mode is "
+                         "arrival_minus_latency; the link's own latency_s stays the Wi-Fi hop.")
+    ap.add_argument("--capture-latency-uw-s", type=float, default=None, help="same for the ultrawide stream (default: the main value)")
     ap.add_argument("--truth", default=None)
     ap.add_argument("--ready-file", default=None)
     ap.add_argument("--loop", action="store_true")

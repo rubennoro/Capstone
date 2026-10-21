@@ -149,9 +149,80 @@ def summarize(out_dir) -> dict:
     return {"schema": "sim_summary/v1", "n_runs": len(rows), "rows": rows}
 
 
+def _rate(m: dict) -> str | None:
+    """'0.67 [0.21, 0.94] (2/3)' from a report's success metrics, None when it has none."""
+    if m.get("success_rate") is None:
+        return None
+    return (f"{_fmt(m['success_rate'])} [{_fmt(m.get('success_ci95_lo'))}, {_fmt(m.get('success_ci95_hi'))}] "
+            f"({m.get('success_k')}/{m.get('success_n')})")
+
+
+def comparison(out_dir) -> dict | None:
+    """The sweep comparison: one column per (point, stage) with the sweep axis values as headers; rows = verdict, success rate
+    (Wilson CI) and every gate (value + pass). None when ``out_dir`` has no ``sweep_index.json``."""
+    out_dir = Path(out_dir)
+    ip = out_dir / "sweep_index.json"
+    if not ip.exists():
+        return None
+    try:
+        idx = json.loads(ip.read_text())
+    except (OSError, ValueError):
+        return None
+    cols = []
+    for pt in idx.get("points", []):
+        for st, ent in (pt.get("stages") or {}).items():
+            rp = out_dir / ent["run_dir"] / "report.json"
+            try:
+                rep = json.loads(rp.read_text())
+            except (OSError, ValueError):
+                rep = None
+            cols.append({"point": pt["i"], "stage": st, "axes": pt["axes"], "run": ent["run_dir"], "report": rep})
+    gate_names = []
+    for c in cols:
+        for g in (c["report"] or {}).get("gates", {}):
+            if g not in gate_names:
+                gate_names.append(g)
+    rows = [{"name": "verdict", "cells": [{"text": (c["report"] or {}).get("verdict", "not run")} for c in cols]},
+            {"name": "success_rate (95% CI)", "cells": [{"text": _rate((c["report"] or {}).get("metrics", {})) or "n/a"} for c in cols]}]
+    for g in gate_names:
+        cells = []
+        for c in cols:
+            gg = ((c["report"] or {}).get("gates") or {}).get(g)
+            cells.append({"text": "not run" if gg is None else _fmt(gg["value"]), "pass": None if gg is None else gg["pass"]})
+        rows.append({"name": g, "cells": cells})
+    return {"axes": idx.get("axes", []), "columns": [{k: c[k] for k in ("point", "stage", "axes", "run")} for c in cols], "rows": rows,
+            "multi_stage": len(idx.get("stages", [])) > 1}
+
+
+def comparison_html(cmp: dict) -> str:
+    e = html.escape
+    head = "".join(f"<tr><th>{e(str(a))}</th>" + "".join(f"<th>{e(str(c['axes'].get(a)))}</th>" for c in cmp["columns"]) + "</tr>"
+                   for a in cmp["axes"])
+    if cmp["multi_stage"]:
+        head += "<tr><th>stage</th>" + "".join(f"<th>{e(c['stage'])}</th>" for c in cmp["columns"]) + "</tr>"
+    head += "<tr><th>run</th>" + "".join(f"<th><a href='{e(c['run'])}/report.html'>{e(c['run'][:18])}</a></th>" for c in cmp["columns"]) + "</tr>"
+    body = ""
+    for r in cmp["rows"]:
+        cells = ""
+        for c in r["cells"]:
+            if r["name"] == "verdict":
+                cells += f"<td><span class='badge {e(c['text'].replace(' ', ''))}'>{e(c['text'])}</span></td>" if c["text"] in (
+                    "PASS", "FAIL", "INCOMPLETE") else f"<td>{e(c['text'])}</td>"
+            elif "pass" in c:
+                cls = "ok" if c["pass"] is True else "bad" if c["pass"] is False else "na"
+                cells += f"<td class='{cls}'>{e(c['text'])}</td>"
+            else:
+                cells += f"<td>{e(c['text'])}</td>"
+        body += f"<tr><td>{e(r['name'])}</td>{cells}</tr>"
+    return f"<h2>Sweep comparison</h2><table>{head}{body}</table>"
+
+
 def write_summary(out_dir) -> dict:
     out_dir = Path(out_dir)
     s = summarize(out_dir)
+    cmp = comparison(out_dir)
+    if cmp is not None:
+        s["comparison"] = cmp
     write_json(out_dir / "summary.json", s)
     e = html.escape
     cols = ["run", "policy", "profile", "sensor", "robot", "stage", "verdict", "key_gates"]
@@ -162,5 +233,5 @@ def write_summary(out_dir) -> dict:
     (out_dir / "summary.html").write_text(
         f"<!doctype html><html><head><meta charset='utf-8'><title>sim eval summary</title><style>{CSS}</style></head><body>"
         f"<h1>Sim evaluation summary</h1><div class='meta'>{s['n_runs']} run(s)</div><table><tr>"
-        + "".join(f"<th>{c}</th>" for c in cols) + f"</tr>{body}</table></body></html>\n")
+        + "".join(f"<th>{c}</th>" for c in cols) + f"</tr>{body}</table>{comparison_html(cmp) if cmp else ''}</body></html>\n")
     return s

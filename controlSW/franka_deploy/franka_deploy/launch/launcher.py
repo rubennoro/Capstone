@@ -206,7 +206,18 @@ def build_bridge_cfg(cfg: dict, station=None) -> tuple[dict, list]:
             frag["home_O_T_EE_xyz_wxyz"] = home["home_O_T_EE_xyz_wxyz"]
         overrides += station_contradictions("bridge", frag, cfg["bridge"].get("override", {}))
         bridge = deep_merge(bridge, frag)
+    if station is not None:     # lowering either the station limit or the deploy override lowers the clamp: take the minimum
+        lows = {k: [d["safety"][k] for d in (station.bridge_fragment(), cfg["bridge"].get("override", {}))
+                    if k in (d.get("safety") or {})] for k in ("v_max", "w_max")}
+        for k, vals in lows.items():
+            for o in overrides:     # the contradiction record (override vs station) also says which value is used
+                if o["target"] == "bridge" and o["path"] == f"safety.{k}":
+                    o["used"] = min(vals)
     bridge = deep_merge(bridge, cfg["bridge"].get("override", {}))
+    if station is not None:
+        for k, vals in lows.items():
+            if vals:
+                bridge.setdefault("safety", {})[k] = min(vals)
     bridge["endpoint"] = cfg["bridge"]["endpoint"]
     return bridge, overrides
 
@@ -225,6 +236,25 @@ def build_controller_cfg(cfg: dict, station=None) -> tuple[dict, list]:
     if cfg["home"].get("pose"):
         ctrl["home_tcp_xyz_wxyz"] = list(cfg["home"]["pose"])
     return ctrl, overrides
+
+
+def task_limits(cfg: dict, station=None) -> tuple:
+    """(v_max, w_max, contradictions) for the task's ``--v-max`` / ``--w-max``. Without a station: deploy.yaml
+    ``task.v_max/w_max`` verbatim (null = default). With a station: the MINIMUM of ``criteria.limits`` and any deploy.yaml ``task.v_max/w_max``,
+    so lowering either one always lowers the limit (a sweep ``--set criteria.limits.v_max_m_s=..`` moves it too). Values that
+    differ are reported as contradictions (the launcher logs a loud WARNING)."""
+    t = {k: x for k, x in cfg.get("task", {}).items() if not (k in ("v_max", "w_max") and x is None)}   # null = "from the station"
+    v, w = t.get("v_max", 0.25), t.get("w_max", 1.0)       # raw: station-less profiles render exactly as before
+    lim = station.get("criteria.limits", None) if station is not None else None
+    if not lim:
+        return v, w, []
+    out, res = [], []
+    for key, mine, dep in (("v_max", "v_max_m_s", v), ("w_max", "w_max_rad_s", w)):
+        st = float(lim[mine])
+        if key in t and float(t[key]) != st:
+            out.append({"target": "task", "path": key, "station": st, "override": float(t[key]), "used": min(st, float(t[key]))})
+        res.append(min(st, float(t[key])) if key in t else st)
+    return res[0], res[1], out
 
 
 def resolve_pkg(p) -> Path:
@@ -450,9 +480,12 @@ class Launcher:
         if st is not None and bridge.get("backend", {}).get("type") == "mujoco":
             # the MuJoCo backend builds the SAME station (robot, tooling, sensor) as this session, not its default profile
             bridge["backend"].setdefault("mujoco", {})["station"] = str(cfgd / "station_resolved.yaml")
+            if c.get("sim_state_endpoint"):   # A6's state PUB follows the (port-offset) endpoint the launcher checks
+                bridge["backend"]["mujoco"]["state_endpoint"] = c["sim_state_endpoint"]
         (cfgd / "bridge.yaml").write_text(yaml.safe_dump(bridge))
         ctrl, o2 = build_controller_cfg(c, st)
         overrides += o2
+        overrides += task_limits(c, st)[2]
         self.bridge_cfg, self.ctrl_cfg = bridge, ctrl
         (cfgd / "franka_cartesian.yaml").write_text(yaml.safe_dump(ctrl))
         (cfgd / "deploy_resolved.yaml").write_text(yaml.safe_dump(c))
@@ -471,6 +504,11 @@ class Launcher:
             self.summary["preflight"]["station_overrides"] = overrides
             if overrides:
                 self.log("station_overrides", overrides=overrides)
+            for o in overrides:
+                if "used" in o:
+                    msg = f"WARNING: limit mismatch {o['target']} {o['path']}: {o} (the lower value is used)"
+                    print(f"[launcher] {msg}", flush=True)
+                    self.log("warning", msg=msg)
         shutil.copy(c["config_path"], cfgd / "deploy.yaml")
         if c["camera"].get("rig_config_path"):
             try:
@@ -579,9 +617,18 @@ class Launcher:
         if src == "video_replay":
             ep = resolve_replay_episode(st.get("sim"))
             q = main.get("jpeg_quality", 0.9)
-            return [py, "-u", "-m", mod, "--episode", str(ep), *common, "--size", f"{main['width_px']}x{main['height_px']}",
-                    "--jpeg-quality", str(int(round(100 * q)) if q <= 1 else int(q))]
+            cmd = [py, "-u", "-m", mod, "--episode", str(ep), *common, "--size", f"{main['width_px']}x{main['height_px']}",
+                   "--jpeg-quality", str(int(round(100 * q)) if q <= 1 else int(q))]
+            clock = st.get("sensor.clock")
+            if proto == "v1" and clock.get("mode") == "arrival_minus_latency":
+                # the receiver subtracts the app's capture latency from the arrival time: the sender models that pipeline
+                cmd += ["--capture-latency-s", str(float(clock["latency_s"]["main"])),
+                        "--capture-latency-uw-s", str(float(clock["latency_s"].get("ultrawide", clock["latency_s"]["main"])))]
+            return cmd
         extra = []
+        if src == "render":   # A7: the renderer follows the sim state PUB and the session's resolved station
+            extra += ["--state-endpoint", str(c.get("sim_state_endpoint", SIM_STATE_ENDPOINT)),
+                      "--station", str(cfgd / "station_resolved.yaml")]
         if src == "rig_raw_replay":   # a raw rig episode: sim.raw_episode_dir, else generated once from an iPhone episode (cached)
             if st.get("sim.raw_episode_dir", None):
                 extra += ["--episode", str(st.get("sim.raw_episode_dir"))]
@@ -763,12 +810,21 @@ class Launcher:
         smc = NoResendClient("launcher_sm", sm["endpoint"], default_timeout_s=0.1)
         self.wait_until("spacemouse", lambda: smc.peek_data(topic="spacemouse_state", n=-1)[0], 10, "spacemouse_state")
 
-        t, tready = c["task"], self.session / "task_ready.json"
+        tready = self.session / "task_ready.json"
+        tcmd = self.task_command(py, cam, sm, logs, tready)
+        self.start("task", tcmd)
+        self.wait_until("task", lambda: tready.exists(), 60, "task ready file")
+
+    def task_command(self, py: str, cam: dict, sm: dict, logs: Path, tready: Path) -> list[str]:
+        """The run_task command line. Pure (reads files only): ``--v-max`` / ``--w-max`` come from ``task_limits``."""
+        c = self.cfg
+        t = c["task"]
+        v_max, w_max, _ = task_limits(c, self.station)
         tcmd = [py, "-u", "-m", "franka_deploy.tasks.run_task", "--work-dir", str(self.session / "task"),
                 "--task-name", t["name"], "--prompt-index", str(t["prompt_index"]), "--exec-h", str(t.get("exec_h", 8)),
                 "--anchor", t.get("anchor", "target"), "--inference-timeout", str(t.get("inference_timeout_s", 2.0)),
-                "--width-proprio", t.get("width_proprio", "commanded"), "--v-max", str(t.get("v_max", 0.25)),
-                "--w-max", str(t.get("w_max", 1.0)), "--tap-images-every", str(t.get("tap_images_every", 0)),
+                "--width-proprio", t.get("width_proprio", "commanded"), "--v-max", str(v_max),
+                "--w-max", str(w_max), "--tap-images-every", str(t.get("tap_images_every", 0)),
                 "--command-file", str(self.cmd_file), "--stop-file", str(self.stop_file), "--no-stdin",
                 "--policy-endpoint", c["inference"]["endpoint"].replace("0.0.0.0", "localhost"), "--camera-endpoint", cam["endpoint"],
                 "--controller-endpoint", c["controller"]["endpoint"], "--spacemouse-endpoint", sm["endpoint"],
@@ -786,8 +842,7 @@ class Launcher:
         if cam.get("video", False):
             tcmd += ["--video-logger-endpoint", cam["logger_endpoint"]]
         tcmd += self.task_replay_args()
-        self.start("task", tcmd)
-        self.wait_until("task", lambda: tready.exists(), 60, "task ready file")
+        return tcmd
 
     def task_replay_args(self) -> list[str]:
         """Extra task flags from deploy.yaml `task:` (B8 Stage 2b): `history_source: replay_gt` + `replay_npz: PATH` make
@@ -922,13 +977,18 @@ class Launcher:
             else:
                 self.forward(act)
 
+    def sim_reset_timeout_s(self) -> float:
+        """Reply timeout of the bridge ``sim_reset`` request (A6 resets in well under a second; was a fixed 0.5 s)."""
+        return float(self.cfg.get("bridge", {}).get("sim_reset_timeout_s", 2.0))
+
     def sim_reset(self, text: str = ""):
         """`--script` action sim_reset[:<json>] -> bridge topic sim_reset (A6; refused unless --allow-sim-reset)."""
         from franka_deploy.bridge.link import BridgeClient
 
         try:
             data = json.loads(text) if text.strip() else {}
-            rep = BridgeClient(self.cfg["bridge"]["endpoint"].replace("0.0.0.0", "127.0.0.1"), 0.5).request("sim_reset", data)
+            rep = BridgeClient(self.cfg["bridge"]["endpoint"].replace("0.0.0.0", "127.0.0.1"),
+                                self.sim_reset_timeout_s()).request("sim_reset", data)
             self.log("sim_reset", data=data, reply=rep)
         except Exception as e:
             self.log("sim_reset_failed", data=text, error=repr(e))

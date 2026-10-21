@@ -45,12 +45,13 @@ UNIT_SUFFIXES = (
     "_m_s2", "_m_s3", "_rad_s2", "_rad_s3", "_nm_s", "_nm_rad", "_n_m", "_kgm2", "_mbit_s", "_ms", "_mm", "_bytes",
     "_gb", "_fraction", "_ratio", "_scale", "_steps", "_errors",
 )
-STRIP_TOKENS = ("_min", "_max", "_p95", "_p99", "_p999")
+STRIP_TOKENS = ("_min", "_max", "_p50", "_p95", "_p99", "_p999")
 # Numeric leaves allowed without a unit: matched (fnmatch) against every path component and against the dotted path
 # (list indices removed).
 NON_SUFFIXED_ALLOW = (
     "K", "T_*", "F_T_*", "C_T_*", "*_T_*", "width_map.a", "width_map.b", "inertia_kgm2",   # matrices, dimensionless map
     "n_*", "seed", "version", "*_version", "*_index",                                       # counts, ids, versions
+    "values", "grip_solref", "grip_solimp",                                                                               # sweep axis values (the axis names the unit)
     "port", "ports", "exec_h", "jpeg_quality", "friction", "max_queue", "max_runs",
     "nullspace_stiffness", "filter_coeff", "impratio", "cone_axis",                         # dimensionless
     "collisions", "reflex", "reflexes", "min_success_rate",                                 # criteria counts / rates

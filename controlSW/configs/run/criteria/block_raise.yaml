@@ -1,32 +1,45 @@
 schema: run.criteria/v1
 id: block_raise
-limits: {v_max_m_s: 0.25, w_max_rad_s: 1.0}   # per-update step clamp (bridge safety) and chunk time-scaling (task --v-max/--w-max)
-success: {lift_min_m: 0.05, hold_s: 2.0, timeout_s: 60, slip_tol_m: 0.002}
+limits: {v_max_m_s: 0.25, w_max_rad_s: 1.0}   # PLACEHOLDER: user decision (v_max). Per-update step clamp (bridge safety) and chunk time-scaling (task --v-max/--w-max)
+success: {lift_min_m: 0.05, hold_s: 2.0, timeout_s: 60, slip_tol_m: 0.002}   # PLACEHOLDER: user decision (success rule)
 stage1: {reachable_fraction_min: 0.95, joint_margin_deg_min: 10, collisions_max: 0, width_p99_mapped_le_stroke: true}
 stage1b: {track_pos_m: 0.01, track_rot_deg: 3, track_ok_fraction_min: 0.9, reflex_max: 0}
 stage2:
   chunk_reachable_fraction_min: 0.95
   chunk_joint_margin_deg_min: 10
   pred_vs_demo_pos_err_mm_p95_max: {k4: 15, k8: 25, k15: 40}
-  live_vs_offline_pos_err_mm_p95_max: 5
+  # PLACEHOLDER: user decision (B8 review finding 1): the 5 mm p95 gate is not reachable by a wireless-JPEG stack
+  # (JPEG q90 alone gives p50 5.5 / p95 19.7 mm at k15). Bounds are checked at chunk step k15; _at_least = evidence
+  # needed (fewer pairs -> INCOMPLETE, not a pass).
+  live_vs_offline_pos_err_mm_p50_max: {k15: 5}       # PLACEHOLDER: user decision
+  live_vs_offline_pos_err_mm_p95_max: {k15: 25}      # PLACEHOLDER: user decision
+  n_pairs_at_least: 50                               # PLACEHOLDER: user decision
   frame_selection_errors_max: 0
   cam_stamp_err_ms_p95_max: {v1: 30, v2: 5}
 stage3:
   collisions_max: 0
   reflex_max: 0
   tracking_err_mm_p95_max: 5
-  gripper_width_reached_within_steps: 1
+  gripper_width_lag_steps_p95_max: 1
   inference_latency_s_p95_max: 0.45
   receiver_age_s_p95_max: 0.15
   stale_image_errors_max: 0
+  # PLACEHOLDER: user decision. obs_motion = arm travel between the newest image time and the proprio sample time = arm speed x lag.
+  # The task samples proprio at monotonic now (not at the image time; --match-camera-latency is off), so the lag is the image age
+  # (~126 ms p50 with the 80 ms app latency): demo speeds (65 / 128 mm/s p50 / p95) give ~5-8 mm, a 3 mm gate cannot hold at
+  # demo speed with any latency above ~40 ms. A static arm (fake policy) gives ~0.
   obs_motion_mm_p95_max: 3
 gonogo: {reflexes: 0, min_success_rate: 0.99, loop_p999_ms: 0.5}
 provenance:
-  limits: {status: decision, source: "deploy.yaml:30-31 task.v_max/w_max; bridge.yaml:12-13 (0.5 m/s only after B3-hw)"}
-  success: {status: decision, source: "PLAN.md success rule 0.05 / 2.0 / 60 / slip 0.002"}
+  limits: {status: placeholder, source: "open user decision (AGENTS.md: success rule, v_max); was deploy.yaml task.v_max/w_max, bridge.yaml (0.5 m/s only after B3-hw)"}
+  success: {status: placeholder, source: "open user decision (AGENTS.md: success rule, v_max); PLAN.md values 0.05 / 2.0 / 60 / slip 0.002"}
   stage1: {status: decision, source: "design_track_b.md run/criteria"}
   stage1b: {status: decision, source: "design_track_b.md run/criteria"}
   stage2: {status: decision, source: "design_track_b.md run/criteria"}
+  stage2.live_vs_offline_pos_err_mm_p50_max: {status: placeholder, source: "B8.REVIEW finding 1 suggestion; open user decision"}
+  stage2.live_vs_offline_pos_err_mm_p95_max: {status: placeholder, source: "B8.REVIEW finding 1 suggestion; open user decision"}
+  stage2.n_pairs_at_least: {status: placeholder, source: "B8.REVIEW finding 1 suggestion; open user decision"}
   stage3: {status: decision, source: "design_track_b.md run/criteria"}
+  stage3.obs_motion_mm_p95_max: {status: placeholder, source: "B9.REVIEW finding 1: speed x image age; open user decision (and whether to turn on --match-camera-latency)"}
   gonogo: {status: decision, source: "design_track_b.md run/criteria"}
 critical: []

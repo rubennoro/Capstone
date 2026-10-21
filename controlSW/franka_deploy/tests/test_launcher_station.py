@@ -121,7 +121,8 @@ def test_override_contradicting_station_is_recorded(tmp_path):
     assert ("bridge", "safety.slack_s") not in paths                 # same value as the station: no contradiction
     assert ("controller", "gripper.type") in paths                   # fake gripper vs the station's franka_hand
     bridge = yaml.safe_load((L.session / "config" / "bridge.yaml").read_text())
-    assert bridge["safety"]["v_max"] == 0.31                         # explicit override still wins
+    assert paths[("bridge", "safety.v_max")]["used"] == 0.25         # B9: the lower of station and override is used
+    assert bridge["safety"]["v_max"] == 0.25
 
 
 def test_station_contradictions_nested_and_lists():

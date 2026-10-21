@@ -274,7 +274,10 @@ def test_check_config_new_profiles(tmp_path, capsys):
     for prof in ("sim-rig-fake", "sim-rig"):
         rc, out = _check(tmp_path, capsys, prof)
         snd = _line(out, "sender")
-        assert "rig_raw_replay" in snd and ("not available yet (B7)" in snd) != lm.SENDERS["rig_raw_replay"][1].is_file()
+        if prof == "sim-rig":    # B9: closed loop = rendered images (Stage 2b swaps in rig_raw_replay)
+            assert "render" in snd and ("not available yet (A7/B8)" in snd) != lm.SENDERS["render"][1].is_file()
+        else:
+            assert "rig_raw_replay" in snd and ("not available yet (B7)" in snd) != lm.SENDERS["rig_raw_replay"][1].is_file()
         assert "iphumi_socketio_v2" in out and "sender_stamp_ping" in out
 
     for prof in ("real-iphone", "real-rig"):

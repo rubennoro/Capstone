@@ -42,8 +42,10 @@ def _only(out, prefix):
 def runs(tmp_path_factory):
     out = tmp_path_factory.mktemp("eval")
     r1 = _eval(out, "--profile", "sim-iphone-fake", "--stage", "1", "--policy", "fake", "--demos", "0,1", "--quick", "--jobs", "4")
-    assert r1.returncode == 0, r1.stderr[-2000:]
-    r2 = _eval(out, "--profile", "sim-iphone-fake", "--stage", "2b", "--policy", "fake", "--demos", "0")
+    assert r1.returncode in (0, 3), r1.stderr[-2000:]          # a verdict was produced: PASS 0, FAIL 3 (B9: FAIL exits non-zero)
+    # the live-vs-offline evidence gate (n_pairs_at_least, a placeholder) needs far more pairs than one fake demo gives: lower it here
+    r2 = _eval(out, "--profile", "sim-iphone-fake", "--stage", "2b", "--policy", "fake", "--demos", "0",
+               "--set", "criteria.stage2.n_pairs_at_least=5")
     assert r2.returncode == 0, r2.stderr[-2000:] + r2.stdout[-2000:]
     return out
 
@@ -66,8 +68,12 @@ def test_stage2b_fake_report_and_stamp_metrics(runs):
     assert m["stamp_err_ms_p95_main"] < 30                                   # the v1 gate
     assert m["n_calls"] > 10 and m["n_pairs"] > 5 and m["contract_ok"] is True
     assert m["live_vs_offline_pos_err_mm_p95"] == pytest.approx(0.0, abs=1e-6)   # fake: identity chunks on both sides
+    assert m["time_source"] and m["first_call_demo_frame_max"] < 120, m["first_call_demo_frame_max"]   # c typed at the demo's start
     names = set(rep["gates"])
-    assert names == {"stage2.live_vs_offline_pos_err_mm_p95_max", "stage2.frame_selection_errors_max", "stage2.cam_stamp_err_ms_p95_max"}
+    assert names == {"stage2.live_vs_offline_pos_err_mm_p50_k15_max", "stage2.live_vs_offline_pos_err_mm_p95_k15_max", "stage2.n_pairs_at_least",
+                     "stage2.frame_selection_errors_max", "stage2.cam_stamp_err_ms_p95_max"}
+    assert sum("capture latency" in n for n in rep["notes"]) == 1
+    assert "image_mae_224_main_p50" in m and "uw_frame_offset_hist" in m
     assert all(g["pass"] is True for g in rep["gates"].values()), rep["gates"]
     assert rep["verdict"] == "PASS"
     assert (d / "demo_00" / "work").is_dir() and (d / "demo_00" / "launcher.log").is_file()
@@ -95,15 +101,14 @@ def test_stage1_quick_grid_and_summary(runs):
     assert "report.html" in sh and "sim-iphone-fake" in sh
 
 
-def test_incomplete_with_reason_and_render_banner(tmp_path):
-    """No replay sender for image_source render (A7/B9): Stage 2b is INCOMPLETE with the reason, never a PASS, and the HTML
-    carries the render banner."""
+def test_render_profile_stage2b_uses_the_replay_source_and_keeps_the_banner(tmp_path):
+    """image_source render (the closed-loop source) has no replay of its own: Stage 2b swaps in the protocol's replay source
+    (video_replay for v1) with a note instead of going INCOMPLETE (B8 raised StageIncomplete here); the HTML keeps the render banner."""
     r = _eval(tmp_path, "--profile", "sim-iphone-fake", "--stage", "2b", "--policy", "fake", "--demos", "0",
-              "--set", "sim.image_source=render")
-    assert r.returncode == 1, r.stdout[-1500:] + r.stderr[-1500:]
+              "--set", "sim.image_source=render", "--set", "criteria.stage2.n_pairs_at_least=5")
+    assert r.returncode == 0, r.stdout[-1500:] + r.stderr[-1500:]
     d = _only(tmp_path, "2b_fake_")
     rep = json.loads((d / "report.json").read_text())
-    assert rpt.validate(rep) == [] and rep["verdict"] == "INCOMPLETE" and rep["image_source"] == "render"
-    assert any(n.startswith("INCOMPLETE") and "replay image source" in n for n in rep["notes"])
-    assert all(g["pass"] is None for g in rep["gates"].values())
+    assert rpt.validate(rep) == [] and rep["verdict"] == "PASS" and rep["image_source"] == "render"
+    assert any("replay source video_replay" in n for n in rep["notes"]), rep["notes"]
     assert "not a real-world estimate" in (d / "report.html").read_text()

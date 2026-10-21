@@ -73,6 +73,7 @@ profiles:
     run: {policy: fake, link: wifi_good, criteria: block_raise, sim: video_replay}
     run_mode: sim
     station_set: ["sensor.transport.bind_host=127.0.0.1"]
+    task: {v_max: null, w_max: null}          # sim: criteria.limits decide (a sweep may raise them); real-* keep the deploy values 0.25 / 1.0 (min rule)
     allow_placeholders: []
     work_root: /home/ruben/franka_runs        # = station/host/pc_laptop.yaml
     python:
@@ -89,6 +90,7 @@ profiles:
   sim-iphone:                                 # MuJoCo arm + bridge-served Franka Hand + rendered images + the real policy
     <<: *sim_iphone_fake                      # (runs once A4-A7 land; check-config lists what is missing)
     run: {policy: bp_run001, link: wifi_good, criteria: block_raise, sim: render}
+    sim_state_endpoint: tcp://127.0.0.1:5570  # A6's state PUB (the judge and the render sender subscribe)
     station_set: ["sensor.transport.bind_host=127.0.0.1", "tooling.hand.endpoint=tcp://127.0.0.1:5565"]   # hand = bridge
     bridge: {override: {backend: {type: mujoco}}, allow_inject: true, allow_sim_reset: true}
     controller: {override: {gripper: {type: franka_hand}}}
@@ -99,7 +101,8 @@ profiles:
   sim-rig:
     <<: *sim_iphone_fake
     station: {robot: panda, tooling: franka_hand_iphumi_rig1, sensor: rig1_wifi, scene: block_raise_table, host: pc_laptop}
-    run: {policy: bp_run001, link: wifi_good_skew, criteria: block_raise, sim: rig_raw_replay}
+    run: {policy: bp_run001, link: wifi_good_skew, criteria: block_raise, sim: render}   # closed loop; Stage 2b swaps in rig_raw_replay
+    sim_state_endpoint: tcp://127.0.0.1:5570
     station_set: ["sensor.transport.bind_host=127.0.0.1", "tooling.hand.endpoint=tcp://127.0.0.1:5565"]
     bridge: {override: {backend: {type: mujoco}}, allow_inject: true, allow_sim_reset: true}
     controller: {override: {gripper: {type: franka_hand}}}

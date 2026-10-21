@@ -1,12 +1,18 @@
 schema: run.sweeps/v1
 id: block_raise_default
-axes:                                        # cartesian product of the ids of each group
+stage: "3"                                     # the closed loop; the grid is walked row-major (last axis fastest)
+axes:                                        # cartesian product; each axis is {group: <run|station group>, ids: [..]} or {set: path, values: [..]}
   - {group: link, ids: [ideal, wifi_good, wifi_busy, wifi_bad]}
   - {group: policy, ids: [demo_replay, bp_run001]}
-max_runs: 16
+  - {set: criteria.limits.v_max_m_s, values: [0.25, 0.5]}          # PLACEHOLDER: user decision (v_max)
+  - {set: sensor.task.camera_latency_s, values: [0.05, 0.1, 0.15]}
+  # PLAN robot / sensor axes (enable one at a time; each multiplies the grid):
+  # - {group: robot, ids: [panda, fr3]}
+  # - {group: sensor, ids: [iphone16pro_wifi, rig1_wifi]}
+max_runs: 16                                 # new runs per invocation (48 points: rerun to continue)
 seed: 0
-n_episodes: 3
+n_episodes: 3                                # Stage 3: episodes per pose
 resume: true
 provenance:
-  "": {status: decision, source: "PLAN.md B9 (2x2 sweep that resumes); design_track_b.md sweeps.py"}
+  "": {status: decision, source: "PLAN.md B9 (2x2 sweep that resumes); design_track_b.md sweeps.py; B9.md"}
 critical: []

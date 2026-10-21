@@ -7,6 +7,8 @@ Rules (keys of ``criteria[<section>]``):
   * ``<name>_min``: value >= threshold; ``<name>_max``: value <= threshold; a boolean threshold: value must equal it
     (``True`` means the metric must be true). The metric looked up is ``<name>`` without the suffix, e.g.
     ``collisions_max`` -> metrics["collisions"]. A key without a suffix is looked up as is.
+  * ``<name>_at_least``: an evidence requirement (``>=``) whose shortfall means "not enough data" (``pass: None``,
+    INCOMPLETE), never a FAIL, e.g. ``n_pairs_at_least: 50``.
   * A threshold dict selects by ``metrics["protocol"]`` (``{v1: 30, v2: 5}``, protocol "v1"/"v2"); a dict of ``k4/k8/k15``
     keys (position error at chunk step k) fans out into one gate per key, metric ``<name>_<key>`` (e.g.
     ``pred_vs_demo_pos_err_mm_p95_max: {k4: 15}`` -> gate ``pred_vs_demo_pos_err_mm_p95_k4_max`` on metric
@@ -26,7 +28,8 @@ STAGE_SECTION = {"1": "stage1", "1b": "stage1b", "2a": "stage2", "2b": "stage2",
 # criteria keys of the shared `stage2` section that belong to one sub-stage only (the other sub-stage's keys are skipped)
 STAGE_KEYS = {
     "2a": {"chunk_reachable_fraction_min", "chunk_joint_margin_deg_min", "pred_vs_demo_pos_err_mm_p95_max"},
-    "2b": {"live_vs_offline_pos_err_mm_p95_max", "frame_selection_errors_max", "cam_stamp_err_ms_p95_max"},
+    "2b": {"live_vs_offline_pos_err_mm_p50_max", "live_vs_offline_pos_err_mm_p95_max", "n_pairs_at_least",
+           "frame_selection_errors_max", "cam_stamp_err_ms_p95_max"},
 }
 K_KEYS = re.compile(r"^k\d+$")
 
@@ -40,7 +43,7 @@ def _missing(v) -> bool:
 
 
 def _split(key: str) -> tuple[str, str]:
-    for suf, op in (("_min", ">="), ("_max", "<=")):
+    for suf, op in (("_at_least", ">=*"), ("_min", ">="), ("_max", "<=")):
         if key.endswith(suf):
             return key[: -len(suf)], op
     return key, "=="
@@ -50,6 +53,11 @@ def _gate(name: str, metric: str, op: str, thr, metrics: dict) -> dict:
     v = metrics.get(metric)
     if _missing(v):
         return {"value": None, "threshold": thr, "op": op, "pass": None, "metric": metric}
+    if op == ">=*":         # evidence requirement: below the threshold = insufficient data, not a failure
+        if float(v) >= float(thr):
+            return {"value": v if isinstance(v, (bool, str, int)) else float(v), "threshold": thr, "op": ">=", "pass": True, "metric": metric}
+        return {"value": float(v), "threshold": thr, "op": ">=", "pass": None, "metric": metric,
+                "note": "insufficient data (INCOMPLETE, not FAIL)"}
     if isinstance(thr, bool):
         ok = bool(v) == thr
         op = "is"
