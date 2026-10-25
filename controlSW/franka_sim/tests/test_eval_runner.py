@@ -16,7 +16,7 @@ from franka_sim.eval import report as rpt  # noqa: E402
 
 SIM = Path(__file__).resolve().parents[1]
 DEPLOY = SIM.parent / "franka_deploy"
-S = Path(os.environ.get("S", "/tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad"))
+S = Path(os.environ.get("S", "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad"))
 ZARR = Path(os.environ.get("ZARR") or S / "deploy_work" / "prompt_zarr" / "firstreal-single.zarr.zip")
 RAW = SIM.parents[1] / "data" / "raw" / "2026-10-01"
 pytestmark = pytest.mark.skipif(not (ZARR.is_file() and RAW.is_dir() and (S / "env_bp" / "bin" / "python").is_file()),

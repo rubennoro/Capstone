@@ -465,7 +465,7 @@ def test_static_preflight_fake_policy_needs_no_checkpoint(tmp_path, monkeypatch)
     assert rec2["checkpoint"] and rec2["imagecodecs_pin"] and (L2.session / "config" / "checksums.json").exists()
 
 
-SIM_EPISODES = Path("/tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/deploy_work/d2_work/sim")
+SIM_EPISODES = Path("/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/deploy_work/d2_work/sim")
 
 
 def _rig_episode():

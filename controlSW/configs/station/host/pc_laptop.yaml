@@ -2,12 +2,12 @@ schema: station.host/v1
 id: pc_laptop
 work_root: /home/ruben/franka_runs
 python:
-  bp: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/env_bp/bin/python
-  realenv: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/env_realenv/bin/python
+  bp: /tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/env_bp/bin/python
+  realenv: /tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/env_realenv/bin/python
 extra_path: []
 inference_device: cuda
 checkpoint: /home/ruben/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
-prompt_zarr: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
+prompt_zarr: /tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
 prompt_zarr_sha256: null
 disk_budget_gb: 1.5
 provenance:

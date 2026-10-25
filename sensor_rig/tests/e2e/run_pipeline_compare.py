@@ -51,7 +51,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[3]
 DP = REPO / "iPhUMI" / "python_package" / "iphumi" / "demonstration_processing"
-SCRATCH = Path("/tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad")
+SCRATCH = Path("/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad")
 DEFAULT_SRC = REPO / "data" / "raw" / "2026-10-01"
 CALIB_ID = "15647"
 DEFAULT_DEMOS = "49242,18798,87784,73132"

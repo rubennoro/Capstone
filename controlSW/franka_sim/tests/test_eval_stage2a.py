@@ -15,7 +15,7 @@ pytest.importorskip("mujoco")
 from franka_sim.eval import runner as rn  # noqa: E402
 from franka_sim.eval import stage2a as s2a  # noqa: E402
 
-S = Path(os.environ.get("S", "/tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad"))
+S = Path(os.environ.get("S", "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad"))
 ZARR = Path(os.environ.get("ZARR") or S / "deploy_work" / "prompt_zarr" / "firstreal-single.zarr.zip")
 pytestmark = pytest.mark.skipif(not ZARR.is_file() or not (S / "env_bp" / "bin" / "python").is_file(),
                                 reason="needs the firstreal zarr and the BP interpreter")

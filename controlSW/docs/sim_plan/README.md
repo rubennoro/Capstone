@@ -30,7 +30,7 @@ If PLAN.md, a design doc and a spec disagree, the more specific one wins: **spec
 ## Environments (scratch, not in the repo)
 
 ```
-S=/tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad
+S=/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad
 RE=$S/env_realenv/bin/python   # real-env stack + mujoco 3.3.0 + flask-socketio + simple-websocket + websocket-client
 BP=$S/env_bp/bin/python        # torch/behavior_prompting: inference, eval, zarr reading with imagecodecs
 IP=$S/env_iphumi/bin/python    # sensor_rig tests, iPhUMI processing (regression pipeline check)

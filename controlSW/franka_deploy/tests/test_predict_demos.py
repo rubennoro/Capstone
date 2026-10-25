@@ -15,7 +15,7 @@ import yaml
 pytest.importorskip("zarr")
 from franka_deploy.tools import predict_demos as pdm  # noqa: E402
 
-ZARR = os.environ.get("FRANKA_DEPLOY_PROMPT_ZARR") or "/tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip"
+ZARR = os.environ.get("FRANKA_DEPLOY_PROMPT_ZARR") or "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip"
 CKPT = os.environ.get("FRANKA_DEPLOY_CKPT")
 need_zarr = pytest.mark.skipif(not Path(ZARR).is_file(), reason="firstreal zarr missing")
 PKG = Path(__file__).resolve().parents[1]
