@@ -1,14 +1,14 @@
 # franka_deploy launcher config: `python -m franka_deploy run --config deploy.yaml [--mock]`.
 # Base = Jetson profile; `profiles.mock` is merged on top with --mock. Paths: absolute (REPLACE on the Jetson).
-work_root: /home/jetson/franka_runs           # must be outside the repo (preflight)
-python:
+work_root: &base_work_root /home/jetson/franka_runs           # must be outside the repo (preflight)
+python: &base_python
   bp: /home/jetson/envs/bp/bin/python          # inference env (JetPack torch + requirements-inference.txt)
   realenv: /home/jetson/envs/realenv/bin/python
 extra_path: []                                # e.g. the dir holding ffmpeg (libx264) for the camera VideoLogger
-checkpoint: /home/jetson/models/run_001/best_slim.ckpt
-prompt_zarr: /home/jetson/models/run_001/firstreal-single.zarr.zip
+checkpoint: &base_checkpoint /home/jetson/models/run_001/best_slim.ckpt
+prompt_zarr: &base_prompt_zarr /home/jetson/models/run_001/firstreal-single.zarr.zip
 prompt_zarr_sha256: null                      # set to pin the prompt dataset (preflight)
-disk_budget_gb: 5.0
+disk_budget_gb: &base_disk_budget_gb 5.0
 home:                                         # TCP home (base frame): FK must be within max_dist_m at start and at every `c`
   xyz: [0.45, 0.0, 0.25]
   max_dist_m: 0.05
@@ -63,11 +63,18 @@ profiles:
     run: {policy: fake, link: ideal, criteria: block_raise, sim: video_replay}
     run_mode: sim                             # sim | real (default real when a station exists: critical placeholders then fail preflight)
     allow_placeholders: []                    # station paths (e.g. robot.desk_end_effector) a real run accepts as still unset; logged
+    work_root: *base_work_root                # pinned to the base (Jetson) values: a profile that sets these keys is not filled from
+    python: *base_python                      # the station host group (B10), and station-mock resolved exactly as before B10.
+    checkpoint: *base_checkpoint              # Open question for the user: should station-mock follow host pc_laptop like sim-*?
+    prompt_zarr: *base_prompt_zarr
+    disk_budget_gb: *base_disk_budget_gb
   # ---------------------------------------------------------------------------------------------- B6 station profiles
   # Wireless sensor path: camera.kind wireless = the B5 receiver (camera.yaml from the station sensor group). In sim
   # profiles a `sender` child imitates the sensor over run.link (run.sim.image_source picks it: video_replay = the
   # iPhone replay sender, rig_raw_replay = the rig replay sender (a simulated raw rig episode, cached under work_root/cache), render = A7/B8). The home (home.xyz/max_dist_m, and for the sim backends
-  # home.pose + the bridge start pose) comes from the station (robot.home_tcp). Paths: the pc_laptop host values.
+  # home.pose + the bridge start pose) comes from the station (robot.home_tcp). Paths (work_root, python, checkpoint, prompt_zarr,
+  # disk_budget_gb): not set here; load_config fills them from the station host group (pc_laptop), B10. Override with
+  # `--set host.work_root=DIR` on run / check-config.
   sim-iphone-fake: &sim_iphone_fake           # no MuJoCo, no GPU, no Track A: FakeBackend + fake gripper + fake policy
     station: {robot: panda, tooling: franka_hand_iphumi_iphone16pro, sensor: iphone16pro_wifi, scene: block_raise_table, host: pc_laptop}
     run: {policy: fake, link: wifi_good, criteria: block_raise, sim: video_replay}
@@ -75,13 +82,6 @@ profiles:
     station_set: ["sensor.transport.bind_host=127.0.0.1"]
     task: {v_max: null, w_max: null}          # sim: criteria.limits decide (a sweep may raise them); real-* keep the deploy values 0.25 / 1.0 (min rule)
     allow_placeholders: []
-    work_root: /home/ruben/franka_runs        # = station/host/pc_laptop.yaml
-    python:
-      bp: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/env_bp/bin/python
-      realenv: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/env_realenv/bin/python
-    checkpoint: /home/ruben/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
-    prompt_zarr: /tmp/claude-1000/-home-ruben-Capstone/b5f58f43-1b87-4846-beab-dc85de4129a4/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip
-    disk_budget_gb: 1.5
     user_site_children: [camera, sender]      # laptop: flask lives in ~/.local (the scratch envs lack it)
     camera: {kind: wireless, config: null, rig_config_path: null, video: false, overrides: []}
     bridge: {override: {backend: {type: fake}}, allow_inject: true}

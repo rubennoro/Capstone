@@ -23,7 +23,8 @@ def test_disk_free(tmp_path):
 
 def test_shm_clean(tmp_path):
     assert pf.shm_clean(str(tmp_path / "rmq_*"))[0]
-    (tmp_path / "rmq_x_123_main").write_text("")
+    import os
+    (tmp_path / f"rmq_x_{os.getpid()}_main").write_text("")      # a live owner
     assert not pf.shm_clean(str(tmp_path / "rmq_*"))[0]
 
 
@@ -106,3 +107,17 @@ class StalledCam:
 
 def test_camera_ok_detects_stall():
     assert not pf.camera_ok(StalledCam(), seconds=0.05)[0]
+
+
+def test_shm_clean_ignores_dead_owner_but_fails_on_live(tmp_path):
+    import os
+    import subprocess
+
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    (tmp_path / f"rmq_u_{dead.pid}_cam_main").write_text("")
+    ok, detail = pf.shm_clean(str(tmp_path / "rmq_*"))
+    assert ok and "stale" in detail and f"rmq_u_{dead.pid}_cam_main" in detail
+    (tmp_path / f"rmq_u_{os.getpid()}_cam_main").write_text("")                 # this process is alive
+    ok, detail = pf.shm_clean(str(tmp_path / "rmq_*"))
+    assert not ok and f"rmq_u_{os.getpid()}_cam_main" in detail and "stale" in detail

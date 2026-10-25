@@ -65,9 +65,14 @@ The mock profile uses FakeBackend + FakeGripper + a replayed rig episode + real 
 `python -m franka_deploy --help`:
 
 - `validate`, `annotate --annotator <name>`, `eval` (env_bp), `reinfer`, `offline-eval`;
-- `fdcal handeye|pivot|width|capture`;
+- `fdcal handeye|pivot|width|capture|stream-intrinsics`:
+  - `fdcal capture stream --out DIR --n 30` then `fdcal stream-intrinsics --data DIR --config deploy.yaml --profile real-iphone --out DIR/result`: ChArUco K of the deployed 960x720 stream vs the station K and the training variants;
+  - `fdcal capture width --out DIR --hand-endpoint tcp://localhost:5566 --gaps 0.0:0.08:0.0025` then `fdcal width --linear --data DIR --deploy-config deploy.yaml --profile real-iphone`: the Franka Hand's `train = a * gap + b` (the servo path keeps `--controller-config --positions`);
+- `wireless-latency measure|analyze|show|synth`: QR-clock latency of the iPhone or rig stream (`--set` snippet for `sensor.clock.*`);
 - `gonogo run|evaluate`;
-- `replay-server`.
+- `replay-server`;
+- `policy-contract`;
+- `run` and `check-config` take `--set group.path=value` (station override, e.g. `--set host.work_root=$S/runs`).
 
 Tests live in `tests/`. Most run in env_realenv; the server, eval and light-workspace tests run in env_bp.
 
@@ -82,6 +87,11 @@ derives bridge/controller values and the task flags from `controlSW/configs/` (s
 writes `config/station_resolved.yaml` into the session and refuses real runs with critical placeholders. Profiles
 without `station:` behave as before. The bridge REQ/REP endpoint is now `tcp://127.0.0.1:5565` (was 5555: the iPhone
 app hardcodes 5555/5556 for its camera streams).
+
+Host paths: a profile with a station fills `work_root`, `python`, `checkpoint`, `prompt_zarr` and `disk_budget_gb` from the
+station `host` group (`controlSW/configs/station/host/`) when the profile does not set them itself; the `sim-*` profiles
+therefore hold no machine paths. Profiles without `station:` never read `host`. `real-*` use `jetson_orin_nano`, whose
+values equal the deploy.yaml base.
 
 Values marked `HW:` must be measured on the arm. See [docs/hardware_day.md](docs/hardware_day.md) and
 [docs/panda_py_checklist.md](docs/panda_py_checklist.md).

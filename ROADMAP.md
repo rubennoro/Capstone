@@ -48,17 +48,42 @@ step.
   - the safety filter, watchdog, reflex latch, stop path ≤ 12 ms and every kill / Ctrl+C case end in a hold.
 - Procedure: [controlSW/franka_deploy/docs/hardware_day.md](controlSW/franka_deploy/docs/hardware_day.md).
 
+**Sim evaluator (branch `sim-eval`, local commits, not pushed):** a MuJoCo Panda/FR3 + Franka Hand model, the iPhone and
+rig wireless sensor path (Wi-Fi emulator, receiver, clock sync) and a configurable station (`controlSW/configs/`) so a
+policy can be evaluated before hardware. Resume point and phase list: [controlSW/docs/sim_plan/STATUS.md](controlSW/docs/sim_plan/STATUS.md).
+
+| Stage | What it checks | State |
+|---|---|---|
+| 1 | offline kinematic feasibility of the 45 demos | built, run: **+10 cm fingers + phone on -y gives 43/45 on Panda and FR3**; stock length hits links 5/6 (iPhone housing only; not yet re-run with the 30 mm-thick rig housing) |
+| 1b | full-stack demo replay with physics | not built (A8) |
+| 2a / 2b | chunk reachability; live-vs-offline stamps and prediction error | built; the real-policy 2b gap (p95 10.8 mm iPhone, 29.8 mm rig) is expected from JPEG and latency, gates are placeholders |
+| 3 | closed loop with a judge, sweeps with resume | built on the stub simulator; MuJoCo closed loop depends on the scene/render phases |
+| hardware-day tools | `wireless-latency` (QR clock), `fdcal stream-intrinsics`, `fdcal width --linear` | built and self-tested; never run on a device |
+
+What is still **placeholder** (each has a hardware-day step, [hardware_day.md](controlSW/franka_deploy/docs/hardware_day.md) §11-15):
+
+- iPhone capture latency 0.08 s (`sensor.clock.latency_s`), rig `residual_latency_s` 0;
+- `width_map.a` = 1.0 (critical); `b` = 0.0431 is derived;
+- the arm's impedance law: the sim implements the documented `CartesianImpedance` and is **under-damped (15-34 % overshoot)**, unverified against panda-py;
+- Franka Hand semantics (GIL, `stop()`, grasp without an object, force per finger), `grasp_epsilon_inner_m` 0.015;
+- `--match-camera-latency` is off (user decision): obs_motion 5-9 mm at demo speeds;
+- limits use the minimum rule (station `criteria.limits`, deploy `task.v_max`, bridge safety).
+
+**New decisions D9 and D10 (TODO.md):** confirm printed fingers about 10 cm longer than stock with the phone on the -y side (before printing).
+
 **To-do list:** [TODO.md](TODO.md). **What to buy:** [PURCHASING.md](PURCHASING.md).
 
 **Decisions needed from the user**
 
 1. Panda or FR3 (pins libfranka/panda-py).
-2. Gripper actuator (motorized iPhUMI gripper, Feetech or Dynamixel).
+2. Gripper actuator: motorized iPhUMI gripper (Feetech or Dynamixel) **or** the Franka Hand with printed fingers (what the sim evaluates; PURCHASING §2b).
 3. Lens purchase: 2.1 mm main lens for the B0180. Ultrawide decided 2026-10-19: Arducam B0179 (fixed 175° fisheye, IR-cut version).
 4. Where the 1 kHz loop runs: Jetson first, gated by the go/no-go test; RT PC as fallback.
-5. v_max for the reported evaluation, plus the success rule and prompt indices.
-6. Commit `sensor_rig/` changes, `controlSW/franka_deploy/`, `scripts/regression/`, ROADMAP.md.
-7. A machine with ≥ 20 GB free to build the ORB-SLAM3 image.
+5. v_max for the reported evaluation, plus the success rule and prompt indices; the open sim gates (Stage 2b, obs_motion).
+6. **D9:** printed fingers +10 cm and the phone on the -y side (Stage 1 result: 43/45; but 37/45 demos leave the 60 degree cone and joint speeds are within limits for only 19/43 FR3 and 36/43 Panda), if the Franka Hand path is chosen.
+7. **D10:** the open sim gates (Stage 2b live-vs-offline p50/p95/n_pairs, Stage 3 obs_motion) and the laptop work_root on the full /home.
+8. Commit `sensor_rig/` changes, `controlSW/franka_deploy/`, `scripts/regression/`, ROADMAP.md.
+9. A machine with ≥ 20 GB free to build the ORB-SLAM3 image.
 
 **Top hardware-day risks**
 

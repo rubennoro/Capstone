@@ -91,12 +91,88 @@ def run_mode_of(cfg: dict) -> str:
     return str(cfg.get("run_mode", "real"))
 
 
-def load_config(path, profile: str) -> dict:
+HOST_PATH_KEYS = ("work_root", "python", "checkpoint", "prompt_zarr", "disk_budget_gb")
+
+
+def host_path_fills(cfg: dict, base: dict, prof: dict) -> list[dict]:
+    """B10: a profile WITH a station fills the host-dependent keys it does not set itself from the station `host` group.
+
+    deploy.yaml's top level (`base`) holds the Jetson values, so `cfg` always has every key; "the profile lacks it"
+    means the profile dict `prof` (anchors merged) has no such key. The fill replaces the Jetson placeholder with the
+    host's value (pc_laptop for the sim-* profiles, jetson_orin_nano for real-*: equal to the base, so nothing changes
+    there). Returns the substitutions that changed a value (recorded in the launcher's station_overrides). A broken
+    station is left for the launcher / check-config to report."""
+    if "station" not in cfg:
+        return []
+    missing = [k for k in HOST_PATH_KEYS if k not in prof]
+    if not missing:
+        return []
+    try:
+        st = station_from_deploy_cfg(cfg)
+    except StationError:
+        return []
+    if st is None or "host" not in st.groups:
+        return []
+    fills = []
+    for k in missing:
+        v = st.get(f"host.{k}", None)
+        if v is None or v == cfg.get(k):
+            continue
+        fills.append({"target": "host", "path": k, "base": cfg.get(k), "host": v, "host_id": st.ids.get("host")})
+        cfg[k] = v
+    return fills
+
+
+class ConfigUsageError(ValueError):
+    """A command-line option the profile cannot honour (reported as a usage error, exit 2)."""
+
+
+def check_station_set(cfg: dict, station_set) -> None:
+    """`--set` rules: profiles without a station take none (it would be silently ignored); real (non-sim) runs accept
+    only host.* (criteria / robot / tooling / sensor values change what a real arm is allowed to do)."""
+    if not station_set:
+        return
+    if "station" not in cfg:
+        raise ConfigUsageError(f"--set {station_set[0]!r}: profile '{cfg['profile']}' has no station: block, so --set would be ignored")
+    if run_mode_of(cfg) != "sim":
+        bad = [x for x in station_set if str(x).partition("=")[0].partition(".")[0] != "host"]
+        if bad:
+            raise ConfigUsageError(f"--set {bad[0]!r}: real-mode profile '{cfg['profile']}' accepts only host.* overrides "
+                                   "(edit the station yaml or the profile's station_set to change other values)")
+
+
+def load_config(path, profile: str, station_set=()) -> dict:
+    """Merged deploy config of a profile. `station_set` ("group.path=value", e.g. host.work_root=/scratch/runs) is added
+    to the profile's own station_set before the station is read (host-group fill, B10). Raises ConfigUsageError for a
+    --set the profile cannot honour (no station; non-host key on a real profile)."""
     raw = yaml.safe_load(open(path))
-    cfg = deep_merge({k: v for k, v in raw.items() if k != "profiles"}, raw.get("profiles", {}).get(profile, {}))
+    base = {k: v for k, v in raw.items() if k != "profiles"}
+    prof = raw.get("profiles", {}).get(profile, {})
+    cfg = deep_merge(base, prof)
     cfg["profile"] = profile
     cfg["config_path"] = str(Path(path).resolve())
+    check_station_set(cfg, [str(x) for x in station_set])
+    if station_set:
+        cfg["station_set"] = list(cfg.get("station_set", [])) + [str(x) for x in station_set]
+    host_path_fills(cfg, base, prof)
     return cfg
+
+
+def recorded_host_fills(cfg: dict, station) -> list[dict]:
+    """The host fills that load_config made for this cfg, re-derived for the launcher's override record: the profile
+    lacks the key, the base value differs, and the cfg value IS the station host value. Kept out of cfg so
+    deploy_resolved.yaml is unchanged by the fill."""
+    if station is None or "host" not in station.groups:
+        return []
+    try:
+        raw = yaml.safe_load(open(cfg["config_path"]))
+    except Exception:
+        return []
+    base = {k: v for k, v in raw.items() if k != "profiles"}
+    prof = raw.get("profiles", {}).get(cfg.get("profile"), {})
+    return [{"target": "host", "path": k, "base": base.get(k), "host": cfg[k], "host_id": station.ids.get("host")}
+            for k in HOST_PATH_KEYS
+            if k not in prof and k in base and cfg.get(k) == station.get(f"host.{k}", None) and cfg.get(k) != base.get(k)]
 
 
 POLICY_KINDS = ("bp_server", "replay", "fake", "command")
@@ -197,6 +273,7 @@ def build_bridge_cfg(cfg: dict, station=None) -> tuple[dict, list]:
     """Merged bridge.yaml (precedence: bridge.yaml < station fragment (+ station home) < deploy.yaml bridge.override)
     and the override leaves that contradict the station. Pure (reads the yaml files only)."""
     bridge = yaml.safe_load(open(resolve_pkg(cfg["bridge"]["config"])))
+    own_safety = {k: bridge.get("safety", {}).get(k) for k in ("v_max", "w_max")}   # bridge.yaml's own limits
     overrides = []
     if station is not None:
         frag = station.bridge_fragment()
@@ -207,8 +284,12 @@ def build_bridge_cfg(cfg: dict, station=None) -> tuple[dict, list]:
         overrides += station_contradictions("bridge", frag, cfg["bridge"].get("override", {}))
         bridge = deep_merge(bridge, frag)
     if station is not None:     # lowering either the station limit or the deploy override lowers the clamp: take the minimum
-        lows = {k: [d["safety"][k] for d in (station.bridge_fragment(), cfg["bridge"].get("override", {}))
-                    if k in (d.get("safety") or {})] for k in ("v_max", "w_max")}
+        srcs = [station.bridge_fragment(), cfg["bridge"].get("override", {})]
+        lows = {k: [d["safety"][k] for d in srcs if k in (d.get("safety") or {})] for k in ("v_max", "w_max")}
+        if run_mode_of(cfg) != "sim":   # B10 safety: outside sim no station / criteria / --set value can raise the clamp
+            for k in lows:              # above bridge.yaml's own value (raising it is an edit of bridge.yaml, hardware-day 9.5)
+                if lows[k] and own_safety.get(k) is not None:
+                    lows[k].append(own_safety[k])
         for k, vals in lows.items():
             for o in overrides:     # the contradiction record (override vs station) also says which value is used
                 if o["target"] == "bridge" and o["path"] == f"safety.{k}":
@@ -486,6 +567,8 @@ class Launcher:
         ctrl, o2 = build_controller_cfg(c, st)
         overrides += o2
         overrides += task_limits(c, st)[2]
+        if st is not None:
+            overrides += recorded_host_fills(c, st)     # B10: values the station host group filled in (not in deploy_resolved)
         self.bridge_cfg, self.ctrl_cfg = bridge, ctrl
         (cfgd / "franka_cartesian.yaml").write_text(yaml.safe_dump(ctrl))
         (cfgd / "deploy_resolved.yaml").write_text(yaml.safe_dump(c))

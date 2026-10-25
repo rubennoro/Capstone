@@ -46,6 +46,24 @@ on real hardware.
 | 1 | **USB 3 → gigabit Ethernet adapter** | Linux-supported (ASIX / Realtek r8152) | the Jetson's only RJ45 port goes to the Franka, so this one gives development/network access | $15 |
 | 1 | **3Dconnexion SpaceMouse** (Compact or Wireless) *(if not owned)* | works with real-env's `SpacemouseClient` | start, teleop and reset in the real-env task flow | ~$150 |
 
+### 2b. Deployment on the Franka Hand (alternative to the servo path above; **decision D2 is open**)
+
+The sim evaluator (`controlSW/franka_sim`, profiles `sim-*` and `real-iphone`) evaluates the **Franka Hand** with printed
+fingers, not the servo-driven iPhUMI gripper. The two paths are alternatives: buy for the one you pick, or for both while
+D2 is open. The Franka Hand itself is part of the Franka kit (check that the lab has it).
+
+| Qty | Item | Must satisfy | Why | ~Price |
+|---|---|---|---|---|
+| 2 | **Printed finger adapters** (PETG or similar) carrying the iPhUMI pads and ArUco tags | Stage 1 result (iPhone housing only): fingers about **10 cm longer than stock** with the **phone on the -y side** give 43/45 demos feasible on Panda and FR3; stock length puts the phone into links 5/6. **Open decision D9** (confirm before printing; not yet re-run with the 30 mm-thick rig housing). Tags must be visible in the ultrawide at every gap | fingers and tags look like training; the finger length is the whole point of the +10 cm print | filament |
+| 1 | **Force gauge** (0-100 N, between the pads) | reads 30 N | checks whether libfranka's `force` is per finger or total (`hardware_day.md` 12.7) | $20-60 |
+| 1 | The same **ChArUco board** as §3 | 9x7, 30 mm | stream intrinsics (`fdcal stream-intrinsics`, 11.6) as well as hand-eye | already in §3 |
+| 1 | Screen with **120 Hz or more** *(optional)* | any laptop/tablet/phone display | `wireless-latency` over-estimates the latency by the display lag (10-25 ms at 60 Hz); a faster screen halves it | owned |
+| 1 | **Phone mount** for the iPhone on the fingers/flange (printed) | the -y side if D9 is confirmed | holds the iPhone on the hand | filament |
+
+The Franka Hand path needs no servo, servo adapter, servo supply or actuation mechanism (§2 rows 1-4). The iPhone streams
+over Wi-Fi: a **dedicated 5 GHz access point** with the policy host on Ethernet (ports 5555/5556 open) replaces the CSI
+cameras of §1 on this path. The rig (§1) stays the plan for the data-collection and v2-stream path.
+
 ## 3. Calibration and test aids (required for hardware day)
 
 | Qty | Item | Spec | Used by | ~Price |
@@ -81,5 +99,6 @@ Mechanical parts (brackets, mounts, gripper actuation) are extra: 3D printing or
 - **Raspberry Pi Camera Module 3 / IMX708** for the Jetson: fragile JetPack 6 drivers, and its 16:9 sensor can't cover
   the iPhone ultrawide view (coverage ≤ 0.75).
 - **Narrow lenses**: an IMX219 "77°" module (coverage 0.83), a 120° ultrawide (0.84), or a main lens longer than 2.3 mm.
-- **The Franka Hand** as the deployment gripper: it looks nothing like the training gripper, so the policy would see
-  unfamiliar images.
+- **The Franka Hand with stock fingers** as the deployment gripper: it looks nothing like the training gripper, so the
+  policy would see unfamiliar images. The sim evaluator tests the Hand **with the printed iPhUMI fingers** (§2b); whether
+  to go that way instead of the servo path is the open decision D2.

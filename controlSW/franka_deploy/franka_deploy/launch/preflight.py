@@ -35,9 +35,29 @@ def disk_free(path, budget_gb: float) -> tuple[bool, str]:
     return free >= budget_gb, f"{free:.1f} GB free (budget {budget_gb} GB)"
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def shm_clean(pattern: str = "/dev/shm/rmq_*") -> tuple[bool, str]:
-    left = glob.glob(pattern)
-    return not left, "clean" if not left else f"{len(left)} leftover robotmq segments, e.g. {os.path.basename(left[0])}"
+    """Fails on robotmq segments of a LIVE owner (name rmq_<user>_<pid>_...) or of an unparseable name. Segments whose
+    owner pid is dead are stale (a killed process): ignored and reported in the detail."""
+    import re
+
+    live, stale = [], []
+    for f in glob.glob(pattern):
+        m = re.match(r"rmq_[^_]+_(\d+)_", os.path.basename(f))
+        (stale if m and not _pid_alive(int(m.group(1))) else live).append(os.path.basename(f))
+    note = f" ({len(stale)} stale segments of dead pids ignored, e.g. {stale[0]})" if stale else ""
+    if live:
+        return False, f"{len(live)} leftover robotmq segments, e.g. {live[0]}{note}"
+    return True, "clean" + note
 
 
 def ports_free(endpoints) -> tuple[bool, str]:

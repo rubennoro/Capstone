@@ -39,20 +39,27 @@ def slow_server(endpoint, delay_s, count, stop_after_s):
 @pytest.fixture
 def server():
     procs = []
+    # spawn, not fork: in a full suite the parent already has zmq/robotmq threads and SIGTERM handlers installed by
+    # earlier in-process tests; a forked child can inherit a held lock (spins at 100% CPU) and ignore terminate(),
+    # and then pytest hangs at exit joining it
+    ctx = mp.get_context("spawn")
 
     def start(delay_s, stop_after_s=6.0):
         ep = f"tcp://127.0.0.1:{free_port()}"
-        count = mp.Value("i", 0)
-        p = mp.get_context("fork").Process(target=slow_server, args=(ep, delay_s, count, stop_after_s), daemon=True)
+        count = ctx.Value("i", 0)
+        p = ctx.Process(target=slow_server, args=(ep, delay_s, count, stop_after_s), daemon=True)
         p.start()
         procs.append(p)
-        time.sleep(0.5)
+        time.sleep(1.5)  # spawn re-imports robotmq in the child
         return ep, count
 
     yield start
     for p in procs:
         p.terminate()
         p.join(2)
+        if p.is_alive():
+            p.kill()
+            p.join(2)
 
 
 def test_ok_and_error_reply(server):

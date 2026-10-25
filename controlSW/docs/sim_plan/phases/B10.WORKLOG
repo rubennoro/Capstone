@@ -1,0 +1,6 @@
+2026-10-21 10:47:17 start: read spec, captured before-state (check-config + resolved yaml for 9 profiles) in $S/b10/before
+10:55:06 wrote tools/wireless_latency.py, fdcal/stream_intrinsics.py, fdcal width --linear (fit_linear), capture stream + width --hand-endpoint, fdcal -h, passthrough wireless-latency; all --help exit 0. synth v1 queued behind A6 full suite on the lock
+10:56:47 launcher: load_config host-group fill (profile lacks key -> station host value; --set on run/check-config), deploy.yaml sim-iphone-fake keys removed, station-mock pinned via anchors; check-config + resolved yaml for 9 profiles IDENTICAL before/after (diff -r)
+11:03:00 physics.yaml: added sim_log_hz 25, state_pub_hz 100 (A6 request)
+11:09:52 docs written (hardware_day 11-15 + decisions, PURCHASING 2b, ROADMAP, TODO, README); tests: host_paths 12, stream_intr 10, width 9, wl 10, doc cmds 20; synth v1/v2 pass; shm cleanup added after leftover segments
+11:55:37 review fix round: hardware_day dedup + heading test; --set rules (real: host.* only, station-less: usage error, exit 2); bridge clamp min'd with bridge.yaml outside sim; hand sweep timeout travel/speed+1; redraw-hz flag; v1 synth wording; exact shm glob; shm_clean ignores dead pids; A6 findings (D11, 14.7) + A3 caveats; TODO/ROADMAP order

@@ -13,6 +13,7 @@
     python -m franka_deploy gonogo run|evaluate ...                       (Jetson RT go/no-go load test)
     python -m franka_deploy policy-contract --endpoint E [--expect run/policy/<id>.yaml] [--out contract.json]
     python -m franka_deploy replay-server --zarr Z --episode NAME ...     (single-arm action replay)
+    python -m franka_deploy wireless-latency measure|analyze|show|synth ...   (QR-clock latency of the wireless camera)
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ def main(argv=None) -> int:
     r.add_argument("--config", required=True)
     r.add_argument("--mock", action="store_true", help="profile 'mock': FakeBackend + FakeGripper + camera mock + real inference")
     r.add_argument("--profile", default=None)
+    r.add_argument("--set", action="append", default=[], metavar="GROUP.PATH=VALUE",
+                   help="station override (repeatable), e.g. host.work_root=/scratch/runs")
     r.add_argument("--script", default=None, help="timed keys/injections for tests, e.g. '3:c,20:y'")
     r.add_argument("--no-tty", action="store_true")
     r.add_argument("--replay-episode", default=None,
@@ -37,6 +40,7 @@ def main(argv=None) -> int:
     c = sub.add_parser("check-config")
     c.add_argument("--config", required=True)
     c.add_argument("--profile", default="jetson")
+    c.add_argument("--set", action="append", default=[], metavar="GROUP.PATH=VALUE", help="station override (repeatable)")
     n = sub.add_parser("note")
     n.add_argument("--session", required=True)
     n.add_argument("text")
@@ -46,7 +50,8 @@ def main(argv=None) -> int:
                    "reinfer": "franka_deploy.tools.reinfer", "offline-eval": "franka_deploy.tools.offline_eval",
                    "fdcal": "franka_deploy.fdcal.__main__", "gonogo": "franka_deploy.tools.gonogo",
                    "replay-server": "franka_deploy.tools.replay_server",
-                   "policy-contract": "franka_deploy.tools.policy_contract"}
+                   "policy-contract": "franka_deploy.tools.policy_contract",
+                   "wireless-latency": "franka_deploy.tools.wireless_latency"}
     for name in passthrough:
         sub.add_parser(name, add_help=False)
     argv = sys.argv[1:] if argv is None else argv
@@ -56,17 +61,29 @@ def main(argv=None) -> int:
 
         return importlib.import_module(mod).main(argv[1:]) or 0
     a = ap.parse_args(argv)
+    if a.cmd in ("run", "check-config"):
+        from franka_deploy.launch.launcher import ConfigUsageError
+
+        try:
+            return _dispatch(a)
+        except ConfigUsageError as e:
+            print(f"usage error: {e}", file=sys.stderr)
+            return 2
+    return _dispatch(a)
+
+
+def _dispatch(a) -> int:
     if a.cmd == "run":
         from franka_deploy.launch.launcher import Launcher, load_config
 
-        cfg = load_config(a.config, a.profile or ("mock" if a.mock else "jetson"))
+        cfg = load_config(a.config, a.profile or ("mock" if a.mock else "jetson"), station_set=a.set)
         if a.replay_episode is not None:
             cfg["inference"]["replay"] = {"episode": a.replay_episode, "speed": a.replay_speed}
         return Launcher(cfg, interactive=False if a.no_tty else None, script=a.script).run()
     if a.cmd == "check-config":
         from franka_deploy.launch.launcher import check_config, load_config
 
-        return check_config(load_config(a.config, a.profile))
+        return check_config(load_config(a.config, a.profile, station_set=a.set))
     if a.cmd == "note":
         with open(Path(a.session) / "commands.txt", "a") as f:
             f.write("note:" + a.text.replace("\n", " ") + "\n")
