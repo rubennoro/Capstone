@@ -1,0 +1,6 @@
+W10A hand investigation (Track A executor): gripper lag steady 6.9 mm at cmd 0.05
+- Read hand_logic.py, franka_hand.py, hand_sim.py, safe_controller trace (width_measured = driver.get_width = wm.train(hand gap); width_commanded = policy train width), stage3.gripper_lag_steps.
+- Repro $S/hand/repro.py (SimCore+HandSim, empty hand, policy rule grasp if train<0.064 else move), panda+fr3 x station+ext10_my: identical.
+  cmd train 0.044..0.058 -> grasp target max(0, gap-eps_inner 0.015)=0 -> gap 0.0 -> measured 0.0431 (=b), grasp_failed (no object). 0.0585->0.0435, 0.060->0.0450, >=0.064 move_ok exact.
+- Cause: NOT a Track A bug. Hand follows libfranka grasp semantics (close to w-eps_inner, clamped at 0). An empty hand in sim Stage 3 (arm never reaches the eraser: all episodes n, tracking 21 mm) closes fully; with the eraser the pads stop at gap 0.012 (meas 0.0551, grasped_fn excludes it). Full-stack config identical (b 0.0431, eps_inner 0.015).
+- No code change. Track B change: see report.

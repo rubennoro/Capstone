@@ -33,7 +33,7 @@ from franka_deploy.station import StationError, load_station  # noqa: E402
 from franka_deploy.launch import launcher as L  # noqa: E402
 from franka_deploy.paths import REPO_ROOT  # noqa: E402
 
-STAGES = ("1", "2a", "2b")                                      # what "--stage all" runs
+STAGES = ("1", "1b", "2a", "2b")                                # what "--stage all" runs (1b = A8's full-stack campaign)
 ALL_STAGES = STAGES + ("3",)                                    # Stage 3 (closed loop) is always asked for explicitly
 EXIT_PASS, EXIT_INCOMPLETE, EXIT_USAGE, EXIT_FAIL = 0, 1, 2, 3   # 2 = usage / config error (as argparse), never a verdict
 STATION_ID_GROUPS = ("robot", "tooling", "sensor", "scene", "host")
@@ -169,7 +169,7 @@ def write_policy_yaml(R: Run, path: Path) -> Path:
     return path
 
 
-STAGE_FN = {"1": "stage1", "2a": "stage2a", "2b": "stage2b", "3": "stage3"}
+STAGE_FN = {"1": "stage1", "1b": "stage1b", "2a": "stage2a", "2b": "stage2b", "3": "stage3"}
 
 
 def run_one_stage(R: Run, stage: str, results: dict) -> dict:

@@ -9,16 +9,17 @@ import argparse
 def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--deploy-config", default=None, help="deploy.yaml (default: controlSW/franka_deploy/configs/deploy.yaml)")
     p.add_argument("--profile", required=True, help="deploy.yaml station profile, e.g. sim-iphone-fake, sim-rig-fake")
-    p.add_argument("--stage", default="all", choices=["1", "2a", "2b", "3", "all"],
-                   help="all = 1, 2a, 2b in turn; 3 = the closed loop (judge, between-episode reset), asked for explicitly")
+    p.add_argument("--stage", default="all", choices=["1", "1b", "2a", "2b", "3", "all"],
+                   help="all = 1, 1b, 2a, 2b in turn (1b = the full-stack demo-replay campaign, A8); 3 = the closed loop (judge, between-episode reset), asked for explicitly")
     p.add_argument("--policy", default=None, help="run/policy id (default: the profile's run.policy)")
     p.add_argument("--episodes", type=int, default=None, help="N demos: Stage 2a = the first N of the checkpoint's held-out split (default all of it); Stage 1 / 2b = demos 0..N-1 (2b default 1)")
     p.add_argument("--demos", default=None, help="explicit zarr demo indices, e.g. 0,3 (wins over --episodes)")
     p.add_argument("--set", action="append", default=[], metavar="group.path=value", help="station override (repeatable)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--quick", action="store_true", help="Stage 1: coarse 3x3x4 placement grid, one fine placement")
-    p.add_argument("--jobs", type=int, default=4, help="Stage 1 worker processes")
-    p.add_argument("--stage1", default=None, help="Stage 2a: an existing Stage 1 run dir (stage1.json) to take placements from")
+    p.add_argument("--jobs", type=int, default=4, help="Stage 1 worker processes / Stage 1b campaign jobs")
+    p.add_argument("--stage1", default=None, help="Stage 1b / 2a / 3 (center stage1): an existing Stage 1 run dir (stage1.json) to take placements from")
+    p.add_argument("--speeds", default=None, help="Stage 1b: replay speeds, e.g. 0.5,1.0 (default sim.stage1b.speeds; the first one is gated)")
     p.add_argument("--port-offset", type=int, default=None, help="Stage 2b: shift every launcher port (default $FD_TEST_PORT_OFFSET)")
     p.add_argument("--sweep", default=None, metavar="ID|PATH", help="run a sweep spec (run/sweeps/<id>.yaml or a path): the cartesian grid of its axes, with resume")
     p.add_argument("--max-runs", type=int, default=None, help="--sweep: at most N new runs (overrides the spec's max_runs)")

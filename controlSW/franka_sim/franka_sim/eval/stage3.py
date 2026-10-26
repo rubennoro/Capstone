@@ -47,7 +47,9 @@ DEFAULTS = {
     "reset_timeout_s": 3.0, "home_timeout_s": 15.0, "settle_s": 0.5, "start_retries_n": 3,
     "finger_geom_patterns": ["pad_", "tag_", "finger"],
     "ignore_contact_pairs": [["eraser", "table"]],
+    "table_geom_patterns": ["table"],            # finger <-> table contacts are reported apart (pad_table), not as collisions
 }
+GT_T_SUCCESS_TOL_S = 0.1                          # B9 acceptance 2: judge vs A6 ground truth t_success agreement
 GRIPPER_ERR_START_M, GRIPPER_ERR_OK_M = 0.004, 0.002     # a lag interval opens above 4 mm of error and closes below 2 mm
 EVENT = re.compile(r"^\[franka_task\] (\w+) (\{.*\})\s*$")
 
@@ -137,6 +139,51 @@ def pct(x, q):
     return float(np.percentile(x, q)) if x.size else None
 
 
+def episode_start_t(ep_dir: Path, timeout_s: float = 2.0) -> float | None:
+    """The task's own ``episode_start`` time (``events.jsonl`` ``t``, host monotonic). The A6 ground truth anchors there;
+    the judge must too (A6 review finding 1), not at the driver's later ``time.monotonic()`` after tailing the log."""
+    p = Path(ep_dir) / "events.jsonl"
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout_s:
+        if p.is_file():
+            for ln in p.read_text(errors="replace").splitlines():
+                try:
+                    e = json.loads(ln)
+                except ValueError:
+                    continue
+                if e.get("kind") == "episode_start" and e.get("t") is not None:
+                    return float(e["t"])
+        time.sleep(0.02)
+    return None
+
+
+def ground_truth_compare(ep_dir: Path, success: dict, t_start: float, judge_truth: dict, cfg: dict, tries: int = 30) -> dict | None:
+    """A6 ``ground_truth.evaluate_episode`` on the episode's bridge.jsonl sim lines, compared with the judge. None when the
+    episode has no sim lines (stub / real arm). The bridge log is copied at finalize: retry briefly for the sim lines."""
+    from franka_sim import ground_truth as gtm
+
+    gt = None
+    for _ in range(tries):
+        try:
+            gt = gtm.evaluate_episode(ep_dir, {"success": success}, t_start=t_start,
+                                      finger_patterns=tuple(cfg["finger_geom_patterns"]),
+                                      ignore_pairs=tuple(tuple(p) for p in cfg["ignore_contact_pairs"]))
+        except (OSError, ValueError, KeyError):
+            gt = None
+        if gt is not None:
+            break
+        time.sleep(0.1)
+    if gt is None:
+        return None
+    js, gs = bool(judge_truth.get("success")), bool(gt.get("success"))
+    jt = judge_truth.get("t_success_s")
+    dt = None if (jt is None or gt.get("t_success_s") is None) else round(abs(float(jt) - float(gt["t_success_s"])), 4)
+    agree = js == gs and (dt is None or dt <= GT_T_SUCCESS_TOL_S) and ((jt is None) == (gt.get("t_success_s") is None))
+    return {"gt": gt, "success_agree": js == gs, "t_success_dt_s": dt, "agree": bool(agree),
+            "judge_t_success_mono": None if jt is None else round(t_start + float(jt), 4),
+            "gt_t_success_mono": gt.get("t_success_mono")}
+
+
 def episode_metrics(ep_dir: Path, grasped_fn, step_s: float) -> dict:
     """Arrays/numbers from one episode dir (missing files give empty results, never an exception)."""
     ep_dir = Path(ep_dir)
@@ -187,9 +234,14 @@ def aggregate(eps: list, R: rn.Run, sim_source: str, n_gripper_events: int | Non
     from franka_deploy.eval.metrics import wilson
 
     labels = [e["label"] for e in eps]
-    scored = [x for x in labels if x in ("y", "n")]
-    k = sum(x == "y" for x in scored)
+    # success: A6's sim_gt where the episode has it (authoritative), else the judge's label
+    auth = [(e.get("auth") or {}).get("success") if (e.get("auth") or {}).get("source") == "sim_gt"
+            else ({"y": True, "n": False}.get(e["label"])) for e in eps]
+    scored = [x for x in auth if x is not None]
+    k = sum(bool(x) for x in scored)
     p, lo, hi = wilson(k, len(scored))
+    cmps = [e["cmp"] for e in eps if e.get("cmp")]
+    dts = [c["t_success_dt_s"] for c in cmps if c["t_success_dt_s"] is not None]
     trk = np.concatenate([e["m"]["tracking_mm"] for e in eps] or [np.array([])])
     lag = [x for e in eps for x in e["m"]["gripper_lag"]]
     inf = [x for e in eps for x in e["m"]["infer_s"]]
@@ -209,10 +261,21 @@ def aggregate(eps: list, R: rn.Run, sim_source: str, n_gripper_events: int | Non
         "slip_exceeds_tol_episodes": int(sum(bool(e["truth"].get("slip_exceeds_tol")) for e in eps)),
         "max_slip_m": max([e["truth"].get("slip_m", 0.0) for e in eps] or [0.0]),
         "knocked_over_episodes": int(sum(bool(e["truth"].get("knocked_over")) for e in eps)),
+        # a reflex is a policy failure (label n, the reflex gate); finger<->table strikes are reported apart (A6 review finding 5)
+        "pad_table_contacts": int(sum(len(e.get("pad_table") or []) for e in eps)),
+        "pad_table_episodes": int(sum(bool(e.get("pad_table")) for e in eps)),
+        "pad_table_force_max_n": max([float(e.get("pad_table_force_max_n") or 0.0) for e in eps] or [0.0]),
+        "success_source": ("sim_gt" if cmps and len(cmps) == len(eps) else "judge" if not cmps else "mixed"),
+        "judge_gt_compared": len(cmps), "judge_gt_agree": int(sum(c["agree"] for c in cmps)),
+        "judge_gt_success_agree": int(sum(c["success_agree"] for c in cmps)),
+        "judge_gt_t_success_dt_s_max": max(dts) if dts else None,
+        "judge_t0_from_events": int(sum(e.get("t0_source") == "events" for e in eps)),
     }
     rows = [{"pose": e["pose_i"], "ep": e["ep_i"], "label": e["label"], "reason": e["truth"].get("reason"),
              "max_lift_mm": round(1000 * e["truth"].get("max_lift_m", 0.0), 1), "slip_mm": round(1000 * e["truth"].get("slip_m", 0.0), 2),
-             "collisions": len(e["collisions"]), "reflexes": e["m"]["reflexes"], "calls": e["m"]["n_calls"],
+             "collisions": len(e["collisions"]), "reflexes": e["m"]["reflexes"], "pad_table": len(e.get("pad_table") or []),
+             "gt": {True: "y", False: "n"}.get(((e.get("cmp") or {}).get("gt") or {}).get("success"), "-"),
+             "gt_dt_s": (e.get("cmp") or {}).get("t_success_dt_s"), "calls": e["m"]["n_calls"],
              "track_p95_mm": round(pct(e["m"]["tracking_mm"], 95) or 0.0, 2), "wall_s": e["wall_s"]} for e in eps]
     return m, rows
 
@@ -432,12 +495,14 @@ def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, sc
         dr.go_home()
     else:
         raise rn.StageIncomplete(f"episode start refused {cfg['start_retries_n']} times: {reason}")
-    t0 = time.monotonic()
+    t_seen = time.monotonic()
     ep_dir = Path(ev[1]["episode_dir"])
+    t_task = episode_start_t(ep_dir)
+    t0 = t_task if t_task is not None else t_seen       # the task's episode_start t (as the A6 ground truth)
     if hasattr(sim, "on_episode_start"):
         sim.on_episode_start(t0)
     judge = jg.Judge(sim.state_endpoint, dr.session / "commands.txt", success, judge_cfg["finger_geom_patterns"],
-                     judge_cfg["ignore_contact_pairs"], t_start=t0)
+                     judge_cfg["ignore_contact_pairs"], t_start=t0, table_patterns=judge_cfg.get("table_geom_patterns", ["table"]))
     judge.start()
     timers = []
     for rel, action in getattr(sim, "driver_actions", []):
@@ -459,7 +524,7 @@ def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, sc
             tm.start()
             timers.append(tm)
     try:
-        t_limit = float(success["timeout_s"]) + 40.0
+        t_limit = float(success["timeout_s"]) + 40.0 - (t_seen - t0)
         fin, forced = None, False
         while fin is None and time.monotonic() - t0 < t_limit:
             fin = dr.wait_event(("episode_finalized",), 0.5)
@@ -477,11 +542,20 @@ def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, sc
         if hasattr(sim, "on_episode_end"):
             sim.on_episode_end()
     truth = {**judge.tracker.result(), "label_written": judge.label, "forced_stop": forced}
-    (ep_dir / "sim_truth.json").write_text(json.dumps({"pose_xy_yaw": list(pose), "scenario": scenario, "truth": truth,
-                                                        "collisions": judge.collisions, "n_states": judge.n_states}, indent=1))
     m = episode_metrics(ep_dir, judge.grasped_at, step_s)
+    cmp = ground_truth_compare(ep_dir, success, t0, truth, judge_cfg) if scenario is None else None
+    # A6's sim_gt is authoritative when present (B9 acceptance 2); the judge decides live (the label), the GT confirms offline
+    auth = {"success": bool(cmp["gt"]["success"]), "source": "sim_gt"} if cmp else {"success": truth.get("success"), "source": "judge"}
+    (ep_dir / "sim_truth.json").write_text(json.dumps({
+        "pose_xy_yaw": list(pose), "scenario": scenario, "truth": truth, "collisions": judge.collisions,
+        "pad_table": judge.pad_table, "pad_table_force_max_n": judge.pad_table_force_max_n, "n_states": judge.n_states,
+        "t0": t0, "t0_source": "events.jsonl episode_start" if t_task is not None else "driver monotonic (events.jsonl unreadable)",
+        "t_driver_saw_start": t_seen, "success_authoritative": auth,
+        "judge_vs_gt": None if cmp is None else {k: v for k, v in cmp.items() if k != "gt"},
+        "sim_gt": None if cmp is None else cmp["gt"]}, indent=1, default=str))
     rec = {"ep_dir": str(ep_dir), "pose": pose, "label": m["label"], "truth": truth, "collisions": judge.collisions, "m": m,
-           "wall_s": round(time.monotonic() - t_wall, 1)}
+           "pad_table": judge.pad_table, "pad_table_force_max_n": judge.pad_table_force_max_n, "cmp": cmp, "auth": auth,
+           "t0_source": "events" if t_task is not None else "driver", "wall_s": round(time.monotonic() - t_wall, 1)}
     # after the episode: a reflex needs the bridge recovered before the arm can go home
     if m["reflexes"] or truth.get("reflex") or dr.recover_if_reflex():
         dr.recover_if_reflex()
@@ -561,11 +635,26 @@ def run(R: rn.Run, d: Path, results: dict) -> dict:
         m["incomplete_reason"] = reason
     # wall-clock dependent numbers are timing (reproducibility checks skip them)
     m["timing"] = sorted(k for k in m if k in ("tracking_err_mm_p95", "gripper_width_lag_steps_p95", "inference_latency_s_p95",
-                                               "receiver_age_s_p95", "obs_motion_mm_p95", "holds", "stale_image_errors"))
+                                               "receiver_age_s_p95", "obs_motion_mm_p95", "holds", "stale_image_errors",
+                                               "sim_reset_s_max", "sim_reset_s_p50"))
     if sim_source != "mujoco":
         notes.append(f"sim_source {sim_source}: scripted stub eraser (scenario {scenario}), NOT a physics simulation; success and "
                      "collisions only exercise the judge and the driver")
     notes.append(f"{R.image_source} images: success is informational (Stage 3 measures plumbing, safety and timing)")
+    rs = list(getattr(sim, "reset_s", []) or [])
+    m["sim_reset_s_max"] = round(max(rs), 4) if rs else None
+    m["sim_reset_s_p50"] = round(pct(rs, 50), 4) if rs else None
+    m["timing"] = sorted(set(m["timing"]) | {"sim_reset_s_max", "sim_reset_s_p50"})
+    if rs:
+        notes.append(f"sim_reset round trip p50 {m['sim_reset_s_p50']:.3f} s / max {m['sim_reset_s_max']:.3f} s over {len(rs)} resets "
+                     f"(driver timeout sim.stage3.reset_timeout_s {cfg['reset_timeout_s']} s; launcher bridge.sim_reset_timeout_s "
+                     f"{(R.cfg.get('bridge') or {}).get('sim_reset_timeout_s', 2.0)} s)")
+    if m["judge_gt_compared"]:
+        notes.append(f"success from A6 sim_gt (authoritative) on {m['judge_gt_compared']}/{len(eps)} episodes; judge vs sim_gt agree on "
+                     f"{m['judge_gt_agree']} (same success, t_success within {GT_T_SUCCESS_TOL_S} s; max dt {m['judge_gt_t_success_dt_s_max']} s)")
+    notes.append("reflexes count as policy failures (label n, reflex gate); pad_table = finger<->table contact onsets, reported "
+                 f"separately and not gated: {m['pad_table_contacts']} in {m['pad_table_episodes']} episodes "
+                 f"(max {m['pad_table_force_max_n']:.1f} N)")
     if m["n_gripper_lag_events"] == 0 and eps:
         notes.append("no gripper command change left the 2 mm band: gripper_width_lag_steps_p95 is 0 by default (vacuous for this policy)")
     notes.append(f"run dir {d}: launcher.log, work/session_*/task/episodes/*/*/*/episode_*/sim_truth.json")

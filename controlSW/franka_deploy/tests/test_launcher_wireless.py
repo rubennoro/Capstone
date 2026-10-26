@@ -261,7 +261,7 @@ def test_check_config_new_profiles(tmp_path, capsys):
         assert _line(out, "camera_kind").startswith("OK") and "wireless" in out
 
     rc, out = _check(tmp_path, capsys, "sim-iphone")
-    assert rc == 1
+    assert rc == (0 if lm.SENDERS["render"][1].is_file() else 1), out     # 1 only while the A7 render sender is missing
     mj = _line(out, "mujoco_backend")
     assert "franka_sim present" in mj and mj.startswith("OK" if lm.MUJOCO_BACKEND.is_file() else "FAIL")
     assert ("missing (A4)" in mj) != lm.MUJOCO_BACKEND.is_file()

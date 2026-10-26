@@ -48,6 +48,7 @@ class BridgeSim:
         from franka_deploy.bridge.link import BridgeClient
 
         self.state_endpoint = state_endpoint
+        self.reset_s: list = []
         self.client = BridgeClient(bridge_endpoint.replace("0.0.0.0", "127.0.0.1"), reset_timeout_s)
 
     def reset(self, eraser_xy_yaw, hand_gap_m=None) -> dict:
@@ -56,10 +57,13 @@ class BridgeSim:
         data = {"eraser_xy_yaw": [float(x) for x in eraser_xy_yaw]}
         if hand_gap_m is not None:
             data["hand_gap_m"] = float(hand_gap_m)
+        t0 = time.monotonic()
         try:
-            return self.client.request("sim_reset", data) or {}
+            rep = self.client.request("sim_reset", data) or {}
         except RpcError as e:
             raise SimResetRefused(str(e)) from e
+        self.reset_s.append(time.monotonic() - t0)      # request round trip (B9 addendum 4: the launcher timeout must cover it)
+        return rep
 
     def latest(self) -> dict | None:
         try:

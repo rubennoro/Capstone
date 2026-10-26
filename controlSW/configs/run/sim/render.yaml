@@ -11,6 +11,7 @@ stage3:                                      # Stage 3 closed loop (eval.stage3.
   start_retries_n: 3
   finger_geom_patterns: [pad_, tag_, finger]
   ignore_contact_pairs: [[eraser, table]]
+  table_geom_patterns: [table]                 # finger<->table contacts: reported as pad_table (A6 review finding 5), not collisions
 provenance:
   "": {status: decision, source: "design_track_b.md run/sim (images follow the sim in closed loop)"}
 critical: []

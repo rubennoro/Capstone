@@ -28,6 +28,8 @@ STAGE_SECTION = {"1": "stage1", "1b": "stage1b", "2a": "stage2", "2b": "stage2",
 # criteria keys of the shared `stage2` section that belong to one sub-stage only (the other sub-stage's keys are skipped)
 STAGE_KEYS = {
     "2a": {"chunk_reachable_fraction_min", "chunk_joint_margin_deg_min", "pred_vs_demo_pos_err_mm_p95_max"},
+    # stage1b: track_pos_m / track_rot_deg are the campaign's tracking tolerances (A8 uses them), not gates
+    "1b": {"track_ok_fraction_min", "reflex_max"},
     "2b": {"live_vs_offline_pos_err_mm_p50_max", "live_vs_offline_pos_err_mm_p95_max", "n_pairs_at_least",
            "frame_selection_errors_max", "cam_stamp_err_ms_p95_max"},
 }

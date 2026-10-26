@@ -117,6 +117,17 @@ def _has(name: str, patterns) -> bool:
     return any(p in str(name) for p in patterns)
 
 
+def classify_pad_table(contacts, finger_patterns, table_patterns) -> list:
+    """Finger geom (pad / tag / finger) against the table: not a collision (``classify_contacts`` drops finger contacts),
+    but reported on its own (A6 review finding 5: a fast approach strikes the pads on the table and may trip a reflex)."""
+    out = []
+    for c in contacts or []:
+        a, b = str(c["a"]), str(c["b"])
+        if (_has(a, finger_patterns) and _has(b, table_patterns)) or (_has(b, finger_patterns) and _has(a, table_patterns)):
+            out.append({"a": a, "b": b, "force_n": float(c.get("force_n", 0.0))})
+    return out
+
+
 def classify_contacts(contacts, finger_patterns, ignore_pairs, min_force_n: float = 0.0) -> list:
     """The collisions in one state that are not expected: a contact is dropped when either geom is a finger geom
     (``finger_patterns`` are substrings of the geom name: pads, tags, fingers) or the pair matches ``ignore_pairs``
@@ -164,7 +175,8 @@ class Judge(threading.Thread):
     what it saw: the non-finger collisions, the reflex, the grasped intervals and the state rate."""
 
     def __init__(self, state_endpoint: str, commands_file, success: dict, finger_patterns=(), ignore_pairs=(),
-                 t_start: float | None = None, z0: float | None = None, write_label: bool = True, name: str = "judge"):
+                 t_start: float | None = None, z0: float | None = None, write_label: bool = True, name: str = "judge",
+                 table_patterns=("table",)):
         super().__init__(name=name, daemon=True)
         self.endpoint = state_endpoint
         self.commands = Path(commands_file)
@@ -175,6 +187,10 @@ class Judge(threading.Thread):
         self.label: str | None = None
         self.collisions: list = []       # [{t_s, a, b, force_n}], one entry per distinct pair per contact episode
         self._active: set = set()
+        self.table_patterns = list(table_patterns)
+        self.pad_table: list = []        # [{t_s, a, b, force_n}] finger<->table contact onsets (reported, not a collision)
+        self._active_pt: set = set()
+        self.pad_table_force_max_n = 0.0
         self.grasped: list = []          # [(t_mono, bool)] edges
         self.n_states = 0
         self.t_first = self.t_last = None
@@ -199,6 +215,14 @@ class Judge(threading.Thread):
             if key not in self._active:
                 self.collisions.append({"t_s": round(t - self.tracker.t_start, 4), **c})
         self._active = now
+        now = set()
+        for c in classify_pad_table(s.get("contacts"), self.finger_patterns, self.table_patterns):
+            key = tuple(sorted((c["a"], c["b"])))
+            now.add(key)
+            self.pad_table_force_max_n = max(self.pad_table_force_max_n, c["force_n"])
+            if key not in self._active_pt:
+                self.pad_table.append({"t_s": round(t - self.tracker.t_start, 4), **c})
+        self._active_pt = now
 
     def grasped_at(self, t_mono: float) -> bool:
         v = False

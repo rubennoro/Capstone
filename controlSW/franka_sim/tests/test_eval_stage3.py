@@ -198,3 +198,60 @@ def test_sweep_smoke_on_the_stub_runs_resumes_and_compares(tmp_path):
         assert failed == ([] if rep["policy_id"] == "fake" else ["stage3.obs_motion_mm_p95_max"]), (rep["policy_id"], failed)
     h = (tmp_path / "summary.html").read_text()
     assert "Sweep comparison" in h and "demo_replay" in h and "wifi_good" in h and "fake" in h
+
+
+# ----------------------------------------------------------------------------------------------- Part 2 (pure)
+SUCC = {"lift_min_m": 0.05, "hold_s": 2.0, "timeout_s": 60, "slip_tol_m": 0.002}
+
+
+def _sim_ep(tmp_path, t_ep=100.0, hz=25.0, lift_at=3.0):
+    """An episode dir with the task's events.jsonl and 25 Hz bridge sim lines: +6 cm from lift_at, held."""
+    ep = tmp_path / "episode_0"
+    ep.mkdir()
+    (ep / "events.jsonl").write_text(json.dumps({"t": t_ep, "kind": "episode_start", "episode_dir": str(ep)}) + "\n")
+    lines = []
+    for i in range(int(8 * hz)):
+        t = t_ep + i / hz
+        z = 0.02 + (0.06 if t - t_ep >= lift_at else 0.0)
+        lines.append({"t": t, "kind": "sim", "obj": [0.45, 0, z, 1, 0, 0, 0], "gap": 0.03, "grasped": t - t_ep >= 1.0,
+                      "contacts": [{"a": "pad_left", "b": "table", "force_n": 5.0}] if i == 3 else [], "reflex": None})
+    (ep / "bridge.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    return ep
+
+
+def test_episode_start_t_comes_from_events_jsonl(tmp_path):
+    ep = _sim_ep(tmp_path, t_ep=123.25)
+    assert s3.episode_start_t(ep) == 123.25
+    assert s3.episode_start_t(tmp_path / "missing", timeout_s=0.05) is None
+
+
+def test_judge_vs_ground_truth_agree_and_disagree(tmp_path):
+    ep = _sim_ep(tmp_path, t_ep=100.0, lift_at=3.0)
+    cfg = dict(s3.DEFAULTS)
+    judge = {"success": True, "t_success_s": 5.01}                  # the judge at 100 Hz decides 10 ms later than a 25 Hz sample
+    c = s3.ground_truth_compare(ep, SUCC, 100.0, judge, cfg, tries=1)
+    assert c["gt"]["success"] is True and c["gt"]["t_success_s"] == pytest.approx(5.0)
+    assert c["agree"] and c["t_success_dt_s"] == pytest.approx(0.01) and c["gt_t_success_mono"] == pytest.approx(105.0)
+    late = s3.ground_truth_compare(ep, SUCC, 100.0, {"success": True, "t_success_s": 5.3}, cfg, tries=1)
+    assert late["success_agree"] and not late["agree"]                # same success, t_success off by 0.3 s
+    # anchoring at the driver's later t0 (A6 finding 1) shifts the relative time: the comparison then uses the same t_start for both
+    shifted = s3.ground_truth_compare(ep, SUCC, 100.2, {"success": True, "t_success_s": 4.8}, cfg, tries=1)
+    assert shifted["agree"]
+    no = s3.ground_truth_compare(ep, SUCC, 100.0, {"success": False, "t_success_s": None}, cfg, tries=1)
+    assert not no["success_agree"] and not no["agree"]
+    assert s3.ground_truth_compare(tmp_path / "nolines", SUCC, 0.0, judge, cfg, tries=1) is None
+
+
+def test_aggregate_takes_sim_gt_as_authoritative_and_counts_pad_table():
+    import types
+    R = types.SimpleNamespace(image_source="render")
+    m0 = {"tracking_mm": np.array([1.0]), "gripper_lag": [], "infer_s": [0.1], "obs_motion_mm": [], "reflexes": 0, "stale_image": 0,
+          "label": "y", "n_calls": 1, "holds": 0}
+    cmp_ok = {"gt": {"success": False}, "agree": False, "success_agree": False, "t_success_dt_s": None}
+    eps = [{"label": "y", "pose": (0, 0, 0), "pose_i": 0, "ep_i": 0, "truth": {"success": True}, "collisions": [], "m": m0,
+            "pad_table": [{"t_s": 1.0}], "pad_table_force_max_n": 41.0, "cmp": cmp_ok, "auth": {"success": False, "source": "sim_gt"},
+            "t0_source": "events", "wall_s": 1.0}]
+    m, rows = s3.aggregate(eps, R, "mujoco")
+    assert m["success_rate"] == 0.0 and m["success_source"] == "sim_gt" and m["judge_gt_compared"] == 1 and m["judge_gt_agree"] == 0
+    assert m["pad_table_contacts"] == 1 and m["pad_table_force_max_n"] == 41.0 and m["collisions"] == 0
+    assert rows[0]["gt"] == "n" and rows[0]["pad_table"] == 1 and m["judge_t0_from_events"] == 1

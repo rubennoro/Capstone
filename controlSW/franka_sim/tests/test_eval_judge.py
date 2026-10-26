@@ -209,3 +209,17 @@ def test_bridge_sim_sends_the_a6_payload_and_maps_refusal(tmp_path):
         stop.set()
         th.join(2)
         srv.close()
+
+
+def test_pad_table_contacts_are_reported_apart_from_collisions(tmp_path):
+    """A6 review finding 5: a finger geom on the table is not a collision but is reported on its own."""
+    pats, ign, tbl = ["pad_", "tag_", "finger"], [["eraser", "table"]], ["table"]
+    cs = [{"a": "pad_left", "b": "table", "force_n": 40.0}, {"a": "table", "b": "finger_r", "force_n": 38.0},
+          {"a": "pad_left", "b": "eraser", "force_n": 10.0}, {"a": "eraser", "b": "table", "force_n": 1.0},
+          {"a": "link6_col", "b": "table", "force_n": 7.0}]
+    assert [(c["a"], c["b"]) for c in J.classify_pad_table(cs, pats, tbl)] == [("pad_left", "table"), ("table", "finger_r")]
+    assert [(c["a"], c["b"]) for c in J.classify_contacts(cs, pats, ign)] == [("link6_col", "table")]
+    j = J.Judge("tcp://127.0.0.1:1", tmp_path / "c.txt", SUCCESS, pats, ign, t_start=0.0, table_patterns=tbl)
+    for i, c in enumerate([cs[:1], cs[:1], [], cs[:1]]):       # contact, still in contact, released, again: 2 onsets
+        j._observe({"t_mono": 0.1 * i, "contacts": c, "grasped": False})
+    assert len(j.pad_table) == 2 and j.pad_table_force_max_n == 40.0 and j.collisions == []
