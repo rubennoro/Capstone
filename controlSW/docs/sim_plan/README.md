@@ -34,6 +34,8 @@ S=/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scr
 RE=$S/env_realenv/bin/python   # real-env stack + mujoco 3.3.0 + flask-socketio + simple-websocket + websocket-client
 BP=$S/env_bp/bin/python        # torch/behavior_prompting: inference, eval, zarr reading with imagecodecs
 IP=$S/env_iphumi/bin/python    # sensor_rig tests, iPhUMI processing (regression pipeline check)
+                               # needs conda-forge opencv 4.12.0 (pip opencv-headless changes solvePnP bits -> golden mismatch):
+                               # conda create -p $S/env_iphumi -c conda-forge --override-channels python=3.10 numpy=2.2.6 opencv=4.12.0
 LOCK=$S/suite.lock             # flock target for full suites and e2e/process tests
 ZARR=$S/deploy_work/prompt_zarr/firstreal-single.zarr.zip   # firstreal-single dataset (45 demos)
 ```
