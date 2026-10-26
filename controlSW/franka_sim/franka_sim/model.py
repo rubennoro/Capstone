@@ -47,6 +47,17 @@ HAND_IN_LINK7 = (0.0, 0.0, FLANGE_Z_M, 0.9238795, 0.0, 0.0, -0.3826834)
 CV_TO_MJ = np.diag([1.0, -1.0, -1.0])            # R_mj = R_cv @ CV_TO_MJ (and back: R_cv = R_mj @ CV_TO_MJ)
 UW_PLACEHOLDER = np.array([[1, 0, 0, 0], [0, 1, 0, 0.012], [0, 0, 1, 0], [0, 0, 0, 1]], float)  # UW 12 mm below main
 TAG_SIZE_M = 0.016
+# Tag centre along the approach axis relative to the pad centre (= the TCP height), TCP-relative so it does not depend on
+# ``finger_adapter.extension_m`` (the camera is fixed to the TCP through C_T_TCP, and so are the tags). The real tags sit
+# ~98 mm from the UW camera along its optical axis (iPhUMI gripper_calibration artag_z_distance_from_ultrawide 0.098079),
+# the TCP ~211 mm: camera-check measured the sim tags 104 mm too far in UW z when they were at the pad centre; a pure
+# shift of the tag along TCP z explains the whole (0, +23, -104) mm UW-frame offset. Override: finger_adapter.tag_z_from_pad_m.
+TAG_Z_FROM_PAD_M = -0.108
+# Lateral position: camera-check on 5 firstreal demos (200 frames) found the real tag centres separated by (zarr width + 44 mm)
+# = (finger gap + 87 mm) while the sim had gap + 24 mm: a constant sim-minus-real of -62.3 mm (p50 -62.25, p95 -62.2, ~0.1 mm
+# spread over widths 45-84 mm), i.e. the real tags sit 31.2 mm further out per side than b/2 + TAG/2. Override:
+# finger_adapter.tag_y_extra_m.
+TAG_Y_EXTRA_M = 0.0312
 # Inner-face separation of the printed pads at finger gap 0 (pad separation = gap + PAD_OFFSET_M). Placeholder (CAD
 # pending): it was tied to width_map.b until the A5 review showed b is the TRAINING width at gap 0 (~0.0431, tag
 # separation), not a geometry offset. Override with tooling.finger_adapter.pad_offset_m.
@@ -283,12 +294,15 @@ def _box(body, name: str, size_full, T: np.ndarray, rgba, *, collide: bool, mass
 
 def _set_cam_intrinsics(cam, K, width: int, height: int) -> None:
     """MjSpec camera intrinsics (mujoco 3.3.0). Verified by rendering (WORKLOG): MuJoCo's principal_pixel is the
-    offset from the image centre with the x sign reversed relative to OpenCV: (W/2 - cx, cy - H/2)."""
+    offset from the image centre with the x sign reversed relative to OpenCV: (W/2 - cx, cy - H/2). MuJoCo measures
+    from the continuous image centre W/2 while OpenCV puts pixel centres at integer coordinates, so the OpenCV
+    principal point (cx, cy) is (cx + 0.5, cy + 0.5) in MuJoCo's convention (A1 review finding 1; A7 test_render
+    checks the projection to <= 0.15 px)."""
     K = np.asarray(K, float)
     cam.resolution = [int(width), int(height)]
     cam.sensor_size = [width * 1e-6, height * 1e-6]       # any non-zero size switches MuJoCo to intrinsic mode
     cam.focal_pixel = [K[0, 0], K[1, 1]]
-    cam.principal_pixel = [width / 2 - K[0, 2], K[1, 2] - height / 2]
+    cam.principal_pixel = [width / 2 - (K[0, 2] + 0.5), (K[1, 2] + 0.5) - height / 2]
 
 
 def build_model(station: Station, sim: dict | None = None, with_scene: bool = True) -> SimModel:
@@ -366,6 +380,8 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
     grip_sol = grip_contact(simc)
     b = float(fa.get("pad_offset_m", PAD_OFFSET_M))          # pad offset (geometry), NOT width_map.b (training units)
     info["pad_offset_m"] = b
+    info["tag_y_extra_m"] = float(fa.get("tag_y_extra_m", TAG_Y_EXTRA_M))
+    info["tag_z_from_pad_m"] = float(fa.get("tag_z_from_pad_m", TAG_Z_FROM_PAD_M))
     info["pad_offset_source"] = ("tooling.finger_adapter.pad_offset_m" if "pad_offset_m" in fa
                                  else "model.PAD_OFFSET_M placeholder (CAD pending)")
     px, pt, pl = (float(v) for v in fa["pad_size_m"])
@@ -393,7 +409,8 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
         hT = _body_in(m0, d0, fb, names["bodies"]["hand"])
         dir_f = hT[:3, :3].T @ cam_dir_h                   # camera direction in this finger's frame (+-x)
         face = np.sign(dir_f[0]) * px / 2
-        tag_c = np.array([face + np.sign(dir_f[0]) * 0.0005, b / 2 + TAG_SIZE_M / 2, pad_c[2]])
+        tag_z = pad_c[2] + float(fa.get("tag_z_from_pad_m", TAG_Z_FROM_PAD_M))
+        tag_c = np.array([face + np.sign(dir_f[0]) * 0.0005, b / 2 + TAG_SIZE_M / 2 + float(fa.get("tag_y_extra_m", TAG_Y_EXTRA_M)), tag_z])
         _box(body, f"tag_{side}", [0.001, TAG_SIZE_M, TAG_SIZE_M], make_T(None, tag_c), [1, 1, 1, 1], collide=False)
         tag_in = tag_c + [np.sign(dir_f[0]) * 0.0006, 0, 0]
         _box(body, f"tag_{side}_ink", [0.001, 0.6 * TAG_SIZE_M, 0.6 * TAG_SIZE_M], make_T(None, tag_in),
@@ -483,6 +500,11 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
         tbody.pos, tbody.quat = tb_T[:3, 3], mat_to_quat(tb_T[:3, :3])  # body frame: centre of the table top
         _box(tbody, "table", ts, make_T(None, [0, 0, -ts[2] / 2]), [0.6, 0.5, 0.4, 1], collide=True,
              friction=tbl["friction"])
+        bd = arm.worldbody.add_geom()          # visual-only floor so that the renders have no black void past the table
+        bd.name, bd.type, bd.size = "backdrop", mujoco.mjtGeom.mjGEOM_PLANE, [5.0, 5.0, 0.1]
+        bd.pos = [float(tb_T[0, 3]), float(tb_T[1, 3]), float(tb_T[2, 3]) - 0.70]
+        bd.contype = bd.conaffinity = 0
+        bd.rgba = [0.36, 0.36, 0.38, 1]
         base_body = arm.worldbody.bodies[0].name
         for nm in {base_body, *[b.name for b in arm.worldbody.bodies[0].bodies]}:   # robot base stands on the table
             exb = arm.add_exclude()

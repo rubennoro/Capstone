@@ -245,3 +245,34 @@ def test_cli_writes_json(tmp_path):
     assert M.main(["--profile", "sim-rig", "--robot", "fr3", "--no-scene", "--out", str(out)]) == 0
     fr = json.loads(out.read_text())
     assert fr["robot"] == "fr3" and len(fr["F_T_cam_main"]) == 4
+
+
+@pytest.mark.parametrize("robot", ROBOTS)
+@pytest.mark.parametrize("ext", (0.0, 0.1))
+def test_tags_are_tcp_relative_and_near_the_camera(robot, ext):
+    """Tags (and the cameras) are rigid in the TCP frame for any finger extension; the tag centres are ~98 mm from the UW
+    camera along its optical axis (real: iPhUMI artag_z_distance_from_ultrawide 0.098), not at the TCP depth (~210 mm)."""
+    st = _station(robot, [f"tooling.finger_adapter.extension_m={ext}"])
+    sm = M.build_model(st)
+    d = M.forward_at(sm)
+    C_uw = M.cam_T_cv(sm.model, d, "cam_uw")
+    z = []
+    for side in ("l", "r"):
+        P = M.inv_T(C_uw) @ M.xform_of(d, "geom", M._id(sm.model, "geom", f"tag_{side}"))
+        z.append(P[2, 3])
+    assert abs(np.mean(z) - 0.098) < 0.012, z
+    W_tcp = _site(sm, d, "tcp")
+    for side in ("l", "r"):
+        T = M.inv_T(W_tcp) @ M.xform_of(d, "geom", M._id(sm.model, "geom", f"tag_{side}"))
+        assert abs(T[2, 3] - M.TAG_Z_FROM_PAD_M) < 1e-6, T[:3, 3]      # same for both extensions and both arms
+
+
+@pytest.mark.parametrize("robot", ROBOTS)
+def test_tag_separation_is_gap_plus_real_offset(robot):
+    """Real tag centre separation = finger gap + 87 mm (camera-check, 5 demos); at the home key gap the sim must match."""
+    sm = M.build_model(_station(robot))
+    d = M.forward_at(sm)
+    gap = 2 * float(d.qpos[7])                 # both fingers at the home key position
+    C = M.cam_T_cv(sm.model, d, "cam_uw")
+    x = [(M.inv_T(C) @ M.xform_of(d, "geom", M._id(sm.model, "geom", f"tag_{s}")))[0, 3] for s in ("l", "r")]
+    assert abs(abs(x[0] - x[1]) - (gap + 0.0869)) < 0.002, (x, gap)

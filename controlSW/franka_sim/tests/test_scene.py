@@ -86,7 +86,7 @@ def test_pub_rate_keys_world_and_rest(backend):
         sub.close()
     rate = (len(ts) - 1) / (ts[-1] - ts[0])
     m = b.sm.model
-    assert KEYS <= set(s) and {"hand_mode", "hand_grasped", "sim_t"} <= set(s)
+    assert KEYS <= set(s) and {"hand_mode", "hand_grasped", "sim_t", "tcp_z"} <= set(s)
     assert np.shape(s["qpos"]) == (m.nq,) and np.shape(s["qvel"]) == (m.nv,) and np.shape(s["tau_ext"]) == (7,)
     assert np.shape(s["eraser_T_base"]) == (4, 4) and isinstance(s["grasped"], bool) and s["reflex"] is None
     assert isinstance(s["hand_gap_m"], float) and all(set(c) == {"a", "b", "force_n"} for c in s["contacts"])
@@ -241,7 +241,9 @@ def test_sim_tick_writes_sim_lines_at_sim_log_hz(backend, tmp_path):
     rate = (len(lines) - 1) / (lines[-1]["t"] - lines[0]["t"])
     assert 22 <= rate <= 28, rate
     ln = lines[-1]
-    assert set(ln) == {"t", "kind", "obj", "gap", "grasped", "hand_mode", "contacts", "F_ext_max", "reflex"} and ln["kind"] == "sim"
+    assert set(ln) == {"t", "kind", "obj", "gap", "grasped", "hand_mode", "contacts", "F_ext_max", "reflex", "tcp_z"} \
+        and ln["kind"] == "sim"
+    assert isinstance(ln["tcp_z"], float) and ln["tcp_z"] > ln["obj"][2]         # A7: TCP z (additive key)
     assert len(ln["obj"]) == 7 and isinstance(ln["gap"], float)
     b.sim_tick(type("NoLog", (), {"_jsonl": None}))           # no --log-jsonl: nothing to do
 

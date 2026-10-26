@@ -28,7 +28,8 @@ CONTACT_MIN_N = 0.1              # contacts below this are dropped
 CONTACTS_MAX = 32
 REST_LIFT_M = 0.0005             # sim_reset drops the eraser from 0.5 mm above the table
 PENETRATION_MAX_M = 0.001        # sim_reset refuses a pose that penetrates anything but the table by more
-PAD_TABLE_CLEARANCE_M = 0.003    # grasp_tcp_height_m: the pad bottoms stay this far above the table top
+PAD_TABLE_CLEARANCE_M = 0.005    # grasp_tcp_height_m: the pad bottoms stay this far above the table top (A6 review
+                                 # finding 4: 3 mm left a 0.07 mm margin after the descent undershoot)
 
 
 def geom_name(m, g: int) -> str:
@@ -58,7 +59,7 @@ def tilt_deg(T) -> float:
 
 def grasp_tcp_height_m(sm, station) -> float:
     """TCP height above the table top for the scripted grasp: the station's ``scene.grasp_tcp_height_m``, raised so
-    the pads (the TCP is at the pad centre, pads are ``pad_size_m[2]`` long) clear the table by 3 mm. With the
+    the pads (the TCP is at the pad centre, pads are ``pad_size_m[2]`` long) clear the table by PAD_TABLE_CLEARANCE_M. With the
     station's 0.01 m and 30 mm pads the station value would put the pads 5 mm into the table."""
     h = float(station.get("scene.grasp_tcp_height_m", 0.01))
     pl = float(station.get("tooling.finger_adapter.pad_size_m")[2])
@@ -77,6 +78,7 @@ class Scene:
         self.qa, self.va = int(m.jnt_qposadr[j]), int(m.jnt_dofadr[j])
         self.g_eraser = oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["object"])
         self.g_table = oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["table"])
+        self.tcp_site = oid(mujoco.mjtObj.mjOBJ_SITE, nm["sites"]["tcp"])
         self.pads = (oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["pad_l"]), oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["pad_r"]))
         self.fingers = [int(m.jnt_qposadr[oid(mujoco.mjtObj.mjOBJ_JOINT, f)]) for f in nm["fingers"].values()]
         self.finger_dofs = [int(m.jnt_dofadr[oid(mujoco.mjtObj.mjOBJ_JOINT, f)]) for f in nm["fingers"].values()]
@@ -159,7 +161,8 @@ class Scene:
 
     # ------------------------------------------------------------------------------------------ I-SIMSTATE
     def sim_state(self, core, contacts, t_mono: float, hand=None) -> dict:
-        """The I-SIMSTATE dict (keys simlink/judge read, plus hand_mode, hand_grasped, sim_t)."""
+        """The I-SIMSTATE dict (keys simlink/judge read, plus hand_mode, hand_grasped, sim_t, and tcp_z: the TCP site z
+        in the base frame, so in-hand slip = the drop of eraser z - tcp_z while grasped, A7)."""
         d = core.d
         hs = hand._state if hand is not None else None
         gap = float(hs["gap_m"]) if hs is not None else 2.0 * float(d.ten_length[core._tendon])
@@ -167,7 +170,8 @@ class Scene:
                 "hand_gap_m": gap, "grasped": bool(self.grasped(contacts)), "contacts": contacts,
                 "reflex": core.error, "tau_ext": np.asarray(core.tau_ext, float).copy(),
                 "hand_mode": hs["mode"] if hs is not None else None,
-                "hand_grasped": bool(hs["grasped"]) if hs is not None else None, "sim_t": float(d.time)}
+                "hand_grasped": bool(hs["grasped"]) if hs is not None else None, "sim_t": float(d.time),
+                "tcp_z": float(d.site_xpos[self.tcp_site][2])}
 
 
 class ContactProbe:
@@ -199,4 +203,5 @@ def sim_line(state: dict, F_ext_max: float = 0.0) -> dict:
     return {"t": float(state["t_mono"]), "kind": "sim", "obj": [round(float(v), 6) for v in (*T[:3, 3], *q)],
             "gap": round(float(state["hand_gap_m"]), 6), "grasped": bool(state["grasped"]),
             "hand_mode": str(state.get("hand_mode")), "contacts": [dict(c) for c in state["contacts"]],
-            "F_ext_max": round(float(F_ext_max), 4), "reflex": None if state["reflex"] is None else str(state["reflex"])}
+            "F_ext_max": round(float(F_ext_max), 4), "reflex": None if state["reflex"] is None else str(state["reflex"]),
+            **({"tcp_z": round(float(state["tcp_z"]), 6)} if state.get("tcp_z") is not None else {})}

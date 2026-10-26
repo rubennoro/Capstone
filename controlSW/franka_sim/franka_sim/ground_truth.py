@@ -8,10 +8,12 @@ The rule is the judge's (franka_sim.eval.judge.SuccessTracker), written independ
   z0 = the eraser z of the first sample at or after t_start; lift = z - z0;
   success = lift >= success.lift_min_m held continuously for hold_s (a drop below restarts the clock), decided at the
   first sample where that holds; a non-null ``reflex`` -> n; tilt > 30 deg -> n (knocked_over); no decision by
-  timeout_s -> n. Slip = the largest drop below the running max of z while ``grasped`` (reported vs slip_tol_m).
+  timeout_s -> n. Slip = the largest drop below the running max of z while ``grasped`` (reported vs slip_tol_m; it
+  includes arm overshoot, A6 review finding 2). In-hand slip (``in_hand_slip_m``, A7) = the same on eraser z - TCP z
+  (lines with ``tcp_z``; None when no line has it), i.e. the eraser sliding in the fingers.
 
 Sim lines (MuJoCoBackend.sim_tick, 25 Hz): {"t", "kind": "sim", "obj": [x,y,z,qw,qx,qy,qz], "gap", "grasped",
-"hand_mode", "contacts": [{a, b, force_n}], "F_ext_max", "reflex"}.
+"hand_mode", "contacts": [{a, b, force_n}], "F_ext_max", "reflex", "tcp_z" (A7; absent in older logs)}.
 
     from franka_sim.ground_truth import evaluate_episode
     gt = evaluate_episode(ep_dir)     # None for an episode without sim lines (real arm)
@@ -70,6 +72,7 @@ def evaluate(events: list, criteria: dict, t_start: float, *, finger_patterns=FI
     z0 = None
     since = None
     z_max_g = None
+    rel_max_g, in_hand = None, None
     t_dec = None
     pairs, collisions, active = set(), [], set()
     used = []
@@ -110,6 +113,10 @@ def evaluate(events: list, criteria: dict, t_start: float, *, finger_patterns=FI
                 r["grasp_t_s"] = round(t - t_start, 4)
             z_max_g = z if z_max_g is None else max(z_max_g, z)
             r["slip_m"] = max(r["slip_m"], z_max_g - z)
+            if e.get("tcp_z") is not None:
+                rel = z - float(e["tcp_z"])
+                rel_max_g = rel if rel_max_g is None else max(rel_max_g, rel)
+                in_hand = max(in_hand or 0.0, rel_max_g - rel)
         if lift >= lift_min:
             since = t if since is None else since
             if t - since >= hold_s:
@@ -126,6 +133,7 @@ def evaluate(events: list, criteria: dict, t_start: float, *, finger_patterns=FI
     out["max_lift_m"] = round(out["max_lift_m"], 5)
     out["slip_m"] = round(out["slip_m"], 5)
     out["slip_exceeds_tol"] = out["slip_m"] > slip_tol
+    out["in_hand_slip_m"] = None if in_hand is None else round(in_hand, 5)
     out.update(lift_min_m=lift_min, hold_s=hold_s, timeout_s=timeout_s, slip_tol_m=slip_tol)
     out["t_success_mono"] = None if out["t_success_s"] is None else round(t_start + out["t_success_s"], 4)
     out["t_start_mono"] = t_start

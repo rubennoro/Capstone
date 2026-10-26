@@ -162,3 +162,20 @@ def test_evaluate_episode_reads_station_events_and_none_without_sim(tmp_path):
 def test_module_is_pure():
     src = open(GT.__file__).read()
     assert "import mujoco" not in src and "import zmq" not in src and "from franka_sim.eval" not in src
+
+
+def test_in_hand_slip_from_tcp_z_separates_overshoot_from_slip():
+    """A7 (A6 review finding 2): slip_m includes arm overshoot; in_hand_slip_m uses eraser z - tcp_z while grasped."""
+    ev = stream("lift5")
+    for e in ev:                                  # rigid grasp: TCP 4 mm above the eraser, the arm overshoots 5 mm
+        e["tcp_z"] = e["obj"][2] + 0.004
+    for e in ev[90:100]:
+        e["obj"][2] -= 0.005
+        e["tcp_z"] -= 0.005
+    r = GT.evaluate(ev, CRIT, 100.0)
+    assert r["slip_m"] == pytest.approx(0.005, abs=1e-5) and r["in_hand_slip_m"] == pytest.approx(0.0, abs=1e-6)
+    for e in ev[100:]:                            # now the eraser slides 3 mm down in the fingers
+        e["obj"][2] -= 0.003
+    r = GT.evaluate(ev, CRIT, 100.0)
+    assert r["in_hand_slip_m"] == pytest.approx(0.003, abs=1e-5)
+    assert GT.evaluate(stream("lift5"), CRIT, 100.0)["in_hand_slip_m"] is None      # old logs: no tcp_z
