@@ -1,0 +1,8813 @@
+{
+ "schema": "sim_campaign/v1",
+ "fingerprint": "52a32d42f68ec56b",
+ "fingerprint_inputs": {
+  "station": "dd993690ded4652f",
+  "stage1_sha": "1dc3d319777003af",
+  "overrides": [
+   "tooling.finger_adapter.extension_m=0.1",
+   "tooling.tcp_x_along_hand=-y",
+   "tooling.F_T_TCP=[[-0.707106756, 0.707106806, 0.0, 0.0], [-0.707106806, -0.707106756, 0.0, 0.0], [0.0, 0.0, 1.0, 0.1973], [0.0, 0.0, 0.0, 1.0]]",
+   "sensor.clock.latency_s.main=0.0",
+   "sensor.clock.latency_s.ultrawide=0.0"
+  ],
+  "grasp_height": "scene",
+  "anchor_dz_m": 0.01,
+  "criteria": {
+   "track_pos_m": 0.01,
+   "track_rot_deg": 3,
+   "track_ok_fraction_min": 0.9,
+   "reflex_max": 0
+  },
+  "profile": "sim-iphone",
+  "zarr": "firstreal-single.zarr.zip",
+  "tail_s": 4.0
+ },
+ "config": "/home/ruben/Capstone/controlSW/franka_deploy/configs/deploy.yaml",
+ "profile": "sim-iphone",
+ "robot": "panda",
+ "station_ids": {
+  "robot": "panda",
+  "tooling": "franka_hand_iphumi_iphone16pro",
+  "sensor": "iphone16pro_wifi",
+  "scene": "block_raise_table",
+  "host": "pc_laptop",
+  "policy": "demo_replay",
+  "link": "wifi_good",
+  "criteria": "block_raise",
+  "sim": "render"
+ },
+ "station_fingerprint": "dd993690ded4652f",
+ "stage1": {
+  "path": "/home/ruben/Capstone/controlSW/docs/sim_plan/results/stage1/panda_ext0.1_my_stage1.json.gz",
+  "design": {
+   "extension_m": 0.1,
+   "camera_side": "-y"
+  },
+  "station_sets": [
+   "tooling.finger_adapter.extension_m=0.1",
+   "tooling.tcp_x_along_hand=-y"
+  ],
+  "grasp_tcp_height_m": 0.01,
+  "placement": {
+   "grid_point": {
+    "gx": 0.7,
+    "gy": 0.2666666666666666
+   },
+   "yaw_deg": 90.0,
+   "grasp_xyz_base": [
+    0.7,
+    0.2666666666666666,
+    0.01
+   ]
+  },
+  "n_feasible": 43
+ },
+ "overrides": [
+  "tooling.finger_adapter.extension_m=0.1",
+  "tooling.tcp_x_along_hand=-y",
+  "tooling.F_T_TCP=[[-0.707106756, 0.707106806, 0.0, 0.0], [-0.707106806, -0.707106756, 0.0, 0.0], [0.0, 0.0, 1.0, 0.1973], [0.0, 0.0, 0.0, 1.0]]",
+  "sensor.clock.latency_s.main=0.0",
+  "sensor.clock.latency_s.ultrawide=0.0"
+ ],
+ "grasp_height": "scene",
+ "anchor_dz_m": 0.01,
+ "grasp_tcp_z_base_m": 0.02,
+ "criteria": {
+  "track_pos_m": 0.01,
+  "track_rot_deg": 3,
+  "track_ok_fraction_min": 0.9,
+  "reflex_max": 0
+ },
+ "v_max_m_s": 0.25,
+ "lookahead_s": 0.1,
+ "window_s": 5.0,
+ "lag_max_s": 0.3,
+ "tail_s": 4.0,
+ "jobs": 3,
+ "port_offset_base": 1000,
+ "zarr": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/deploy_work/prompt_zarr/firstreal-single.zarr.zip",
+ "demos": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44
+ ],
+ "speeds": [
+  0.5
+ ],
+ "wall_s_this_invocation": 0.0,
+ "aggregates": {
+  "0.5": {
+   "speed": 0.5,
+   "n": 45,
+   "n_stage1_infeasible": 2,
+   "stage1_infeasible": [
+    18,
+    32
+   ],
+   "system_faults": 0,
+   "track_ok": {
+    "k": 3,
+    "n": 43,
+    "p": 0.0698,
+    "ci95": [
+     0.024,
+     0.1861
+    ],
+    "min": 0.9,
+    "holds": false
+   },
+   "track_fraction_median": 0.0,
+   "runs_with_reflex": 8,
+   "reflexes_total": 8,
+   "reflex_max": 0,
+   "runs_with_pad_table": 22,
+   "pad_table_contacts_total": 60,
+   "sim_gt_success": {
+    "k": 36,
+    "n": 45,
+    "p": 0.8,
+    "ci95": [
+     0.6618,
+     0.891
+    ]
+   },
+   "clamps_total": 500,
+   "settle_timeouts_total": 6,
+   "causes": {
+    "system_fault": 0,
+    "reflex": 8,
+    "pad_table": 2,
+    "safety_clamp": 28,
+    "hand": 0,
+    "overshoot": 4
+   },
+   "failing": [
+    {
+     "demo": 0,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 1,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 2,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 3,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 4,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 5,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 6,
+     "cause": "reflex",
+     "track_fraction": 0.676,
+     "detail": "joint_reflex: |tau_ext2| 29.1 > 20.0 Nm",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 7,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 8,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 9,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 10,
+     "cause": "reflex",
+     "track_fraction": 0.872,
+     "detail": "joint_reflex: |tau_ext2| 29.3 > 20.0 Nm",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 11,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 12,
+     "cause": "overshoot",
+     "track_fraction": 0.484,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 14,
+     "cause": "pad_table",
+     "track_fraction": 0.716,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 15,
+     "cause": "reflex",
+     "track_fraction": 0.28,
+     "detail": "joint_reflex: |tau_ext2| 24.6 > 20.0 Nm",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 18,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": true
+    },
+    {
+     "demo": 19,
+     "cause": "reflex",
+     "track_fraction": 0.852,
+     "detail": "joint_reflex: |tau_ext2| 29.8 > 20.0 Nm",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 20,
+     "cause": "overshoot",
+     "track_fraction": 0.76,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 21,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 22,
+     "cause": "reflex",
+     "track_fraction": 0.732,
+     "detail": "joint_reflex: |tau_ext2| 27.7 > 20.0 Nm",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 23,
+     "cause": "safety_clamp",
+     "track_fraction": 0.876,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 24,
+     "cause": "overshoot",
+     "track_fraction": 0.884,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 25,
+     "cause": "reflex",
+     "track_fraction": 0.752,
+     "detail": "cartesian_reflex: |O_F_ext2| 28.8 > 20.0",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 26,
+     "cause": "overshoot",
+     "track_fraction": 0.748,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 27,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 28,
+     "cause": "reflex",
+     "track_fraction": 0.0,
+     "detail": "joint_reflex: |tau_ext2| 29.3 > 20.0 Nm",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 29,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 30,
+     "cause": "safety_clamp",
+     "track_fraction": 0.348,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 31,
+     "cause": "safety_clamp",
+     "track_fraction": 0.268,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 32,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": true
+    },
+    {
+     "demo": 33,
+     "cause": "safety_clamp",
+     "track_fraction": 0.632,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 34,
+     "cause": "pad_table",
+     "track_fraction": 0.872,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 35,
+     "cause": "safety_clamp",
+     "track_fraction": 0.476,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 36,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 37,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 38,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 39,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 40,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 41,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 42,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 43,
+     "cause": "reflex",
+     "track_fraction": 0.0,
+     "detail": "cartesian_reflex: |O_F_ext2| 20.1 > 20.0",
+     "stage1_infeasible": false
+    },
+    {
+     "demo": 44,
+     "cause": "safety_clamp",
+     "track_fraction": 0.0,
+     "detail": null,
+     "stage1_infeasible": false
+    }
+   ],
+   "run_wall_s": {
+    "median": 78.6,
+    "max": 153.3
+   }
+  }
+ },
+ "sessions": [
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d00_s0.5/work/session_20261025_190045",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d01_s0.5/work/session_20261025_190050",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d02_s0.5/work/session_20261025_190056",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d03_s0.5/work/session_20261025_190210",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d04_s0.5/work/session_20261025_190215",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d05_s0.5/work/session_20261025_190219",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d06_s0.5/work/session_20261025_190330",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d07_s0.5/work/session_20261025_194221",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d08_s0.5/work/session_20261025_190349",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d09_s0.5/work/session_20261025_190359",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d10_s0.5/work/session_20261025_190507",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d11_s0.5/work/session_20261025_190519",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d12_s0.5/work/session_20261025_190558",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d13_s0.5/work/session_20261025_190639",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d14_s0.5/work/session_20261025_190716",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d15_s0.5/work/session_20261025_190741",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d16_s0.5/work/session_20261025_190805",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d17_s0.5/work/session_20261025_190836",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d18_s0.5/work/session_20261025_190928",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d19_s0.5/work/session_20261025_191001",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d20_s0.5/work/session_20261025_191002",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d21_s0.5/work/session_20261025_191047",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d22_s0.5/work/session_20261025_191121",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d23_s0.5/work/session_20261025_191201",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d24_s0.5/work/session_20261025_191232",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d25_s0.5/work/session_20261025_191319",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d26_s0.5/work/session_20261025_191343",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d27_s0.5/work/session_20261025_191348",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d28_s0.5/work/session_20261025_191457",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d29_s0.5/work/session_20261025_191506",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d30_s0.5/work/session_20261025_191535",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d31_s0.5/work/session_20261025_191623",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d32_s0.5/work/session_20261025_191652",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d33_s0.5/work/session_20261025_191716",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d34_s0.5/work/session_20261025_191739",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d35_s0.5/work/session_20261025_191803",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d36_s0.5/work/session_20261025_191828",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d37_s0.5/work/session_20261025_191857",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d38_s0.5/work/session_20261025_194407",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d39_s0.5/work/session_20261025_194412",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d40_s0.5/work/session_20261025_194417",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d41_s0.5/work/session_20261025_194522",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d42_s0.5/work/session_20261025_194524",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d43_s0.5/work/session_20261025_192213",
+  "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d44_s0.5/work/session_20261025_192340"
+ ],
+ "rows": [
+  {
+   "run": "d00_s0.5",
+   "demo": 0,
+   "name": "2026-10-01T21-13-57.489Z_75494_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     0.156947,
+     -0.316798,
+     0.081128,
+     -2.65113,
+     1.909107,
+     2.53208,
+     1.652752
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.51732,
+     0.220614,
+     0.267236,
+     0.493956,
+     -0.798818,
+     0.28957,
+     -0.184515
+    ],
+    "home_xyz": [
+     0.51732,
+     0.220614,
+     0.267236
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -2.488799
+    ],
+    "hand_gap_m": 0.040058,
+    "w0": 0.08315784484148026,
+    "anchor_dz_m": 0.01,
+    "n_frames": 996,
+    "T_y_s": 137.8
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 84.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d00_s0.5/work/session_20261025_190045",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 10.06,
+    "total_s": 83.81,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 11.071,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.488799
+     ],
+     "hand_gap_m": 0.040058
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.488799
+     ],
+     "hand_gap_m": 0.040058,
+     "t_mono": 6422.676741668
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d00_s0.5/work/session_20261025_190045/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 59.505438645999675,
+   "policy_calls": 103,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 43,
+   "settle_waits": 70,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 1,
+    "realtime_factor_min": 0.943,
+    "loop_p99_ms_max": 15.33
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4701,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 7143,
+    "nan": 0,
+    "cone_fraction": 0.397
+   },
+   "F_ext_max": 2.58,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0401,
+    "grasped_fraction": 0.458,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 22.6403,
+    "grasp_t_s": 16.4783,
+    "max_lift_m": 0.11911,
+    "slip_m": 0.00037,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 567,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 30.73,
+    "fk_minus_safe_p50": 5.03,
+    "fk_minus_safe_p95": 13.32
+   },
+   "start_err_mm": 12.58,
+   "replay_frames": {
+    "last": 1005.5,
+    "n_demo": 996,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 5.16,
+     "p95": 26.82,
+     "max": 31.04
+    },
+    "rot_err_deg": {
+     "p50": 1.693,
+     "p95": 7.809,
+     "max": 9.066
+    },
+    "worst_window_t_s": 24.38,
+    "n_samples": 2807,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d01_s0.5",
+   "demo": 1,
+   "name": "2026-10-01T21-14-29.896Z_73688_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     0.16001,
+     -0.240051,
+     0.082767,
+     -2.69057,
+     1.999018,
+     2.507059,
+     1.509873
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.499081,
+     0.222527,
+     0.213866,
+     0.482257,
+     -0.809839,
+     0.285546,
+     -0.173354
+    ],
+    "home_xyz": [
+     0.499081,
+     0.222527,
+     0.213866
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -2.436899
+    ],
+    "hand_gap_m": 0.038855,
+    "w0": 0.08195473998785019,
+    "anchor_dz_m": 0.01,
+    "n_frames": 969,
+    "T_y_s": 135.2
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 84.7,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d01_s0.5/work/session_20261025_190050",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.37,
+    "total_s": 84.36,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.384,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.436899
+     ],
+     "hand_gap_m": 0.038855
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.436899
+     ],
+     "hand_gap_m": 0.038855,
+     "t_mono": 6428.997099513
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d01_s0.5/work/session_20261025_190050/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 58.62874678699973,
+   "policy_calls": 102,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 44,
+   "settle_waits": 73,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.981,
+    "loop_p99_ms_max": 11.65
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4769,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 6856,
+    "nan": 0,
+    "cone_fraction": 0.41
+   },
+   "F_ext_max": 2.11,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0398,
+    "grasped_fraction": 0.366,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 26.0779,
+    "grasp_t_s": 20.9652,
+    "max_lift_m": 0.1311,
+    "slip_m": 0.00043,
+    "in_hand_slip_m": 1e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 652,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 28.06,
+    "fk_minus_safe_p50": 5.58,
+    "fk_minus_safe_p95": 15.27
+   },
+   "start_err_mm": 5.73,
+   "replay_frames": {
+    "last": 978.5,
+    "n_demo": 969,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 6.09,
+     "p95": 25.88,
+     "max": 29.14
+    },
+    "rot_err_deg": {
+     "p50": 1.897,
+     "p95": 7.541,
+     "max": 8.406
+    },
+    "worst_window_t_s": 29.2,
+    "n_samples": 2755,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d02_s0.5",
+   "demo": 2,
+   "name": "2026-10-01T21-14-52.701Z_73132_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     0.162372,
+     -0.262852,
+     0.079274,
+     -2.638439,
+     2.004994,
+     2.53352,
+     1.561556
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.524576,
+     0.220936,
+     0.251154,
+     0.495044,
+     -0.793054,
+     0.298489,
+     -0.192096
+    ],
+    "home_xyz": [
+     0.524576,
+     0.220936,
+     0.251154
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -2.472297
+    ],
+    "hand_gap_m": 0.040161,
+    "w0": 0.08326078206300735,
+    "anchor_dz_m": 0.01,
+    "n_frames": 937,
+    "T_y_s": 131.3
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 83.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d02_s0.5/work/session_20261025_190056",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.31,
+    "total_s": 82.68,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.317,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.472297
+     ],
+     "hand_gap_m": 0.040161
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.472297
+     ],
+     "hand_gap_m": 0.040161,
+     "t_mono": 6435.101505143
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d02_s0.5/work/session_20261025_190056/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 56.02539005499966,
+   "policy_calls": 99,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 44,
+   "settle_waits": 74,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.997,
+    "loop_p99_ms_max": 6.64
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4839,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 6417,
+    "nan": 0,
+    "cone_fraction": 0.43
+   },
+   "F_ext_max": 4.89,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0402,
+    "grasped_fraction": 0.422,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 23.5192,
+    "grasp_t_s": 18.4395,
+    "max_lift_m": 0.11469,
+    "slip_m": 0.00051,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 588,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 40.91,
+    "fk_minus_safe_p50": 5.83,
+    "fk_minus_safe_p95": 13.82
+   },
+   "start_err_mm": 14.3,
+   "replay_frames": {
+    "last": 946.5,
+    "n_demo": 937,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 6.48,
+     "p95": 32.49,
+     "max": 41.0
+    },
+    "rot_err_deg": {
+     "p50": 2.14,
+     "p95": 9.566,
+     "max": 11.866
+    },
+    "worst_window_t_s": 0.24,
+    "n_samples": 2625,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d03_s0.5",
+   "demo": 3,
+   "name": "2026-10-01T21-15-27.519Z_24298_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     0.170025,
+     -0.254581,
+     0.092784,
+     -2.672832,
+     1.996913,
+     2.523795,
+     1.552804
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.504289,
+     0.23003,
+     0.22807,
+     0.487119,
+     -0.805254,
+     0.290386,
+     -0.173082
+    ],
+    "home_xyz": [
+     0.504289,
+     0.23003,
+     0.22807
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -2.481393
+    ],
+    "hand_gap_m": 0.040505,
+    "w0": 0.08360496163368225,
+    "anchor_dz_m": 0.01,
+    "n_frames": 884,
+    "T_y_s": 124.8
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 80.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d03_s0.5/work/session_20261025_190210",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.44,
+    "total_s": 79.78,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.451,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.481393
+     ],
+     "hand_gap_m": 0.040505
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.481393
+     ],
+     "hand_gap_m": 0.040505,
+     "t_mono": 6508.456049485
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d03_s0.5/work/session_20261025_190210/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 53.88031150500046,
+   "policy_calls": 93,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 36,
+   "settle_waits": 68,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.964,
+    "loop_p99_ms_max": 12.03
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4105,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 6511,
+    "nan": 0,
+    "cone_fraction": 0.387
+   },
+   "F_ext_max": 10.01,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0405,
+    "grasped_fraction": 0.394,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.3212,
+    "grasp_t_s": 15.2112,
+    "max_lift_m": 0.15647,
+    "slip_m": 0.00017,
+    "in_hand_slip_m": 1e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 509,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 28.38,
+    "fk_minus_safe_p50": 6.03,
+    "fk_minus_safe_p95": 17.85
+   },
+   "start_err_mm": 7.8,
+   "replay_frames": {
+    "last": 893.5,
+    "n_demo": 884,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 6.57,
+     "p95": 28.27,
+     "max": 30.71
+    },
+    "rot_err_deg": {
+     "p50": 2.019,
+     "p95": 8.272,
+     "max": 9.259
+    },
+    "worst_window_t_s": 21.16,
+    "n_samples": 2518,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d04_s0.5",
+   "demo": 4,
+   "name": "2026-10-01T21-16-10.059Z_14546_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     0.159588,
+     -0.215479,
+     0.085244,
+     -2.614316,
+     1.995911,
+     2.507543,
+     1.554515
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.527493,
+     0.231635,
+     0.241596,
+     0.498493,
+     -0.796973,
+     0.289978,
+     -0.179584
+    ],
+    "home_xyz": [
+     0.527493,
+     0.231635,
+     0.241596
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -2.40055
+    ],
+    "hand_gap_m": 0.040194,
+    "w0": 0.0832943320274353,
+    "anchor_dz_m": 0.01,
+    "n_frames": 1001,
+    "T_y_s": 139.1
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 86.2,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d04_s0.5/work/session_20261025_190215",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.33,
+    "total_s": 85.85,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.332,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.40055
+     ],
+     "hand_gap_m": 0.040194
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.40055
+     ],
+     "hand_gap_m": 0.040194,
+     "t_mono": 6514.923441416
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d04_s0.5/work/session_20261025_190215/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 59.09373892699932,
+   "policy_calls": 105,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 50,
+   "settle_waits": 71,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.989,
+    "loop_p99_ms_max": 10.36
+   },
+   "safety": {
+    "box": 0,
+    "cone": 5497,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 6366,
+    "nan": 0,
+    "cone_fraction": 0.463
+   },
+   "F_ext_max": 0.68,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0402,
+    "grasped_fraction": 0.411,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 22.7909,
+    "grasp_t_s": 18.2295,
+    "max_lift_m": 0.14438,
+    "slip_m": 0.00016,
+    "in_hand_slip_m": 2e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 570,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 26.47,
+    "fk_minus_safe_p50": 4.66,
+    "fk_minus_safe_p95": 13.66
+   },
+   "start_err_mm": 13.76,
+   "replay_frames": {
+    "last": 1010.5,
+    "n_demo": 1001,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 5.5,
+     "p95": 23.65,
+     "max": 25.88
+    },
+    "rot_err_deg": {
+     "p50": 1.737,
+     "p95": 7.104,
+     "max": 7.613
+    },
+    "worst_window_t_s": 0.22,
+    "n_samples": 2784,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d05_s0.5",
+   "demo": 5,
+   "name": "2026-10-01T21-16-39.585Z_65486_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     0.190481,
+     -0.463866,
+     0.144863,
+     -2.760164,
+     1.771818,
+     2.605927,
+     1.84494
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.464795,
+     0.231594,
+     0.26093,
+     0.458393,
+     -0.826394,
+     0.28525,
+     -0.159943
+    ],
+    "home_xyz": [
+     0.464795,
+     0.231594,
+     0.26093
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -2.466196
+    ],
+    "hand_gap_m": 0.03963,
+    "w0": 0.08272991329431534,
+    "anchor_dz_m": 0.01,
+    "n_frames": 1043,
+    "T_y_s": 144.3
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 89.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d05_s0.5/work/session_20261025_190219",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.92,
+    "total_s": 89.21,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.929,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.466196
+     ],
+     "hand_gap_m": 0.03963
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -2.466196
+     ],
+     "hand_gap_m": 0.03963,
+     "t_mono": 6519.051487645
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d05_s0.5/work/session_20261025_190219/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 61.94669758999953,
+   "policy_calls": 108,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 32,
+   "settle_waits": 76,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.983,
+    "loop_p99_ms_max": 10.3
+   },
+   "safety": {
+    "box": 0,
+    "cone": 3569,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 8903,
+    "nan": 0,
+    "cone_fraction": 0.286
+   },
+   "F_ext_max": 2.53,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0413,
+    "grasped_fraction": 0.371,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 25.8305,
+    "grasp_t_s": 21.1117,
+    "max_lift_m": 0.16918,
+    "slip_m": 0.00022,
+    "in_hand_slip_m": 1e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 646,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 28.0,
+    "fk_minus_safe_p50": 5.8,
+    "fk_minus_safe_p95": 15.97
+   },
+   "start_err_mm": 0.07,
+   "replay_frames": {
+    "last": 1052.5,
+    "n_demo": 1043,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.07,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 5.61,
+     "p95": 26.68,
+     "max": 29.68
+    },
+    "rot_err_deg": {
+     "p50": 1.694,
+     "p95": 7.804,
+     "max": 8.413
+    },
+    "worst_window_t_s": 27.68,
+    "n_samples": 2928,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d06_s0.5",
+   "demo": 6,
+   "name": "2026-10-01T21-20-13.631Z_97211_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.1389,
+     0.169769,
+     -0.091653,
+     -2.02899,
+     0.942458,
+     1.678839,
+     1.645637
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.530927,
+     0.118385,
+     0.258335,
+     0.474769,
+     -0.878804,
+     -0.045839,
+     0.014007
+    ],
+    "home_xyz": [
+     0.530927,
+     0.118385,
+     0.258335
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.565793
+    ],
+    "hand_gap_m": 0.038104,
+    "w0": 0.08120431751012802,
+    "anchor_dz_m": 0.01,
+    "n_frames": 873,
+    "T_y_s": 123.5
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 147.2,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d06_s0.5/work/session_20261025_190330",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.99,
+    "total_s": 146.83,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.991,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.565793
+     ],
+     "hand_gap_m": 0.038104
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.5657929999999998
+     ],
+     "hand_gap_m": 0.038104,
+     "t_mono": 6589.467931668
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d06_s0.5/work/session_20261025_190330/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:RuntimeError",
+   "episode_duration_s": 15.500439174999883,
+   "policy_calls": 28,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 20,
+   "settle_timeouts": 0,
+   "policy_exceptions": [
+    "RuntimeError('EEF traj scheduling failed')"
+   ],
+   "holds": [
+    "exception: RuntimeError"
+   ],
+   "reflexes": [
+    "joint_reflex: |tau_ext2| 29.1 > 20.0 Nm"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.987,
+    "loop_p99_ms_max": 10.77
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 3003,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 5.83,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.008,
+    "gap_max_m": 0.0391,
+    "grasped_fraction": 0.005,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "reflex",
+    "t_success_s": null,
+    "grasp_t_s": 15.2308,
+    "max_lift_m": 0.0,
+    "slip_m": 0.0,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": "joint_reflex: |tau_ext2| 29.1 > 20.0 Nm",
+    "n_arm_table_contacts": 0,
+    "n_samples": 383,
+    "rate_hz": 25.02,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 6.11,
+    "fk_minus_safe_p95": 17.85
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 294.0,
+    "n_demo": 873,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.676,
+    "track_ok": false,
+    "lag_s": 0.05,
+    "pos_fraction": 0.676,
+    "rot_fraction": 0.708,
+    "pos_err_mm": {
+     "p50": 5.27,
+     "p95": 12.89,
+     "max": 16.08
+    },
+    "rot_err_deg": {
+     "p50": 1.339,
+     "p95": 3.626,
+     "max": 4.653
+    },
+    "worst_window_t_s": 10.8,
+    "n_samples": 775,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.676,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": true
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d07_s0.5",
+   "demo": 7,
+   "name": "2026-10-01T21-20-33.666Z_47794_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.121605,
+     0.10493,
+     -0.090579,
+     -2.133801,
+     0.960525,
+     1.642121,
+     1.615877
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.489222,
+     0.143339,
+     0.261934,
+     0.498365,
+     -0.864185,
+     -0.05979,
+     0.035234
+    ],
+    "home_xyz": [
+     0.489222,
+     0.143339,
+     0.261934
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.726258
+    ],
+    "hand_gap_m": 0.038996,
+    "w0": 0.08209612965583801,
+    "anchor_dz_m": 0.01,
+    "n_frames": 882,
+    "T_y_s": 123.5
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 74.4,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d07_s0.5/work/session_20261025_194221",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 9.84,
+    "total_s": 74.19,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 10.849,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.726258
+     ],
+     "hand_gap_m": 0.038996
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.726258
+     ],
+     "hand_gap_m": 0.038996,
+     "t_mono": 8918.351848472
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d07_s0.5/work/session_20261025_194221/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 50.066380231999574,
+   "policy_calls": 93,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 42,
+   "settle_waits": 65,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 4.88
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4404,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 5640,
+    "nan": 0,
+    "cone_fraction": 0.438
+   },
+   "F_ext_max": 4.29,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.039,
+    "grasped_fraction": 0.396,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.2558,
+    "grasp_t_s": 15.655,
+    "max_lift_m": 0.19157,
+    "slip_m": 0.00039,
+    "in_hand_slip_m": 2e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 507,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 26.1,
+    "fk_minus_safe_p50": 6.16,
+    "fk_minus_safe_p95": 20.5
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 891.5,
+    "n_demo": 882,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.07,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 6.28,
+     "p95": 25.63,
+     "max": 27.84
+    },
+    "rot_err_deg": {
+     "p50": 2.007,
+     "p95": 7.577,
+     "max": 7.998
+    },
+    "worst_window_t_s": 20.34,
+    "n_samples": 2339,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "timeout_fault": null,
+   "attempts": 1,
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d08_s0.5",
+   "demo": 8,
+   "name": "2026-10-01T21-20-55.848Z_72494_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.27855,
+     0.193783,
+     -0.156592,
+     -2.002848,
+     0.954545,
+     1.359082,
+     1.539546
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.482098,
+     0.060652,
+     0.30141,
+     0.564643,
+     -0.822473,
+     -0.05887,
+     0.035367
+    ],
+    "home_xyz": [
+     0.482098,
+     0.060652,
+     0.30141
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.654456
+    ],
+    "hand_gap_m": 0.036679,
+    "w0": 0.07977882772684097,
+    "anchor_dz_m": 0.01,
+    "n_frames": 873,
+    "T_y_s": 123.5
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 78.0,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d08_s0.5/work/session_20261025_190349",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.05,
+    "total_s": 77.65,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.073,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.654456
+     ],
+     "hand_gap_m": 0.036679
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.654456
+     ],
+     "hand_gap_m": 0.036679,
+     "t_mono": 6608.122858399
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d08_s0.5/work/session_20261025_190349/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 51.250023284000235,
+   "policy_calls": 93,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 59,
+   "settle_waits": 57,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.958,
+    "loop_p99_ms_max": 10.1
+   },
+   "safety": {
+    "box": 0,
+    "cone": 6335,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 3897,
+    "nan": 0,
+    "cone_fraction": 0.619
+   },
+   "F_ext_max": 2.07,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0367,
+    "grasped_fraction": 0.396,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.2355,
+    "grasp_t_s": 16.1549,
+    "max_lift_m": 0.19317,
+    "slip_m": 0.00031,
+    "in_hand_slip_m": 1e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 506,
+    "rate_hz": 24.99,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 54.23,
+    "fk_minus_safe_p50": 5.85,
+    "fk_minus_safe_p95": 22.59
+   },
+   "start_err_mm": 30.67,
+   "replay_frames": {
+    "last": 882.5,
+    "n_demo": 873,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 20.58,
+     "p95": 51.78,
+     "max": 54.75
+    },
+    "rot_err_deg": {
+     "p50": 5.923,
+     "p95": 15.162,
+     "max": 16.053
+    },
+    "worst_window_t_s": 0.22,
+    "n_samples": 2376,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d09_s0.5",
+   "demo": 9,
+   "name": "2026-10-01T21-21-39.289Z_18637_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.281054,
+     0.296705,
+     -0.061668,
+     -1.794743,
+     1.023862,
+     1.404616,
+     1.678483
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.556927,
+     0.087985,
+     0.326973,
+     0.557155,
+     -0.828484,
+     -0.051065,
+     0.024159
+    ],
+    "home_xyz": [
+     0.556927,
+     0.087985,
+     0.326973
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.553485
+    ],
+    "hand_gap_m": 0.035001,
+    "w0": 0.0781005397439003,
+    "anchor_dz_m": 0.01,
+    "n_frames": 855,
+    "T_y_s": 120.9
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 79.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d09_s0.5/work/session_20261025_190359",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.75,
+    "total_s": 78.75,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.75,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.553485
+     ],
+     "hand_gap_m": 0.035001
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.553485
+     ],
+     "hand_gap_m": 0.035001,
+     "t_mono": 6619.084970847
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d09_s0.5/work/session_20261025_190359/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 51.53662553899994,
+   "policy_calls": 91,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 53,
+   "settle_waits": 59,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 2.9
+   },
+   "safety": {
+    "box": 0,
+    "cone": 5915,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 4346,
+    "nan": 0,
+    "cone_fraction": 0.576
+   },
+   "F_ext_max": 0.88,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0366,
+    "grasped_fraction": 0.362,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.5761,
+    "grasp_t_s": 16.2557,
+    "max_lift_m": 0.18326,
+    "slip_m": 0.00015,
+    "in_hand_slip_m": 7e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 515,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 50.92,
+    "fk_minus_safe_p50": 5.59,
+    "fk_minus_safe_p95": 19.12
+   },
+   "start_err_mm": 26.82,
+   "replay_frames": {
+    "last": 864.5,
+    "n_demo": 855,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 11.12,
+     "p95": 49.21,
+     "max": 51.13
+    },
+    "rot_err_deg": {
+     "p50": 3.317,
+     "p95": 14.394,
+     "max": 14.853
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 2391,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d10_s0.5",
+   "demo": 10,
+   "name": "2026-10-01T21-28-35.219Z_69378_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.16044,
+     0.222126,
+     -0.106619,
+     -1.925062,
+     0.867458,
+     1.626502,
+     1.632325
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.541412,
+     0.087847,
+     0.259046,
+     0.452449,
+     -0.888742,
+     -0.071126,
+     0.019209
+    ],
+    "home_xyz": [
+     0.541412,
+     0.087847,
+     0.259046
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.602978
+    ],
+    "hand_gap_m": 0.038304,
+    "w0": 0.08140355348587036,
+    "anchor_dz_m": 0.01,
+    "n_frames": 930,
+    "T_y_s": 130.0
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 153.3,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d10_s0.5/work/session_20261025_190507",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.58,
+    "total_s": 152.91,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.585,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.602978
+     ],
+     "hand_gap_m": 0.038304
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.6029780000000002
+     ],
+     "hand_gap_m": 0.038304,
+     "t_mono": 6685.987886096
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d10_s0.5/work/session_20261025_190507/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:RuntimeError",
+   "episode_duration_s": 16.4726740670003,
+   "policy_calls": 29,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 24,
+   "settle_timeouts": 0,
+   "policy_exceptions": [
+    "RuntimeError('EEF traj scheduling failed')"
+   ],
+   "holds": [
+    "exception: RuntimeError"
+   ],
+   "reflexes": [
+    "joint_reflex: |tau_ext2| 29.3 > 20.0 Nm"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.982,
+    "loop_p99_ms_max": 14.02
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 3404,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 83.94,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.008,
+    "gap_max_m": 0.0383,
+    "grasped_fraction": 0.002,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "reflex",
+    "t_success_s": null,
+    "grasp_t_s": 16.3865,
+    "max_lift_m": 0.0,
+    "slip_m": 0.0,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": "joint_reflex: |tau_ext2| 29.3 > 20.0 Nm",
+    "n_arm_table_contacts": 0,
+    "n_samples": 411,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 5.68,
+    "fk_minus_safe_p95": 11.76
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 304.5,
+    "n_demo": 930,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.872,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.872,
+    "rot_fraction": 1.0,
+    "pos_err_mm": {
+     "p50": 3.81,
+     "p95": 9.89,
+     "max": 12.71
+    },
+    "rot_err_deg": {
+     "p50": 1.065,
+     "p95": 2.04,
+     "max": 2.636
+    },
+    "worst_window_t_s": 11.76,
+    "n_samples": 823,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.872,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": true
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d11_s0.5",
+   "demo": 11,
+   "name": "2026-10-01T21-29-13.341Z_66632_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.244592,
+     0.52973,
+     0.042392,
+     -1.8402,
+     1.052298,
+     1.64083,
+     1.480392
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.57093,
+     0.147101,
+     0.171147,
+     0.557775,
+     -0.826889,
+     -0.066627,
+     0.026509
+    ],
+    "home_xyz": [
+     0.57093,
+     0.147101,
+     0.171147
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.445891
+    ],
+    "hand_gap_m": 0.036529,
+    "w0": 0.07962850481271744,
+    "anchor_dz_m": 0.01,
+    "n_frames": 877,
+    "T_y_s": 123.5
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 80.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d11_s0.5/work/session_20261025_190519",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.45,
+    "total_s": 79.67,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.46,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.445891
+     ],
+     "hand_gap_m": 0.036529
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.4458910000000003
+     ],
+     "hand_gap_m": 0.036529,
+     "t_mono": 6698.341464547
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d11_s0.5/work/session_20261025_190519/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 51.83341292499972,
+   "policy_calls": 93,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 15,
+   "settle_waits": 62,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 1,
+    "realtime_factor_min": 0.946,
+    "loop_p99_ms_max": 14.52
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1730,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 8710,
+    "nan": 0,
+    "cone_fraction": 0.166
+   },
+   "F_ext_max": 5.56,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0365,
+    "grasped_fraction": 0.406,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.7284,
+    "grasp_t_s": 14.3185,
+    "max_lift_m": 0.10917,
+    "slip_m": 0.00015,
+    "in_hand_slip_m": 9e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 519,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 29.49,
+    "fk_minus_safe_p50": 4.71,
+    "fk_minus_safe_p95": 13.61
+   },
+   "start_err_mm": 27.18,
+   "replay_frames": {
+    "last": 886.5,
+    "n_demo": 877,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.11,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 3.73,
+     "p95": 29.63,
+     "max": 31.67
+    },
+    "rot_err_deg": {
+     "p50": 1.302,
+     "p95": 8.55,
+     "max": 9.362
+    },
+    "worst_window_t_s": 0.26,
+    "n_samples": 2407,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d12_s0.5",
+   "demo": 12,
+   "name": "2026-10-01T21-29-33.232Z_84785_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.117371,
+     0.73397,
+     0.100521,
+     -1.589947,
+     1.045886,
+     1.95453,
+     1.703751
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.676581,
+     0.203088,
+     0.101857,
+     0.47962,
+     -0.877468,
+     -0.000596,
+     0.003843
+    ],
+    "home_xyz": [
+     0.676581,
+     0.203088,
+     0.101857
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.531971
+    ],
+    "hand_gap_m": 0.038622,
+    "w0": 0.08172234892845154,
+    "anchor_dz_m": 0.01,
+    "n_frames": 853,
+    "T_y_s": 120.9
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 78.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d12_s0.5/work/session_20261025_190558",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.53,
+    "total_s": 78.17,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.537,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.531971
+     ],
+     "hand_gap_m": 0.038622
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.531971
+     ],
+     "hand_gap_m": 0.038622,
+     "t_mono": 6737.383637378
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d12_s0.5/work/session_20261025_190558/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 50.31190263999997,
+   "policy_calls": 91,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 49,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.973,
+    "loop_p99_ms_max": 11.67
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 10028,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 2.06,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0388,
+    "grasped_fraction": 0.407,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 19.294,
+    "grasp_t_s": 13.9336,
+    "max_lift_m": 0.1376,
+    "slip_m": 0.00047,
+    "in_hand_slip_m": 2e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 483,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 4.17,
+    "fk_minus_safe_p95": 16.58
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 862.5,
+    "n_demo": 853,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.484,
+    "track_ok": false,
+    "lag_s": 0.11,
+    "pos_fraction": 0.708,
+    "rot_fraction": 0.544,
+    "pos_err_mm": {
+     "p50": 2.78,
+     "p95": 10.56,
+     "max": 14.7
+    },
+    "rot_err_deg": {
+     "p50": 1.118,
+     "p95": 3.22,
+     "max": 4.53
+    },
+    "worst_window_t_s": 36.34,
+    "n_samples": 2321,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.484,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "overshoot",
+   "final": true
+  },
+  {
+   "run": "d13_s0.5",
+   "demo": 13,
+   "name": "2026-10-01T21-29-55.365Z_73354_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.089032,
+     0.35199,
+     0.004676,
+     -2.070835,
+     1.012334,
+     1.789809,
+     1.450502
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.508767,
+     0.193652,
+     0.155546,
+     0.496908,
+     -0.860448,
+     -0.10493,
+     0.041255
+    ],
+    "home_xyz": [
+     0.508767,
+     0.193652,
+     0.155546
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.694897
+    ],
+    "hand_gap_m": 0.037649,
+    "w0": 0.08074941486120224,
+    "anchor_dz_m": 0.01,
+    "n_frames": 1000,
+    "T_y_s": 139.1
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 85.5,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d13_s0.5/work/session_20261025_190639",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.4,
+    "total_s": 85.19,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.406,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.694897
+     ],
+     "hand_gap_m": 0.037649
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.694897
+     ],
+     "hand_gap_m": 0.037649,
+     "t_mono": 6778.597366748
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d13_s0.5/work/session_20261025_190639/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 58.47717612799988,
+   "policy_calls": 104,
+   "clamp_count": 1,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 11,
+   "settle_waits": 62,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 15.66
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1226,
+    "step_pos": 1,
+    "step_rot": 0,
+    "ok": 10411,
+    "nan": 0,
+    "cone_fraction": 0.105
+   },
+   "F_ext_max": 6.3,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0376,
+    "grasped_fraction": 0.421,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 23.3258,
+    "grasp_t_s": 16.0058,
+    "max_lift_m": 0.10651,
+    "slip_m": 0.00033,
+    "in_hand_slip_m": 2e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 584,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 1.7,
+    "fk_minus_safe_p50": 4.22,
+    "fk_minus_safe_p95": 13.63
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 1009.5,
+    "n_demo": 1000,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.976,
+    "track_ok": true,
+    "lag_s": 0.11,
+    "pos_fraction": 0.996,
+    "rot_fraction": 0.976,
+    "pos_err_mm": {
+     "p50": 2.89,
+     "p95": 6.74,
+     "max": 10.07
+    },
+    "rot_err_deg": {
+     "p50": 0.988,
+     "p95": 2.295,
+     "max": 3.236
+    },
+    "worst_window_t_s": 17.02,
+    "n_samples": 2755,
+    "window_s": 5.0
+   },
+   "track_ok": true,
+   "track_fraction": 0.976,
+   "worst_window": {},
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": null,
+   "final": true
+  },
+  {
+   "run": "d14_s0.5",
+   "demo": 14,
+   "name": "2026-10-01T21-30-17.802Z_42376_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.104587,
+     0.377434,
+     -0.03303,
+     -2.049037,
+     0.944663,
+     1.785161,
+     1.462761
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.508526,
+     0.156226,
+     0.137062,
+     0.473628,
+     -0.873806,
+     -0.096577,
+     0.053029
+    ],
+    "home_xyz": [
+     0.508526,
+     0.156226,
+     0.137062
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.629637
+    ],
+    "hand_gap_m": 0.03749,
+    "w0": 0.0805903822183609,
+    "anchor_dz_m": 0.01,
+    "n_frames": 868,
+    "T_y_s": 122.2
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 79.7,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d14_s0.5/work/session_20261025_190716",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.46,
+    "total_s": 79.31,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.462,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.629637
+     ],
+     "hand_gap_m": 0.03749
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.629637
+     ],
+     "hand_gap_m": 0.03749,
+     "t_mono": 6816.102888622
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d14_s0.5/work/session_20261025_190716/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 52.42101803700007,
+   "policy_calls": 92,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 64,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.972,
+    "loop_p99_ms_max": 15.05
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 10405,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 2.22,
+   "pad_table": 1,
+   "pad_table_max_force_n": 0.48,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0375,
+    "grasped_fraction": 0.422,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 21.2416,
+    "grasp_t_s": 13.9731,
+    "max_lift_m": 0.08515,
+    "slip_m": 0.00046,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 532,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 5.92,
+    "fk_minus_safe_p95": 13.36
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 877.5,
+    "n_demo": 868,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.716,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.716,
+    "rot_fraction": 0.892,
+    "pos_err_mm": {
+     "p50": 3.38,
+     "p95": 7.88,
+     "max": 13.87
+    },
+    "rot_err_deg": {
+     "p50": 1.258,
+     "p95": 2.57,
+     "max": 3.585
+    },
+    "worst_window_t_s": 35.34,
+    "n_samples": 2450,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.716,
+   "worst_window": {
+    "pad_table": true,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "pad_table",
+   "final": true
+  },
+  {
+   "run": "d15_s0.5",
+   "demo": 15,
+   "name": "2026-10-01T21-30-39.943Z_76669_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.123169,
+     0.422089,
+     0.029582,
+     -2.064143,
+     1.091153,
+     1.789023,
+     1.449658
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.516575,
+     0.200354,
+     0.137886,
+     0.529277,
+     -0.845053,
+     -0.061233,
+     0.04474
+    ],
+    "home_xyz": [
+     0.516575,
+     0.200354,
+     0.137886
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.567928
+    ],
+    "hand_gap_m": 0.029872,
+    "w0": 0.07297181338071823,
+    "anchor_dz_m": 0.01,
+    "n_frames": 822,
+    "T_y_s": 117.0
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 141.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d15_s0.5/work/session_20261025_190741",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.91,
+    "total_s": 141.25,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.929,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.567928
+     ],
+     "hand_gap_m": 0.029872
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.567928
+     ],
+     "hand_gap_m": 0.029872,
+     "t_mono": 6840.826076729
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d15_s0.5/work/session_20261025_190741/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:RuntimeError",
+   "episode_duration_s": 17.394084172000476,
+   "policy_calls": 31,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 11,
+   "settle_waits": 26,
+   "settle_timeouts": 0,
+   "policy_exceptions": [
+    "RuntimeError('EEF traj scheduling failed')"
+   ],
+   "holds": [
+    "exception: RuntimeError"
+   ],
+   "reflexes": [
+    "joint_reflex: |tau_ext2| 24.6 > 20.0 Nm"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.995,
+    "loop_p99_ms_max": 11.25
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1166,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 2240,
+    "nan": 0,
+    "cone_fraction": 0.342
+   },
+   "F_ext_max": 5.49,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.008,
+    "gap_max_m": 0.0301,
+    "grasped_fraction": 0.0,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "reflex",
+    "t_success_s": null,
+    "grasp_t_s": null,
+    "max_lift_m": 0.00251,
+    "slip_m": 0.0,
+    "in_hand_slip_m": null,
+    "knocked_over": false,
+    "reflex": "joint_reflex: |tau_ext2| 24.6 > 20.0 Nm",
+    "n_arm_table_contacts": 0,
+    "n_samples": 423,
+    "rate_hz": 24.99,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 15.65,
+    "fk_minus_safe_p50": 5.56,
+    "fk_minus_safe_p95": 14.0
+   },
+   "start_err_mm": 14.39,
+   "replay_frames": {
+    "last": 325.5,
+    "n_demo": 822,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.28,
+    "track_ok": false,
+    "lag_s": 0.12,
+    "pos_fraction": 0.316,
+    "rot_fraction": 0.28,
+    "pos_err_mm": {
+     "p50": 4.85,
+     "p95": 15.75,
+     "max": 17.37
+    },
+    "rot_err_deg": {
+     "p50": 1.368,
+     "p95": 4.704,
+     "max": 5.09
+    },
+    "worst_window_t_s": 0.26,
+    "n_samples": 870,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.28,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d16_s0.5",
+   "demo": 16,
+   "name": "2026-10-01T21-30-57.709Z_16787_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.079464,
+     0.307836,
+     -0.04401,
+     -2.162035,
+     0.960812,
+     1.856085,
+     1.381866
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.486768,
+     0.158547,
+     0.128781,
+     0.461118,
+     -0.87942,
+     -0.114332,
+     0.030316
+    ],
+    "home_xyz": [
+     0.486768,
+     0.158547,
+     0.128781
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.680613
+    ],
+    "hand_gap_m": 0.038072,
+    "w0": 0.08117217570543289,
+    "anchor_dz_m": 0.01,
+    "n_frames": 942,
+    "T_y_s": 131.3
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 83.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d16_s0.5/work/session_20261025_190805",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.85,
+    "total_s": 82.7,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.856,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.680613
+     ],
+     "hand_gap_m": 0.038072
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.680613
+     ],
+     "hand_gap_m": 0.038072,
+     "t_mono": 6864.938095432
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d16_s0.5/work/session_20261025_190805/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 55.446250558999964,
+   "policy_calls": 98,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 60,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.982,
+    "loop_p99_ms_max": 11.49
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 11036,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 1.4,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0388,
+    "grasped_fraction": 0.397,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 22.0511,
+    "grasp_t_s": 16.2514,
+    "max_lift_m": 0.08629,
+    "slip_m": 0.0003,
+    "in_hand_slip_m": 5e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 552,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 4.35,
+    "fk_minus_safe_p95": 12.14
+   },
+   "start_err_mm": 0.05,
+   "replay_frames": {
+    "last": 951.5,
+    "n_demo": 942,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 1.0,
+    "track_ok": true,
+    "lag_s": 0.09,
+    "pos_fraction": 1.0,
+    "rot_fraction": 1.0,
+    "pos_err_mm": {
+     "p50": 2.61,
+     "p95": 6.35,
+     "max": 8.51
+    },
+    "rot_err_deg": {
+     "p50": 0.983,
+     "p95": 2.05,
+     "max": 2.716
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 2609,
+    "window_s": 5.0
+   },
+   "track_ok": true,
+   "track_fraction": 1.0,
+   "worst_window": {},
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": null,
+   "final": true
+  },
+  {
+   "run": "d17_s0.5",
+   "demo": 17,
+   "name": "2026-10-01T21-31-17.495Z_45786_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.078076,
+     0.279753,
+     -0.019282,
+     -2.17391,
+     1.010431,
+     1.825788,
+     1.416884
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.485082,
+     0.183722,
+     0.151528,
+     0.485784,
+     -0.867434,
+     -0.102264,
+     0.033374
+    ],
+    "home_xyz": [
+     0.485082,
+     0.183722,
+     0.151528
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.747384
+    ],
+    "hand_gap_m": 0.038001,
+    "w0": 0.08110082149505615,
+    "anchor_dz_m": 0.01,
+    "n_frames": 1007,
+    "T_y_s": 139.1
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 84.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d17_s0.5/work/session_20261025_190836",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.22,
+    "total_s": 83.67,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.235,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.747384
+     ],
+     "hand_gap_m": 0.038001
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.747384
+     ],
+     "hand_gap_m": 0.038001,
+     "t_mono": 6895.872463755
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d17_s0.5/work/session_20261025_190836/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 59.161396305999915,
+   "policy_calls": 105,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 65,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.983,
+    "loop_p99_ms_max": 13.63
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 11849,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 8.51,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.038,
+    "grasped_fraction": 0.384,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 24.7359,
+    "grasp_t_s": 18.145,
+    "max_lift_m": 0.09219,
+    "slip_m": 0.00042,
+    "in_hand_slip_m": 4e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 619,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 4.21,
+    "fk_minus_safe_p95": 12.7
+   },
+   "start_err_mm": 0.05,
+   "replay_frames": {
+    "last": 1016.5,
+    "n_demo": 1007,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 1.0,
+    "track_ok": true,
+    "lag_s": 0.11,
+    "pos_fraction": 1.0,
+    "rot_fraction": 1.0,
+    "pos_err_mm": {
+     "p50": 2.5,
+     "p95": 5.98,
+     "max": 10.0
+    },
+    "rot_err_deg": {
+     "p50": 1.04,
+     "p95": 1.879,
+     "max": 2.384
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 2782,
+    "window_s": 5.0
+   },
+   "track_ok": true,
+   "track_fraction": 1.0,
+   "worst_window": {},
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": null,
+   "final": true
+  },
+  {
+   "run": "d18_s0.5",
+   "demo": 18,
+   "name": "2026-10-01T21-31-43.349Z_29725_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": true,
+   "stage1_reason": "unreachable",
+   "plan": {
+    "q_init": [
+     -0.187057,
+     0.841702,
+     0.161138,
+     -1.57108,
+     1.060813,
+     1.788071,
+     1.56165
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.62912,
+     0.225721,
+     0.082069,
+     0.557503,
+     -0.827092,
+     -0.055063,
+     0.045567
+    ],
+    "home_xyz": [
+     0.62912,
+     0.225721,
+     0.082069
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.441409
+    ],
+    "hand_gap_m": 0.039044,
+    "w0": 0.08214372396469116,
+    "anchor_dz_m": 0.01,
+    "n_frames": 869,
+    "T_y_s": 122.2
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 78.5,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d18_s0.5/work/session_20261025_190928",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.29,
+    "total_s": 78.17,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.291,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.441409
+     ],
+     "hand_gap_m": 0.039044
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.441409
+     ],
+     "hand_gap_m": 0.039044,
+     "t_mono": 6947.767660327
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d18_s0.5/work/session_20261025_190928/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 51.60620878300051,
+   "policy_calls": 92,
+   "clamp_count": 90,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 36,
+   "settle_waits": 65,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.995,
+    "loop_p99_ms_max": 14.64
+   },
+   "safety": {
+    "box": 0,
+    "cone": 3927,
+    "step_pos": 51,
+    "step_rot": 39,
+    "ok": 6461,
+    "nan": 0,
+    "cone_fraction": 0.375
+   },
+   "F_ext_max": 15.85,
+   "pad_table": 11,
+   "pad_table_max_force_n": 15.82,
+   "hand": {
+    "gap_min_m": -0.0001,
+    "gap_max_m": 0.0432,
+    "grasped_fraction": 0.0,
+    "modes": [
+     "grasping",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "ended_undecided",
+    "t_success_s": null,
+    "grasp_t_s": null,
+    "max_lift_m": 0.0,
+    "slip_m": 0.0,
+    "in_hand_slip_m": null,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 1290,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 28.16,
+    "fk_minus_safe_p50": 6.42,
+    "fk_minus_safe_p95": 16.66
+   },
+   "start_err_mm": 27.65,
+   "replay_frames": {
+    "last": 878.5,
+    "n_demo": 869,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.0,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 93.03,
+     "p95": 105.71,
+     "max": 109.01
+    },
+    "rot_err_deg": {
+     "p50": 11.155,
+     "p95": 13.941,
+     "max": 14.132
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 2410,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d19_s0.5",
+   "demo": 19,
+   "name": "2026-10-01T21-32-02.020Z_69427_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.082373,
+     0.269901,
+     -0.063419,
+     -2.129124,
+     0.895492,
+     1.790963,
+     1.478728
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.48523,
+     0.145909,
+     0.155449,
+     0.451557,
+     -0.884338,
+     -0.105454,
+     0.05406
+    ],
+    "home_xyz": [
+     0.48523,
+     0.145909,
+     0.155449
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.596644
+    ],
+    "hand_gap_m": 0.037518,
+    "w0": 0.08061796426773071,
+    "anchor_dz_m": 0.01,
+    "n_frames": 906,
+    "T_y_s": 127.4
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 151.3,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d19_s0.5/work/session_20261025_191001",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.19,
+    "total_s": 150.96,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.198,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.596644
+     ],
+     "hand_gap_m": 0.037518
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.596644
+     ],
+     "hand_gap_m": 0.037518,
+     "t_mono": 6980.111561571
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d19_s0.5/work/session_20261025_191001/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:RuntimeError",
+   "episode_duration_s": 16.896182018000218,
+   "policy_calls": 30,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 22,
+   "settle_timeouts": 0,
+   "policy_exceptions": [
+    "RuntimeError('EEF traj scheduling failed')"
+   ],
+   "holds": [
+    "exception: RuntimeError"
+   ],
+   "reflexes": [
+    "joint_reflex: |tau_ext2| 29.8 > 20.0 Nm"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.997,
+    "loop_p99_ms_max": 8.14
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 3416,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 83.94,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.0082,
+    "gap_max_m": 0.0376,
+    "grasped_fraction": 0.004,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "reflex",
+    "t_success_s": null,
+    "grasp_t_s": 16.6685,
+    "max_lift_m": 9e-05,
+    "slip_m": 0.0,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": "joint_reflex: |tau_ext2| 29.8 > 20.0 Nm",
+    "n_arm_table_contacts": 0,
+    "n_samples": 419,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 6.72,
+    "fk_minus_safe_p95": 12.84
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 315.0,
+    "n_demo": 906,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.852,
+    "track_ok": false,
+    "lag_s": 0.12,
+    "pos_fraction": 0.852,
+    "rot_fraction": 1.0,
+    "pos_err_mm": {
+     "p50": 3.43,
+     "p95": 9.84,
+     "max": 14.5
+    },
+    "rot_err_deg": {
+     "p50": 1.251,
+     "p95": 2.166,
+     "max": 2.786
+    },
+    "worst_window_t_s": 12.18,
+    "n_samples": 845,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.852,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": true
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d20_s0.5",
+   "demo": 20,
+   "name": "2026-10-01T21-32-20.689Z_33732_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.111733,
+     0.343922,
+     -0.018249,
+     -2.042444,
+     0.97376,
+     1.737486,
+     1.45091
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.51093,
+     0.170815,
+     0.16828,
+     0.49532,
+     -0.860387,
+     -0.112521,
+     0.041607
+    ],
+    "home_xyz": [
+     0.51093,
+     0.170815,
+     0.16828
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.598938
+    ],
+    "hand_gap_m": 0.038167,
+    "w0": 0.08126683533191681,
+    "anchor_dz_m": 0.01,
+    "n_frames": 870,
+    "T_y_s": 122.2
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 78.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d20_s0.5/work/session_20261025_191002",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.37,
+    "total_s": 78.17,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.38,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.598938
+     ],
+     "hand_gap_m": 0.038167
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.598938
+     ],
+     "hand_gap_m": 0.038167,
+     "t_mono": 6982.082280124
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d20_s0.5/work/session_20261025_191002/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 51.45973217400024,
+   "policy_calls": 92,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 10,
+   "settle_waits": 67,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.987,
+    "loop_p99_ms_max": 13.33
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1144,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 9110,
+    "nan": 0,
+    "cone_fraction": 0.112
+   },
+   "F_ext_max": 2.75,
+   "pad_table": 2,
+   "pad_table_max_force_n": 2.25,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0383,
+    "grasped_fraction": 0.41,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.8611,
+    "grasp_t_s": 14.8213,
+    "max_lift_m": 0.13204,
+    "slip_m": 0.00015,
+    "in_hand_slip_m": 0.00041,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 522,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 1.36,
+    "fk_minus_safe_p50": 5.36,
+    "fk_minus_safe_p95": 14.32
+   },
+   "start_err_mm": 0.04,
+   "replay_frames": {
+    "last": 879.5,
+    "n_demo": 870,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.76,
+    "track_ok": false,
+    "lag_s": 0.11,
+    "pos_fraction": 0.976,
+    "rot_fraction": 0.784,
+    "pos_err_mm": {
+     "p50": 3.24,
+     "p95": 7.29,
+     "max": 10.52
+    },
+    "rot_err_deg": {
+     "p50": 1.137,
+     "p95": 2.548,
+     "max": 4.046
+    },
+    "worst_window_t_s": 39.8,
+    "n_samples": 2401,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.76,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "overshoot",
+   "final": true
+  },
+  {
+   "run": "d21_s0.5",
+   "demo": 21,
+   "name": "2026-10-01T21-32-43.276Z_74547_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.149842,
+     0.328474,
+     -0.005951,
+     -2.173555,
+     1.110214,
+     1.735684,
+     1.402236
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.489207,
+     0.182062,
+     0.160656,
+     0.54895,
+     -0.83349,
+     -0.053274,
+     0.033324
+    ],
+    "home_xyz": [
+     0.489207,
+     0.182062,
+     0.160656
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.670441
+    ],
+    "hand_gap_m": 0.038048,
+    "w0": 0.0811479315161705,
+    "anchor_dz_m": 0.01,
+    "n_frames": 747,
+    "T_y_s": 107.9
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 74.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d21_s0.5/work/session_20261025_191047",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.43,
+    "total_s": 73.68,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.441,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.670441
+     ],
+     "hand_gap_m": 0.038048
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.670441
+     ],
+     "hand_gap_m": 0.038048,
+     "t_mono": 7026.691358118
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d21_s0.5/work/session_20261025_191047/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 45.83255762999943,
+   "policy_calls": 80,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 11,
+   "settle_waits": 59,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.992,
+    "loop_p99_ms_max": 13.39
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1355,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 7892,
+    "nan": 0,
+    "cone_fraction": 0.147
+   },
+   "F_ext_max": 9.4,
+   "pad_table": 2,
+   "pad_table_max_force_n": 8.05,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.038,
+    "grasped_fraction": 0.406,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 18.8668,
+    "grasp_t_s": 12.0664,
+    "max_lift_m": 0.10775,
+    "slip_m": 0.00118,
+    "in_hand_slip_m": 3e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 472,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 23.76,
+    "fk_minus_safe_p50": 5.25,
+    "fk_minus_safe_p95": 15.05
+   },
+   "start_err_mm": 23.2,
+   "replay_frames": {
+    "last": 756.5,
+    "n_demo": 747,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.1,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 4.02,
+     "p95": 25.16,
+     "max": 28.69
+    },
+    "rot_err_deg": {
+     "p50": 1.351,
+     "p95": 7.2,
+     "max": 8.123
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 2119,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d22_s0.5",
+   "demo": 22,
+   "name": "2026-10-01T21-33-00.080Z_51863_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.144174,
+     0.295433,
+     -0.056834,
+     -2.162391,
+     1.003477,
+     1.722687,
+     1.441466
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.480389,
+     0.147781,
+     0.161269,
+     0.514073,
+     -0.854117,
+     -0.062035,
+     0.048625
+    ],
+    "home_xyz": [
+     0.480389,
+     0.147781,
+     0.161269
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.449208
+    ],
+    "hand_gap_m": 0.034615,
+    "w0": 0.07771511375904083,
+    "anchor_dz_m": 0.01,
+    "n_frames": 818,
+    "T_y_s": 115.7
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 141.2,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d22_s0.5/work/session_20261025_191121",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.85,
+    "total_s": 140.91,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.855,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.449208
+     ],
+     "hand_gap_m": 0.034615
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.449208
+     ],
+     "hand_gap_m": 0.034615,
+     "t_mono": 7061.361065224
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d22_s0.5/work/session_20261025_191121/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:RuntimeError",
+   "episode_duration_s": 14.480840313999579,
+   "policy_calls": 26,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 13,
+   "settle_waits": 19,
+   "settle_timeouts": 0,
+   "policy_exceptions": [
+    "RuntimeError('EEF traj scheduling failed')"
+   ],
+   "holds": [
+    "exception: RuntimeError"
+   ],
+   "reflexes": [
+    "joint_reflex: |tau_ext2| 27.7 > 20.0 Nm"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.994,
+    "loop_p99_ms_max": 2.64
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1415,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 1399,
+    "nan": 0,
+    "cone_fraction": 0.503
+   },
+   "F_ext_max": 89.96,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.008,
+    "gap_max_m": 0.0347,
+    "grasped_fraction": 0.003,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "reflex",
+    "t_success_s": null,
+    "grasp_t_s": 14.3195,
+    "max_lift_m": 0.0,
+    "slip_m": 0.0,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": "joint_reflex: |tau_ext2| 27.7 > 20.0 Nm",
+    "n_arm_table_contacts": 0,
+    "n_samples": 359,
+    "rate_hz": 24.98,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 10.81,
+    "fk_minus_safe_p50": 6.39,
+    "fk_minus_safe_p95": 11.19
+   },
+   "start_err_mm": 7.54,
+   "replay_frames": {
+    "last": 273.0,
+    "n_demo": 818,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.732,
+    "track_ok": false,
+    "lag_s": 0.03,
+    "pos_fraction": 0.804,
+    "rot_fraction": 0.748,
+    "pos_err_mm": {
+     "p50": 6.95,
+     "p95": 10.81,
+     "max": 13.26
+    },
+    "rot_err_deg": {
+     "p50": 1.88,
+     "p95": 3.174,
+     "max": 3.412
+    },
+    "worst_window_t_s": 0.74,
+    "n_samples": 724,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.732,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d23_s0.5",
+   "demo": 23,
+   "name": "2026-10-01T21-33-19.351Z_94216_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.147701,
+     0.289537,
+     -0.064822,
+     -2.143258,
+     1.003447,
+     1.755417,
+     1.432493
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.498167,
+     0.134725,
+     0.163339,
+     0.500102,
+     -0.863357,
+     -0.062699,
+     0.024091
+    ],
+    "home_xyz": [
+     0.498167,
+     0.134725,
+     0.163339
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.439208
+    ],
+    "hand_gap_m": 0.040335,
+    "w0": 0.08343541622161865,
+    "anchor_dz_m": 0.01,
+    "n_frames": 858,
+    "T_y_s": 120.9
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 77.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d23_s0.5/work/session_20261025_191201",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.99,
+    "total_s": 76.72,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.994,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.439208
+     ],
+     "hand_gap_m": 0.040335
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.439208
+     ],
+     "hand_gap_m": 0.040335,
+     "t_mono": 7100.590498649
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d23_s0.5/work/session_20261025_191201/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 51.23904808400039,
+   "policy_calls": 91,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 5,
+   "settle_waits": 60,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.981,
+    "loop_p99_ms_max": 14.1
+   },
+   "safety": {
+    "box": 0,
+    "cone": 584,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 9643,
+    "nan": 0,
+    "cone_fraction": 0.057
+   },
+   "F_ext_max": 3.26,
+   "pad_table": 2,
+   "pad_table_max_force_n": 1.53,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0408,
+    "grasped_fraction": 0.394,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 21.8249,
+    "grasp_t_s": 15.4651,
+    "max_lift_m": 0.07983,
+    "slip_m": 0.0011,
+    "in_hand_slip_m": 3e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 546,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 4.18,
+    "fk_minus_safe_p95": 12.66
+   },
+   "start_err_mm": 0.35,
+   "replay_frames": {
+    "last": 867.5,
+    "n_demo": 858,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.876,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.884,
+    "rot_fraction": 0.892,
+    "pos_err_mm": {
+     "p50": 2.62,
+     "p95": 7.98,
+     "max": 13.73
+    },
+    "rot_err_deg": {
+     "p50": 0.962,
+     "p95": 2.465,
+     "max": 3.606
+    },
+    "worst_window_t_s": 5.96,
+    "n_samples": 2384,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.876,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d24_s0.5",
+   "demo": 24,
+   "name": "2026-10-01T21-33-36.956Z_83183_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.099803,
+     0.324433,
+     -0.04997,
+     -2.150666,
+     0.985033,
+     1.823813,
+     1.463508
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.490392,
+     0.153714,
+     0.132022,
+     0.476757,
+     -0.875434,
+     -0.062338,
+     0.049326
+    ],
+    "home_xyz": [
+     0.490392,
+     0.153714,
+     0.132022
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.486926
+    ],
+    "hand_gap_m": 0.041277,
+    "w0": 0.08437671512365341,
+    "anchor_dz_m": 0.01,
+    "n_frames": 788,
+    "T_y_s": 111.8
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 75.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d24_s0.5/work/session_20261025_191232",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.43,
+    "total_s": 74.76,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.442,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.486926
+     ],
+     "hand_gap_m": 0.041277
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.486926
+     ],
+     "hand_gap_m": 0.041277,
+     "t_mono": 7131.923909577
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d24_s0.5/work/session_20261025_191232/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 47.871294248000595,
+   "policy_calls": 84,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 57,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.962,
+    "loop_p99_ms_max": 12.6
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 9650,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 5.26,
+   "pad_table": 4,
+   "pad_table_max_force_n": 3.46,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0413,
+    "grasped_fraction": 0.353,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 22.4852,
+    "grasp_t_s": 16.0551,
+    "max_lift_m": 0.10752,
+    "slip_m": 0.00011,
+    "in_hand_slip_m": 2e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 563,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 5.65,
+    "fk_minus_safe_p95": 15.69
+   },
+   "start_err_mm": 0.05,
+   "replay_frames": {
+    "last": 797.5,
+    "n_demo": 788,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.884,
+    "track_ok": false,
+    "lag_s": 0.07,
+    "pos_fraction": 0.884,
+    "rot_fraction": 0.916,
+    "pos_err_mm": {
+     "p50": 3.49,
+     "p95": 8.84,
+     "max": 12.86
+    },
+    "rot_err_deg": {
+     "p50": 1.272,
+     "p95": 2.574,
+     "max": 3.533
+    },
+    "worst_window_t_s": 6.86,
+    "n_samples": 2225,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.884,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "overshoot",
+   "final": true
+  },
+  {
+   "run": "d25_s0.5",
+   "demo": 25,
+   "name": "2026-10-01T21-33-53.971Z_24383_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.107151,
+     0.199653,
+     -0.072691,
+     -2.255273,
+     1.003664,
+     1.794727,
+     1.430618
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.467118,
+     0.150877,
+     0.1656,
+     0.49122,
+     -0.868026,
+     -0.066352,
+     0.028824
+    ],
+    "home_xyz": [
+     0.467118,
+     0.150877,
+     0.1656
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.564866
+    ],
+    "hand_gap_m": 0.038186,
+    "w0": 0.08128610253334045,
+    "anchor_dz_m": 0.01,
+    "n_frames": 788,
+    "T_y_s": 111.8
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 135.8,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d25_s0.5/work/session_20261025_191319",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.34,
+    "total_s": 135.41,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.355,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.564866
+     ],
+     "hand_gap_m": 0.038186
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.564866
+     ],
+     "hand_gap_m": 0.038186,
+     "t_mono": 7178.348300716
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d25_s0.5/work/session_20261025_191319/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:SettleTimeoutError",
+   "episode_duration_s": 31.92500509399997,
+   "policy_calls": 53,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 41,
+   "settle_timeouts": 3,
+   "policy_exceptions": [
+    "SettleTimeoutError('arm not settled after 1.0 s (backlog 0.0033328479957026396, track_dev 0.0050 m)')"
+   ],
+   "holds": [
+    "exception: SettleTimeoutError"
+   ],
+   "reflexes": [
+    "cartesian_reflex: |O_F_ext2| 28.8 > 20.0"
+   ],
+   "rt": {
+    "rt_resyncs": 2,
+    "realtime_factor_min": 0.949,
+    "loop_p99_ms_max": 15.07
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 6194,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 5.13,
+   "pad_table": 2,
+   "pad_table_max_force_n": 1.19,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0382,
+    "grasped_fraction": 0.584,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 17.1273,
+    "grasp_t_s": 12.6875,
+    "max_lift_m": 0.09962,
+    "slip_m": 0.00027,
+    "in_hand_slip_m": 7e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 429,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 5.41,
+    "fk_minus_safe_p95": 15.51
+   },
+   "start_err_mm": 0.05,
+   "replay_frames": {
+    "last": 556.5,
+    "n_demo": 788,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.752,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.752,
+    "rot_fraction": 0.896,
+    "pos_err_mm": {
+     "p50": 3.18,
+     "p95": 9.49,
+     "max": 12.82
+    },
+    "rot_err_deg": {
+     "p50": 1.202,
+     "p95": 2.596,
+     "max": 3.358
+    },
+    "worst_window_t_s": 5.44,
+    "n_samples": 1596,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.752,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d26_s0.5",
+   "demo": 26,
+   "name": "2026-10-01T21-34-10.661Z_12841_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.119627,
+     0.275254,
+     -0.045482,
+     -2.143865,
+     1.005746,
+     1.760925,
+     1.481159
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.495213,
+     0.157873,
+     0.170519,
+     0.498572,
+     -0.863584,
+     -0.064009,
+     0.039383
+    ],
+    "home_xyz": [
+     0.495213,
+     0.157873,
+     0.170519
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.43541
+    ],
+    "hand_gap_m": 0.038391,
+    "w0": 0.08149078488349915,
+    "anchor_dz_m": 0.01,
+    "n_frames": 773,
+    "T_y_s": 110.5
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 74.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d26_s0.5/work/session_20261025_191343",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.73,
+    "total_s": 74.21,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.732,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.43541
+     ],
+     "hand_gap_m": 0.038391
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.4354099999999999
+     ],
+     "hand_gap_m": 0.038391,
+     "t_mono": 7201.600061499
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d26_s0.5/work/session_20261025_191343/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 48.17940182499933,
+   "policy_calls": 82,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 22,
+   "settle_waits": 63,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.997,
+    "loop_p99_ms_max": 10.27
+   },
+   "safety": {
+    "box": 0,
+    "cone": 2476,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 7163,
+    "nan": 0,
+    "cone_fraction": 0.257
+   },
+   "F_ext_max": 8.61,
+   "pad_table": 1,
+   "pad_table_max_force_n": 3.03,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0384,
+    "grasped_fraction": 0.423,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 19.7566,
+    "grasp_t_s": 14.0678,
+    "max_lift_m": 0.10638,
+    "slip_m": 0.00047,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 494,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 9.53,
+    "fk_minus_safe_p50": 6.66,
+    "fk_minus_safe_p95": 15.87
+   },
+   "start_err_mm": 0.09,
+   "replay_frames": {
+    "last": 782.5,
+    "n_demo": 773,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.748,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.752,
+    "rot_fraction": 0.792,
+    "pos_err_mm": {
+     "p50": 5.14,
+     "p95": 10.34,
+     "max": 12.01
+    },
+    "rot_err_deg": {
+     "p50": 1.587,
+     "p95": 2.935,
+     "max": 3.83
+    },
+    "worst_window_t_s": 35.44,
+    "n_samples": 2245,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.748,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "overshoot",
+   "final": true
+  },
+  {
+   "run": "d27_s0.5",
+   "demo": 27,
+   "name": "2026-10-01T21-34-27.692Z_81818_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.165097,
+     0.26802,
+     -0.062298,
+     -2.164227,
+     1.013675,
+     1.643128,
+     1.449404
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.473257,
+     0.147928,
+     0.188723,
+     0.539422,
+     -0.838029,
+     -0.062559,
+     0.053078
+    ],
+    "home_xyz": [
+     0.473257,
+     0.147928,
+     0.188723
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.485217
+    ],
+    "hand_gap_m": 0.03859,
+    "w0": 0.08169025927782059,
+    "anchor_dz_m": 0.01,
+    "n_frames": 834,
+    "T_y_s": 118.3
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 78.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d27_s0.5/work/session_20261025_191348",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 13.06,
+    "total_s": 78.17,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 14.071,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.485217
+     ],
+     "hand_gap_m": 0.03859
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.485217
+     ],
+     "hand_gap_m": 0.03859,
+     "t_mono": 7208.012494351
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d27_s0.5/work/session_20261025_191348/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 50.761638764000054,
+   "policy_calls": 89,
+   "clamp_count": 17,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 10,
+   "settle_waits": 62,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 2.47
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1151,
+    "step_pos": 1,
+    "step_rot": 16,
+    "ok": 8884,
+    "nan": 0,
+    "cone_fraction": 0.115
+   },
+   "F_ext_max": 5.48,
+   "pad_table": 2,
+   "pad_table_max_force_n": 5.23,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0386,
+    "grasped_fraction": 0.393,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 21.9162,
+    "grasp_t_s": 15.4372,
+    "max_lift_m": 0.10298,
+    "slip_m": 0.00032,
+    "in_hand_slip_m": 4e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 548,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 17.31,
+    "fk_minus_safe_p50": 6.91,
+    "fk_minus_safe_p95": 17.14
+   },
+   "start_err_mm": 19.46,
+   "replay_frames": {
+    "last": 843.5,
+    "n_demo": 834,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.04,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 8.71,
+     "p95": 18.24,
+     "max": 20.12
+    },
+    "rot_err_deg": {
+     "p50": 2.291,
+     "p95": 6.225,
+     "max": 7.774
+    },
+    "worst_window_t_s": 36.82,
+    "n_samples": 2363,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d28_s0.5",
+   "demo": 28,
+   "name": "2026-10-01T21-34-44.980Z_73553_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.26172,
+     0.316951,
+     -0.067926,
+     -2.014534,
+     1.043149,
+     1.519913,
+     1.511391
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.517992,
+     0.103878,
+     0.234903,
+     0.570343,
+     -0.820122,
+     -0.034828,
+     0.02992
+    ],
+    "home_xyz": [
+     0.517992,
+     0.103878,
+     0.234903
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.389462
+    ],
+    "hand_gap_m": 0.037766,
+    "w0": 0.08086571097373962,
+    "anchor_dz_m": 0.01,
+    "n_frames": 801,
+    "T_y_s": 114.4
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 138.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d28_s0.5/work/session_20261025_191457",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.89,
+    "total_s": 137.62,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.901,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.389462
+     ],
+     "hand_gap_m": 0.037766
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.3894620000000002
+     ],
+     "hand_gap_m": 0.037766,
+     "t_mono": 7276.655767293
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d28_s0.5/work/session_20261025_191457/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:RuntimeError",
+   "episode_duration_s": 14.66662813199946,
+   "policy_calls": 26,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 14,
+   "settle_waits": 18,
+   "settle_timeouts": 0,
+   "policy_exceptions": [
+    "RuntimeError('EEF traj scheduling failed')"
+   ],
+   "holds": [
+    "exception: RuntimeError"
+   ],
+   "reflexes": [
+    "joint_reflex: |tau_ext2| 29.3 > 20.0 Nm"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.999,
+    "loop_p99_ms_max": 12.35
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1519,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 1237,
+    "nan": 0,
+    "cone_fraction": 0.551
+   },
+   "F_ext_max": 27.91,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.0085,
+    "gap_max_m": 0.0384,
+    "grasped_fraction": 0.003,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "reflex",
+    "t_success_s": null,
+    "grasp_t_s": 14.4518,
+    "max_lift_m": 0.0002,
+    "slip_m": 0.0,
+    "in_hand_slip_m": 0.0,
+    "knocked_over": false,
+    "reflex": "joint_reflex: |tau_ext2| 29.3 > 20.0 Nm",
+    "n_arm_table_contacts": 0,
+    "n_samples": 363,
+    "rate_hz": 24.98,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 31.78,
+    "fk_minus_safe_p50": 6.93,
+    "fk_minus_safe_p95": 13.01
+   },
+   "start_err_mm": 33.25,
+   "replay_frames": {
+    "last": 273.0,
+    "n_demo": 801,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 10.59,
+     "p95": 31.35,
+     "max": 32.2
+    },
+    "rot_err_deg": {
+     "p50": 2.86,
+     "p95": 9.327,
+     "max": 9.511
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 733,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d29_s0.5",
+   "demo": 29,
+   "name": "2026-10-01T21-35-03.532Z_46761_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.139463,
+     0.306017,
+     -0.013164,
+     -2.139517,
+     1.140865,
+     1.805854,
+     1.487329
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.5277,
+     0.171805,
+     0.173083,
+     0.528091,
+     -0.849049,
+     -0.013694,
+     0.006938
+    ],
+    "home_xyz": [
+     0.5277,
+     0.171805,
+     0.173083
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.475109
+    ],
+    "hand_gap_m": 0.037322,
+    "w0": 0.08042231947183609,
+    "anchor_dz_m": 0.01,
+    "n_frames": 806,
+    "T_y_s": 114.4
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 76.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d29_s0.5/work/session_20261025_191506",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.99,
+    "total_s": 76.18,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 14.006,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.475109
+     ],
+     "hand_gap_m": 0.037322
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.475109
+     ],
+     "hand_gap_m": 0.037322,
+     "t_mono": 7286.748144271
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d29_s0.5/work/session_20261025_191506/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 48.84813857399968,
+   "policy_calls": 86,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 33,
+   "settle_waits": 59,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.984,
+    "loop_p99_ms_max": 16.03
+   },
+   "safety": {
+    "box": 0,
+    "cone": 3707,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 6109,
+    "nan": 0,
+    "cone_fraction": 0.378
+   },
+   "F_ext_max": 4.45,
+   "pad_table": 3,
+   "pad_table_max_force_n": 3.56,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0373,
+    "grasped_fraction": 0.382,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 19.4061,
+    "grasp_t_s": 13.7649,
+    "max_lift_m": 0.10905,
+    "slip_m": 0.00022,
+    "in_hand_slip_m": 0.00027,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 485,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 13.97,
+    "fk_minus_safe_p50": 5.89,
+    "fk_minus_safe_p95": 17.1
+   },
+   "start_err_mm": 12.98,
+   "replay_frames": {
+    "last": 815.5,
+    "n_demo": 806,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 5.25,
+     "p95": 13.94,
+     "max": 16.74
+    },
+    "rot_err_deg": {
+     "p50": 1.658,
+     "p95": 4.12,
+     "max": 5.146
+    },
+    "worst_window_t_s": 0.28,
+    "n_samples": 2260,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d30_s0.5",
+   "demo": 30,
+   "name": "2026-10-01T21-35-22.118Z_96111_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.167932,
+     0.283668,
+     -0.044295,
+     -2.148407,
+     1.104773,
+     1.737464,
+     1.477293
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.514994,
+     0.148921,
+     0.185001,
+     0.535824,
+     -0.844046,
+     -0.018174,
+     0.012161
+    ],
+    "home_xyz": [
+     0.514994,
+     0.148921,
+     0.185001
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.420423
+    ],
+    "hand_gap_m": 0.038601,
+    "w0": 0.08170123398303986,
+    "anchor_dz_m": 0.01,
+    "n_frames": 832,
+    "T_y_s": 118.3
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 76.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d30_s0.5/work/session_20261025_191535",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 13.06,
+    "total_s": 76.26,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 14.061,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.420423
+     ],
+     "hand_gap_m": 0.038601
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.420423
+     ],
+     "hand_gap_m": 0.038601,
+     "t_mono": 7315.096195195
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d30_s0.5/work/session_20261025_191535/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 48.72557446399969,
+   "policy_calls": 89,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 11,
+   "settle_waits": 57,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.995,
+    "loop_p99_ms_max": 10.81
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1218,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 8433,
+    "nan": 0,
+    "cone_fraction": 0.126
+   },
+   "F_ext_max": 6.43,
+   "pad_table": 1,
+   "pad_table_max_force_n": 3.22,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0386,
+    "grasped_fraction": 0.412,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.0382,
+    "grasp_t_s": 13.3687,
+    "max_lift_m": 0.11768,
+    "slip_m": 0.00016,
+    "in_hand_slip_m": 0.00011,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 501,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 9.76,
+    "fk_minus_safe_p50": 5.27,
+    "fk_minus_safe_p95": 14.4
+   },
+   "start_err_mm": 16.62,
+   "replay_frames": {
+    "last": 841.5,
+    "n_demo": 832,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.348,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.388,
+    "rot_fraction": 0.372,
+    "pos_err_mm": {
+     "p50": 3.95,
+     "p95": 12.47,
+     "max": 16.09
+    },
+    "rot_err_deg": {
+     "p50": 1.402,
+     "p95": 3.66,
+     "max": 4.703
+    },
+    "worst_window_t_s": 0.26,
+    "n_samples": 2263,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.348,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d31_s0.5",
+   "demo": 31,
+   "name": "2026-10-01T21-35-43.738Z_19436_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.151558,
+     0.411318,
+     -0.009147,
+     -2.043476,
+     0.993423,
+     1.716668,
+     1.432913
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.503145,
+     0.162796,
+     0.142892,
+     0.517367,
+     -0.849291,
+     -0.087358,
+     0.05835
+    ],
+    "home_xyz": [
+     0.503145,
+     0.162796,
+     0.142892
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.451432
+    ],
+    "hand_gap_m": 0.039319,
+    "w0": 0.08241858333349228,
+    "anchor_dz_m": 0.01,
+    "n_frames": 803,
+    "T_y_s": 114.4
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 75.0,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d31_s0.5/work/session_20261025_191623",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.11,
+    "total_s": 74.64,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.122,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.451432
+     ],
+     "hand_gap_m": 0.039319
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.451432
+     ],
+     "hand_gap_m": 0.039319,
+     "t_mono": 7362.692078193
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d31_s0.5/work/session_20261025_191623/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 48.18833332600025,
+   "policy_calls": 86,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 11,
+   "settle_waits": 53,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 2,
+    "realtime_factor_min": 0.948,
+    "loop_p99_ms_max": 14.47
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1332,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 8273,
+    "nan": 0,
+    "cone_fraction": 0.139
+   },
+   "F_ext_max": 5.14,
+   "pad_table": 1,
+   "pad_table_max_force_n": 0.72,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0396,
+    "grasped_fraction": 0.344,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 19.6328,
+    "grasp_t_s": 13.3534,
+    "max_lift_m": 0.11045,
+    "slip_m": 0.00058,
+    "in_hand_slip_m": 6e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 491,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 10.92,
+    "fk_minus_safe_p50": 4.38,
+    "fk_minus_safe_p95": 18.83
+   },
+   "start_err_mm": 9.51,
+   "replay_frames": {
+    "last": 812.5,
+    "n_demo": 803,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.268,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.572,
+    "rot_fraction": 0.268,
+    "pos_err_mm": {
+     "p50": 4.06,
+     "p95": 10.97,
+     "max": 14.03
+    },
+    "rot_err_deg": {
+     "p50": 1.449,
+     "p95": 3.673,
+     "max": 4.407
+    },
+    "worst_window_t_s": 0.5,
+    "n_samples": 2223,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.268,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d32_s0.5",
+   "demo": 32,
+   "name": "2026-10-01T21-36-00.591Z_87784_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": true,
+   "stage1_reason": "unreachable",
+   "plan": {
+    "q_init": [
+     -0.307152,
+     1.436941,
+     1.068216,
+     -0.466846,
+     -0.036898,
+     1.667091,
+     2.219281
+    ],
+    "ik_ok": false,
+    "start_tcp_pose7": [
+     0.792769,
+     0.199971,
+     0.175457,
+     0.487322,
+     -0.871343,
+     -0.05652,
+     -0.009136
+    ],
+    "home_xyz": [
+     0.792769,
+     0.199971,
+     0.175457
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -0.888272
+    ],
+    "hand_gap_m": 0.038506,
+    "w0": 0.081605926156044,
+    "anchor_dz_m": 0.01,
+    "n_frames": 718,
+    "T_y_s": 104.0
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 71.0,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d32_s0.5/work/session_20261025_191652",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.35,
+    "total_s": 70.64,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.359,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -0.888272
+     ],
+     "hand_gap_m": 0.038506
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -0.8882719999999998
+     ],
+     "hand_gap_m": 0.038506,
+     "t_mono": 7391.475020681
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d32_s0.5/work/session_20261025_191652/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 44.04178934900028,
+   "policy_calls": 78,
+   "clamp_count": 14,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 50,
+   "settle_waits": 57,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.982,
+    "loop_p99_ms_max": 14.0
+   },
+   "safety": {
+    "box": 5543,
+    "cone": 0,
+    "step_pos": 1,
+    "step_rot": 0,
+    "ok": 3256,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 4.13,
+   "pad_table": 5,
+   "pad_table_max_force_n": 3.93,
+   "hand": {
+    "gap_min_m": -0.0006,
+    "gap_max_m": 0.0392,
+    "grasped_fraction": 0.0,
+    "modes": [
+     "grasping",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "ended_undecided",
+    "t_success_s": null,
+    "grasp_t_s": null,
+    "max_lift_m": 0.0,
+    "slip_m": 0.0,
+    "in_hand_slip_m": null,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 1102,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 165.17,
+    "fk_minus_safe_p50": 6.54,
+    "fk_minus_safe_p95": 16.78
+   },
+   "start_err_mm": 0.47,
+   "replay_frames": {
+    "last": 727.5,
+    "n_demo": 718,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.11,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.428,
+    "pos_err_mm": {
+     "p50": 12.35,
+     "p95": 167.22,
+     "max": 170.42
+    },
+    "rot_err_deg": {
+     "p50": 1.844,
+     "p95": 3.439,
+     "max": 4.421
+    },
+    "worst_window_t_s": 3.96,
+    "n_samples": 2019,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d33_s0.5",
+   "demo": 33,
+   "name": "2026-10-01T21-36-17.615Z_58724_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.202912,
+     0.392722,
+     -0.019645,
+     -1.948142,
+     1.007824,
+     1.667599,
+     1.470872
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.546927,
+     0.131132,
+     0.189221,
+     0.521763,
+     -0.849413,
+     -0.077315,
+     0.016835
+    ],
+    "home_xyz": [
+     0.546927,
+     0.131132,
+     0.189221
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.583891
+    ],
+    "hand_gap_m": 0.040863,
+    "w0": 0.08396344631910324,
+    "anchor_dz_m": 0.01,
+    "n_frames": 737,
+    "T_y_s": 106.6
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 72.5,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d33_s0.5/work/session_20261025_191716",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.54,
+    "total_s": 72.18,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.551,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.583891
+     ],
+     "hand_gap_m": 0.040863
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.583891
+     ],
+     "hand_gap_m": 0.040863,
+     "t_mono": 7415.489974449
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d33_s0.5/work/session_20261025_191716/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 45.27599388999988,
+   "policy_calls": 80,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 9,
+   "settle_waits": 58,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 1,
+    "realtime_factor_min": 0.949,
+    "loop_p99_ms_max": 14.62
+   },
+   "safety": {
+    "box": 0,
+    "cone": 1123,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 7865,
+    "nan": 0,
+    "cone_fraction": 0.125
+   },
+   "F_ext_max": 4.96,
+   "pad_table": 4,
+   "pad_table_max_force_n": 1.68,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0409,
+    "grasped_fraction": 0.386,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 17.7186,
+    "grasp_t_s": 12.558,
+    "max_lift_m": 0.10363,
+    "slip_m": 0.00031,
+    "in_hand_slip_m": 0.00017,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 443,
+    "rate_hz": 24.99,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 2.57,
+    "fk_minus_safe_p50": 6.79,
+    "fk_minus_safe_p95": 16.27
+   },
+   "start_err_mm": 10.14,
+   "replay_frames": {
+    "last": 746.5,
+    "n_demo": 737,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.632,
+    "track_ok": false,
+    "lag_s": 0.07,
+    "pos_fraction": 0.7,
+    "rot_fraction": 0.648,
+    "pos_err_mm": {
+     "p50": 5.05,
+     "p95": 10.5,
+     "max": 14.12
+    },
+    "rot_err_deg": {
+     "p50": 1.627,
+     "p95": 3.211,
+     "max": 4.431
+    },
+    "worst_window_t_s": 33.78,
+    "n_samples": 2073,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.632,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d34_s0.5",
+   "demo": 34,
+   "name": "2026-10-01T21-36-33.796Z_23541_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.155986,
+     0.35234,
+     -0.064301,
+     -1.984216,
+     0.92937,
+     1.733819,
+     1.488552
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.536937,
+     0.112997,
+     0.172003,
+     0.470758,
+     -0.878159,
+     -0.081731,
+     0.023334
+    ],
+    "home_xyz": [
+     0.536937,
+     0.112997,
+     0.172003
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.498816
+    ],
+    "hand_gap_m": 0.040922,
+    "w0": 0.0840219035744667,
+    "anchor_dz_m": 0.01,
+    "n_frames": 846,
+    "T_y_s": 119.6
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 78.5,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d34_s0.5/work/session_20261025_191739",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 13.06,
+    "total_s": 78.16,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 14.065,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.498816
+     ],
+     "hand_gap_m": 0.040922
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.498816
+     ],
+     "hand_gap_m": 0.040922,
+     "t_mono": 7439.003074082
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d34_s0.5/work/session_20261025_191739/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 50.75581776999934,
+   "policy_calls": 90,
+   "clamp_count": 0,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 0,
+   "settle_waits": 58,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 1,
+    "realtime_factor_min": 0.947,
+    "loop_p99_ms_max": 13.79
+   },
+   "safety": {
+    "box": 0,
+    "cone": 0,
+    "step_pos": 0,
+    "step_rot": 0,
+    "ok": 10010,
+    "nan": 0,
+    "cone_fraction": 0.0
+   },
+   "F_ext_max": 11.52,
+   "pad_table": 3,
+   "pad_table_max_force_n": 0.96,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0409,
+    "grasped_fraction": 0.413,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 19.4123,
+    "grasp_t_s": 12.5827,
+    "max_lift_m": 0.10884,
+    "slip_m": 0.00018,
+    "in_hand_slip_m": 6e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 486,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 5.28,
+    "fk_minus_safe_p95": 13.71
+   },
+   "start_err_mm": 0.03,
+   "replay_frames": {
+    "last": 855.5,
+    "n_demo": 846,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.872,
+    "track_ok": false,
+    "lag_s": 0.1,
+    "pos_fraction": 0.872,
+    "rot_fraction": 0.936,
+    "pos_err_mm": {
+     "p50": 3.45,
+     "p95": 8.19,
+     "max": 12.21
+    },
+    "rot_err_deg": {
+     "p50": 1.245,
+     "p95": 2.482,
+     "max": 3.515
+    },
+    "worst_window_t_s": 33.42,
+    "n_samples": 2354,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.872,
+   "worst_window": {
+    "pad_table": true,
+    "safety_clamp": false,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "pad_table",
+   "final": true
+  },
+  {
+   "run": "d35_s0.5",
+   "demo": 35,
+   "name": "2026-10-01T21-36-51.635Z_34681_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.154062,
+     0.366512,
+     -0.034494,
+     -2.016171,
+     0.986823,
+     1.740383,
+     1.495302
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.530465,
+     0.139965,
+     0.165437,
+     0.495578,
+     -0.865474,
+     -0.065221,
+     0.033209
+    ],
+    "home_xyz": [
+     0.530465,
+     0.139965,
+     0.165437
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.627443
+    ],
+    "hand_gap_m": 0.03933,
+    "w0": 0.08242954313755035,
+    "anchor_dz_m": 0.01,
+    "n_frames": 803,
+    "T_y_s": 114.4
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 76.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d35_s0.5/work/session_20261025_191803",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.95,
+    "total_s": 76.25,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.957,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.627443
+     ],
+     "hand_gap_m": 0.03933
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.627443
+     ],
+     "hand_gap_m": 0.03933,
+     "t_mono": 7463.35205095
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d35_s0.5/work/session_20261025_191803/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 48.91287178899984,
+   "policy_calls": 86,
+   "clamp_count": 2,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 4,
+   "settle_waits": 58,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 1,
+    "realtime_factor_min": 0.948,
+    "loop_p99_ms_max": 11.96
+   },
+   "safety": {
+    "box": 0,
+    "cone": 410,
+    "step_pos": 2,
+    "step_rot": 0,
+    "ok": 9175,
+    "nan": 0,
+    "cone_fraction": 0.043
+   },
+   "F_ext_max": 12.31,
+   "pad_table": 3,
+   "pad_table_max_force_n": 12.31,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0393,
+    "grasped_fraction": 0.42,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 20.8612,
+    "grasp_t_s": 14.3844,
+    "max_lift_m": 0.1212,
+    "slip_m": 0.00043,
+    "in_hand_slip_m": 1e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 522,
+    "rate_hz": 24.99,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 0.0,
+    "fk_minus_safe_p50": 6.48,
+    "fk_minus_safe_p95": 15.68
+   },
+   "start_err_mm": 0.03,
+   "replay_frames": {
+    "last": 812.5,
+    "n_demo": 803,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.476,
+    "track_ok": false,
+    "lag_s": 0.1,
+    "pos_fraction": 0.64,
+    "rot_fraction": 0.656,
+    "pos_err_mm": {
+     "p50": 3.98,
+     "p95": 9.73,
+     "max": 14.94
+    },
+    "rot_err_deg": {
+     "p50": 1.309,
+     "p95": 2.853,
+     "max": 4.035
+    },
+    "worst_window_t_s": 36.98,
+    "n_samples": 2267,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.476,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d36_s0.5",
+   "demo": 36,
+   "name": "2026-10-01T21-37-49.429Z_98585_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.394623,
+     0.524149,
+     0.033586,
+     -1.488023,
+     0.994277,
+     1.37546,
+     1.705146
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.620739,
+     0.046107,
+     0.313265,
+     0.553672,
+     -0.830348,
+     -0.062621,
+     0.006914
+    ],
+    "home_xyz": [
+     0.620739,
+     0.046107,
+     0.313265
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.562388
+    ],
+    "hand_gap_m": 0.038411,
+    "w0": 0.08151067793369293,
+    "anchor_dz_m": 0.01,
+    "n_frames": 796,
+    "T_y_s": 113.1
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 75.1,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d36_s0.5/work/session_20261025_191828",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.71,
+    "total_s": 74.7,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.709,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.562388
+     ],
+     "hand_gap_m": 0.038411
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.562388
+     ],
+     "hand_gap_m": 0.038411,
+     "t_mono": 7488.45434897
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d36_s0.5/work/session_20261025_191828/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 47.613242145000186,
+   "policy_calls": 84,
+   "clamp_count": 24,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 45,
+   "settle_waits": 64,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.958,
+    "loop_p99_ms_max": 14.08
+   },
+   "safety": {
+    "box": 0,
+    "cone": 5121,
+    "step_pos": 8,
+    "step_rot": 16,
+    "ok": 4472,
+    "nan": 0,
+    "cone_fraction": 0.532
+   },
+   "F_ext_max": 4.98,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0387,
+    "grasped_fraction": 0.407,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 18.1808,
+    "grasp_t_s": 13.9003,
+    "max_lift_m": 0.21865,
+    "slip_m": 0.00135,
+    "in_hand_slip_m": 0.00048,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 455,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 41.88,
+    "fk_minus_safe_p50": 7.12,
+    "fk_minus_safe_p95": 23.46
+   },
+   "start_err_mm": 24.94,
+   "replay_frames": {
+    "last": 805.5,
+    "n_demo": 796,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.08,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 13.78,
+     "p95": 41.79,
+     "max": 44.85
+    },
+    "rot_err_deg": {
+     "p50": 3.746,
+     "p95": 17.378,
+     "max": 19.085
+    },
+    "worst_window_t_s": 18.4,
+    "n_samples": 2219,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d37_s0.5",
+   "demo": 37,
+   "name": "2026-10-01T21-38-08.447Z_86726_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.378293,
+     0.460895,
+     0.040269,
+     -1.53872,
+     1.064902,
+     1.351854,
+     1.788634
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.613011,
+     0.074871,
+     0.35229,
+     0.58069,
+     -0.812805,
+     -0.041011,
+     0.021596
+    ],
+    "home_xyz": [
+     0.613011,
+     0.074871,
+     0.35229
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.598875
+    ],
+    "hand_gap_m": 0.035354,
+    "w0": 0.07845361530780792,
+    "anchor_dz_m": 0.01,
+    "n_frames": 771,
+    "T_y_s": 110.5
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 73.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d37_s0.5/work/session_20261025_191857",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.6,
+    "total_s": 73.26,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.609,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.598875
+     ],
+     "hand_gap_m": 0.035354
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.5988749999999998
+     ],
+     "hand_gap_m": 0.035354,
+     "t_mono": 7517.334528702
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d37_s0.5/work/session_20261025_191857/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 46.31676711199998,
+   "policy_calls": 82,
+   "clamp_count": 16,
+   "chunk_scale_max": 1.1225283020923866,
+   "workspace_contacts": 43,
+   "settle_waits": 58,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.959,
+    "loop_p99_ms_max": 15.35
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4782,
+    "step_pos": 0,
+    "step_rot": 16,
+    "ok": 4440,
+    "nan": 0,
+    "cone_fraction": 0.518
+   },
+   "F_ext_max": 11.33,
+   "pad_table": 1,
+   "pad_table_max_force_n": 1.19,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0372,
+    "grasped_fraction": 0.421,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 15.322,
+    "grasp_t_s": 10.851,
+    "max_lift_m": 0.23708,
+    "slip_m": 0.00057,
+    "in_hand_slip_m": 0.00012,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 384,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 62.65,
+    "fk_minus_safe_p50": 6.85,
+    "fk_minus_safe_p95": 24.88
+   },
+   "start_err_mm": 38.02,
+   "replay_frames": {
+    "last": 780.5,
+    "n_demo": 771,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 15.08,
+     "p95": 64.8,
+     "max": 69.88
+    },
+    "rot_err_deg": {
+     "p50": 4.337,
+     "p95": 19.033,
+     "max": 20.364
+    },
+    "worst_window_t_s": 13.92,
+    "n_samples": 2145,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d38_s0.5",
+   "demo": 38,
+   "name": "2026-10-01T21-38-26.148Z_47931_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.528779,
+     0.599447,
+     0.121132,
+     -1.344857,
+     1.101082,
+     1.309492,
+     1.878806
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.651086,
+     0.010965,
+     0.369482,
+     0.610422,
+     -0.792074,
+     8.3e-05,
+     -0.001936
+    ],
+    "home_xyz": [
+     0.651086,
+     0.010965,
+     0.369482
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.527238
+    ],
+    "hand_gap_m": 0.035012,
+    "w0": 0.07811234891414642,
+    "anchor_dz_m": 0.01,
+    "n_frames": 825,
+    "T_y_s": 117.0
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 74.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d38_s0.5/work/session_20261025_194407",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 10.04,
+    "total_s": 74.29,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 11.052,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.527238
+     ],
+     "hand_gap_m": 0.035012
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.5272380000000003
+     ],
+     "hand_gap_m": 0.035012,
+     "t_mono": 9024.091684519
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d38_s0.5/work/session_20261025_194407/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 50.90947533000144,
+   "policy_calls": 88,
+   "clamp_count": 66,
+   "chunk_scale_max": 1.29406990263354,
+   "workspace_contacts": 43,
+   "settle_waits": 64,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.991,
+    "loop_p99_ms_max": 15.59
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4867,
+    "step_pos": 20,
+    "step_rot": 46,
+    "ok": 5312,
+    "nan": 0,
+    "cone_fraction": 0.475
+   },
+   "F_ext_max": 13.06,
+   "pad_table": 2,
+   "pad_table_max_force_n": 3.92,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0353,
+    "grasped_fraction": 0.404,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 18.1901,
+    "grasp_t_s": 12.5593,
+    "max_lift_m": 0.25665,
+    "slip_m": 0.00218,
+    "in_hand_slip_m": 0.00105,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 456,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 38.44,
+    "fk_minus_safe_p50": 6.88,
+    "fk_minus_safe_p95": 25.94
+   },
+   "start_err_mm": 52.33,
+   "replay_frames": {
+    "last": 834.5,
+    "n_demo": 825,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.07,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 14.67,
+     "p95": 44.76,
+     "max": 53.47
+    },
+    "rot_err_deg": {
+     "p50": 5.67,
+     "p95": 19.816,
+     "max": 20.187
+    },
+    "worst_window_t_s": 16.82,
+    "n_samples": 2370,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "timeout_fault": null,
+   "attempts": 1,
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d39_s0.5",
+   "demo": 39,
+   "name": "2026-10-01T21-38-44.684Z_88442_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.606409,
+     0.646304,
+     0.21848,
+     -1.194068,
+     1.174768,
+     1.226832,
+     2.0152
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.658197,
+     0.004949,
+     0.444868,
+     0.652135,
+     -0.75808,
+     -0.005799,
+     -0.000871
+    ],
+    "home_xyz": [
+     0.658197,
+     0.004949,
+     0.444868
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.65696
+    ],
+    "hand_gap_m": 0.036868,
+    "w0": 0.07996825873851776,
+    "anchor_dz_m": 0.01,
+    "n_frames": 727,
+    "T_y_s": 105.3
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 71.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d39_s0.5/work/session_20261025_194412",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 11.4,
+    "total_s": 71.26,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 12.407,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.65696
+     ],
+     "hand_gap_m": 0.036868
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.65696
+     ],
+     "hand_gap_m": 0.036868,
+     "t_mono": 9030.494339843
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d39_s0.5/work/session_20261025_194412/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 45.451195832998565,
+   "policy_calls": 78,
+   "clamp_count": 19,
+   "chunk_scale_max": 1.270750072247051,
+   "workspace_contacts": 40,
+   "settle_waits": 52,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.996,
+    "loop_p99_ms_max": 5.03
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4443,
+    "step_pos": 3,
+    "step_rot": 16,
+    "ok": 4580,
+    "nan": 0,
+    "cone_fraction": 0.491
+   },
+   "F_ext_max": 10.71,
+   "pad_table": 2,
+   "pad_table_max_force_n": 10.71,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.037,
+    "grasped_fraction": 0.397,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 16.2473,
+    "grasp_t_s": 11.8974,
+    "max_lift_m": 0.24346,
+    "slip_m": 0.00078,
+    "in_hand_slip_m": 7e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 407,
+    "rate_hz": 25.02,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 58.16,
+    "fk_minus_safe_p50": 8.39,
+    "fk_minus_safe_p95": 27.78
+   },
+   "start_err_mm": 73.29,
+   "replay_frames": {
+    "last": 736.5,
+    "n_demo": 727,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 18.87,
+     "p95": 68.02,
+     "max": 75.49
+    },
+    "rot_err_deg": {
+     "p50": 8.104,
+     "p95": 21.572,
+     "max": 22.103
+    },
+    "worst_window_t_s": 14.32,
+    "n_samples": 2096,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "timeout_fault": null,
+   "attempts": 1,
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d40_s0.5",
+   "demo": 40,
+   "name": "2026-10-01T21-39-04.171Z_18798_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.572207,
+     0.588881,
+     0.156174,
+     -1.255847,
+     1.119841,
+     1.217697,
+     1.940025
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.639896,
+     0.00398,
+     0.426629,
+     0.621067,
+     -0.783403,
+     -0.023575,
+     -0.000626
+    ],
+    "home_xyz": [
+     0.639896,
+     0.00398,
+     0.426629
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.454885
+    ],
+    "hand_gap_m": 0.037733,
+    "w0": 0.08083271235227585,
+    "anchor_dz_m": 0.01,
+    "n_frames": 663,
+    "T_y_s": 97.5
+   },
+   "slot": 2,
+   "launcher_rc": 0,
+   "wall_s": 69.2,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d40_s0.5/work/session_20261025_194417",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.28,
+    "total_s": 68.77,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.285,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.454885
+     ],
+     "hand_gap_m": 0.037733
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.454885
+     ],
+     "hand_gap_m": 0.037733,
+     "t_mono": 9036.40973679
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d40_s0.5/work/session_20261025_194417/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 42.04316545399888,
+   "policy_calls": 73,
+   "clamp_count": 74,
+   "chunk_scale_max": 1.3805921028775887,
+   "workspace_contacts": 39,
+   "settle_waits": 50,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 3.82
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4409,
+    "step_pos": 9,
+    "step_rot": 65,
+    "ok": 3972,
+    "nan": 0,
+    "cone_fraction": 0.521
+   },
+   "F_ext_max": 4.14,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0377,
+    "grasped_fraction": 0.408,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 15.3259,
+    "grasp_t_s": 10.4464,
+    "max_lift_m": 0.27864,
+    "slip_m": 0.00072,
+    "in_hand_slip_m": 0.00026,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 384,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 53.86,
+    "fk_minus_safe_p50": 7.0,
+    "fk_minus_safe_p95": 30.16
+   },
+   "start_err_mm": 57.61,
+   "replay_frames": {
+    "last": 672.5,
+    "n_demo": 663,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.09,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 21.46,
+     "p95": 57.75,
+     "max": 59.0
+    },
+    "rot_err_deg": {
+     "p50": 9.009,
+     "p95": 24.345,
+     "max": 25.464
+    },
+    "worst_window_t_s": 13.4,
+    "n_samples": 1918,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "timeout_fault": null,
+   "attempts": 1,
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d41_s0.5",
+   "demo": 41,
+   "name": "2026-10-01T21-39-22.626Z_49242_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.629683,
+     0.672364,
+     0.234327,
+     -1.149297,
+     1.151856,
+     1.18976,
+     2.043874
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.651257,
+     -0.0065,
+     0.445887,
+     0.650273,
+     -0.75957,
+     -0.007124,
+     0.012182
+    ],
+    "home_xyz": [
+     0.651257,
+     -0.0065,
+     0.445887
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.588736
+    ],
+    "hand_gap_m": 0.037559,
+    "w0": 0.08065858483314514,
+    "anchor_dz_m": 0.01,
+    "n_frames": 647,
+    "T_y_s": 94.9
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 66.0,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d41_s0.5/work/session_20261025_194522",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 10.9,
+    "total_s": 65.7,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 11.914,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.588736
+     ],
+     "hand_gap_m": 0.037559
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.588736
+     ],
+     "hand_gap_m": 0.037559,
+     "t_mono": 9099.760892345
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d41_s0.5/work/session_20261025_194522/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 40.432918452001104,
+   "policy_calls": 71,
+   "clamp_count": 57,
+   "chunk_scale_max": 1.795385662155798,
+   "workspace_contacts": 45,
+   "settle_waits": 44,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.987,
+    "loop_p99_ms_max": 7.96
+   },
+   "safety": {
+    "box": 0,
+    "cone": 5155,
+    "step_pos": 7,
+    "step_rot": 50,
+    "ok": 3019,
+    "nan": 0,
+    "cone_fraction": 0.626
+   },
+   "F_ext_max": 0.0,
+   "pad_table": 0,
+   "pad_table_max_force_n": 0.0,
+   "hand": {
+    "gap_min_m": -0.0001,
+    "gap_max_m": 0.0376,
+    "grasped_fraction": 0.0,
+    "modes": [
+     "grasping",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": false,
+    "reason": "ended_undecided",
+    "t_success_s": null,
+    "grasp_t_s": null,
+    "max_lift_m": 0.0,
+    "slip_m": 0.0,
+    "in_hand_slip_m": null,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 1010,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 102.58,
+    "fk_minus_safe_p50": 5.89,
+    "fk_minus_safe_p95": 28.88
+   },
+   "start_err_mm": 72.39,
+   "replay_frames": {
+    "last": 656.5,
+    "n_demo": 647,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.01,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 35.79,
+     "p95": 132.44,
+     "max": 139.4
+    },
+    "rot_err_deg": {
+     "p50": 8.782,
+     "p95": 24.98,
+     "max": 27.481
+    },
+    "worst_window_t_s": 5.68,
+    "n_samples": 1853,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "timeout_fault": null,
+   "attempts": 1,
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d42_s0.5",
+   "demo": 42,
+   "name": "2026-10-01T21-39-39.176Z_59397_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.645536,
+     0.782867,
+     0.277946,
+     -0.984025,
+     1.084101,
+     1.188388,
+     2.07863
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.667441,
+     -0.025946,
+     0.431632,
+     0.633961,
+     -0.773266,
+     -0.010748,
+     0.00606
+    ],
+    "home_xyz": [
+     0.667441,
+     -0.025946,
+     0.431632
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.399372
+    ],
+    "hand_gap_m": 0.035817,
+    "w0": 0.0789170190691948,
+    "anchor_dz_m": 0.01,
+    "n_frames": 803,
+    "T_y_s": 114.4
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 74.0,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d42_s0.5/work/session_20261025_194524",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.51,
+    "total_s": 73.7,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.512,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.399372
+     ],
+     "hand_gap_m": 0.035817
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.399372
+     ],
+     "hand_gap_m": 0.035817,
+     "t_mono": 9103.514558543
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d42_s0.5/work/session_20261025_194524/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 46.808108241999435,
+   "policy_calls": 86,
+   "clamp_count": 16,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 43,
+   "settle_waits": 57,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 2.56
+   },
+   "safety": {
+    "box": 0,
+    "cone": 4447,
+    "step_pos": 1,
+    "step_rot": 15,
+    "ok": 4780,
+    "nan": 0,
+    "cone_fraction": 0.481
+   },
+   "F_ext_max": 3.84,
+   "pad_table": 2,
+   "pad_table_max_force_n": 2.27,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0392,
+    "grasped_fraction": 0.441,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 17.1914,
+    "grasp_t_s": 11.9217,
+    "max_lift_m": 0.20688,
+    "slip_m": 0.00031,
+    "in_hand_slip_m": 0.00029,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 431,
+    "rate_hz": 25.01,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 47.68,
+    "fk_minus_safe_p50": 7.17,
+    "fk_minus_safe_p95": 26.61
+   },
+   "start_err_mm": 64.08,
+   "replay_frames": {
+    "last": 812.5,
+    "n_demo": 803,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 15.26,
+     "p95": 56.2,
+     "max": 65.17
+    },
+    "rot_err_deg": {
+     "p50": 4.328,
+     "p95": 18.528,
+     "max": 18.961
+    },
+    "worst_window_t_s": 15.88,
+    "n_samples": 2168,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "timeout_fault": null,
+   "attempts": 1,
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  },
+  {
+   "run": "d43_s0.5",
+   "demo": 43,
+   "name": "2026-10-01T21-39-59.746Z_98455_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.552602,
+     0.784709,
+     0.249919,
+     -0.993673,
+     1.025841,
+     1.281028,
+     2.013917
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.690169,
+     0.012539,
+     0.396916,
+     0.598599,
+     -0.800488,
+     -0.029508,
+     -0.005255
+    ],
+    "home_xyz": [
+     0.690169,
+     0.012539,
+     0.396916
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.5276
+    ],
+    "hand_gap_m": 0.036097,
+    "w0": 0.07919705659151077,
+    "anchor_dz_m": 0.01,
+    "n_frames": 775,
+    "T_y_s": 110.5
+   },
+   "slot": 0,
+   "launcher_rc": 0,
+   "wall_s": 134.6,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d43_s0.5/work/session_20261025_192213",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.43,
+    "total_s": 134.27,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.44,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.5276
+     ],
+     "hand_gap_m": 0.036097
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.5276
+     ],
+     "hand_gap_m": 0.036097,
+     "t_mono": 7712.597053614
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d43_s0.5/work/session_20261025_192213/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "exception:SettleTimeoutError",
+   "episode_duration_s": 33.576463854000394,
+   "policy_calls": 56,
+   "clamp_count": 22,
+   "chunk_scale_max": 1.0,
+   "workspace_contacts": 22,
+   "settle_waits": 44,
+   "settle_timeouts": 3,
+   "policy_exceptions": [
+    "SettleTimeoutError('arm not settled after 1.0 s (backlog 0.002613451045849886, track_dev 0.0083 m)')"
+   ],
+   "holds": [
+    "exception: SettleTimeoutError"
+   ],
+   "reflexes": [
+    "cartesian_reflex: |O_F_ext2| 20.1 > 20.0"
+   ],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.998,
+    "loop_p99_ms_max": 2.36
+   },
+   "safety": {
+    "box": 0,
+    "cone": 2611,
+    "step_pos": 4,
+    "step_rot": 18,
+    "ok": 4006,
+    "nan": 0,
+    "cone_fraction": 0.393
+   },
+   "F_ext_max": 15.75,
+   "pad_table": 2,
+   "pad_table_max_force_n": 11.97,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0361,
+    "grasped_fraction": 0.589,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 16.7778,
+    "grasp_t_s": 11.9373,
+    "max_lift_m": 0.23968,
+    "slip_m": 0.00032,
+    "in_hand_slip_m": 8e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 420,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 43.41,
+    "fk_minus_safe_p50": 10.72,
+    "fk_minus_safe_p95": 26.03
+   },
+   "start_err_mm": 46.53,
+   "replay_frames": {
+    "last": 588.0,
+    "n_demo": 775,
+    "completed": false
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.06,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 19.39,
+     "p95": 46.53,
+     "max": 49.34
+    },
+    "rot_err_deg": {
+     "p50": 4.685,
+     "p95": 16.259,
+     "max": 16.841
+    },
+    "worst_window_t_s": 14.98,
+    "n_samples": 1679,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "reflex",
+   "final": true
+  },
+  {
+   "run": "d44_s0.5",
+   "demo": 44,
+   "name": "2026-10-01T21-40-19.166Z_83997_firstreal_demonstration",
+   "speed": 0.5,
+   "stage1_infeasible": false,
+   "stage1_reason": null,
+   "plan": {
+    "q_init": [
+     -0.423396,
+     0.509125,
+     0.066473,
+     -1.371118,
+     1.043016,
+     1.38172,
+     1.881297
+    ],
+    "ik_ok": true,
+    "start_tcp_pose7": [
+     0.653904,
+     0.040169,
+     0.379515,
+     0.553683,
+     -0.832401,
+     -0.019337,
+     -0.013003
+    ],
+    "home_xyz": [
+     0.653904,
+     0.040169,
+     0.379515
+    ],
+    "grasp_tcp_xyz": [
+     0.7,
+     0.266667,
+     0.02
+    ],
+    "eraser_xy_yaw": [
+     0.7,
+     0.266667,
+     -1.420673
+    ],
+    "hand_gap_m": 0.038728,
+    "w0": 0.08182789385318756,
+    "anchor_dz_m": 0.01,
+    "n_frames": 755,
+    "T_y_s": 107.9
+   },
+   "slot": 1,
+   "launcher_rc": 0,
+   "wall_s": 72.5,
+   "fingerprint": "52a32d42f68ec56b",
+   "session": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d44_s0.5/work/session_20261025_192340",
+   "launcher": {
+    "exit_code": 0,
+    "exit_reason": "quit",
+    "ready_s": 12.36,
+    "total_s": 72.11,
+    "sender_died": null
+   },
+   "sim_reset": {
+    "t": 13.367,
+    "kind": "sim_reset",
+    "data": {
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.420673
+     ],
+     "hand_gap_m": 0.038728
+    },
+    "reply": {
+     "ok": true,
+     "eraser_xy_yaw": [
+      0.7,
+      0.266667,
+      -1.420673
+     ],
+     "hand_gap_m": 0.038728,
+     "t_mono": 7799.484747317
+    }
+   },
+   "episode": "/tmp/claude-1000/-home-ruben-Capstone/299e5dab-9afb-41ab-aa6c-ac52f8fb5552/scratchpad/a8/c05/runs/d44_s0.5/work/session_20261025_192340/task/episodes/franka_deploy/block_raise/run/episode_000000",
+   "label": "y",
+   "episode_duration_s": 45.423283029999766,
+   "policy_calls": 82,
+   "clamp_count": 82,
+   "chunk_scale_max": 1.0794380620673438,
+   "workspace_contacts": 27,
+   "settle_waits": 60,
+   "settle_timeouts": 0,
+   "policy_exceptions": [],
+   "holds": [
+    "stop key 'y' (file)"
+   ],
+   "reflexes": [],
+   "rt": {
+    "rt_resyncs": 0,
+    "realtime_factor_min": 0.996,
+    "loop_p99_ms_max": 5.81
+   },
+   "safety": {
+    "box": 0,
+    "cone": 2805,
+    "step_pos": 12,
+    "step_rot": 70,
+    "ok": 6156,
+    "nan": 0,
+    "cone_fraction": 0.31
+   },
+   "F_ext_max": 6.57,
+   "pad_table": 4,
+   "pad_table_max_force_n": 1.33,
+   "hand": {
+    "gap_min_m": 0.0116,
+    "gap_max_m": 0.0387,
+    "grasped_fraction": 0.411,
+    "modes": [
+     "grasping",
+     "holding",
+     "idle",
+     "moving"
+    ]
+   },
+   "sim_gt": {
+    "success": true,
+    "reason": "lift_held",
+    "t_success_s": 16.2535,
+    "grasp_t_s": 10.8927,
+    "max_lift_m": 0.24671,
+    "slip_m": 0.00251,
+    "in_hand_slip_m": 7e-05,
+    "knocked_over": false,
+    "reflex": null,
+    "n_arm_table_contacts": 0,
+    "n_samples": 407,
+    "rate_hz": 25.0,
+    "error": null
+   },
+   "err_split_mm": {
+    "safe_minus_cmd_p95": 27.49,
+    "fk_minus_safe_p50": 8.92,
+    "fk_minus_safe_p95": 27.31
+   },
+   "start_err_mm": 24.99,
+   "replay_frames": {
+    "last": 764.5,
+    "n_demo": 755,
+    "completed": true
+   },
+   "track": {
+    "track_fraction": 0.0,
+    "track_ok": false,
+    "lag_s": 0.04,
+    "pos_fraction": 0.0,
+    "rot_fraction": 0.0,
+    "pos_err_mm": {
+     "p50": 15.25,
+     "p95": 24.3,
+     "max": 26.5
+    },
+    "rot_err_deg": {
+     "p50": 4.231,
+     "p95": 20.374,
+     "max": 20.728
+    },
+    "worst_window_t_s": 14.36,
+    "n_samples": 2091,
+    "window_s": 5.0
+   },
+   "track_ok": false,
+   "track_fraction": 0.0,
+   "worst_window": {
+    "pad_table": false,
+    "safety_clamp": true,
+    "hand": false
+   },
+   "system_fault": false,
+   "fault_reason": null,
+   "cause": "safety_clamp",
+   "final": true
+  }
+ ],
+ "checks": [
+  {
+   "run": "d00_s0.5",
+   "validate_rc": 1,
+   "validate_errors": [
+    "checksums.json incomplete",
+    "no camera video (*.zarr/*.mp4)"
+   ],
+   "validate_ok_except_sim_known": true,
+   "validate_tail": [
+    "     - checksums.json incomplete",
+    "     - no camera video (*.zarr/*.mp4)",
+    "0/1 episodes valid"
+   ],
+   "eval_rc": 0,
+   "eval_tail": [
+    "{\"n_episodes\": 1, \"outcomes\": {\"success\": 1, \"failure\": 0, \"unlabeled\": 0, \"system_fault\": 0}, \"success_rate\": {\"k\": 1, \"n\": 1, \"p\": 1.0, \"ci95\": [0.20654931437723745, 1.0]}, \"similarity_ratio_median\": 0.5104841809664129}"
+   ]
+  },
+  {
+   "run": "d01_s0.5",
+   "validate_rc": 1,
+   "validate_errors": [
+    "checksums.json incomplete",
+    "no camera video (*.zarr/*.mp4)"
+   ],
+   "validate_ok_except_sim_known": true,
+   "validate_tail": [
+    "     - checksums.json incomplete",
+    "     - no camera video (*.zarr/*.mp4)",
+    "0/1 episodes valid"
+   ],
+   "eval_rc": 0,
+   "eval_tail": [
+    "{\"n_episodes\": 1, \"outcomes\": {\"success\": 1, \"failure\": 0, \"unlabeled\": 0, \"system_fault\": 0}, \"success_rate\": {\"k\": 1, \"n\": 1, \"p\": 1.0, \"ci95\": [0.20654931437723745, 1.0]}, \"similarity_ratio_median\": 0.32092543489869974}"
+   ]
+  },
+  {
+   "run": "d02_s0.5",
+   "validate_rc": 1,
+   "validate_errors": [
+    "checksums.json incomplete",
+    "no camera video (*.zarr/*.mp4)"
+   ],
+   "validate_ok_except_sim_known": true,
+   "validate_tail": [
+    "     - checksums.json incomplete",
+    "     - no camera video (*.zarr/*.mp4)",
+    "0/1 episodes valid"
+   ],
+   "eval_rc": 0,
+   "eval_tail": [
+    "{\"n_episodes\": 1, \"outcomes\": {\"success\": 1, \"failure\": 0, \"unlabeled\": 0, \"system_fault\": 0}, \"success_rate\": {\"k\": 1, \"n\": 1, \"p\": 1.0, \"ci95\": [0.20654931437723745, 1.0]}, \"similarity_ratio_median\": 0.5763038233578122}"
+   ]
+  }
+ ]
+}

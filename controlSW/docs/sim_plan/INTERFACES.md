@@ -111,3 +111,20 @@ Until B1 lands, Track A reads a fixture dict with the same group layout (`franka
 **I-CLI (A0).** `franka_sim/__main__.py` holds a subcommand registry, `franka_sim.cli.register(name, add_parser_fn, main_fn)`. Track B registers `eval` without editing A's files (the same pattern as `sensor_rig/sim/cli.py`).
 
 **I-POLICY (existing).** robotmq server topics `policy_config`, `policy_reset` (< 0.5 s), `policy_prompt`, `policy_inference` (K = 16 steps of pos3 + rot6d + width, relative to the last observed pose) and `export_recorded_data`. The contract test is `tools/policy_contract.py` (B3).
+
+**I-CAMPAIGN (A8).** `franka_sim/campaign.py` (RE env; launches full sim stacks).
+```python
+def run_campaign(config, profile, stage1_json, demos, speeds, out_dir, sets=(), jobs=1) -> dict
+    # demos "all" | "0,3,7" | [int]; speeds "0.5,1.0" | [float]; sets: extra station overrides for every run.
+    # Returns the campaign.json content (also written to out_dir/campaign.json + campaign.txt). Resumable: rows in
+    # out_dir/rows/<run>.json with the same fingerprint are reused.
+```
+- `campaign.json` (schema `sim_campaign/v1`): `fingerprint`, `overrides` (stage1 station_sets + `tooling.F_T_TCP` = model TCP
+  + sets), `criteria` (= `criteria.stage1b`), `aggregates` per speed (`"0.5"`: n, system_faults, `track_ok {k, n, p, ci95}`
+  Wilson 95 %, reflexes, pad_table, sim_gt_success, causes, failing), `sessions`, `rows`.
+- Row (flat keys read by `eval/stage1b.py`): `run, demo, speed, stage1_infeasible, system_fault (bool), fault_reason,
+  track_ok, track_fraction, reflexes [str], pad_table (int onsets), pad_table_max_force_n, cause
+  (system_fault|reflex|pad_table|safety_clamp|hand|overshoot|null), session, episode, sim_gt {...}`, plus `track {...}`,
+  `plan {...}`, `hand`, `rt`, `clamp_count`, `settle_timeouts`, `F_ext_max`, `wall_s`.
+- CLI: `python -m franka_sim campaign --stage1 S --config deploy.yaml --profile sim-iphone --demos all --speed 0.5 --out DIR [--jobs N] [--set k=v]`.
+  Ports: `FD_TEST_PORT_OFFSET` (default 1000) + 100 x job slot.

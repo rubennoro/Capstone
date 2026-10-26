@@ -1,0 +1,53 @@
+Stage 1b campaign (sim_campaign/v1), profile sim-iphone, robot panda, fingerprint 52a32d42f68ec56b
+overrides: tooling.finger_adapter.extension_m=0.1 tooling.tcp_x_along_hand=-y tooling.F_T_TCP=[[-0.707106756, 0.707106806, 0.0, 0.0], [-0.707106806, -0.707106756, 0.0, 0.0], [0.0, 0.0, 1.0, 0.1973], [0.0, 0.0, 0.0, 1.0]] sensor.clock.latency_s.main=0.0 sensor.clock.latency_s.ultrawide=0.0
+criteria.stage1b: {"track_pos_m": 0.01, "track_rot_deg": 3, "track_ok_fraction_min": 0.9, "reflex_max": 0}; v_max 0.25 m/s; grasp height scene (anchor dz +0.010 m); jobs 3
+
+speed    n  inf  faults  track_ok        p   ci95            reflex(runs/total)  pad_table(runs/total)  gt_success  clamps  run_s(med)
+  0.5   45    2       0    3/43    0.070 [0.024, 0.186]       8/8                22/60              36/45      500    78.6
+
+run       demo  s1_feas  track   pos_p95mm  rot_p95deg  lag_s  reflex  pad_tbl  gt   grasp_s  F_ext_max  cause
+d00_s0.5     0  y        0.000       26.8        7.81   0.09       0        0  y    16.4783        2.6  safety_clamp
+d01_s0.5     1  y        0.000       25.9        7.54   0.08       0        0  y    20.9652        2.1  safety_clamp
+d02_s0.5     2  y        0.000       32.5        9.57   0.08       0        0  y    18.4395        4.9  safety_clamp
+d03_s0.5     3  y        0.000       28.3        8.27   0.08       0        0  y    15.2112       10.0  safety_clamp
+d04_s0.5     4  y        0.000       23.6        7.10   0.08       0        0  y    18.2295        0.7  safety_clamp
+d05_s0.5     5  y        0.000       26.7        7.80   0.07       0        0  y    21.1117        2.5  safety_clamp
+d06_s0.5     6  y        0.676       12.9        3.63   0.05       1        0  n    15.2308        5.8  reflex
+d07_s0.5     7  y        0.000       25.6        7.58   0.07       0        0  y     15.655        4.3  safety_clamp
+d08_s0.5     8  y        0.000       51.8       15.16   0.06       0        0  y    16.1549        2.1  safety_clamp
+d09_s0.5     9  y        0.000       49.2       14.39   0.06       0        0  y    16.2557        0.9  safety_clamp
+d10_s0.5    10  y        0.872        9.9        2.04   0.09       1        0  n    16.3865       83.9  reflex
+d11_s0.5    11  y        0.000       29.6        8.55   0.11       0        0  y    14.3185        5.6  safety_clamp
+d12_s0.5    12  y        0.484       10.6        3.22   0.11       0        0  y    13.9336        2.1  overshoot
+d13_s0.5    13  y        0.976        6.7        2.29   0.11       0        0  y    16.0058        6.3  
+d14_s0.5    14  y        0.716        7.9        2.57   0.09       0        1  y    13.9731        2.2  pad_table
+d15_s0.5    15  y        0.280       15.8        4.70   0.12       1        0  n          -        5.5  reflex
+d16_s0.5    16  y        1.000        6.3        2.05   0.09       0        0  y    16.2514        1.4  
+d17_s0.5    17  y        1.000        6.0        1.88   0.11       0        0  y     18.145        8.5  
+d18_s0.5    18  n        0.000      105.7       13.94   0.00       0       11  n          -       15.8  safety_clamp
+d19_s0.5    19  y        0.852        9.8        2.17   0.12       1        0  n    16.6685       83.9  reflex
+d20_s0.5    20  y        0.760        7.3        2.55   0.11       0        2  y    14.8213        2.8  overshoot
+d21_s0.5    21  y        0.000       25.2        7.20   0.10       0        2  y    12.0664        9.4  safety_clamp
+d22_s0.5    22  y        0.732       10.8        3.17   0.03       1        0  n    14.3195       90.0  reflex
+d23_s0.5    23  y        0.876        8.0        2.46   0.06       0        2  y    15.4651        3.3  safety_clamp
+d24_s0.5    24  y        0.884        8.8        2.57   0.07       0        4  y    16.0551        5.3  overshoot
+d25_s0.5    25  y        0.752        9.5        2.60   0.08       1        2  y    12.6875        5.1  reflex
+d26_s0.5    26  y        0.748       10.3        2.94   0.09       0        1  y    14.0678        8.6  overshoot
+d27_s0.5    27  y        0.000       18.2        6.22   0.04       0        2  y    15.4372        5.5  safety_clamp
+d28_s0.5    28  y        0.000       31.4        9.33   0.06       1        0  n    14.4518       27.9  reflex
+d29_s0.5    29  y        0.000       13.9        4.12   0.09       0        3  y    13.7649        4.5  safety_clamp
+d30_s0.5    30  y        0.348       12.5        3.66   0.09       0        1  y    13.3687        6.4  safety_clamp
+d31_s0.5    31  y        0.268       11.0        3.67   0.08       0        1  y    13.3534        5.1  safety_clamp
+d32_s0.5    32  n        0.000      167.2        3.44   0.11       0        5  n          -        4.1  safety_clamp
+d33_s0.5    33  y        0.632       10.5        3.21   0.07       0        4  y     12.558        5.0  safety_clamp
+d34_s0.5    34  y        0.872        8.2        2.48   0.10       0        3  y    12.5827       11.5  pad_table
+d35_s0.5    35  y        0.476        9.7        2.85   0.10       0        3  y    14.3844       12.3  safety_clamp
+d36_s0.5    36  y        0.000       41.8       17.38   0.08       0        0  y    13.9003        5.0  safety_clamp
+d37_s0.5    37  y        0.000       64.8       19.03   0.06       0        1  y     10.851       11.3  safety_clamp
+d38_s0.5    38  y        0.000       44.8       19.82   0.07       0        2  y    12.5593       13.1  safety_clamp
+d39_s0.5    39  y        0.000       68.0       21.57   0.06       0        2  y    11.8974       10.7  safety_clamp
+d40_s0.5    40  y        0.000       57.8       24.34   0.09       0        0  y    10.4464        4.1  safety_clamp
+d41_s0.5    41  y        0.000      132.4       24.98   0.01       0        0  n          -        0.0  safety_clamp
+d42_s0.5    42  y        0.000       56.2       18.53   0.06       0        2  y    11.9217        3.8  safety_clamp
+d43_s0.5    43  y        0.000       46.5       16.26   0.06       1        2  y    11.9373       15.8  reflex
+d44_s0.5    44  y        0.000       24.3       20.37   0.04       0        4  y    10.8927        6.6  safety_clamp
