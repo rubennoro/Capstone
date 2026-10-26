@@ -82,6 +82,21 @@ def load_station_spec(spec=None, robot: str | None = None):
     return load_station(spec)
 
 
+def _warn_tcp_mismatch(station, sm) -> None:
+    """Loud warning when the controller's F_T_TCP (the station config it receives) is not the model's pad TCP."""
+    from franka_sim.model import T_err, orthonormalize
+
+    st_F = station.get("tooling.F_T_TCP", None)
+    if st_F is None:
+        return
+    e_t, e_r = T_err(np.asarray(sm.F_T_TCP, float), orthonormalize(st_F))
+    sm.info["controller_F_T_TCP_deviation"] = {"mm": e_t * 1e3, "deg": e_r}
+    if e_t > 1e-3 or e_r > 0.1:
+        print(f"[mujoco] WARNING: the controller F_T_TCP differs from the sim's actual TCP (model.F_T_TCP) by "
+              f"{e_t * 1e3:.1f} mm / {e_r:.1f} deg: grasps will miss. Use franka_sim.model.derived_tcp(station).",
+              flush=True)
+
+
 class MuJoCoBackend(Backend):
     extra_topics: tuple = ("hand_cmd", "hand_state", "sim_reset", "sim_state")   # A5 I-HAND + A6 I-SIMSTATE
 
@@ -109,7 +124,8 @@ class MuJoCoBackend(Backend):
         self._cycles: list[float] = []
         self._lag_max = 0.0
         self._spw_max = 0
-        self.rt_resyncs = 0
+        self.rt_resyncs = 0                  # cumulative (campaign.py reads max - min)
+        self.rt_resyncs_win = 0              # per loop_stats window
         self._win = (time.monotonic(), 0.0)      # (wall, sim_t) at the last loop_stats
         self._viewer = None
         if viewer:
@@ -184,6 +200,7 @@ class MuJoCoBackend(Backend):
                 raise ValueError(f"MuJoCoBackend: home_O_T_EE is not reachable from home_q (IK err "
                                  f"{info['err_p'] * 1e3:.2f} mm / {np.degrees(info['err_r']):.2f} deg); set "
                                  f"backend.mujoco.q_init")
+        _warn_tcp_mismatch(station, sm)
         print(f"[mujoco] robot={sm.robot} station={dict(station.ids)} rate_hz={mj.get('rate_hz', 1000)} "
               f"q_init={np.round(np.asarray(q_init, float), 4).tolist()}", flush=True)
         ep = mj.get("state_endpoint", _UNSET)
@@ -215,11 +232,13 @@ class MuJoCoBackend(Backend):
         while self._run:
             now = time.monotonic()
             behind = (now - t0) * self.rate - k_done
+            lag_seen = behind * dt                     # recorded before a resync zeroes it (the stall is the point)
             if behind * dt > RESYNC_S:                 # far behind: drop the backlog instead of fast-forwarding
                 t0 = now - k_done * dt
                 behind = 0.0
                 with self._lock:
                     self.rt_resyncs += 1
+                    self.rt_resyncs_win += 1
             due = int(math.floor(behind))
             n = min(due, self.max_catchup)
             c0 = time.perf_counter()
@@ -255,7 +274,7 @@ class MuJoCoBackend(Backend):
                     if len(self._periods) > 20000:
                         del self._periods[:10000]
                         del self._cycles[:10000]
-                self._lag_max = max(self._lag_max, behind * dt)
+                self._lag_max = max(self._lag_max, lag_seen)
                 self._spw_max = max(self._spw_max, n)
             nxt = t0 + (k_done + 1) * dt
             time.sleep(max(0.0, nxt - time.monotonic()))
@@ -446,12 +465,13 @@ class MuJoCoBackend(Backend):
         with self._lock:
             p, c = np.array(self._periods), np.array(self._cycles)
             self._periods, self._cycles = [], []
-            lag, spw, rs = self._lag_max, self._spw_max, self.rt_resyncs
-            self._lag_max, self._spw_max = 0.0, 0
+            lag, spw, rs, rsw = self._lag_max, self._spw_max, self.rt_resyncs, self.rt_resyncs_win
+            self._lag_max, self._spw_max, self.rt_resyncs_win = 0.0, 0, 0
             sim_t = float(self._state["sim_t"])
         w0, s0 = self._win
         self._win = (now, sim_t)
         out = {"sim_lag_ms_max": lag * 1e3, "steps_per_wake_max": int(spw), "rt_resyncs": int(rs),
+               "rt_resyncs_window": int(rsw),
                "realtime_factor": (sim_t - s0) / (now - w0) if now > w0 else float("nan")}
         if p.size:
             out.update({"n": int(p.size), "p50_ms": float(np.percentile(p, 50) * 1e3),

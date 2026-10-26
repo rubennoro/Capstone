@@ -430,6 +430,14 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
             F_T_TCP = orthonormalize(st_F)
             info["F_T_TCP_source"] = "station"
     info.setdefault("F_T_TCP_source", "derived")
+    info["F_T_TCP_derived"] = F_T_TCP_derived.tolist()
+    # F_T_C_main (finding 3): a measured station camera pose (status not placeholder/hw, same gate as F_T_TCP) wins over the C_T_TCP derivation
+    st_C = tool.get("F_T_C_main")
+    st_C_prov = station.prov("tooling.F_T_C_main").status if st_C is not None else None
+    info["F_T_C_main_status"] = st_C_prov
+    F_T_C_given = None
+    if st_C is not None and st_C_prov not in ("placeholder", "hw"):
+        F_T_C_given = orthonormalize(st_C)
     F_T_EE = np.array(robot["F_T_NE"], float) @ np.array(robot["NE_T_EE"], float)
     EE_T_TCP = inv_T(F_T_EE) @ F_T_TCP
 
@@ -448,7 +456,23 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
     C_T_TCP = orthonormalize(C_T_TCP_raw)
     info["C_T_TCP_orthonormalize_deg"] = T_err(make_T(C_T_TCP_raw[:3, :3] / np.linalg.norm(C_T_TCP_raw[:3, 0])),
                                                C_T_TCP)[1]
-    F_T_C = F_T_TCP @ inv_T(C_T_TCP)
+    if F_T_C_given is not None:
+        F_T_C = F_T_C_given
+        F_T_TCP_cam = F_T_C @ C_T_TCP
+        e_t, e_r = T_err(F_T_TCP, F_T_TCP_cam)
+        info["F_T_C_main_source"] = "station"
+        info["F_T_TCP_vs_camera_deviation"] = {"mm": e_t * 1e3, "deg": e_r}
+        print(f"[model] tooling.F_T_C_main (status {info['F_T_C_main_status']}) is used for the cameras; F_T_TCP = "
+              f"F_T_C_main @ C_T_TCP, pad-centre TCP differs by {e_t * 1e3:.2f} mm / {e_r:.2f} deg", flush=True)
+        F_T_TCP = F_T_TCP_cam
+        info["F_T_TCP_source"] = "F_T_C_main"
+        EE_T_TCP = inv_T(F_T_EE) @ F_T_TCP
+        for s_ in tb.sites:
+            if s_.name == "tcp":
+                s_.pos, s_.quat = F_T_TCP[:3, 3], mat_to_quat(F_T_TCP[:3, :3])
+    else:
+        F_T_C = F_T_TCP @ inv_T(C_T_TCP)
+        info["F_T_C_main_source"] = "derived (F_T_TCP @ inv(C_T_TCP))"
     uw_raw = tool.get("C_main_T_C_uw")
     C_T_uw = UW_PLACEHOLDER if uw_raw is None else pose_to_T(uw_raw)
     info["C_main_T_C_uw_source"] = "placeholder (12 mm along +y, parallel)" if uw_raw is None else "station"
@@ -560,6 +584,20 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
     }
     return SimModel(model=model, spec=arm, names=names, F_T_TCP=F_T_TCP, EE_T_TCP=EE_T_TCP, limits=limits,
                     robot=str(robot["id"]), station_fingerprint=station.fingerprint(), info=info)
+
+
+_DERIVED_CACHE: dict = {}
+
+
+def derived_tcp(station: Station) -> np.ndarray:
+    """I-TCP: the 4x4 F_T_TCP of the model chain flange -> hand -> extended pads (the pad-centre midpoint, with
+    ``extension_m`` and ``tcp_x_along_hand`` honoured). The single source of the sim's TCP: ignores any station
+    F_T_TCP / F_T_C_main. Cached per station fingerprint (one hand-only compile)."""
+    key = station.fingerprint()
+    if key not in _DERIVED_CACHE:
+        sm = build_model(station, with_scene=False)
+        _DERIVED_CACHE[key] = np.array(sm.info["F_T_TCP_derived"], float)
+    return _DERIVED_CACHE[key].copy()
 
 
 # -------------------------------------------------------------------------------------------- frames / reports

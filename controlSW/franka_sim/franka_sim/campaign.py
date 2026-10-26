@@ -29,8 +29,9 @@ when |dp| <= track_pos_m and the rotation error <= track_rot_deg. ``track_fracti
 ``track_ok`` = track_fraction >= track_ok_fraction_min.
 
 DEVIATIONS (recorded in campaign.json ``overrides``):
-  * The controller's ``tooling.F_T_TCP`` is a placeholder 13 cm / 45 deg away from the model TCP that Stage 1 used;
-    the replay is relative to the controller TCP, so the run sets ``tooling.F_T_TCP`` = the model's derived F_T_TCP.
+  * The controller's ``tooling.F_T_TCP`` is a placeholder 131 mm / 135 deg away from the model TCP that
+    Stage 1 used for the -y design at extension 0.10 (224 mm at extension 0; 47 deg for +y); the replay is relative to
+    the controller TCP, so the run sets ``tooling.F_T_TCP`` = ``model.derived_tcp(station)`` (I-TCP).
   * ``grasp_height: scene`` (default) moves the Stage 1 anchor up so the grasp TCP is at
     ``scene.grasp_tcp_height_m(sm, station)`` (the A6 pad-clearance rule, 0.02 m) instead of the station's 0.01 m
     placeholder (pads 5 mm into the table); the start q is re-solved by IK from the Stage 1 start q.
@@ -670,6 +671,51 @@ def fmt_list(v) -> str:
     return "[" + ",".join(repr(float(x)) for x in v) + "]"
 
 
+def process_tree(root: int) -> list[int]:
+    """root pid + all its descendants (by /proc ppid), including children that left the process group."""
+    kids: dict[int, list[int]] = {}
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                with open(f"/proc/{d}/stat") as f:
+                    ppid = int(f.read().rsplit(")", 1)[1].split()[1])
+            except (OSError, ValueError, IndexError):
+                continue
+            kids.setdefault(ppid, []).append(int(d))
+    out, todo = [], [root]
+    while todo:
+        pid = todo.pop()
+        out.append(pid)
+        todo += kids.get(pid, [])
+    return out
+
+
+def kill_cleanup_shm(pids) -> list[str]:
+    """Remove the robotmq segments (rmq_<user>_<pid>_*) of the killed tree's pids that are dead now; live pids
+    (and every other process's segments) are left alone."""
+    import glob
+    import re
+
+    removed: list[str] = []
+    for pid in pids:
+        try:
+            os.kill(pid, 0)
+            continue                                  # still alive (or a recycled pid): not ours to clean
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            continue
+        for f in glob.glob(f"/dev/shm/rmq_*_{pid}_*"):      # then keep only rmq_<user>_<pid>_ (prefix-anchored)
+            m = re.match(r"rmq_[^_]+_(\d+)_", os.path.basename(f))
+            if m and int(m.group(1)) == pid:
+                try:
+                    os.remove(f)
+                    removed.append(os.path.basename(f))
+                except OSError:
+                    pass
+    return removed
+
+
 class Campaign:
     """Plans, runs and collects the campaign (``run_campaign`` is the functional entry point)."""
 
@@ -681,7 +727,7 @@ class Campaign:
         from franka_sim import frames as fr
         from franka_sim import scene as S
         from franka_sim.kinematics import Kin
-        from franka_sim.model import build_model
+        from franka_sim.model import build_model, derived_tcp
         from franka_sim.stage1_replay import load_demos
 
         self.log = log or (lambda msg: print(msg, flush=True))
@@ -714,7 +760,9 @@ class Campaign:
         self.v_max = task_limits(cfg, st)[0]
         self.lookahead_s = float(st.task_args().get("lookahead_s", 0.1))
         self.sm = build_model(st)
-        self.F_T_TCP = np.asarray(self.sm.F_T_TCP, float)
+        self.F_T_TCP = np.asarray(self.sm.F_T_TCP, float)       # == derived_tcp(st) unless F_T_C_main is measured
+        if self.sm.info.get("F_T_TCP_source") != "F_T_C_main":
+            assert np.allclose(self.F_T_TCP, derived_tcp(st), atol=1e-9)
         self.kin_tcp = Kin(self.sm, "tcp")
         top = float(st.get("scene.table.top_z_base_m"))
         h_s1 = float(self.s1.get("grasp_tcp_height_m", st.get("scene.grasp_tcp_height_m")))
@@ -861,8 +909,10 @@ class Campaign:
                 try:
                     rc = proc.wait(20)
                 except subprocess.TimeoutExpired:
+                    tree = process_tree(proc.pid)
                     os.killpg(proc.pid, signal.SIGKILL)
                     rc = proc.wait(10)
+                    fault += f"; SIGKILL, removed {len(kill_cleanup_shm(tree))} shm segments"
             stop.set()
         wall = time.monotonic() - t0
         row = {"run": p["run"], "demo": demo, "name": p["name"], "speed": float(speed),

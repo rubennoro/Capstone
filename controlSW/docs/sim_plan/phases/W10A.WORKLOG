@@ -1,0 +1,8 @@
+W10A fix round, Track A executor
+- model.py: info["F_T_TCP_derived"]; derived_tcp(station) (cached per fingerprint); F_T_C_main branch (non-null and status != placeholder wins; F_T_TCP = F_T_C_main @ C_T_TCP; tcp site moved; logged)
+- backend.py: _warn_tcp_mismatch in from_config; lag recorded before resync zeroing; rt_resyncs_window added (rt_resyncs stays cumulative: campaign.py:577 reads max-min)
+- campaign.py: F_T_TCP = derived_tcp(st) (override kept); docstring 131 mm / 135 deg; SIGKILL path: process_tree + kill_cleanup_shm (dead pids only)
+- tests/test_w10a_fix.py added; INTERFACES.md I-TCP appended
+- Finding 4 (tag off printed finger at ext 0.10 / behind flange at ext 0): CAD input for the user, not changed.
+- Re-review R1: one status gate (placeholder, hw excluded) for F_T_C_main and F_T_TCP; _warn_tcp_mismatch compares against sm.F_T_TCP; campaign overrides with sm.F_T_TCP (asserts == derived_tcp unless F_T_C_main used). Test: hw ignored, measured used + warning vs controller on derived_tcp.
+- Re-review R2: kill_cleanup_shm matches rmq_<user>_<pid>_ prefix-anchored (own glob+regex; dryrun.py untouched). Test with embedded dead pid kept.
