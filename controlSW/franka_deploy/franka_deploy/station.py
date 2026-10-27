@@ -16,6 +16,7 @@ import copy
 import fnmatch
 import hashlib
 import json
+import math
 import re
 import sys
 from collections.abc import Mapping
@@ -243,6 +244,10 @@ def _is_num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
+def _is_finite(v) -> bool:
+    return _is_num(v) and math.isfinite(v)
+
+
 def _finger_adapter_problems(tag: str, fa) -> list[str]:
     """Finger-kit keys of tooling.finger_adapter (all optional, so old files stay valid). No path-existence check:
     the loader in franka_sim does that (the Jetson has no assets)."""
@@ -258,16 +263,28 @@ def _finger_adapter_problems(tag: str, fa) -> list[str]:
             errs.append(f"{p}.kit_sha256 must be a 64-character lowercase hex string when kit is set, got {sha!r}")
     if "lateral_offset_m" in fa:
         v = fa["lateral_offset_m"]
-        if not (v == "auto" and isinstance(v, str)) and not _is_num(v):
+        if not (v == "auto" and isinstance(v, str)) and not _is_finite(v):
             errs.append(f"{p}.lateral_offset_m must be \"auto\" or a number, got {v!r}")
     if "adapter_length_m" in fa:
         v = fa["adapter_length_m"]
-        if not _is_num(v) or not v >= 0:
+        if not _is_finite(v) or not v >= 0:
             errs.append(f"{p}.adapter_length_m must be a number >= 0, got {v!r}")
     if "adapter_section_m" in fa:
         v = fa["adapter_section_m"]
-        if not (isinstance(v, list) and len(v) == 2 and all(_is_num(x) and x > 0 for x in v)):
+        if not (isinstance(v, list) and len(v) == 2 and all(_is_finite(x) and x > 0 for x in v)):
             errs.append(f"{p}.adapter_section_m must be two positive numbers, got {v!r}")
+    if "adapter_yaw_deg" in fa and not _is_finite(fa["adapter_yaw_deg"]):
+        errs.append(f"{p}.adapter_yaw_deg must be a finite number, got {fa['adapter_yaw_deg']!r}")
+    if "mode" in fa:
+        m = fa["mode"]
+        if not (isinstance(m, str) and m in ("stock", "box", "kit")):
+            errs.append(f"{p}.mode must be one of stock, box, kit, got {m!r}")
+        elif m == "kit" and fa.get("kit") is None:
+            errs.append(f"{p}.mode kit requires kit (and kit_sha256) to be set")
+    if "kit_variant" in fa:
+        v = fa["kit_variant"]
+        if not (isinstance(v, str) and re.fullmatch(r"[a-z0-9_]+", v)):
+            errs.append(f"{p}.kit_variant must be a non-empty string matching [a-z0-9_]+, got {v!r}")
     return errs
 
 

@@ -17,6 +17,8 @@ finger_adapter:
   extension_m: 0.0
   pad_size_m: [0.02, 0.008, 0.03]
   friction: 1.0
+  mode: box                                  # stock | box | kit (A9 addendum)
+  kit_variant: full                          # full = soft finger + UMI holder (tags); finger_only = soft fingers only
   kit: null                                  # finger kit dir relative to controlSW (like robot.model.mjcf); null = box fingers
   kit_sha256: null                           # required when kit is set: must equal kit_digest(kit dir)
   adapter_length_m: 0.0                      # L, kit mode only
@@ -68,6 +70,8 @@ provenance:
   hand.port: {status: decision, source: "INTERFACES.md section 2 (5566 hand_server)"}
   hand.endpoint: {status: derived, source: "from hand.port"}
   finger_adapter: {status: placeholder, source: "iphumi_finger_v1 print; not measured on the Franka Hand"}
+  finger_adapter.mode: {status: decision, source: "A9 addendum: stock | box | kit; box until the iPhUMI kit passes camera-check"}
+  finger_adapter.kit_variant: {status: decision, source: "A9 addendum: kit variant, full = soft finger + UMI holder (tags); finger_only = soft fingers only"}
   finger_adapter.kit: {status: decision, source: "A9: box fingers until the iPhUMI kit passes camera-check"}
   finger_adapter.kit_sha256: {status: decision, source: "A9: box fingers until the iPhUMI kit passes camera-check"}
   finger_adapter.adapter_length_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}

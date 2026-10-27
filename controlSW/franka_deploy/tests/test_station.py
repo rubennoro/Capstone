@@ -464,7 +464,40 @@ def test_repo_tooling_has_kit_keys(name):
     assert fa["kit"] is None and fa["kit_sha256"] is None and fa["lateral_offset_m"] == "auto"
     assert fa["adapter_length_m"] == 0.0 and fa["adapter_section_m"] == [0.021, 0.024]
     assert fa["extension_m"] == 0.0 and fa["pad_size_m"] == [0.02, 0.008, 0.03]
+    assert fa["mode"] == "box" and fa["kit_variant"] == "full"
     assert S.validate_group("tooling", d, name) == []
+
+
+@pytest.mark.parametrize("fa", [
+    {"mode": "stock"}, {"mode": "box"}, {"mode": "kit", "kit": "k", "kit_sha256": _SHA},
+    {"kit_variant": "finger_only"}, {"kit_variant": "v2"}, {"adapter_yaw_deg": 5}, {"adapter_yaw_deg": -1.5},
+    {"mode": "stock", "kit": "k", "kit_sha256": _SHA},
+])
+def test_mode_variant_accepted(fa):
+    assert _tooling_errs(**fa) == []
+
+
+@pytest.mark.parametrize("fa,msg", [
+    ({"mode": "Box"}, "mode must be one of"), ({"mode": ""}, "mode must be one of"),
+    ({"mode": None}, "mode must be one of"), ({"mode": 1}, "mode must be one of"),
+    ({"mode": "kit"}, "mode kit requires kit"), ({"mode": "kit", "kit": None}, "mode kit requires kit"),
+    ({"mode": "kit", "kit": "k"}, "kit_sha256 must be a 64-character"),
+    ({"kit_variant": ""}, "kit_variant must be"), ({"kit_variant": "Full"}, "kit_variant must be"),
+    ({"kit_variant": "a-b"}, "kit_variant must be"), ({"kit_variant": 3}, "kit_variant must be"),
+    ({"kit_variant": None}, "kit_variant must be"),
+    ({"lateral_offset_m": float("nan")}, "lateral_offset_m must be"),
+    ({"lateral_offset_m": float("inf")}, "lateral_offset_m must be"),
+    ({"adapter_length_m": float("inf")}, "adapter_length_m must be"),
+    ({"adapter_length_m": float("nan")}, "adapter_length_m must be"),
+    ({"adapter_section_m": [0.02, float("inf")]}, "adapter_section_m must be two positive"),
+    ({"adapter_section_m": [float("nan"), 0.02]}, "adapter_section_m must be two positive"),
+    ({"adapter_yaw_deg": float("nan")}, "adapter_yaw_deg must be a finite"),
+    ({"adapter_yaw_deg": float("-inf")}, "adapter_yaw_deg must be a finite"),
+    ({"adapter_yaw_deg": "90"}, "adapter_yaw_deg must be a finite"),
+    ({"adapter_yaw_deg": True}, "adapter_yaw_deg must be a finite"),
+])
+def test_mode_variant_rejected(fa, msg):
+    assert msg in "\n".join(_tooling_errs(**fa))
 
 
 @pytest.mark.parametrize("fa", [
@@ -497,7 +530,7 @@ def test_kit_keys_rejected(fa, msg):
 
 def test_old_tooling_without_kit_keys_valid():
     d = _yaml(STATION_ROOT / "station" / "tooling" / "franka_hand_iphumi_iphone16pro.yaml")
-    for k in ("kit", "kit_sha256", "adapter_length_m", "lateral_offset_m", "adapter_yaw_deg", "adapter_section_m"):
+    for k in ("mode", "kit_variant", "kit", "kit_sha256", "adapter_length_m", "lateral_offset_m", "adapter_yaw_deg", "adapter_section_m"):
         del d["finger_adapter"][k]
         d["provenance"].pop(f"finger_adapter.{k}")
     assert S.validate_group("tooling", d, "franka_hand_iphumi_iphone16pro") == []

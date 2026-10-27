@@ -65,6 +65,9 @@ Optional; absent keys keep old files valid. `kit` (null = box fingers, or a kit 
 `adapter_length_m` (>= 0, L), `lateral_offset_m` (`auto` or a number, dy), `adapter_yaw_deg` and `adapter_section_m`
 (two positive numbers, placeholder block cross-section) place it. station.py checks types only; franka_sim checks
 that the kit exists and matches the digest.
+`mode` (`stock` | `box` | `kit`; absent = `kit` if `kit` is set, else `box`) picks the fingers; `mode: kit` requires `kit`.
+`kit_variant` (`[a-z0-9_]+`, default `full`) picks a variant defined in the kit's `kit.yaml` (`full` = soft finger +
+holder with tags, `finger_only` = soft fingers only). Number keys must be finite (no nan/inf); `adapter_yaw_deg` too.
 
 ## Critical
 
