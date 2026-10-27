@@ -10,7 +10,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--deploy-config", default=None, help="deploy.yaml (default: controlSW/franka_deploy/configs/deploy.yaml)")
     p.add_argument("--profile", required=True, help="deploy.yaml station profile, e.g. sim-iphone-fake, sim-rig-fake")
     p.add_argument("--stage", default="all", choices=["1", "1b", "2a", "2b", "3", "all"],
-                   help="all = 1, 1b, 2a, 2b in turn (1b = the full-stack demo-replay campaign, A8); 3 = the closed loop (judge, between-episode reset), asked for explicitly")
+                   help="all = 1, 1b, 2a, 2b in turn (1b = the full-stack demo-replay campaign, A8: ~1 h for the 45 demos; pass --stage1 / --demos to shorten it); 3 = the closed loop (judge, between-episode reset), asked for explicitly")
     p.add_argument("--policy", default=None, help="run/policy id (default: the profile's run.policy)")
     p.add_argument("--episodes", type=int, default=None, help="N demos: Stage 2a = the first N of the checkpoint's held-out split (default all of it); Stage 1 / 2b = demos 0..N-1 (2b default 1)")
     p.add_argument("--demos", default=None, help="explicit zarr demo indices, e.g. 0,3 (wins over --episodes)")

@@ -82,17 +82,37 @@ def load_station_spec(spec=None, robot: str | None = None):
     return load_station(spec)
 
 
-def _warn_tcp_mismatch(station, sm) -> None:
-    """Loud warning when the controller's F_T_TCP (the station config it receives) is not the model's pad TCP."""
+def _controller_file_tcp():
+    """F_T_TCP of the shipped franka_deploy/configs/franka_cartesian.yaml: what a controller started without a station
+    F_T_TCP keeps (None when the file is not found)."""
+    try:
+        import franka_deploy
+        import yaml
+
+        p = Path(franka_deploy.__file__).resolve().parents[1] / "configs" / "franka_cartesian.yaml"
+        v = yaml.safe_load(p.read_text()).get("F_T_TCP")
+        return None if v is None else np.asarray(v, float)
+    except Exception:   # noqa: BLE001  (a missing file/package must not stop the backend; the check is advisory)
+        return None
+
+
+def _warn_tcp_mismatch(station, sm, controller_F_T_TCP=None) -> None:
+    """Loud warning when the controller's F_T_TCP is not the model's pad TCP. The controller gets the station F_T_TCP;
+    when that is null (W10B) it keeps franka_cartesian.yaml's value (`controller_F_T_TCP`, default: the shipped file),
+    which is checked instead. The launcher fills the null with the model TCP for sim runs, so those stay silent."""
     from franka_sim.model import T_err, orthonormalize
 
     st_F = station.get("tooling.F_T_TCP", None)
-    if st_F is None:
-        return
+    null = st_F is None
+    if null:
+        st_F = controller_F_T_TCP if controller_F_T_TCP is not None else _controller_file_tcp()
+        if st_F is None:
+            return
     e_t, e_r = T_err(np.asarray(sm.F_T_TCP, float), orthonormalize(st_F))
     sm.info["controller_F_T_TCP_deviation"] = {"mm": e_t * 1e3, "deg": e_r}
     if e_t > 1e-3 or e_r > 0.1:
-        print(f"[mujoco] WARNING: the controller F_T_TCP differs from the sim's actual TCP (model.F_T_TCP) by "
+        why = ("the station F_T_TCP is null, so the controller keeps franka_cartesian.yaml's placeholder; " if null else "")
+        print(f"[mujoco] WARNING: {why}the controller F_T_TCP differs from the sim's actual TCP (model.F_T_TCP) by "
               f"{e_t * 1e3:.1f} mm / {e_r:.1f} deg: grasps will miss. Use franka_sim.model.derived_tcp(station).",
               flush=True)
 

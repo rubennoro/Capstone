@@ -5,12 +5,12 @@ All software below is built and tested with mocks; nothing has run on real hardw
 
 ## Decisions (blocking)
 
-- [ ] **D1. Panda or FR3?** Pins libfranka/panda-py (`controlSW/franka_deploy/scripts/build_libfranka_pandapy.sh --robot`); `check-config --profile jetson` fails until set. Record the robot system version from Desk.
+- [ ] **D1. Panda or FR3?** Pins libfranka/panda-py (`controlSW/franka_deploy/scripts/build_libfranka_pandapy.sh --robot`); `check-config --config deploy.yaml` (no `--profile`) fails until set. Record the robot system version from Desk.
 - [ ] **D2. Gripper actuator:** (a) Franka Hand with printed fingers: what the sim evaluator, profile `real-iphone` and `hardware_day.md` §11-13 assume (needs finger adapters, the width map, `hand_server`); or (b) the servo-driven iPhUMI gripper, Feetech STS3215 (recommended, cheap) or Dynamixel XM430 (PURCHASING §2). Undecided; the docs present both.
 - [x] **D3. Cameras/lenses:** main = Arducam B0180 + 2.1 mm low-distortion lens; ultrawide = Arducam B0179 (175° fixed fisheye, IR-cut version). Decided 2026-10-19 (PURCHASING §1).
 - [ ] **D4. Where the Franka 1 kHz loop runs:** the Jetson first, gated by the go/no-go load test; a small RT PC is the fallback.
 - [ ] **D5. Evaluation settings:** v_max for reported results (0.25 vs 0.5 m/s), the success rule (lift 3 cm here, 5 cm in `hardware_day.md` §10 and `criteria/block_raise.yaml`, held ≥ 2 s, 60 s timeout), which prompt indices, start-pose buckets, N ≥ 20 per condition.
-- [ ] **D6. Commit?** Uncommitted: newer `sensor_rig/` changes, `controlSW/franka_deploy/`, `scripts/regression/`, ROADMAP.md, PURCHASING.md, TODO.md. Run the regression guard first (`scripts/regression/README.md`).
+- [ ] **D6. Commit?** Uncommitted: W10B (sim TCP derivation, judge/eval fixes), newer `sensor_rig/`, `scripts/regression/`. Run the regression guard first (`scripts/regression/README.md`).
 - [ ] **D7. Powering the handheld rig:** tether or battery (PURCHASING §1).
 - [ ] **D8. Pending upstream real-env fixes** (ROADMAP §0, `sensor_rig/docs/deployment.md`): stay unapplied (franka_deploy works around them) unless you approve them.
 - [ ] **D9. Franka Hand tooling geometry:** printed fingers about 10 cm longer than stock, iPhone on the -y side (sim Stage 1: 43/45 demos feasible on Panda and FR3; stock length hits links 5/6). Confirm before printing; sets `tooling.finger_adapter.extension_m` / `tcp_x_along_hand` (still 0.0 / "+y"). Not yet re-run with the 30 mm-thick rig housing. Caveats (A3): 37/45 demos leave the 60 degree bridge cone (the SafetyFilter would clamp them); joint speeds within limits for only 19/43 FR3 and 36/43 Panda.

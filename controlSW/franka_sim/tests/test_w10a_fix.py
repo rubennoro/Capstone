@@ -45,9 +45,10 @@ def test_derived_tcp_matches_probe(robot, side, yaw, ext):
 
 
 def test_warning_on_mismatch_and_not_on_match(capsys):
-    st = _station()
+    stale = [[1.0, 0, 0, 0], [0, 1.0, 0, 0], [0, 0, 1.0, -0.1034], [0, 0, 0, 1.0]]     # an explicit stale station TCP
+    st = _station(sets=["tooling.F_T_TCP=" + str(stale)])
     sm = M.build_model(st, with_scene=False)
-    B._warn_tcp_mismatch(st, sm)                                                  # shipped placeholder: 131 / 224 mm off
+    B._warn_tcp_mismatch(st, sm)
     out = capsys.readouterr().out
     assert "WARNING" in out and sm.info["controller_F_T_TCP_deviation"]["mm"] > 100
     T = [[round(float(x), 12) for x in r] for r in M.derived_tcp(st)]
@@ -56,6 +57,20 @@ def test_warning_on_mismatch_and_not_on_match(capsys):
     B._warn_tcp_mismatch(st2, sm2)
     assert "WARNING" not in capsys.readouterr().out
     assert sm2.info["controller_F_T_TCP_deviation"]["mm"] < 1e-3
+
+
+def test_warning_when_station_tcp_is_null(capsys):
+    """W10B: a null station F_T_TCP leaves the controller on franka_cartesian.yaml's placeholder: warn if it is off the
+    model TCP, stay silent when they agree (what the launcher's derived fill produces)."""
+    st = _station()
+    assert st.get("tooling.F_T_TCP") is None                                       # shipped: null (hw)
+    sm = M.build_model(st, with_scene=False)
+    B._warn_tcp_mismatch(st, sm)                                                   # shipped controller file placeholder
+    out = capsys.readouterr().out
+    assert "WARNING" in out and "null" in out and sm.info["controller_F_T_TCP_deviation"]["mm"] > 100
+    B._warn_tcp_mismatch(st, sm, controller_F_T_TCP=sm.F_T_TCP)                    # controller already on the model TCP
+    assert "WARNING" not in capsys.readouterr().out
+    assert sm.info["controller_F_T_TCP_deviation"]["mm"] < 1e-9
 
 
 def _with_status(st, path, status):

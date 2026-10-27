@@ -55,9 +55,9 @@ policy can be evaluated before hardware. Resume point and phase list: [controlSW
 | Stage | What it checks | State |
 |---|---|---|
 | 1 | offline kinematic feasibility of the 45 demos | built, run: **+10 cm fingers + phone on -y gives 43/45 on Panda and FR3**; stock length hits links 5/6 (iPhone housing only; not yet re-run with the 30 mm-thick rig housing) |
-| 1b | full-stack demo replay with physics | not built (A8) |
+| 1b | full-stack demo replay with physics | built (`python -m franka_sim campaign` / `eval --stage 1b`); 45-demo result: tracking 3/43 within gate (a finding, not a pass) |
 | 2a / 2b | chunk reachability; live-vs-offline stamps and prediction error | built; the real-policy 2b gap (p95 10.8 mm iPhone, 29.8 mm rig) is expected from JPEG and latency, gates are placeholders |
-| 3 | closed loop with a judge, sweeps with resume | built on the stub simulator; MuJoCo closed loop depends on the scene/render phases |
+| 3 | closed loop with a judge, sweeps with resume | built; runs on the stub (`--sim-stub`) and on MuJoCo via BridgeSim with rendered images (W9c) |
 | hardware-day tools | `wireless-latency` (QR clock), `fdcal stream-intrinsics`, `fdcal width --linear` | built and self-tested; never run on a device |
 
 What is still **placeholder** (each has a hardware-day step, [hardware_day.md](controlSW/franka_deploy/docs/hardware_day.md) §11-15):

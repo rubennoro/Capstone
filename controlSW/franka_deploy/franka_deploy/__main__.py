@@ -4,7 +4,7 @@
         [--replay-episode E --replay-speed 0.5]     (open-loop demo replay instead of the policy)
     python -m franka_deploy check-config --config deploy.yaml [--profile jetson|mock]
     python -m franka_deploy note --session <session_dir> "text"      # non-blocking operator note
-    python -m franka_deploy validate <episode_dir | session_dir>
+    python -m franka_deploy validate <episode_dir | session_dir> [--mode auto|real|sim]
     python -m franka_deploy annotate <episode_dir> [--success yes|no --category CAT ...]
     python -m franka_deploy eval <sessions...> --out DIR                 (env_bp: zarr, normalizer)
     python -m franka_deploy reinfer <session_dir> --work-dir DIR          (env_bp)
@@ -46,6 +46,8 @@ def main(argv=None) -> int:
     n.add_argument("text")
     v = sub.add_parser("validate")
     v.add_argument("path")
+    v.add_argument("--mode", choices=("auto", "real", "sim"), default="auto",
+                   help="auto: run_mode of the episode's config/deploy_resolved.yaml (sim accepts no video / no checkpoint)")
     passthrough = {"annotate": "franka_deploy.eval.annotate", "eval": "franka_deploy.eval.report",
                    "reinfer": "franka_deploy.tools.reinfer", "offline-eval": "franka_deploy.tools.offline_eval",
                    "fdcal": "franka_deploy.fdcal.__main__", "gonogo": "franka_deploy.tools.gonogo",
@@ -91,7 +93,7 @@ def _dispatch(a) -> int:
     if a.cmd == "validate":
         from franka_deploy.tools.validate_episode import main as vmain
 
-        return vmain([a.path])
+        return vmain([a.path, "--mode", a.mode])
     return 1
 
 

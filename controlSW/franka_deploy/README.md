@@ -30,7 +30,7 @@ Run from the repo root with `PYTHONPATH=controlSW/franka_deploy`. The Jetson set
 ## The one command
 
 ```bash
-python -m franka_deploy check-config --config configs/deploy.yaml --profile jetson   # all OK first
+python -m franka_deploy check-config --config configs/deploy.yaml   # all OK first (no --profile: the base is the Jetson)
 python -m franka_deploy run --config configs/deploy.yaml
 ```
 
@@ -85,7 +85,9 @@ Tests live in `tests/`. Most run in env_realenv; the server, eval and light-work
 Station configs: a deploy profile can carry `station:` / `run:` ids (see profile `station-mock`). The launcher then
 derives bridge/controller values and the task flags from `controlSW/configs/` (see [../configs/README.md](../configs/README.md)),
 writes `config/station_resolved.yaml` into the session and refuses real runs with critical placeholders. Profiles
-without `station:` behave as before. The bridge REQ/REP endpoint is now `tcp://127.0.0.1:5565` (was 5555: the iPhone
+without `station:` behave as before. Profiles `sim-iphone-fake|sim-rig-fake|sim-iphone|sim-rig` are driven by
+`python -m franka_sim eval --profile P --stage 1|1b|2a|2b|3|all --out DIR`; on `sim-*` MuJoCo runs the launcher fills
+`tooling.F_T_TCP` from the sim model when it is null (provenance `derived (sim)`, INTERFACES I-TCP); `real-*` never do. The bridge REQ/REP endpoint is now `tcp://127.0.0.1:5565` (was 5555: the iPhone
 app hardcodes 5555/5556 for its camera streams).
 
 Host paths: a profile with a station fills `work_root`, `python`, `checkpoint`, `prompt_zarr` and `disk_budget_gb` from the

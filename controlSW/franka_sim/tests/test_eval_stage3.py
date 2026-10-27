@@ -255,3 +255,23 @@ def test_aggregate_takes_sim_gt_as_authoritative_and_counts_pad_table():
     assert m["success_rate"] == 0.0 and m["success_source"] == "sim_gt" and m["judge_gt_compared"] == 1 and m["judge_gt_agree"] == 0
     assert m["pad_table_contacts"] == 1 and m["pad_table_force_max_n"] == 41.0 and m["collisions"] == 0
     assert rows[0]["gt"] == "n" and rows[0]["pad_table"] == 1 and m["judge_t0_from_events"] == 1
+
+
+def test_gripper_lag_uses_the_hand_target_not_the_policy_command(tmp_path):
+    """W10B item 8: an empty-hand grasp closes to max(0, gap - eps_inner); against the policy's train width it is a
+    6.9 mm "error" for ever, against the hand's own width_servo_target it is no lag at all."""
+    t = np.arange(0, 4.0, 0.005)
+    cmd = np.where(t < 1.0, 0.08, 0.050)                       # policy: close to train 0.050 at t=1 s
+    target = np.where(t < 1.0, 0.08, 0.0431)                   # the hand: grasp -> gap 0 -> train b = 0.0431
+    meas = np.where(t < 1.0, 0.08, np.maximum(0.0431, 0.08 - (t - 1.0) * 0.4))   # reaches the target in ~0.1 s
+    np.savez(tmp_path / "controller_trace.npz", t=t, width_measured=meas, width_commanded=cmd, width_servo_target=target,
+             commanded=np.zeros((len(t), 7)), fk=np.zeros((len(t), 7)))
+    m = s3.episode_metrics(tmp_path, None, 0.05)
+    assert m["gripper_lag_ref"] == "width_servo_target"
+    assert m["gripper_lag"] == [1]                             # ~0.09 s -> 1 step, then closed
+    old = s3.gripper_lag_steps(t, meas, cmd, 0.05)
+    assert old[-1] >= int((t[-1] - 1.2) // 0.05)               # the policy command: open (6.9 mm) until the end (the old defect)
+    np.savez(tmp_path / "controller_trace.npz", t=t, width_measured=meas, width_commanded=cmd,
+             width_servo_target=np.full_like(t, np.nan), commanded=np.zeros((len(t), 7)), fk=np.zeros((len(t), 7)))
+    m = s3.episode_metrics(tmp_path, None, 0.05)
+    assert m["gripper_lag_ref"] == "width_commanded" and m["gripper_lag"] == old   # no hand target (fake gripper): fallback

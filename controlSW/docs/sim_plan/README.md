@@ -51,7 +51,7 @@ ZARR=$S/deploy_work/prompt_zarr/firstreal-single.zarr.zip   # firstreal-single d
 1. Both REVIEW.md files say PASS.
 2. The phase tests pass.
 3. The full franka_deploy suite passes in RE, plus the BP subset if touched.
-   - Baseline 2026-10-18: RE 145 passed, 8 skipped.
+   - Baseline: see [STATUS.md](STATUS.md).
    - BP subset: `tests/test_light_workspace.py tests/test_eval_demos.py tests/test_eval_metrics.py tests/test_server_ckpt.py`.
    - BP cannot run the files that import real_env (that is pre-existing, not a regression).
 4. The sensor_rig suite passes if touched.
@@ -88,9 +88,17 @@ the same files.
 | W1 | A0 assets: PASS | B1 station: PASS | committed d888546 (RE suite 190 passed / 8 skipped; regression guard PASS) |
 | W2 | A1 model: PASS | B2 constants + launcher: PASS | committed 0da4d34 (B2), 2efc96f (A1); RE suite 215 passed |
 | W3 | A2 kinematics: PASS (+link6 fix) | B3 policy slot: PASS after FIX | committed 8522223 (A2), see log (B3) |
-| W4 | A3 Stage 1: built, NOT reviewed (uncommitted) | B4: PASS, 374c1ec | |
-| W5 | A4 (waits on user tooling decision) | B5: PASS, a3d0d95 | |
+| W4 | A3 Stage 1: built (committed in W5b) | B4: PASS, 374c1ec | |
+| W5 | A4: see W5b | B5: PASS, a3d0d95 | |
 | W6 | — | B6: PASS, d3b82cc | |
-| W7 | — | B7: built, review interrupted (uncommitted) | |
+| W7 | — | B7 rig sender + `sim-rig-fake`: PASS, 806c9b6 | committed |
+| W5b | A3 Stage 1 review fixes (860171f), A4 SimCore + MuJoCoBackend (067fab9) | B8 eval runner, Stage 1/2a/2b (f657715) | committed |
+| W6c | A5 Franka Hand (d9aae67) | B9 Part 1: judge, Stage 3 on StubSim, sweeps (6eb7633) | committed |
+| W7a | A6 scene runtime, ground truth (25cf996) | — | committed |
+| W9a/9b | A8 Stage 1b campaign (0431ed4); A7 renderer, camera-check/gap (51371a0) | — | committed |
+| W9c | — | B9 Part 2: Stage 3 on MuJoCo via BridgeSim (94f3575) | committed |
+| W10a | — | B10 hardware-day tools (b2ff667) | committed |
+| W10A | derived TCP, measured F_T_C_main honoured, loop stall stats (d960efe) | — | committed |
+| W10B | sim TCP derivation in eval/deploy, judge offline fixes | docs review (`phases/W10B_docs.REVIEW.md`) | under review, uncommitted |
 
-**PAUSED 2026-10-18 22:40 EDT: see [STATUS.md](STATUS.md) for the resume point.**
+Test baselines and the resume point: see [STATUS.md](STATUS.md). Full history: `git log --oneline 4be9982..HEAD`.

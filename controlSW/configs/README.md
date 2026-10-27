@@ -2,7 +2,7 @@
 
 One home for every constant of the Franka deployment and its simulator. The loader is
 `controlSW/franka_deploy/franka_deploy/station.py` (stdlib + numpy + yaml only, so it runs on the Jetson).
-Nothing consumes it yet in B1; B2 switches the launcher, `run_task.py` and `fdcal` over.
+Consumed by the launcher, `run_task.py`, `fdcal` and `franka_sim`.
 
 ## Layout
 
@@ -18,7 +18,7 @@ run/                          what one experiment chooses
   link/     ideal, wifi_good|busy|bad[_skew]   latency, jitter, stalls, bandwidth, clock skew
   criteria/ block_raise       success rule, stage gates, v_max / w_max
   sim/      physics, render, video_replay, rig_raw_replay, stage1
-  sweeps/   block_raise_default
+  sweeps/   block_raise_default, block_raise_smoke
 ```
 
 Every file starts with `schema: <kind>.<group>/v1` and `id: <file stem>`.

@@ -22,11 +22,15 @@ width_map:                                   # train = a * gap + b
   train_closed_m: 0.0431
   train_min_m: 0.0447
   train_max_m: 0.0844
-F_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966, 0.3114], [0.0, 0.0, 0.0, 1.0]]
+F_T_TCP: null                                # sim: the launcher derives it from the model (franka_sim.model.derived_tcp,
+                                             # I-TCP; provenance "derived (sim)"); hardware: fdcal handeye F_T_C_main @ C_T_TCP.
+                                             # null -> the controller keeps franka_cartesian.yaml's placeholder (real: critical FAIL)
 C_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966, 0.2114], [0.0, 0.0, 0.0, 1.0]]
 F_T_C_main: null                             # rig CAD then fdcal handeye; null -> derived F_T_TCP @ inv(C_T_TCP)
 C_main_T_C_uw: null                          # rig main -> UW extrinsic; HW/CAD (placeholder: 12 mm offset, parallel axes)
-tcp_x_along_hand: "+y"                       # TCP x = +hand y (finger closing axis); the camera sits on TCP -y
+tcp_x_along_hand: "+y"                       # TCP x = sgn * hand y (finger closing axis); the camera sits on TCP -y, i.e. on
+                                             # hand sgn * x: "+y" = hand +x side, "-y" = hand -x side (the flag flips the
+                                             # TCP frame). Stage 1 recommends "-y" (with extension_m 0.10): D9, unconfirmed
 housing:                                     # rig camera housing; frame = OpenCV camera axes (x right, y down, z optical)
   size_m: [0.090, 0.060, 0.030]
   main_lens_in_body_m: [0.0, -0.006, 0.015]   # main lens point from the box centre (on the front face)
@@ -61,7 +65,7 @@ provenance:
   width_map.train_closed_m: {status: measured, source: "training data: tag separation at closed (iPhUMI gripper_calibration)"}
   width_map.train_min_m: {status: measured, source: "training data width range (firstreal-single)"}
   width_map.train_max_m: {status: measured, source: "training data width range (firstreal-single)"}
-  F_T_TCP: {status: placeholder, source: "franka_cartesian.yaml:5-12 (camera ahead of the flange, NOT a calibration)"}
+  F_T_TCP: {status: hw, source: "null on purpose (W10A review, TCP source of truth): derived in sim (launcher applies franka_sim.model.derived_tcp(station) as a station override, provenance derived (sim)); measured on hardware (fdcal handeye: F_T_TCP = F_T_C_main @ C_T_TCP, then status measured). Do not commit a numeric copy of the derived value"}
   C_T_TCP: {status: placeholder, source: "copy of gripper_calibration.yaml iPhone17,1 (JetsonRig1,1 entry is a copy); measure the rig"}
   F_T_C_main: {status: hw, source: "CAD then fdcal handeye"}
   C_main_T_C_uw: {status: hw, source: "rig CAD / rig_calibrated.yaml"}

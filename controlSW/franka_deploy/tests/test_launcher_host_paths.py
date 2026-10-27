@@ -8,6 +8,7 @@ record: `_station_home` is left out of the comparison so later station edits do 
 import copy
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
@@ -37,6 +38,19 @@ def test_resolved_config_equals_before(profile):
         for k in HOST_PATH_KEYS:
             assert got[k] == HOST[k], f"{profile}.{k} is not the pc_laptop host value"
             got[k] = f"<HOST:{k}>"
+    if profile in ("sim-iphone", "sim-rig"):
+        # W10B (intended change): tooling.F_T_TCP is null in the YAML, so the launcher derives the model TCP for MuJoCo
+        # sims: one extra station_set entry, the _sim_tcp record and the matching home orientation. Check the new values,
+        # then compare the rest with the golden.
+        mujoco_model = pytest.importorskip("franka_sim.model")
+        rec = got.pop("_sim_tcp")
+        st = station_from_deploy_cfg(got | {"station_set": [x for x in got["station_set"] if x != rec["set"]]})
+        assert rec["yaml_value"] is None and rec["yaml_status"] == "hw" and rec["provenance"] == "derived (sim)"
+        assert got["station_set"][-1] == rec["set"] and got["station_set"][:-1] == gold["station_set"]
+        assert np.allclose(rec["F_T_TCP"], mujoco_model.derived_tcp(st), atol=1e-9)
+        assert got["home"]["pose"][:3] == gold["home"]["pose"][:3]               # same TCP position; orientation follows
+        got["station_set"] = gold["station_set"]
+        got["home"] = dict(got["home"], pose=gold["home"]["pose"])
     assert got == gold
 
 

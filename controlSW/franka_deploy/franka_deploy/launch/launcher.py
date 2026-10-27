@@ -155,7 +155,127 @@ def load_config(path, profile: str, station_set=()) -> dict:
     if station_set:
         cfg["station_set"] = list(cfg.get("station_set", [])) + [str(x) for x in station_set]
     host_path_fills(cfg, base, prof)
+    sim_tcp_fill(cfg)
     return cfg
+
+
+# ---------------------------------------------------------------------------------------- W10B: one TCP in sim (I-TCP)
+TCP_TOL_M, TCP_TOL_DEG = 1e-3, 0.1      # controller vs sim TCP agreement required by the sim_tcp preflight
+SIM_TCP_SOURCE = "derived (sim)"
+
+
+def backend_type_of(cfg: dict) -> str | None:
+    """bridge backend type of a merged deploy cfg (bridge.yaml < deploy.yaml bridge.override)."""
+    b = deep_merge(yaml.safe_load(open(resolve_pkg(cfg["bridge"]["config"]))), cfg["bridge"].get("override", {}))
+    return (b.get("backend") or {}).get("type")
+
+
+def _franka_sim_model():
+    """franka_sim.model (needs mujoco), imported lazily: only sim MuJoCo runs reach it, so franka_deploy still imports
+    without mujoco and real / jetson profiles never import franka_sim."""
+    try:
+        from franka_sim import model
+    except ImportError:
+        if not SIM_ROOT.is_dir():
+            raise
+        if str(SIM_ROOT) not in sys.path:
+            sys.path.append(str(SIM_ROOT))
+        from franka_sim import model
+    return model
+
+
+def sim_tcp(station):
+    """(4x4 F_T_TCP, source) the MuJoCo sim actually uses (SimModel.F_T_TCP, I-TCP): franka_sim.model.derived_tcp
+    (the pad-centre TCP), or F_T_C_main @ C_T_TCP when tooling.F_T_C_main is measured (not placeholder / hw)."""
+    from franka_deploy.station import PLACEHOLDER_STATUSES
+
+    m = _franka_sim_model()
+    C = station.get("tooling.F_T_C_main", None)
+    if C is not None and station.prov("tooling.F_T_C_main").status not in PLACEHOLDER_STATUSES:
+        return m.orthonormalize(C) @ m.orthonormalize(station.get("tooling.C_T_TCP")), "F_T_C_main @ C_T_TCP (sim)"
+    return m.derived_tcp(station), SIM_TCP_SOURCE
+
+
+def _tcp_set_text(T) -> str:
+    return "tooling.F_T_TCP=" + json.dumps([[float(x) + 0.0 for x in row] for row in T])
+
+
+def sim_tcp_fill(cfg: dict) -> dict | None:
+    """W10A finding 1 / W10B: a sim run on the MuJoCo backend whose tooling.F_T_TCP is null or a placeholder/hw value
+    drives the model TCP. The value is added as a station override (`--set tooling.F_T_TCP=<4x4>`, appended to
+    cfg.station_set), so station_resolved.yaml, the controller fragment, station_home and the backend's mismatch check
+    all see the same matrix. An explicit `tooling.F_T_TCP=` in station_set (--set, a campaign) is kept as given; the
+    sim_tcp preflight then checks that it agrees. Real profiles, FakeBackend sims and measured values are untouched.
+    The record (or the derivation error, which the preflight reports) is cfg["_sim_tcp"]."""
+    if run_mode_of(cfg) != "sim" or "station" not in cfg:
+        return None
+    try:
+        if backend_type_of(cfg) != "mujoco":
+            return None
+    except (OSError, KeyError, yaml.YAMLError):
+        return None
+    if any(str(x).partition("=")[0].strip() == "tooling.F_T_TCP" for x in cfg.get("station_set", [])):
+        return None
+    try:
+        st = station_from_deploy_cfg(cfg)
+    except StationError:
+        return None    # reported by the launcher / check-config
+    if st is None or "tooling" not in st.groups:
+        return None
+    from franka_deploy.station import PLACEHOLDER_STATUSES
+
+    prev = st.get("tooling.F_T_TCP", None)
+    status = st.prov("tooling.F_T_TCP").status
+    if prev is not None and status not in PLACEHOLDER_STATUSES:
+        return None
+    rec = {"target": "station", "path": "tooling.F_T_TCP", "yaml_value": prev, "yaml_status": status}
+    try:
+        T, source = sim_tcp(st)
+    except Exception as e:     # e.g. mujoco missing in this python: the sim_tcp preflight refuses the run
+        rec.update(source=None, error=f"{type(e).__name__}: {e}")
+        cfg["_sim_tcp"] = rec
+        return rec
+    text = _tcp_set_text(T)
+    cfg["station_set"] = list(cfg.get("station_set", [])) + [text]
+    rec.update(source=source, provenance=source, set=text, F_T_TCP=[[float(x) + 0.0 for x in r] for r in T])
+    cfg["_sim_tcp"] = rec
+    return rec
+
+
+def _F_T_TCP_of_ctrl(ctrl: dict, station):
+    """The controller's F_T_TCP (its config holds EE_T_TCP when Desk has an end effector)."""
+    import numpy as np
+
+    F = np.asarray(ctrl["F_T_TCP"], float)
+    robot = station.get("robot", None)
+    if robot and robot.get("desk_end_effector", "none") != "none":
+        F = np.asarray(robot["F_T_NE"], float) @ np.asarray(robot["NE_T_EE"], float) @ F
+    return F
+
+
+def sim_tcp_check(cfg: dict, station) -> tuple[bool, str] | None:
+    """Preflight `sim_tcp` (MuJoCo sim runs only, else None): the controller TCP must equal the sim's TCP within
+    1 mm / 0.1 deg (catches a stale --set, a controller.override or an underived placeholder)."""
+    import numpy as np
+
+    if station is None or run_mode_of(cfg) != "sim" or backend_type_of(cfg) != "mujoco":
+        return None
+    rec = cfg.get("_sim_tcp") or {}
+    if rec.get("error"):
+        return False, f"cannot derive the sim TCP ({rec['error']}): run in python.realenv (mujoco) or --set tooling.F_T_TCP"
+    try:
+        T_sim, source = sim_tcp(station)
+    except Exception as e:
+        return False, f"cannot derive the sim TCP: {type(e).__name__}: {e}"
+    ctrl, _ = build_controller_cfg(cfg, station)
+    T_c = _F_T_TCP_of_ctrl(ctrl, station)
+    R = T_c[:3, :3].T @ np.asarray(T_sim)[:3, :3]
+    e_t = float(np.linalg.norm(T_c[:3, 3] - np.asarray(T_sim)[:3, 3]))
+    e_r = float(np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1))))
+    given = "launcher-derived" if rec.get("set") else "given (station yaml / --set / override)"
+    detail = (f"controller F_T_TCP ({given}) vs sim TCP ({source}): {e_t * 1e3:.3f} mm / {e_r:.3f} deg "
+              f"(limit {TCP_TOL_M * 1e3:.0f} mm / {TCP_TOL_DEG} deg), tcp_z {T_c[2, 3]:.4f} vs {float(T_sim[2][3]):.4f} m")
+    return e_t <= TCP_TOL_M and e_r <= TCP_TOL_DEG, detail
 
 
 def recorded_host_fills(cfg: dict, station) -> list[dict]:
@@ -569,6 +689,14 @@ class Launcher:
         overrides += task_limits(c, st)[2]
         if st is not None:
             overrides += recorded_host_fills(c, st)     # B10: values the station host group filled in (not in deploy_resolved)
+        if c.get("_sim_tcp"):                           # W10B: the model-derived controller TCP (provenance "derived (sim)")
+            rec = c["_sim_tcp"]
+            overrides.append({k: rec[k] for k in ("target", "path", "yaml_status", "source", "provenance", "error")
+                              if k in rec})
+            self.summary["sim_tcp"] = rec
+            print(f"[launcher] tooling.F_T_TCP: {rec.get('provenance') or 'NOT derived: ' + str(rec.get('error'))} "
+                  f"(yaml: {rec.get('yaml_status')}); " + (f"F_T_TCP xyz {[r[3] for r in rec['F_T_TCP'][:3]]}"
+                                                           if rec.get("F_T_TCP") else ""), flush=True)
         self.bridge_cfg, self.ctrl_cfg = bridge, ctrl
         (cfgd / "franka_cartesian.yaml").write_text(yaml.safe_dump(ctrl))
         (cfgd / "deploy_resolved.yaml").write_text(yaml.safe_dump(c))
@@ -756,6 +884,9 @@ class Launcher:
             self.check("station_placeholders", pf.station_placeholders(self.station, run_mode_of(c),
                                                                        c.get("allow_placeholders", [])))
             self.check("tooling_sensor_compat", pf.tooling_sensor_compat(self.station))
+            tcp = sim_tcp_check(c, self.station)
+            if tcp is not None:
+                self.check("sim_tcp", tcp)
         if kind == "wireless":
             if self.station is None or "sensor" not in self.station.groups:
                 self.check("camera_kind", (False, "camera.kind wireless needs a station with a sensor group"))
@@ -772,6 +903,21 @@ class Launcher:
         if self.backend_type() == "mujoco":
             self.check("mujoco_backend_available", (MUJOCO_BACKEND.is_file(), f"franka_sim {'present' if SIM_ROOT.is_dir() else 'missing'}"
                                                     f" / MuJoCoBackend {'present' if MUJOCO_BACKEND.is_file() else 'missing (A4)'}"))
+
+    def bridge_tcp_warnings(self) -> list[str]:
+        """W10B (W10A re-review item 6): the MuJoCo backend's TCP-mismatch WARNING (printed in from_config, before the
+        bridge answers get_state) is copied from logs/bridge.log into the launcher output and summary["warnings"]."""
+        try:
+            text = (self.session / "logs" / "bridge.log").read_text(errors="replace")
+        except OSError:
+            return []
+        found = [ln.strip() for ln in text.splitlines() if "WARNING" in ln and "F_T_TCP" in ln]
+        for ln in found:
+            print(f"[launcher] bridge: {ln}", flush=True)
+            self.log("warning", msg=f"bridge: {ln}")
+        if found:
+            self.summary.setdefault("warnings", []).extend(found)
+        return found
 
     def policy_command(self, pol: dict | None = None) -> tuple[list[str], float]:
         """Command line and ready timeout (s) for a policy kind. Pure: starts nothing."""
@@ -824,6 +970,8 @@ class Launcher:
         bc = BridgeClient(c["bridge"]["endpoint"].replace("0.0.0.0", "127.0.0.1"), timeout_s=0.3)
         st = self.wait_until("bridge", lambda: bc.request("get_state"), 15, "get_state")
         self.check("bridge_not_reflex", pf.bridge_not_reflex(st))
+        if self.backend_type() == "mujoco":
+            self.bridge_tcp_warnings()
 
         hand_ep = self.hand_endpoint()
         if hand_ep:   # real Franka Hand: libfranka Gripper in its own process (A5), before the controller uses it
@@ -1318,6 +1466,12 @@ def check_config(cfg: dict) -> int:
               f"(python -m franka_deploy.station validate --all -v lists them)")
         r.append(("station_placeholders", pf.station_placeholders(st, mode, cfg.get("allow_placeholders", []))))
         r.append(("tooling_sensor_compat", pf.tooling_sensor_compat(st)))
+        tcp = sim_tcp_check(cfg, st)
+        if tcp is not None:
+            r.append(("sim_tcp", tcp))
+            if (cfg.get("_sim_tcp") or {}).get("provenance"):
+                notes.append(f"tooling.F_T_TCP {cfg['_sim_tcp']['provenance']}: the launcher applies the model TCP as a "
+                             f"station override (yaml status {cfg['_sim_tcp']['yaml_status']})")
     ok = True
     for name, (good, detail) in r:
         print(f"{'OK  ' if good else 'FAIL'} {name}: {detail}")

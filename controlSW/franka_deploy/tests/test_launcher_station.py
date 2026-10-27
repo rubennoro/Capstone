@@ -99,7 +99,9 @@ def test_station_mock_snapshot_carries_station_values(tmp_path):
     assert bridge["backend"]["type"] == "fake"                      # deploy.yaml override still wins
     assert bridge["endpoint"] == "tcp://127.0.0.1:5565"
     ctrl = yaml.safe_load((cfgd / "franka_cartesian.yaml").read_text())
-    assert ctrl["F_T_TCP"] == st.controller_fragment()["F_T_TCP"]
+    assert st.get("tooling.F_T_TCP") is None and "F_T_TCP" not in st.controller_fragment()   # W10B: null (hw)
+    assert ctrl["F_T_TCP"] == yaml.safe_load((Path(__file__).resolve().parents[1] / "configs" / "franka_cartesian.yaml")
+                                             .read_text())["F_T_TCP"]     # fake sim: the controller keeps the file value
     assert ctrl["gripper"]["type"] == "fake"                        # controller.override wins over the station
     assert ctrl["gripper"]["width_map"]["a"] == st.get("tooling.width_map.a")
     res = yaml.safe_load((cfgd / "station_resolved.yaml").read_text())

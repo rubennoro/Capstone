@@ -1,6 +1,6 @@
 """Validate that a rollout episode dir (or every episode of a session) is complete and self-consistent.
 
-    python -m franka_deploy validate <episode_dir | session_dir>
+    python -m franka_deploy validate <episode_dir | session_dir> [--mode auto|real|sim]
 
 Checks: config snapshot (deploy, bridge, controller yamls, checksums incl. ckpt sha256 + prompt index, git, package
 versions); label.json matches the stop event; events.jsonl has episode_start/stop; summary.json duration and policy
@@ -8,6 +8,11 @@ calls; tap/ has exactly `policy_calls` npz files, each passing the obs/reply con
 the episode at ~200 Hz with the required columns; bridge.jsonl has per-second stats inside the episode (Franka);
 camera_stats.txt; the camera videos (libx264) exist and decode with frames for ~the episode duration; MainLogger
 metadata exists.
+
+Modes (W10B): `real` is the full check above. `sim` (auto: config/deploy_resolved.yaml says run_mode: sim) accepts
+the two by-design differences of sim sessions: no camera video when camera.video is off (the wireless receiver records
+none in sim), and a checksums.json without checkpoint entries (replay / fake policies stage no model); the prompt zarr
+sha256 + prompt index are then required instead. A checkpoint entry, when present, must still carry its sha256.
 """
 
 from __future__ import annotations
@@ -24,11 +29,41 @@ from franka_deploy.tools.analyze_tap import CONTRACT_OBS, CONTRACT_REPLY
 TRACE_COLS = ("t", "fk", "commanded", "width_measured", "width_commanded", "held", "fault")
 
 
-def validate_episode(d: str) -> list[str]:
+MODES = ("auto", "real", "sim")
+
+
+def episode_mode(d: str, mode: str = "auto") -> str:
+    """real | sim. auto: run_mode of config/deploy_resolved.yaml; real when it is missing or unreadable (strict)."""
+    if mode != "auto":
+        return mode
+    import yaml
+
+    try:
+        with open(os.path.join(d, "config", "deploy_resolved.yaml")) as f:
+            cfg = yaml.safe_load(f) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return "real"
+    if not isinstance(cfg, dict):
+        return "real"
+    return "sim" if str(cfg.get("run_mode", "real")) == "sim" else "real"
+
+
+def _video_expected(d: str) -> bool:
+    import yaml
+
+    try:
+        cfg = yaml.safe_load(open(os.path.join(d, "config", "deploy_resolved.yaml"))) or {}
+        return bool((cfg.get("camera") or {}).get("video", True))
+    except (OSError, ValueError, yaml.YAMLError, AttributeError):
+        return True
+
+
+def validate_episode(d: str, mode: str = "auto") -> list[str]:
     """Complete episodes: everything below. Aborted episodes (label "aborted:<reason>", e.g. a killed process or
     Ctrl+C): the same, except the video may be truncated/missing and the trace may end early (it is merged from the
     1 s parts by the salvage) - but config, label, summary, events, taps and (for > 2 s) the trace must exist."""
     errs = []
+    sim = episode_mode(d, mode) == "sim"
     J = lambda f: json.load(open(os.path.join(d, f)))  # noqa: E731
     lab0 = str(J("label.json").get("label", "")) if os.path.exists(os.path.join(d, "label.json")) else ""
     aborted = lab0.startswith("aborted:")
@@ -44,7 +79,10 @@ def validate_episode(d: str) -> list[str]:
         return errs
     s, lab = J("summary.json"), J("label.json")
     ck = J("config/checksums.json")
-    if len(ck.get("checkpoint_sha256", "")) != 64 or "prompt_index" not in ck:
+    if sim and "checkpoint" not in ck:      # replay / fake policy: no model staged, the prompt zarr is still pinned
+        if len(ck.get("prompt_zarr_sha256", "")) != 64 or "prompt_index" not in ck:
+            errs.append("checksums.json incomplete (sim, no checkpoint: prompt_zarr_sha256 + prompt_index required)")
+    elif len(ck.get("checkpoint_sha256", "")) != 64 or "prompt_index" not in ck:
         errs.append("checksums.json incomplete")
     evs = [json.loads(ln) for ln in open(os.path.join(d, "events.jsonl"))]
     kinds = [e["kind"] for e in evs]
@@ -102,7 +140,7 @@ def validate_episode(d: str) -> list[str]:
             cap.release()
             if not ok or n < 0.5 * fps * max(s["duration_s"] - 1.0, 1.0):
                 errs.append(f"video {os.path.basename(v)}: {n} frames for {s['duration_s']:.1f} s")
-    else:
+    elif not (sim and not _video_expected(d)):
         errs.append("no camera video (*.zarr/*.mp4)")
     if not aborted and not os.path.exists(os.path.join(d, "metadata.zarr")):
         errs.append("missing MainLogger metadata.zarr")
@@ -110,14 +148,21 @@ def validate_episode(d: str) -> list[str]:
 
 
 def main(argv=None) -> int:
-    path = (argv or sys.argv[1:])[0]
+    import argparse
+
+    ap = argparse.ArgumentParser(prog="franka_deploy validate")
+    ap.add_argument("path")
+    ap.add_argument("--mode", choices=MODES, default="auto",
+                    help="auto (run_mode of config/deploy_resolved.yaml) | real (full check) | sim")
+    a = ap.parse_args(argv if argv is not None else sys.argv[1:])
+    path = a.path
     eps = [path] if os.path.exists(os.path.join(path, "summary.json")) else \
         sorted(glob.glob(os.path.join(path, "**", "episode_*"), recursive=True))
     bad = 0
     for d in eps:
-        errs = validate_episode(d)
+        errs = validate_episode(d, a.mode)
         s = json.load(open(os.path.join(d, "summary.json"))) if os.path.exists(os.path.join(d, "summary.json")) else {}
-        print(f"{'OK  ' if not errs else 'FAIL'} {d}  label={s.get('label')} calls={s.get('policy_calls')} "
+        print(f"{'OK  ' if not errs else 'FAIL'} [{episode_mode(d, a.mode)}] {d}  label={s.get('label')} calls={s.get('policy_calls')} "
               f"dur={s.get('duration_s', 0):.1f}s size={s.get('size_mb', 0):.1f}MB rate={s.get('log_rate_mb_per_min', 0):.1f}MB/min")
         for e in errs[:10]:
             print(f"     - {e}")

@@ -28,7 +28,7 @@ Two hardware paths exist. The sections below say which one a step belongs to.
 
 | Path | Gripper | Camera | Profile | Steps |
 |------|---------|--------|---------|-------|
-| **Servo** (original, PURCHASING §2) | motorized iPhUMI gripper (Feetech/Dynamixel) | Jetson rig (`RigCamera`) | `jetson` | 0-10 as written. Steps marked "servo gripper only" are skipped on the Franka Hand path |
+| **Servo** (original, PURCHASING §2) | motorized iPhUMI gripper (Feetech/Dynamixel) | Jetson rig (`RigCamera`) | (base, no `--profile`) | 0-10 as written. Steps marked "servo gripper only" are skipped on the Franka Hand path |
 | **Franka Hand + iPhone** (the sim evaluator's path) | Franka Hand with printed fingers (`hand_server` on 5566) | iPhone app over Wi-Fi (`WirelessCamera`) | `real-iphone` (`real-rig` for the rig's v2 stream) | 0 (skip 0.6, 0.7), 1, 2, 3, **11**, **12**, 4, 5, **13**, 7, 8, **14**, 9, 10, **15** |
 
 ## Decisions to record first (nothing below is decided for you)
@@ -69,7 +69,7 @@ Limits use the **minimum rule**: every speed limit is the minimum of the station
 | 0.5 | Re-check the panda-py names used by `PandaPyBackend` against the pinned version (list in `docs/panda_py_checklist.md` §0). | every name exists |
 | 0.6 | *(servo gripper only)* Implement `FeetechGripper` (or `DynamixelGripper`) `_write_position/_read_position/_write_current_limit` in `gripper/driver.py`. It is a `NotImplementedError` stub today. | `make_gripper({"type": "feetech", ...})` opens and reads a position |
 | 0.7 | *(rig camera only; the iPhone path has no rig)* Rig calibrated (`sensor_rig/docs/calibration.md`). Copy `rig_calibrated.yaml` to `camera.rig_config_path`. | `check-config` row `rig_not_default` OK |
-| 0.8 | Deploy envs built clean on the Jetson, without relying on `~/.local` or a ROS `PYTHONPATH` (D0 G3). Copy the checkpoint and prompt zarr to the paths in `deploy.yaml`; set `prompt_zarr_sha256`. | `python -m franka_deploy check-config --config deploy.yaml --profile jetson`: **all OK** (including `panda_py_versions_pinned`) |
+| 0.8 | Deploy envs built clean on the Jetson, without relying on `~/.local` or a ROS `PYTHONPATH` (D0 G3). Copy the checkpoint and prompt zarr to the paths in `deploy.yaml`; set `prompt_zarr_sha256`. | `python -m franka_deploy check-config --config deploy.yaml` (no `--profile`: the deploy.yaml base is the Jetson): **all OK** (including `panda_py_versions_pinned`) |
 | 0.9 | Disk: video is about **4.3 GB/h** (robologger fixes 5 Mbit/s per camera). Free space ≥ the session plan + `disk_budget_gb` (5 GB). | `df -h` noted |
 | 0.10 | Real spacemouse connected (`spacemouse.mock: false`). | the spacemouse server starts |
 
@@ -118,14 +118,14 @@ thread: it would compete with the loop it is meant to qualify.
 |---|---------|------------------|
 | 4.1 | CAD F_T_C of the rig's virtual main camera on the flange → `cad.json` (4x4). F_T_TCP(CAD) = F_T_C @ C_T_TCP (`franka_cartesian.yaml` comment). | written |
 | 4.2 | Fixed ChArUco board (9x7, 30 mm squares, 22 mm markers, DICT_5X5_100, printed flat; measure the square size). Camera running (`rig_camera wrist_right`). Arm hand-guided, bridge **not** running a controller. `python -m franka_deploy fdcal capture handeye --out he` gives ≥ 20 poses with large rotation diversity (tilt ±30–40°, roll ±60°, board 0.3–0.5 m away). | ≥ 20 rows in `he/poses.json` (frames without a detected board are rejected) |
-| 4.3 | `python -m franka_deploy fdcal handeye --data he --cad-F_T_C cad.json --out he/result.json` | **`cad_agreement.accept`: ≤ 3 mm / 1°** (`cad_agreement.mm`, `.deg`); `tsai_vs_park_mm_deg` ≤ [1 mm, 0.3°]. Copy `F_T_TCP` into `franka_cartesian.yaml` |
+| 4.3 | `python -m franka_deploy fdcal handeye --data he --cad-F_T_C cad.json --out he/result.json` | **`cad_agreement.accept`: ≤ 3 mm / 1°** (`cad_agreement.mm`, `.deg`); `tsai_vs_park_mm_deg` ≤ [1 mm, 0.3°]. Copy `F_T_TCP` into the tooling YAML (`tooling.F_T_TCP`, status `measured`); servo path: `franka_cartesian.yaml` |
 | 4.4 | Either `ee_is_tcp: false` (the default: the bridge commands the flange), or set the EE in Desk / `NE_T_EE` with `ee_is_tcp: true`. Never both. | one of the two |
 
 ## 5. Pivot test
 
 | # | Command | Pass / log field |
 |---|---------|------------------|
-| 5.1 | Fingertip centre on a marked point, bridge `start`. `python -m franka_deploy fdcal capture pivot --out piv --F_T_TCP configs/franka_cartesian.yaml --angle 20` (drives ±20° about TCP x, y, z at ≤ 10°/s and ≤ 2 cm/s, records each extreme). | **`piv/pivot.json`: `tcp_excursion_mm ≤ 2` and `F_T_TCP_translation_error_mm ≤ 2`** (`accept: true`). Also look: the fingertip stays on the mark |
+| 5.1 | Fingertip centre on a marked point, bridge `start`. `python -m franka_deploy fdcal capture pivot --out piv --F_T_TCP <yaml holding the measured F_T_TCP> --angle 20` (drives ±20° about TCP x, y, z at ≤ 10°/s and ≤ 2 cm/s, records each extreme). | **`piv/pivot.json`: `tcp_excursion_mm ≤ 2` and `F_T_TCP_translation_error_mm ≤ 2`** (`accept: true`). Also look: the fingertip stays on the mark |
 
 ## 6. Gripper width map (servo gripper only: on the Franka Hand skip to §13)
 
@@ -238,7 +238,7 @@ EOF
 | 12.9 | **Re-grasp:** while GRASPING, make the hand idle and not holding (stop it mid-hold, or restart `hand_server`). | up to `policy.max_regrasps` (2) new grasps 0.25 s apart; the fingers do not cycle |
 | 12.10 | **Shutdown while holding:** SIGTERM `hand_server` with the eraser held. | the grasp force stays (a finished grasp is not `stop()`ped); release with Desk / `homing` |
 | 12.11 | **Hysteresis on the hand:** `gripper.policy.close_below_train_m` **0.064** / `open_above_train_m` **0.070** (from the firstreal-single widths; the closest demo trigger is 0.02 mm under 0.064, so these are fitted to this dataset). Teleop a close and an open. | no chatter while holding; exactly one release; re-check after §13 changes `a`/`b` |
-| 12.12 | **With the controller:** `gripper.type: franka_hand` (profile `real-iphone`; endpoint `tcp://localhost:5566` from `tooling.hand.endpoint`). `check-config` rows `controller_gripper`, `franka_hand_driver`, `hand_endpoint`. Teleop close/open. | driver status: `rpc_timeouts` 0, `rpc_errors` 0, `stale_reads` ~0, `cmds_sent` rises |
+| 12.12 | **With the controller:** `gripper.type: franka_hand` (profile `real-iphone`; endpoint `tcp://localhost:5566` from `tooling.hand.endpoint`). `check-config` rows `controller_gripper`, `franka_hand_driver`, `hand_server`. Teleop close/open. | driver status: `rpc_timeouts` 0, `rpc_errors` 0, `stale_reads` ~0, `cmds_sent` rises |
 
 ## 13. Franka Hand width map
 
@@ -284,7 +284,8 @@ overshoot rests on this.
 | 14.1 / 14.2 | `backend.mujoco.pinv_damping`, damping of the sim, `robot.impedance.*` |
 | 14.3-14.5 | `robot.desk_end_effector`, `robot.impedance.collision_thresholds`, `robot.fci.libfranka_version` |
 | D9 | `tooling.finger_adapter.extension_m`, `tooling.tcp_x_along_hand` |
-| 4.3, 5.1 | `tooling.F_T_TCP` |
+| 4.3 | `tooling.F_T_C_main`, `tooling.F_T_TCP` |
+| 5.1 | `tooling.F_T_TCP` |
 
 Then re-run the sim stages with the measured values, so the pass/fail it reports matches the hardware (outputs go outside the repo):
 
@@ -293,6 +294,8 @@ python -m franka_sim eval --profile sim-iphone-fake --stage 1 --out $S/after_hw/
 python -m franka_sim eval --profile sim-iphone --stage 2b --demos 0,1 --out $S/after_hw/stage2b
 python -m franka_sim eval --profile sim-iphone --stage 3 --out $S/after_hw/stage3
 ```
+
+For the sim re-run, enter the measured camera mount as `tooling.F_T_C_main` (status `measured`; the sim then uses F_T_C_main @ C_T_TCP). Set `tooling.F_T_TCP` (status `measured`) only if it agrees with it (and with `extension_m` / `tcp_x_along_hand`) within 1 mm / 0.1 deg, or the sim run refuses to start (preflight `sim_tcp`). Leave `tooling.F_T_TCP` null in sim-only work: the launcher derives it.
 
 - Stage 1: kinematic feasibility with the real tooling geometry (D9), including the rig housing (30 mm thick) if the rig path is used.
 - Stage 2b: latency and stamps with the measured `clock.latency_s` (the gate `cam_stamp_err_ms_p95_max`, and the open live-vs-offline gates).

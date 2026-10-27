@@ -128,7 +128,10 @@ def resolve(args, run_overrides: dict | None = None, extra_sets=None) -> Run:
         (station_ids if g in STATION_ID_GROUPS else run_ids)[g] = i
     cfg["station"] = station_ids
     user_sets = list(getattr(args, "set", None) or []) + [str(x) for x in (extra_sets or [])]
-    sets = list(cfg.get("station_set", [])) + user_sets
+    auto_tcp = (cfg.pop("_sim_tcp", None) or {}).get("set")   # W10B: the launcher's derived TCP for the profile's DEFAULT
+    # station; the user sets (extension, side, robot ...) may change the geometry, so it is dropped here and every launcher
+    # child re-derives it from the full station (launcher.sim_tcp_fill), an explicit user tooling.F_T_TCP set still wins
+    sets = [x for x in cfg.get("station_set", []) if x != auto_tcp] + user_sets
     try:
         station = load_station({"station": station_ids, "run": run_ids}, sets=sets)
     except StationError as e:

@@ -324,17 +324,25 @@ def test_home_equals_deploy_yaml():
 
 
 def test_controller_fragment_equals_franka_cartesian():
+    """W10B: tooling.F_T_TCP is null (status hw) in both shipped toolings, so the fragment omits F_T_TCP and the
+    controller keeps franka_cartesian.yaml's value; an explicit value is passed through unchanged."""
     c = _yaml(CFG / "franka_cartesian.yaml")
-    f = load_station(IPHONE).controller_fragment()
-    assert np.array_equal(np.array(f["F_T_TCP"], float), np.array(c["F_T_TCP"], float))
+    st0 = load_station(IPHONE)
+    assert st0.get("tooling.F_T_TCP") is None and st0.prov("tooling.F_T_TCP").status == "hw"
+    f = st0.controller_fragment()
+    assert "F_T_TCP" not in f
+    given = np.array(c["F_T_TCP"], float)
+    f = load_station(IPHONE, sets=["tooling.F_T_TCP=" + str(given.tolist())]).controller_fragment()
+    assert np.array_equal(np.array(f["F_T_TCP"], float), given)
     g = f["gripper"]
     assert g["type"] == "franka_hand" and g["endpoint"] == "tcp://localhost:5566"
     assert (g["width_map"]["a"], g["width_map"]["b"]) == (1.0, 0.0431)          # b = train_closed_m (A5 review)
-    assert load_station({"station": {"tooling": "franka_hand_iphumi_rig1"}}).controller_fragment()["F_T_TCP"] == f["F_T_TCP"]
+    assert "F_T_TCP" not in load_station({"station": {"tooling": "franka_hand_iphumi_rig1"}}).controller_fragment()
 
 
 def test_controller_fragment_ee_frame():
-    st = load_station(IPHONE)
+    F0 = np.array(_yaml(CFG / "franka_cartesian.yaml")["F_T_TCP"], float)
+    st = load_station(IPHONE, sets=["tooling.F_T_TCP=" + str(F0.tolist())])
     robot = dict(st.groups["robot"], desk_end_effector="franka_hand",
                  NE_T_EE=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.1034], [0, 0, 0, 1]])
     st2 = dataclasses.replace(st, groups={**st.groups, "robot": robot})
@@ -432,7 +440,7 @@ def test_station_groups_are_deeply_frozen():
     got = st.get("tooling.C_T_TCP")                         # accessors return mutable copies
     got[0][0] = 99.0
     frag = st.controller_fragment()
-    frag["F_T_TCP"][0][0] = 99.0
+    frag["gripper"]["width_map"]["a"] = 99.0
     st.bridge_fragment()["safety"]["v_max"] = 99.0
     assert st.get("tooling.C_T_TCP")[0][0] == 1.0 and st.fingerprint() == fp
     assert yaml.safe_load(st.to_yaml())["fingerprint"] == fp   # to_yaml thaws

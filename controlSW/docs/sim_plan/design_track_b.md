@@ -272,7 +272,7 @@ See INTERFACES.md I-STATION. Derived fragments, which must equal today's configs
 
 ## Eval runner (`franka_sim/eval/`)
 
-- **CLI:** `python -m franka_sim eval --deploy-config D --profile P --stage 1|1b|2a|2b|3|all [--policy id] [--episodes N] [--sweep file] [--set k=v] --out DIR`.
+- **CLI:** `python -m franka_sim eval --deploy-config D --profile P --stage 1|1b|2a|2b|3|all [--policy id] [--episodes N] [--sweep file] [--set k=v] --out DIR`. `--stage all` runs 1, 1b, 2a, 2b (1b, the full-stack campaign, takes about 1 h for 45 demos).
 - **Run layout:** `DIR/<stage>_<policy>_<fingerprint>_<sha8(sets)>/`, holding `station_resolved.yaml`, `criteria.yaml`, `report.json`, `report.html`.
 - **Modules:**
   - `runner.py`: per-env subprocesses; the sim side never imports torch and the bp side never imports mujoco.

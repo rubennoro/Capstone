@@ -333,12 +333,19 @@ class Station:
         tool = self.groups.get("tooling")
         if not tool:
             return out
-        F_T_TCP = np.array(tool["F_T_TCP"], float)
         robot = self.groups.get("robot")
-        if robot and robot["desk_end_effector"] != "none":
-            F_T_EE = np.array(robot["F_T_NE"], float) @ np.array(robot["NE_T_EE"], float)
-            F_T_TCP = np.linalg.inv(F_T_EE) @ F_T_TCP
-        out["F_T_TCP"] = F_T_TCP.tolist()
+        desk_ee = bool(robot) and robot["desk_end_effector"] != "none"
+        if tool.get("F_T_TCP") is not None:
+            F_T_TCP = np.array(tool["F_T_TCP"], float)
+            if desk_ee:
+                F_T_EE = np.array(robot["F_T_NE"], float) @ np.array(robot["NE_T_EE"], float)
+                F_T_TCP = np.linalg.inv(F_T_EE) @ F_T_TCP
+            out["F_T_TCP"] = F_T_TCP.tolist()
+        elif desk_ee:   # null (W10B): the controller file's value is a flange-frame placeholder, wrong as EE_T_TCP
+            raise StationError(["tooling.F_T_TCP is null but robot.desk_end_effector is not 'none': measure F_T_TCP "
+                                "(fdcal handeye) or, in sim, let the launcher derive it"])
+        # else null (W10B): no F_T_TCP here, the controller keeps franka_cartesian.yaml's placeholder (sim runs get the
+        # model-derived value as a station override from the launcher, see launcher.sim_tcp_fill)
         hand = tool.get("hand", {})
         if hand.get("type") == "franka_hand":
             wm = tool["width_map"]

@@ -122,6 +122,18 @@ def gripper_lag_steps(t, meas, cmd, step_s: float, grasped_fn=None) -> list:
     return out
 
 
+def gripper_reference(tr) -> tuple:
+    """(width the lag gate compares the measured width with, its name). W10B: the hand's own target
+    ``width_servo_target`` (FrankaHandDriver.target_position(): for a grasp wm.train(max(0, gap - eps_inner)), what the
+    Hand actually servos to) when the trace has it with finite values, else the policy's ``width_commanded``. With the
+    policy command an empty-hand close counted the grasp epsilon (6.9 mm) as error for ever (W10A_hand.WORKLOG)."""
+    if "width_servo_target" in tr.files:
+        w = np.asarray(tr["width_servo_target"], float)
+        if w.size and np.all(np.isfinite(w)):
+            return w, "width_servo_target"
+    return np.asarray(tr["width_commanded"], float), "width_commanded"
+
+
 def tracking_err_mm(safe_target, fk) -> np.ndarray:
     return np.linalg.norm(np.asarray(safe_target)[:, :3] - np.asarray(fk)[:, :3], axis=1) * 1000.0
 
@@ -187,7 +199,7 @@ def ground_truth_compare(ep_dir: Path, success: dict, t_start: float, judge_trut
 def episode_metrics(ep_dir: Path, grasped_fn, step_s: float) -> dict:
     """Arrays/numbers from one episode dir (missing files give empty results, never an exception)."""
     ep_dir = Path(ep_dir)
-    out = {"tracking_mm": np.array([]), "gripper_lag": [], "infer_s": [], "obs_motion_mm": [], "reflexes": 0, "stale_image": 0,
+    out = {"tracking_mm": np.array([]), "gripper_lag": [], "gripper_lag_ref": None, "infer_s": [], "obs_motion_mm": [], "reflexes": 0, "stale_image": 0,
            "label": None, "n_calls": 0, "holds": 0}
     tp = ep_dir / "controller_trace.npz"
     tr = None
@@ -203,7 +215,8 @@ def episode_metrics(ep_dir: Path, grasped_fn, step_s: float) -> dict:
     if tr is not None:
         ref = tr["safe_target"] if "safe_target" in tr.files else tr["commanded"]
         out["tracking_mm"] = tracking_err_mm(ref, tr["fk"])
-        out["gripper_lag"] = gripper_lag_steps(tr["t"], tr["width_measured"], tr["width_commanded"], step_s, grasped_fn)
+        ref_w, out["gripper_lag_ref"] = gripper_reference(tr)
+        out["gripper_lag"] = gripper_lag_steps(tr["t"], tr["width_measured"], ref_w, step_s, grasped_fn)
     for f in sorted((ep_dir / "tap").glob("call_*.npz")):
         c = np.load(f, allow_pickle=False)
         out["n_calls"] += 1
@@ -256,6 +269,7 @@ def aggregate(eps: list, R: rn.Run, sim_source: str, n_gripper_events: int | Non
         "tracking_err_mm_p95": pct(trk, 95) if trk.size else None,
         "gripper_width_lag_steps_p95": pct(lag, 95) if lag else (0.0 if eps else None),
         "n_gripper_lag_events": len(lag),
+        "gripper_lag_reference": sorted({e["m"].get("gripper_lag_ref") for e in eps} - {None}),
         "inference_latency_s_p95": pct(inf, 95), "obs_motion_mm_p95": pct(om, 95),
         "stale_image_errors": int(sum(e["m"]["stale_image"] for e in eps)), "holds": int(sum(e["m"]["holds"] for e in eps)),
         "slip_exceeds_tol_episodes": int(sum(bool(e["truth"].get("slip_exceeds_tol")) for e in eps)),

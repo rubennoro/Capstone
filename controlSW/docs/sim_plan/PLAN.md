@@ -194,7 +194,7 @@ controlSW/configs/
   - launcher support for Track A's needs: `PYTHONPATH` += franka_sim, the `hand` child when `hand.endpoint != bridge`, a `sim_reset[:json]` script action.
 - **Rig sender** `sensor_rig/sensor_rig/stream/sender.py`: `RigFrameSource` → virtual-iPhone images → v2 with capture stamps; drop-oldest queue; `sensor-rig stream-send`.
 - **Render sender** `franka_sim/senders/render_sender.py`: subscribes to the sim state PUB, renders at 30 fps, and speaks the sensor's protocol (v1 without stamps for the iPhone, v2 for the rig).
-- **Eval runner** `franka_sim/eval/`, run as `python -m franka_sim eval --deploy-config D --profile P --stage 1|1b|2a|2b|3|all [--policy] [--sweep] [--set] --out DIR`:
+- **Eval runner** `franka_sim/eval/`, run as `python -m franka_sim eval --deploy-config D --profile P --stage 1|1b|2a|2b|3|all [--policy] [--sweep] [--set] --out DIR` (`--stage all` = 1, 1b, 2a, 2b; it includes the 1b full-stack campaign, about 1 h for the 45 demos; Stage 3 only when asked for):
   - `criteria.py` (pure);
   - `report.py`: reuses `franka_deploy.eval.report.episode_metrics/summarize`, adds gates, verdict, `image_source`, `policy_id`, station fingerprint, `criteria_version`, schema `sim_report/v1`, and an HTML banner for render runs;
   - `judge.py`: subscribes to the sim state and writes `y`/`n` to `commands.txt`;
@@ -333,12 +333,12 @@ Touching a file outside your own track's list is an automatic review FIX. Never 
 ## 11. Verification (end to end, at W10)
 
 1. **Tests.** `pytest controlSW/franka_deploy/tests controlSW/franka_sim/tests` (env_realenv), the env_bp subset, the sensor_rig suite, and the 3 regression checks. All green.
-2. **Assets and config.** `python -m franka_sim check-assets`. Then `python -m franka_deploy check-config --config deploy.yaml --profile sim-iphone|sim-rig|real-iphone|real-rig` shows the expected placeholders (real-* FAIL on critical placeholders, as designed).
-3. **Stage 1 and the camera check.** `python -m franka_sim eval --profile sim-iphone --stage 1` for Panda and FR3 gives the placement plus clearance. Then `python -m franka_sim camera-check` gives the overlay report.
-4. **Stages 1b, 2a, 2b, 3.** `python -m franka_sim eval --profile sim-iphone --stage all --policy demo_replay`, then `--policy bp_run001` (real checkpoint, GPU). Repeat with `--profile sim-rig`. Each run writes `report.json` + `report.html` with PASS/FAIL per gate.
+2. **Assets and config.** `python -m franka_sim check-assets`. Then `python -m franka_deploy check-config --config controlSW/franka_deploy/configs/deploy.yaml --profile sim-iphone|sim-rig|real-iphone|real-rig` (from `controlSW/franka_deploy`: `--config configs/deploy.yaml`) shows the expected placeholders (real-* FAIL on critical placeholders, as designed).
+3. **Stage 1 and the camera check.** `python -m franka_sim eval --profile sim-iphone --stage 1 --out $S/s1` gives the placement plus clearance. For both arms: `python -m franka_sim stage1 --zarr $ZARR --ids robot=panda,tooling=franka_hand_iphumi_iphone16pro,sensor=iphone16pro_wifi,scene=block_raise_table --robots panda,fr3 --out $S/s1_both`. Then `python -m franka_sim camera-check --zarr $ZARR --stage1 $S/s1_both/<robot>_ext<e>_<side>/stage1.json --out $S/camcheck` (one combo dir per robot/extension/side) gives the overlay report.
+4. **Stages 1b, 2a, 2b, 3.** `python -m franka_sim eval --profile sim-iphone --stage all --policy demo_replay --out DIR` (includes Stage 1b: about 1 h for 45 demos), then `--policy bp_run001` (real checkpoint, GPU). Repeat with `--profile sim-rig` (and `--out DIR` on every eval call). Each run writes `report.json` + `report.html` with PASS/FAIL per gate.
 5. **Sweep.** Latency × link × v_max with summary.html comparing runs.
-6. **Policy contract.** `python -m franka_deploy policy-contract` against bp, fake and replay servers.
-7. **Manual look.** A Stage 3 run with `viewer: true` to watch the arm, hand and eraser.
+6. **Policy contract.** `python -m franka_deploy policy-contract --endpoint tcp://localhost:18765 [--expect run/policy/<id>.yaml]` against bp, fake and replay servers.
+7. **Manual look.** A Stage 3 run with `backend.mujoco.viewer: true` (needs a display; set it in a copy of deploy.yaml as `profiles.sim-iphone.bridge.override.backend.mujoco.viewer: true`, since `--set` is station-only) to watch the arm, hand and eraser.
 
 ## 12. Hardware implications to surface as they appear
 
