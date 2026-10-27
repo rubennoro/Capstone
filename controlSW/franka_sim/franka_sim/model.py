@@ -305,6 +305,270 @@ def _set_cam_intrinsics(cam, K, width: int, height: int) -> None:
     cam.principal_pixel = [width / 2 - (K[0, 2] + 0.5), (K[1, 2] + 0.5) - height / 2]
 
 
+def _tcp_axes(tool: dict, info: dict) -> tuple[np.ndarray, np.ndarray]:
+    """TCP axes in the hand frame (x = sgn * hand y, z = hand z, y = z x x) and the camera direction (TCP -y)."""
+    info["tcp_x_along_hand"] = str(tool.get("tcp_x_along_hand", "+y"))
+    sgn = {"+y": 1.0, "-y": -1.0}[info["tcp_x_along_hand"]]
+    x_h = np.array([0, sgn, 0.0])
+    z_h = np.array([0, 0, 1.0])
+    R = np.column_stack([x_h, np.cross(z_h, x_h), z_h])
+    return R, -R[:, 1]
+
+
+# --------------------------------------------------------------------------------------------- finger kit (A9)
+
+JAW_FOOTPRINT_TOL_M = 0.001      # finger_0 vertices within this of the base z form the jaw-mount footprint
+ADAPTER_DENSITY_KG_M3 = 1240.0   # PLA: the placeholder adapter block (A9.md)
+
+
+def resolve_kit(rel: str) -> Path:
+    """tooling.finger_adapter.kit is relative to controlSW/ (like robot.model.mjcf) or absolute."""
+    p = Path(rel)
+    p = p if p.is_absolute() else CONTROLSW / p
+    if not p.is_dir():
+        raise FileNotFoundError(f"tooling.finger_adapter.kit not found: {p} (paths are relative to {CONTROLSW})")
+    return p
+
+
+def jaw_mount(m, body: str) -> tuple[float, float]:
+    """(y_c, z_base) of the jaw mount J in the finger body frame, from the stock ``finger_0`` mesh: z_base = its lowest
+    vertex, y_c = the centre of the base footprint (vertices within JAW_FOOTPRINT_TOL_M of z_base) along y."""
+    import mujoco
+
+    bid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, body)
+    for g in np.flatnonzero(m.geom_bodyid == bid):
+        if m.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH or not m.mesh(m.geom_dataid[g]).name.endswith("finger_0"):
+            continue
+        mid = m.geom_dataid[g]
+        v = m.mesh_vert[m.mesh_vertadr[mid]: m.mesh_vertadr[mid] + m.mesh_vertnum[mid]].astype(float)
+        R = np.zeros(9)
+        mujoco.mju_quat2Mat(R, m.geom_quat[g])
+        w = v @ R.reshape(3, 3).T + m.geom_pos[g]
+        z0 = float(w[:, 2].min())
+        foot = w[w[:, 2] <= z0 + JAW_FOOTPRINT_TOL_M]
+        return float(foot[:, 1].min() + foot[:, 1].max()) / 2, z0
+    raise ValueError(f"finger body {body} has no finger_0 mesh geom: cannot locate the jaw mount")
+
+
+def _mesh_geom(arm, body, name: str, mesh_name: str, T: np.ndarray, rgba, *, collide: bool, mass: float,
+               friction=None, condim: int | None = None, solref=None, solimp=None):
+    import mujoco
+
+    g = body.add_geom()
+    g.name = name
+    g.type = mujoco.mjtGeom.mjGEOM_MESH
+    g.meshname = mesh_name
+    g.pos = T[:3, 3]
+    g.quat = mat_to_quat(T[:3, :3])
+    g.rgba = rgba
+    g.group = 0
+    if not collide:
+        g.contype = g.conaffinity = 0
+    g.mass = float(mass)
+    if friction is not None:
+        g.friction = [float(x) for x in friction]
+    if condim is not None:
+        g.condim = condim
+    if solref is not None:
+        g.solref = [float(x) for x in solref]
+    if solimp is not None:
+        g.solimp = [float(x) for x in solimp]
+    return g
+
+
+def _add_mesh(arm, name: str, vertices, faces=None) -> str:
+    """Mesh asset from vertices (m, float64 -> MuJoCo float32); no faces = MuJoCo builds the convex hull."""
+    ms = arm.add_mesh()
+    ms.name = name
+    ms.uservert = np.asarray(vertices, float).ravel().tolist()
+    if faces is not None:
+        ms.userface = np.asarray(faces, int).ravel().tolist()
+    return name
+
+
+def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_y: float, info: dict) -> np.ndarray:
+    """A9c: mount a finger kit on both Franka fingers (frame chain in A9.md / finger_kit.py); returns hand_T_TCP.
+
+    Per Franka finger: J from its stock finger_0 mesh, the kit side whose camera_face matches the camera direction in
+    that finger's frame, dy = lateral_offset_m (or auto_dy), placement by finger_kit.place. Geoms: contact part ->
+    mesh ``pad_{l|r}`` (MuJoCo collides its convex hull), structure parts -> ``finger_holder_{l|r}`` (+ ``_<k>`` for a
+    2nd/3rd structure part; pre-split collision pieces ``..._c<i>`` with the full mesh kept visual-only and carrying
+    the mass), placeholder adapter -> box ``finger_adapter_{l|r}`` from J to the M plane over the stock footprint
+    (omitted when L = 0), tags ``tag_{l|r}`` (+ ``_ink``) from the kit tag frames. The stock finger is replaced by the
+    adapter (J = its base face): all its collisions are off and its visual meshes go to group 3 (not rendered).
+    TCP origin = (0, 0, z_mid) in the hand frame, z_mid = mean hand z of the two placed tips at gap 0."""
+    import mujoco
+
+    from franka_sim import finger_kit as FK
+
+    fa = tool["finger_adapter"]
+    kit = FK.load_kit(resolve_kit(str(fa["kit"])), expect_sha=fa.get("kit_sha256"))
+    variant = str(fa.get("kit_variant", "full"))
+    if variant != "full":     # A9 addendum: needs finger_kit.Kit.variants + Tag.on (load_kit does not parse them yet)
+        raise ValueError(f"tooling.finger_adapter.kit_variant {variant!r}: only 'full' (the sides' own parts) is "
+                         f"supported until finger_kit.load_kit parses kit.yaml 'variants' and tag 'on' carriers")
+    L = float(fa.get("adapter_length_m", 0.0))
+    yaw = float(fa.get("adapter_yaw_deg", 0.0))
+    dy_cfg = fa.get("lateral_offset_m", "auto")
+    sx, sy = (float(v) for v in fa.get("adapter_section_m", [0.021, 0.024]))
+    R_h, cam_dir_h = _tcp_axes(tool, info)
+    contact = kit.contact
+    pad_sol = {"solref": contact["solref"] if contact["solref"] is not None else grip_sol["solref"],
+               "solimp": contact["solimp"] if contact["solimp"] is not None else grip_sol["solimp"]}
+    if pad_sol["solimp"] is not None and len(pad_sol["solimp"]) == 3:
+        pad_sol["solimp"] = list(pad_sol["solimp"]) + [0.5, 2.0]
+    mesh_of: dict = {}
+
+    def mesh_for(pn: str, piece: int | None = None) -> str:
+        key = (pn, piece)
+        if key not in mesh_of:
+            p = kit.parts[pn]
+            nm = f"finger_kit_{pn}" + ("" if piece is None else f"_c{piece}")
+            mesh_of[key] = (_add_mesh(arm, nm, p.vertices, p.faces) if piece is None
+                            else _add_mesh(arm, nm, p.collision_vertices[piece]))
+        return mesh_of[key]
+
+    hand = names["bodies"]["hand"]
+    rep: dict = {"id": kit.id, "sha": kit.sha256, "path": str(kit.path), "variant": variant, "tags_skipped": [],
+                 "side_for_finger": {}, "L": L, "dy": {},
+                 "dy_source": "auto" if dy_cfg == "auto" else "tooling.finger_adapter.lateral_offset_m",
+                 "yaw": yaw, "J_m": {}, "masses_kg": {}}
+    tips_h, inner_y, pad_len, tag_h = [], {}, [], {}
+    for s, fb in (("l", names["bodies"]["finger_l"]), ("r", names["bodies"]["finger_r"])):
+        body = arm.body(fb)
+        for g in body.geoms:                                   # the stock finger is replaced by the adapter
+            if g.contype != 0 or g.conaffinity != 0:
+                g.contype = g.conaffinity = 0
+            elif g.type == mujoco.mjtGeom.mjGEOM_MESH:
+                g.group = 3
+        hT = _body_in(m0, d0, fb, hand)
+        dir_f = hT[:3, :3].T @ cam_dir_h                       # camera direction in this finger's frame (+-x)
+        y_c, z_base = jaw_mount(m0, fb)
+        J = FK.jaw_T(y_c, z_base)
+        dir_M = (J @ FK.J_T_M(L, 0.0, yaw))[:3, :3].T @ dir_f   # ... in the M frame (camera_face is about M's x)
+        if abs(dir_M[0]) < 0.5:
+            raise ValueError(f"finger {fb}: camera direction in the kit M frame {dir_M.round(3).tolist()} is not "
+                             f"along +-x (adapter_yaw_deg {yaw}): no kit side faces the camera")
+        ks = next(n for n, sd in kit.sides.items() if sd.camera_face == np.sign(dir_M[0]))
+        dy = FK.auto_dy(kit, ks, J, L, yaw) if dy_cfg == "auto" else float(dy_cfg)
+        pl_ = FK.place(kit, ks, J, L, dy, yaw)
+        rep["side_for_finger"][s], rep["dy"][s], rep["J_m"][s] = ks, dy, [0.0, y_c, z_base]
+        masses = {}
+        if L > 0:
+            _box(body, f"finger_adapter_{s}", [sx, sy, L], J @ make_T(None, [0, 0, L / 2]), [0.45, 0.45, 0.5, 1],
+                 collide=True, mass=ADAPTER_DENSITY_KG_M3 * sx * sy * L)
+            masses[f"finger_adapter_{s}"] = ADAPTER_DENSITY_KG_M3 * sx * sy * L
+        k_struct = 0
+        for pn in kit.sides[ks].parts:
+            part = kit.parts[pn]
+            T = pl_["parts"][pn]
+            if part.role == "contact":
+                gname = f"pad_{s}"
+                _mesh_geom(arm, body, gname, mesh_for(pn), T, [0.15, 0.15, 0.15, 1], collide=True, mass=part.mass_kg,
+                           friction=contact["friction"], condim=4, **pad_sol)
+                v_b = part.vertices @ T[:3, :3].T + T[:3, 3]
+                inner_y[s] = float(v_b[:, 1].min())
+                pad_len.append(float(v_b[:, 2].max() - v_b[:, 2].min()))
+            else:
+                gname = f"finger_holder_{s}" + ("" if k_struct == 0 else f"_{k_struct}")
+                k_struct += 1
+                if part.collision == "hull":
+                    _mesh_geom(arm, body, gname, mesh_for(pn), T, [0.85, 0.85, 0.8, 1], collide=True,
+                               mass=part.mass_kg)
+                else:                                          # pre-split convex pieces collide, the full mesh shows
+                    _mesh_geom(arm, body, gname, mesh_for(pn), T, [0.85, 0.85, 0.8, 1], collide=False,
+                               mass=part.mass_kg)
+                    for i in range(len(part.collision_vertices)):
+                        _mesh_geom(arm, body, f"{gname}_c{i}", mesh_for(pn, i), T, [0.85, 0.85, 0.8, 0],
+                                   collide=True, mass=0.0)
+            masses[gname] = part.mass_kg
+        if not pl_["tags"]:
+            raise ValueError(f"finger kit {kit.id}: side {ks} has no tags (tag_{s} is required by the frames export)")
+        for i, t in enumerate(pl_["tags"]):
+            tn = f"tag_{s}" + ("" if i == 0 else f"{i}")
+            Rt = t["body_T_tag"][:3, :3]
+            c = t["centre"] + FK.TAG_LIFT_M * t["normal"]
+            _box(body, tn, [0.001, t["size_m"], t["size_m"]], make_T(Rt, c), [1, 1, 1, 1], collide=False)
+            _box(body, f"{tn}_ink", [0.001, 0.6 * t["size_m"], 0.6 * t["size_m"]],
+                 make_T(Rt, c + 0.0006 * t["normal"]), [0, 0, 0, 1], collide=False)
+            if i == 0:
+                tag_h[s] = hT[:3, :3] @ c + hT[:3, 3]
+        tips_h.append(hT[:3, :3] @ pl_["tip"] + hT[:3, 3])
+        rep["masses_kg"].update(masses)
+
+    mid = (tips_h[0] + tips_h[1]) / 2
+    hand_T_TCP = make_T(R_h, [0, 0, mid[2]])
+    info["pad_offset_m"] = inner_y["l"] + inner_y["r"]          # contact-part inner separation at gap 0
+    info["pad_offset_source"] = f"finger kit {kit.id} (contact parts' inner faces at gap 0)"
+    info["stock_finger_mesh_collision_off"] = True
+    info["stock_finger_mesh_inner_y_m"] = float(mesh_inner_y)
+    info["pad_length_m"] = float(np.mean(pad_len))
+    info["tcp_at"] = "tip"
+    rep.update(flange_to_tip_m=None, pad_length_m=info["pad_length_m"],
+               tag_separation_closed_m=float(np.linalg.norm(tag_h["l"] - tag_h["r"])),
+               tcp_residual_mm=(mid[:2] * 1e3).tolist(), tips_hand_m={"l": tips_h[0].tolist(), "r": tips_h[1].tolist()},
+               pad_offset_m=info["pad_offset_m"])
+    info["finger_kit"] = rep
+    return hand_T_TCP
+
+
+FINGER_MODES = ("stock", "box", "kit")
+
+
+def finger_mode(fa: dict) -> str:
+    """tooling.finger_adapter.mode (A9 addendum): stock | box | kit; absent -> kit if ``kit`` is set, else box."""
+    mode = fa.get("mode") or ("kit" if fa.get("kit") is not None else "box")
+    if mode not in FINGER_MODES:
+        raise ValueError(f"tooling.finger_adapter.mode must be one of {list(FINGER_MODES)}, got {mode!r}")
+    if mode == "kit" and fa.get("kit") is None:
+        raise ValueError("tooling.finger_adapter.mode is kit but finger_adapter.kit is null (set the kit directory)")
+    return mode
+
+
+def _stock_fingers(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, info: dict) -> np.ndarray:
+    """mode stock: the menagerie fingers untouched (all stock collisions on, no pads/tags/adapters added); each finger's
+    ``fingertip_pad_collision_1`` geom is named ``pad_{l|r}`` so scene/kinematics/campaign resolve the pads. TCP origin
+    = midpoint of those two pad centres in the hand frame (on the centre line), axes as in box mode. No tags: the
+    images are not training-equivalent (grasp-physics and reach comparisons only). The five stock fingertip pads get
+    ``grip_contact()`` solref/solimp (geometry and friction kept), so all three modes share one contact model."""
+    import mujoco
+
+    R_h, _ = _tcp_axes(tool, info)
+    hand = names["bodies"]["hand"]
+    centres, zlen = [], []
+    for s, fb in (("l", names["bodies"]["finger_l"]), ("r", names["bodies"]["finger_r"])):
+        hit = [g for g in arm.body(fb).geoms
+               if g.classname is not None and g.classname.name.endswith("fingertip_pad_collision_1")]
+        if len(hit) != 1:
+            raise ValueError(f"finger {fb}: expected one fingertip_pad_collision_1 geom, found {len(hit)}")
+        hit[0].name = f"pad_{s}"
+        for gp in arm.body(fb).geoms:
+            if gp.classname is not None and STOCK_PAD_CLASS.search(gp.classname.name or ""):
+                gp.solref, gp.solimp = list(grip_sol["solref"]), list(grip_sol["solimp"])
+        # pose/size from the first compile (class defaults resolved there)
+        bid = mujoco.mj_name2id(m0, mujoco.mjtObj.mjOBJ_BODY, fb)
+        cands = [g for g in np.flatnonzero(m0.geom_bodyid == bid) if m0.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX
+                 and np.allclose(m0.geom_size[g], hit[0].size) and np.allclose(m0.geom_pos[g], hit[0].pos)]
+        if len(cands) != 1:
+            raise ValueError(f"finger {fb}: cannot locate fingertip_pad_collision_1 in the compiled model")
+        g = cands[0]
+        hT = _body_in(m0, d0, fb, hand)
+        centres.append(hT[:3, :3] @ m0.geom_pos[g] + hT[:3, 3])
+        R = np.zeros(9)
+        mujoco.mju_quat2Mat(R, m0.geom_quat[g])
+        zlen.append(float(2 * np.abs(R.reshape(3, 3)[2]) @ m0.geom_size[g]))    # z extent in the finger frame
+    mid = (centres[0] + centres[1]) / 2
+    info["pad_offset_m"] = float(abs(centres[0][1] - centres[1][1]) - 2 * float(m0.geom_size[g][1]))
+    info["pad_offset_source"] = "stock fingertip_pad_collision_1 inner faces at gap 0"
+    info["stock_finger_mesh_collision_off"] = False
+    info["pad_length_m"] = float(np.mean(zlen))
+    info["tcp_at"] = "stock_pads"
+    info["stock_pads"] = {"centres_hand_m": [c.tolist() for c in centres], "tcp_residual_mm": (mid[:2] * 1e3).tolist(),
+                          "contact": {"source": "grip_contact() on fingertip_pad_collision_1..5 (geometry, friction stock)",
+                                      **grip_sol}}
+    return make_T(R_h, [0, 0, mid[2]])
+
+
 def build_model(station: Station, sim: dict | None = None, with_scene: bool = True) -> SimModel:
     import mujoco
 
@@ -378,43 +642,51 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
     # -- 3. printed finger adapters (finger frame: y = closing side outward, z = approach)
     fa, wm = tool["finger_adapter"], tool["width_map"]
     grip_sol = grip_contact(simc)
-    b = float(fa.get("pad_offset_m", PAD_OFFSET_M))          # pad offset (geometry), NOT width_map.b (training units)
-    info["pad_offset_m"] = b
-    info["tag_y_extra_m"] = float(fa.get("tag_y_extra_m", TAG_Y_EXTRA_M))
-    info["tag_z_from_pad_m"] = float(fa.get("tag_z_from_pad_m", TAG_Z_FROM_PAD_M))
-    info["pad_offset_source"] = ("tooling.finger_adapter.pad_offset_m" if "pad_offset_m" in fa
-                                 else "model.PAD_OFFSET_M placeholder (CAD pending)")
-    px, pt, pl = (float(v) for v in fa["pad_size_m"])
-    pad_c = np.array([0.0, b / 2 + pt / 2, tip_z + float(fa["extension_m"]) - pl / 2])
-    info["stock_finger_mesh_collision_off"] = bool(mesh_inner_y < b / 2)
-    info["tcp_x_along_hand"] = str(tool.get("tcp_x_along_hand", "+y"))
-    sgn = {"+y": 1.0, "-y": -1.0}[info["tcp_x_along_hand"]]
-    # TCP in the hand frame: x = sgn * hand y, z = hand z, y = z x x; origin = midpoint of the pad centres
-    x_h = np.array([0, sgn, 0.0])
-    z_h = np.array([0, 0, 1.0])
-    hand_T_TCP = make_T(np.column_stack([x_h, np.cross(z_h, x_h), z_h]),
-                        [0, 0, hand_T_fl[2, 3] + pad_c[2]])
-    cam_dir_h = -hand_T_TCP[:3, 1]                         # TCP -y (camera side) in the hand frame
-    for side, fb in (("l", names["bodies"]["finger_l"]), ("r", names["bodies"]["finger_r"])):
-        body = arm.body(fb)
-        for g in body.geoms:
-            cls = g.classname.name if g.classname is not None else ""
-            is_coll = g.contype != 0 or g.conaffinity != 0
-            if STOCK_PAD_CLASS.search(cls or "") or (info["stock_finger_mesh_collision_off"] and is_coll
-                                                     and g.type == mujoco.mjtGeom.mjGEOM_MESH):
-                g.contype = g.conaffinity = 0
-        _box(body, f"pad_{side}", [px, pt, pl], make_T(None, pad_c), [0.15, 0.15, 0.15, 1], collide=True,
-             friction=fa["friction"], condim=4, **grip_sol)
-        # tag patch on the camera-facing pad face (see report: the literal "outer face" is invisible to the camera)
-        hT = _body_in(m0, d0, fb, names["bodies"]["hand"])
-        dir_f = hT[:3, :3].T @ cam_dir_h                   # camera direction in this finger's frame (+-x)
-        face = np.sign(dir_f[0]) * px / 2
-        tag_z = pad_c[2] + float(fa.get("tag_z_from_pad_m", TAG_Z_FROM_PAD_M))
-        tag_c = np.array([face + np.sign(dir_f[0]) * 0.0005, b / 2 + TAG_SIZE_M / 2 + float(fa.get("tag_y_extra_m", TAG_Y_EXTRA_M)), tag_z])
-        _box(body, f"tag_{side}", [0.001, TAG_SIZE_M, TAG_SIZE_M], make_T(None, tag_c), [1, 1, 1, 1], collide=False)
-        tag_in = tag_c + [np.sign(dir_f[0]) * 0.0006, 0, 0]
-        _box(body, f"tag_{side}_ink", [0.001, 0.6 * TAG_SIZE_M, 0.6 * TAG_SIZE_M], make_T(None, tag_in),
-             [0, 0, 0, 1], collide=False)
+    mode = finger_mode(fa)
+    info["finger_mode"] = mode
+    if fa.get("kit") is not None and mode != "kit":
+        info["finger_kit_ignored"] = f"finger_adapter.kit is set but mode={mode}: kit ignored"
+        print(f"[model] {info['finger_kit_ignored']}", flush=True)
+    if mode == "kit":                        # A9 finger kit (real CAD fingers); box mode below is unchanged
+        hand_T_TCP = _mount_kit(arm, m0, d0, names, tool, grip_sol, mesh_inner_y, info)
+        info["finger_kit"]["flange_to_tip_m"] = float((F_T_hand @ hand_T_TCP)[2, 3])
+    elif mode == "stock":                    # A9 addendum: unmodified menagerie fingers
+        hand_T_TCP = _stock_fingers(arm, m0, d0, names, tool, grip_sol, info)
+    else:
+        b = float(fa.get("pad_offset_m", PAD_OFFSET_M))          # pad offset (geometry), NOT width_map.b (training units)
+        info["pad_offset_m"] = b
+        info["tag_y_extra_m"] = float(fa.get("tag_y_extra_m", TAG_Y_EXTRA_M))
+        info["tag_z_from_pad_m"] = float(fa.get("tag_z_from_pad_m", TAG_Z_FROM_PAD_M))
+        info["pad_offset_source"] = ("tooling.finger_adapter.pad_offset_m" if "pad_offset_m" in fa
+                                     else "model.PAD_OFFSET_M placeholder (CAD pending)")
+        px, pt, pl = (float(v) for v in fa["pad_size_m"])
+        pad_c = np.array([0.0, b / 2 + pt / 2, tip_z + float(fa["extension_m"]) - pl / 2])
+        info["stock_finger_mesh_collision_off"] = bool(mesh_inner_y < b / 2)
+        info["pad_length_m"] = pl
+        info["tcp_at"] = "pad_centre"
+        # TCP in the hand frame: x = sgn * hand y, z = hand z, y = z x x; origin = midpoint of the pad centres
+        R_h, cam_dir_h = _tcp_axes(tool, info)
+        hand_T_TCP = make_T(R_h, [0, 0, hand_T_fl[2, 3] + pad_c[2]])
+        for side, fb in (("l", names["bodies"]["finger_l"]), ("r", names["bodies"]["finger_r"])):
+            body = arm.body(fb)
+            for g in body.geoms:
+                cls = g.classname.name if g.classname is not None else ""
+                is_coll = g.contype != 0 or g.conaffinity != 0
+                if STOCK_PAD_CLASS.search(cls or "") or (info["stock_finger_mesh_collision_off"] and is_coll
+                                                         and g.type == mujoco.mjtGeom.mjGEOM_MESH):
+                    g.contype = g.conaffinity = 0
+            _box(body, f"pad_{side}", [px, pt, pl], make_T(None, pad_c), [0.15, 0.15, 0.15, 1], collide=True,
+                 friction=fa["friction"], condim=4, **grip_sol)
+            # tag patch on the camera-facing pad face (see report: the literal "outer face" is invisible to the camera)
+            hT = _body_in(m0, d0, fb, names["bodies"]["hand"])
+            dir_f = hT[:3, :3].T @ cam_dir_h                   # camera direction in this finger's frame (+-x)
+            face = np.sign(dir_f[0]) * px / 2
+            tag_z = pad_c[2] + float(fa.get("tag_z_from_pad_m", TAG_Z_FROM_PAD_M))
+            tag_c = np.array([face + np.sign(dir_f[0]) * 0.0005, b / 2 + TAG_SIZE_M / 2 + float(fa.get("tag_y_extra_m", TAG_Y_EXTRA_M)), tag_z])
+            _box(body, f"tag_{side}", [0.001, TAG_SIZE_M, TAG_SIZE_M], make_T(None, tag_c), [1, 1, 1, 1], collide=False)
+            tag_in = tag_c + [np.sign(dir_f[0]) * 0.0006, 0, 0]
+            _box(body, f"tag_{side}_ink", [0.001, 0.6 * TAG_SIZE_M, 0.6 * TAG_SIZE_M], make_T(None, tag_in),
+                 [0, 0, 0, 1], collide=False)
     names["geoms"] = {"pad_l": "pad_l", "pad_r": "pad_r", "tag_l": "tag_l", "tag_r": "tag_r"}
 
     # -- 4. TCP
@@ -511,6 +783,14 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
                        "pyramidal": mujoco.mjtCone.mjCONE_PYRAMIDAL}[str(simc.get("cone", "elliptic"))]
     arm.option.impratio = float(simc.get("impratio", 10.0))
     arm.option.timestep = float(simc.get("timestep_s", 0.002))
+    if mode == "kit":
+        # Kit pads are mesh geoms: MuJoCo's mesh-vs-box collision returns ONE contact point, placed at an edge of the
+        # pad/eraser overlap (A9c diagnosis, $S/a9c/diag.py, seed 0, tip 5 mm: pad_l at the eraser top edge, pad_r at
+        # the bottom edge, a couple that pivots the eraser -> |O_F_ext z| 21 N in the grasp, 20 N cartesian reflex on
+        # 5/5 seeds; box pads use the box-box collider, 4 points, 5.1 N). Multi-point CCD (kit mode only, so box
+        # mode is unchanged) gives 4 points per pad: 5/5 seeds lift at tip 5 mm, peak 5.0-6.2 N.
+        arm.option.enableflags |= int(mujoco.mjtEnableBit.mjENBL_MULTICCD)
+        info["multiccd"] = "on (kit mode: multi-point contacts for the mesh pads)"
     eraser_qpos = []
     if with_scene:
         sc = station.get("scene")
@@ -563,7 +843,7 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
 
     model = arm.compile()
 
-    # payload: housing + cradle (+ adapters, massless here) vs payload.mass_kg - hand
+    # payload: housing + cradle (+ box adapters, massless here; kit parts are in the finger bodies) vs payload.mass_kg - hand
     hb = model.body(names["bodies"]["hand"]).id
     hand_mass = float(sum(model.body_mass[i] for i in range(model.nbody)
                           if i == hb or model.body_parentid[i] == hb))
@@ -591,8 +871,10 @@ _DERIVED_CACHE: dict = {}
 
 def derived_tcp(station: Station) -> np.ndarray:
     """I-TCP: the 4x4 F_T_TCP of the model chain flange -> hand -> extended pads (the pad-centre midpoint, with
-    ``extension_m`` and ``tcp_x_along_hand`` honoured). The single source of the sim's TCP: ignores any station
-    F_T_TCP / F_T_C_main. Cached per station fingerprint (one hand-only compile)."""
+    ``extension_m`` and ``tcp_x_along_hand`` honoured; in finger-kit mode the midpoint of the two kit tips). The single
+    source of the sim's TCP: ignores any station F_T_TCP / F_T_C_main. Cached per station fingerprint (one hand-only
+    compile; the fingerprint covers ``finger_adapter.kit`` / ``kit_sha256``, and a kit whose files changed fails
+    load_kit's sha check on the next uncached build)."""
     key = station.fingerprint()
     if key not in _DERIVED_CACHE:
         sm = build_model(station, with_scene=False)
@@ -657,7 +939,10 @@ def export_frames(sm: SimModel, q=None) -> dict:
     TCP_inv = inv_T(W_TCP)
     for side in ("l", "r"):
         key = {"l": "TCP_T_tag_left", "r": "TCP_T_tag_right"}[side]
-        out[key] = (TCP_inv @ xform_of(d, "geom", _id(m, "geom", f"tag_{side}"))).tolist()
+        try:
+            out[key] = (TCP_inv @ xform_of(d, "geom", _id(m, "geom", f"tag_{side}"))).tolist()
+        except KeyError:                 # finger mode stock: no tags
+            out[key] = None
     T = np.array(out["F_T_TCP"])
     rpy = _rpy_deg(T[:3, :3])
     out["F_T_TCP_summary"] = {"xyz_mm": (T[:3, 3] * 1e3).round(3).tolist(), "rpy_deg": rpy,
@@ -788,7 +1073,7 @@ def run(args: argparse.Namespace) -> int:
           f"tcp_x_along_hand={st.get('tooling.tcp_x_along_hand', '+y')} fingerprint={sm.station_fingerprint}")
     print(f"  hand attach: {fr['hand_attach']}")
     for k in ("F_T_TCP", "EE_T_TCP", "F_T_cam_main", "F_T_cam_uw", "TCP_T_tag_left", "TCP_T_tag_right"):
-        print(f"  {k:16s} {_fmt_T(fr[k])}")
+        print(f"  {k:16s} {_fmt_T(fr[k]) if fr[k] is not None else None}")
     print(f"  F_T_TCP source={fr['F_T_TCP_summary']['source']}; station F_T_TCP ({fr['station_F_T_TCP_status']}) "
           f"deviation={fr['station_F_T_TCP_deviation']}")
     pay = fr["payload"]

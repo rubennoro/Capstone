@@ -4,7 +4,8 @@ built by ``model.build_model``; this module only reads and moves it.
 
 Contact names (I-SIMSTATE): ``m.geom(g).name``, or ``f"{body_name}_g{g}"`` for an unnamed geom (the menagerie arm and
 hand geoms are unnamed), so B9's substring patterns match: ``link6`` / ``fr3_link6``, ``left_finger`` / ``right_finger``
-(``finger``), ``pad_l`` / ``pad_r`` (``pad_``), ``table``, ``eraser``, ``housing``, ``cradle_*``.
+(``finger``), ``pad_l`` / ``pad_r`` (``pad_``), ``finger_holder_*`` / ``finger_adapter_*`` (finger-kit mode, ``finger``), ``table``,
+``eraser``, ``housing``, ``cradle_*``.
 
 Contact forces are only consistent with ``d.contact`` right after ``mj_step2`` (``mj_step1`` re-runs collision and
 rebuilds the constraint arrays) or after ``mj_forward``: ``ContactProbe`` is installed as ``SimCore.contact_probe`` and
@@ -58,11 +59,20 @@ def tilt_deg(T) -> float:
 
 
 def grasp_tcp_height_m(sm, station) -> float:
-    """TCP height above the table top for the scripted grasp: the station's ``scene.grasp_tcp_height_m``, raised so
-    the pads (the TCP is at the pad centre, pads are ``pad_size_m[2]`` long) clear the table by PAD_TABLE_CLEARANCE_M. With the
-    station's 0.01 m and 30 mm pads the station value would put the pads 5 mm into the table."""
+    """TCP height above the table top for the scripted grasp. Rule: the lowest point of the fingers sits
+    PAD_TABLE_CLEARANCE_M above the table, so the eraser overlap is comparable across finger modes (``sm.info``
+    ``tcp_at`` / ``pad_length_m``; models without them use the station's ``pad_size_m[2]`` and the pad centre):
+      - box ("pad_centre") and stock ("stock_pads"): the TCP is at the pad centre -> max(station
+        ``scene.grasp_tcp_height_m``, pad_length/2 + clearance). Box with 30 mm pads: 0.02 (pad bottoms at 5 mm; the
+        station's 0.01 would put them 5 mm into the table). Unchanged since A6.
+      - kit ("tip"): the TCP is at the fingertip, the lowest point -> exactly the clearance (tip at 5 mm, like the box
+        pad bottoms); the station value is not applied."""
+    info = getattr(sm, "info", None) or {}
+    if info.get("tcp_at") == "tip":
+        return PAD_TABLE_CLEARANCE_M
     h = float(station.get("scene.grasp_tcp_height_m", 0.01))
-    pl = float(station.get("tooling.finger_adapter.pad_size_m")[2])
+    pl = info.get("pad_length_m")
+    pl = float(station.get("tooling.finger_adapter.pad_size_m")[2]) if pl is None else float(pl)
     return max(h, pl / 2 + PAD_TABLE_CLEARANCE_M)
 
 
