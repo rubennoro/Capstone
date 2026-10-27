@@ -1,0 +1,6 @@
+2026-10-27 step 0: read A9.md, README.md, model.py step 3, SOURCE.md format; plan finger_kit.py (loader, digest, place, auto_dy, make_box_kit)
+2026-10-27 step 1: wrote franka_sim/franka_sim/finger_kit.py (STL r/w numpy, kit_digest, write_source_md, load_kit validation, place, auto_dy, make_box_kit, box_equivalent_placement)
+2026-10-27 step 2: make_box_kit defaults to ASCII STL (float64 exact; binary float32 ~1e-9 m too coarse for A9c 1e-9 test); YAML flow style for lists
+2026-10-27 step 3: wrote tests/test_finger_kit.py (load/validation errors x27 + 2-contact + unused part, digest, SOURCE.md, STL ascii/binary/solid-header/bad, mm units, box-mode reproduction, auto_dy, frame chain, mirrored/rigid kit_T_M, no-mujoco import)
+2026-10-27 step 4: pytest tests/test_finger_kit.py: 51 passed (no fixtures dir: kits generated into tmp_path)
+2026-10-27 step 5: orchestrator decision: tip + tag centre/normal/up now in kit (CAD) coords (camera_face stays M); place() maps them via body_T_kit; make_box_kit stores them as kit_T_M . M-values; docstrings updated; new test_tip_and_tags_are_in_kit_coords; pytest: 52 passed
