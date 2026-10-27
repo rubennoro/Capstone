@@ -110,13 +110,15 @@ def file_sha(path) -> str:
     return h.hexdigest()[:16]
 
 
-def parse_demos(spec, n: int) -> list[int]:
+def parse_demos(spec, avail) -> list[int]:
+    """``avail`` = the zarr demo indices stage1.json covers (or a count n = 0..n-1)."""
+    avail = list(range(avail)) if isinstance(avail, int) else sorted(avail)
     if spec in (None, "", "all"):
-        return list(range(n))
-    out = sorted({int(x) for x in str(spec).split(",") if x.strip() != ""})
-    bad = [i for i in out if not 0 <= i < n]
+        return avail
+    out = sorted({int(x) for x in (spec if isinstance(spec, (list, tuple)) else str(spec).split(",")) if str(x).strip() != ""})
+    bad = [i for i in out if i not in set(avail)]
     if bad:
-        raise ValueError(f"--demos {bad}: stage1.json has {n} demos")
+        raise ValueError(f"--demos {bad}: stage1.json covers demos {avail}")
     return out
 
 
@@ -644,6 +646,9 @@ def collect(run_dir: Path, plan: dict, T_demo_zup: np.ndarray, crit: dict, looka
 
 # =============================================================================================== process side
 
+WIRING_SET_PREFIXES = ("tooling.hand.endpoint=", "sensor.transport.")
+
+
 def apply_port_offset(prof: dict, o: int, protocol: str = "v1") -> None:
     """Shift every port of a sim profile by o (receiver main/uw, camera, logger, bridge, controller, inference,
     spacemouse, sim-state PUB, the bridge-served hand endpoint). Same layout as Track B's stage2b/stage3 helper."""
@@ -734,8 +739,7 @@ class Campaign:
         self.config, self.profile = str(Path(config).resolve()), str(profile)
         self.stage1_path = str(Path(stage1_json).resolve())
         self.s1 = load_stage1(stage1_json)
-        self.s1_rows = stage1_demo_rows(self.s1)
-        self.demos = parse_demos(demos, len(self.s1_rows))
+        self.s1_rows = stage1_demo_rows(self.s1)     # keyed by zarr demo index once the zarr is loaded (below)
         self.speeds = parse_speeds(speeds)
         self.out = Path(out_dir).resolve()
         self.jobs = max(1, int(jobs))
@@ -743,7 +747,9 @@ class Campaign:
         self.timeout_scale, self.tail_s, self.validate_n = float(timeout_scale), float(tail_s), int(validate_n)
         self.port_base = int(os.environ.get("FD_TEST_PORT_OFFSET", 1000))
         # the campaign station = the profile + the Stage 1 tooling sets + the user's sets, policy demo_replay
-        self.tool_sets = [str(x) for x in self.s1.get("station_sets", [])]
+        # design sets only: a Stage 1 run made by `eval` records the profile's wiring sets too (hand endpoint, transport);
+        # re-applied as --set they would undo the per-job port shift of derive() (every job on bridge port 5565)
+        self.tool_sets = [str(x) for x in self.s1.get("station_sets", []) if not str(x).startswith(WIRING_SET_PREFIXES)]
         base_sets = self.tool_sets + self.user_sets
         cfg = load_config(self.config, self.profile, station_set=base_sets)
         cfg["run"] = {**cfg.get("run", {}), "policy": "demo_replay"}
@@ -773,13 +779,16 @@ class Campaign:
         self.wm = dict(st.get("tooling.width_map"))
         self.zarr = str(zarr or cfg.get("prompt_zarr"))
         demos_raw = load_demos(self.zarr)
-        if len(demos_raw) != len(self.s1_rows):
-            raise ValueError(f"{self.zarr}: {len(demos_raw)} demos, stage1.json has {len(self.s1_rows)}")
+        # stage1.json may cover a subset (eval --episodes N / --demos): map its demos to zarr indices by name
+        zidx = {d["name"]: i for i, d in enumerate(demos_raw)}
+        missing = [r["name"] for r in self.s1_rows if r["name"] not in zidx]
+        if missing:
+            raise ValueError(f"{self.zarr}: {len(missing)} stage1.json demo(s) not in the zarr, e.g. {missing[0]}")
+        self.s1_rows = {zidx[r["name"]]: {**r, "idx": zidx[r["name"]]} for r in self.s1_rows}
+        self.demos = parse_demos(demos, list(self.s1_rows))
         self.T_zup, self.width = {}, {}
-        for r in self.s1_rows:
+        for r in self.s1_rows.values():
             d = demos_raw[r["idx"]]
-            if d["name"] != r["name"]:
-                raise ValueError(f"demo {r['idx']}: zarr name {d['name']} != stage1 name {r['name']}")
             self.T_zup[r["idx"]] = fr.arkit_to_zup(d["T"])
             self.width[r["idx"]] = np.asarray(d["w"], float)
         self.F_T_TCP_set = "tooling.F_T_TCP=" + json.dumps([[round(float(x), 9) for x in row] for row in self.F_T_TCP])

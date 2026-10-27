@@ -256,6 +256,9 @@ def test_parse_and_port_offset():
     assert C.parse_demos("all", 3) == [0, 1, 2] and C.parse_demos("2,0", 3) == [0, 2]
     with pytest.raises(ValueError):
         C.parse_demos("5", 3)
+    assert C.parse_demos("all", [7, 3]) == [3, 7] and C.parse_demos([7], [3, 7]) == [7]   # a Stage 1 subset
+    with pytest.raises(ValueError):
+        C.parse_demos("0", [3, 7])
     assert C.parse_speeds("0.5,1.0") == [0.5, 1.0] and C.run_id(3, 1.0) == "d03_s1"
     prof = {"station_set": ["tooling.hand.endpoint=tcp://127.0.0.1:5565"]}
     C.apply_port_offset(prof, 1100)
@@ -270,6 +273,24 @@ def test_cli_registered():
 
     m._register_builtins()
     assert "campaign" in cli.registered()
+
+
+@pytest.mark.skipif(not (STAGE1.is_file() and ZARR.is_file()), reason="needs the committed stage1.json and the firstreal zarr")
+def test_campaign_on_a_stage1_subset_maps_demos_by_name(tmp_path):
+    """W10: eval --stage all --episodes N gives a Stage 1 run over a subset; 1b maps its demos to zarr indices by name."""
+    s1 = C.load_stage1(STAGE1)
+    full = [d["name"] for d in s1["demos"]]
+    s1["demos"] = [s1["demos"][10], s1["demos"][32]]
+    p = tmp_path / "stage1.json"
+    p.write_text(json.dumps(s1))
+    s1["station_sets"] = s1["station_sets"] + ["tooling.hand.endpoint=tcp://127.0.0.1:5565", "sensor.transport.bind_host=127.0.0.1"]
+    p.write_text(json.dumps(s1))                       # an eval-made Stage 1 also records the profile's wiring sets
+    c = C.Campaign(C.DEPLOY_PKG / "configs" / "deploy.yaml", "sim-iphone", p, "all", "0.5", tmp_path / "o", zarr=ZARR)
+    assert c.demos == [10, 32] and sorted(c.s1_rows) == [10, 32]
+    assert not any(x.startswith(C.WIRING_SET_PREFIXES) for x in c.run_sets(c.plan(10, 0.5)))   # the port shift survives
+    assert c.plan(10, 0.5)["name"] == full[10] and c.plan(32, 0.5)["stage1_feasible"] is False
+    with pytest.raises(ValueError):
+        C.Campaign(C.DEPLOY_PKG / "configs" / "deploy.yaml", "sim-iphone", p, "0", "0.5", tmp_path / "o2", zarr=ZARR)
 
 
 @pytest.mark.skipif(not (STAGE1.is_file() and ZARR.is_file()), reason="needs the committed stage1.json and the firstreal zarr")
