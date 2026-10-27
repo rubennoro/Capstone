@@ -340,6 +340,7 @@ class Driver:
         R = self.R
         raw = yaml.safe_load(Path(R.cfg["config_path"]).read_text())
         prof = copy.deepcopy(raw["profiles"][R.profile])
+        prof["station"] = dict(R.ids)       # station-group overrides (sweep / run_overrides robot, sensor ...) reach the child
         prof["station_set"] = list(R.sets)
         if R.policy.get("kind") in ("bp_server", "command"):
             prof["user_site_children"] = sorted(set(prof.get("user_site_children") or []) | {"inference"})

@@ -64,8 +64,10 @@ def replay_run(R: rn.Run) -> rn.Run:
         return R
     src = replay_source_of(R)
     args = copy.copy(R.args)
-    args.set = [x for x in (getattr(R.args, "set", None) or []) if not str(x).startswith("sim.image_source=")]
-    R2 = rn.resolve(args, run_overrides={"sim": src})
+    # R's full user sets (incl. sweep extra_sets) and every group id (incl. station groups from run_overrides): only sim changes
+    args.set = [x for x in R.user_sets if not str(x).startswith("sim.image_source=")]
+    ids = {g: i for g, i in R.ids.items() if g in rn.STATION_ID_GROUPS}
+    R2 = rn.resolve(args, run_overrides={**R.run_ids, **ids, "sim": src})
     R2.notes = R.notes
     R.notes.append(f"image_source {R.image_source}: Stage 2b is teacher-forced on a recorded video, so it uses the replay source "
                    f"{src} (protocol {R.protocol}); the closed loop with rendered images is Stage 3")
@@ -136,6 +138,7 @@ def derive_deploy(R: rn.Run, did: int, info: dict, work: Path, npz: Path, port_o
         raise rn.StageIncomplete(f"Stage 2b needs a replay image source (video_replay / rig_raw_replay), not {src!r}")
     if R.policy.get("kind") == "replay":
         sets += [f"policy.episode_index={did}", "policy.start_frame_index=0"]
+    prof["station"] = dict(R.ids)           # station-group overrides (sweep / run_overrides robot, sensor ...) reach the child
     prof["station_set"] = sets
     if R.policy.get("kind") in ("bp_server", "command"):
         # the laptop's BP env gets torch from ~/.local (README.md): the launcher's PYTHONNOUSERSITE=1 would hide it
