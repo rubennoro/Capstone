@@ -12,7 +12,17 @@ hand:
   home_width_m: 0.08
   port: 5566                                 # hand_server (real Franka Hand, libfranka Gripper); in sim the bridge serves it
   endpoint: "tcp://localhost:${tooling.hand.port}"
-finger_adapter: {printed: iphumi_finger_v1, extension_m: 0.0, pad_size_m: [0.02, 0.008, 0.03], friction: 1.0}
+finger_adapter:
+  printed: iphumi_finger_v1
+  extension_m: 0.0
+  pad_size_m: [0.02, 0.008, 0.03]
+  friction: 1.0
+  kit: null                                  # finger kit dir relative to controlSW (like robot.model.mjcf); null = box fingers
+  kit_sha256: null                           # required when kit is set: must equal kit_digest(kit dir)
+  adapter_length_m: 0.0                      # L, kit mode only
+  lateral_offset_m: auto                     # dy: "auto" or a number (m)
+  adapter_yaw_deg: 0.0
+  adapter_section_m: [0.021, 0.024]          # placeholder adapter block cross-section (x, y)
 width_map:                                   # train = a * gap + b
   a: 1.0
   b: 0.0431                                  # = train_closed_m: training width at gap 0 (A5 review)
@@ -57,6 +67,12 @@ provenance:
   hand.port: {status: decision, source: "INTERFACES.md section 2 (5566 hand_server)"}
   hand.endpoint: {status: derived, source: "from hand.port"}
   finger_adapter: {status: placeholder, source: "iphumi_finger_v1 print; not measured on the Franka Hand"}
+  finger_adapter.kit: {status: decision, source: "A9: box fingers until the iPhUMI kit passes camera-check"}
+  finger_adapter.kit_sha256: {status: decision, source: "A9: box fingers until the iPhUMI kit passes camera-check"}
+  finger_adapter.adapter_length_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
+  finger_adapter.lateral_offset_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
+  finger_adapter.adapter_yaw_deg: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
+  finger_adapter.adapter_section_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
   width_map: {status: placeholder, source: "PLAN.md width map default a=1.0 b=0.008; measure with fdcal width on hardware"}
   width_map.b: {status: derived, source: "= train_closed_m at gap 0 (A5 review); measure with fdcal width"}
   width_map.gap_min_m: {status: datasheet, source: "Franka Hand"}

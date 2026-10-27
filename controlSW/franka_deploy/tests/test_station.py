@@ -444,3 +444,74 @@ def test_station_groups_are_deeply_frozen():
     st.bridge_fragment()["safety"]["v_max"] = 99.0
     assert st.get("tooling.C_T_TCP")[0][0] == 1.0 and st.fingerprint() == fp
     assert yaml.safe_load(st.to_yaml())["fingerprint"] == fp   # to_yaml thaws
+
+
+# ------------------------------------------------------------------------------------------ finger kit keys (A9b)
+
+_SHA = "a" * 64
+
+
+def _tooling_errs(**fa):
+    d = _yaml(STATION_ROOT / "station" / "tooling" / "franka_hand_iphumi_iphone16pro.yaml")
+    d["finger_adapter"].update(fa)
+    return S.validate_group("tooling", d, "franka_hand_iphumi_iphone16pro")
+
+
+@pytest.mark.parametrize("name", ["franka_hand_iphumi_iphone16pro", "franka_hand_iphumi_rig1"])
+def test_repo_tooling_has_kit_keys(name):
+    d = _yaml(STATION_ROOT / "station" / "tooling" / f"{name}.yaml")
+    fa = d["finger_adapter"]
+    assert fa["kit"] is None and fa["kit_sha256"] is None and fa["lateral_offset_m"] == "auto"
+    assert fa["adapter_length_m"] == 0.0 and fa["adapter_section_m"] == [0.021, 0.024]
+    assert fa["extension_m"] == 0.0 and fa["pad_size_m"] == [0.02, 0.008, 0.03]
+    assert S.validate_group("tooling", d, name) == []
+
+
+@pytest.mark.parametrize("fa", [
+    {}, {"kit": "franka_sim/assets/finger_kits/x", "kit_sha256": _SHA}, {"lateral_offset_m": 0.004},
+    {"lateral_offset_m": -0.002}, {"adapter_length_m": 0.1}, {"adapter_section_m": [0.02, 0.03]},
+])
+def test_kit_keys_accepted(fa):
+    assert _tooling_errs(**fa) == []
+
+
+@pytest.mark.parametrize("fa,msg", [
+    ({"kit": ""}, "finger_adapter.kit must be"),
+    ({"kit": 3}, "finger_adapter.kit must be"),
+    ({"kit": "k"}, "kit_sha256 must be a 64-character"),
+    ({"kit": "k", "kit_sha256": "A" * 64}, "kit_sha256 must be a 64-character"),
+    ({"kit": "k", "kit_sha256": "a" * 63}, "kit_sha256 must be a 64-character"),
+    ({"kit": "k", "kit_sha256": 5}, "kit_sha256 must be a 64-character"),
+    ({"lateral_offset_m": "left"}, "lateral_offset_m must be"),
+    ({"lateral_offset_m": True}, "lateral_offset_m must be"),
+    ({"adapter_length_m": -0.01}, "adapter_length_m must be"),
+    ({"adapter_length_m": "0.1"}, "adapter_length_m must be"),
+    ({"adapter_section_m": [0.02]}, "adapter_section_m must be two positive"),
+    ({"adapter_section_m": [0.02, 0.0]}, "adapter_section_m must be two positive"),
+    ({"adapter_section_m": [0.02, -0.01]}, "adapter_section_m must be two positive"),
+    ({"adapter_section_m": 0.02}, "adapter_section_m must be two positive"),
+])
+def test_kit_keys_rejected(fa, msg):
+    assert msg in "\n".join(_tooling_errs(**fa))
+
+
+def test_old_tooling_without_kit_keys_valid():
+    d = _yaml(STATION_ROOT / "station" / "tooling" / "franka_hand_iphumi_iphone16pro.yaml")
+    for k in ("kit", "kit_sha256", "adapter_length_m", "lateral_offset_m", "adapter_yaw_deg", "adapter_section_m"):
+        del d["finger_adapter"][k]
+        d["provenance"].pop(f"finger_adapter.{k}")
+    assert S.validate_group("tooling", d, "franka_hand_iphumi_iphone16pro") == []
+
+
+def test_kit_rules_only_for_tooling():
+    d = _yaml(STATION_ROOT / "station" / "host" / "pc_laptop.yaml")
+    d["finger_adapter"] = {"kit": 3}
+    d["provenance"]["finger_adapter"] = {"status": "decision", "source": "t"}
+    assert not any("kit must be" in e for e in S.validate_group("host", d, "pc_laptop"))
+
+
+@pytest.mark.parametrize("profile", ["sim-iphone", "sim-rig"])
+def test_profiles_load_with_kit_keys(profile):
+    st = load_station(PROFILES[profile])
+    assert st.get("tooling.finger_adapter.kit") is None
+    assert st.get("tooling.finger_adapter.lateral_offset_m") == "auto"

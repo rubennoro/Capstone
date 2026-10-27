@@ -234,6 +234,40 @@ def validate_group(group: str, d: dict, expect_id: str | None = None) -> list[st
             errs.append(f"{tag}: critical path '{c}' does not exist")
     if group == "tooling" and not (isinstance(d.get("sensor_compat"), list) and d["sensor_compat"]):
         errs.append(f"{tag}: tooling needs a non-empty sensor_compat list")
+    if group == "tooling":
+        errs += _finger_adapter_problems(tag, d.get("finger_adapter"))
+    return errs
+
+
+def _is_num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _finger_adapter_problems(tag: str, fa) -> list[str]:
+    """Finger-kit keys of tooling.finger_adapter (all optional, so old files stay valid). No path-existence check:
+    the loader in franka_sim does that (the Jetson has no assets)."""
+    if not isinstance(fa, dict):
+        return []
+    errs: list[str] = []
+    p = f"{tag}: finger_adapter"
+    if "kit" in fa and fa["kit"] is not None and not (isinstance(fa["kit"], str) and fa["kit"].strip()):
+        errs.append(f"{p}.kit must be null or a non-empty string, got {fa['kit']!r}")
+    if fa.get("kit") is not None:
+        sha = fa.get("kit_sha256")
+        if not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha)):
+            errs.append(f"{p}.kit_sha256 must be a 64-character lowercase hex string when kit is set, got {sha!r}")
+    if "lateral_offset_m" in fa:
+        v = fa["lateral_offset_m"]
+        if not (v == "auto" and isinstance(v, str)) and not _is_num(v):
+            errs.append(f"{p}.lateral_offset_m must be \"auto\" or a number, got {v!r}")
+    if "adapter_length_m" in fa:
+        v = fa["adapter_length_m"]
+        if not _is_num(v) or not v >= 0:
+            errs.append(f"{p}.adapter_length_m must be a number >= 0, got {v!r}")
+    if "adapter_section_m" in fa:
+        v = fa["adapter_section_m"]
+        if not (isinstance(v, list) and len(v) == 2 and all(_is_num(x) and x > 0 for x in v)):
+            errs.append(f"{p}.adapter_section_m must be two positive numbers, got {v!r}")
     return errs
 
 

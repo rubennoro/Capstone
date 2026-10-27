@@ -58,6 +58,14 @@ key that matches no value is an error.
 | placeholder | a guess to be replaced |
 | hw | must be read or set on the real hardware (Desk, libfranka, CAD, calibration) |
 
+## Finger kit keys (tooling.finger_adapter)
+
+Optional; absent keys keep old files valid. `kit` (null = box fingers, or a kit dir relative to controlSW) and
+`kit_sha256` (64 lowercase hex, required when `kit` is set, must equal `kit_digest(kit dir)`) select an STL finger kit;
+`adapter_length_m` (>= 0, L), `lateral_offset_m` (`auto` or a number, dy), `adapter_yaw_deg` and `adapter_section_m`
+(two positive numbers, placeholder block cross-section) place it. station.py checks types only; franka_sim checks
+that the kit exists and matches the digest.
+
 ## Critical
 
 `critical:` lists paths (or subtrees) that real profiles must not run with. A critical path whose status is
