@@ -87,7 +87,7 @@ checkpoint: /home/me/models/umi_dp/best.ckpt
 ready_timeout_s: 300
 contract: {K: 16, exec_h: 8, uses_prompt: false, reset_max_s: 0.5}
 task: {agent_hz: 20, exec_h: "${policy.contract.exec_h}", inference_timeout_s: 2.0, lookahead_s: 0.1, policy_latency_s: 0.1}
-provenance:      # every key needs a status (measured|placeholder|hw|datasheet|derived|decision) and a source
+provenance:      # every key needs a status (measured|placeholder|hw|datasheet|derived|decision|fitted) and a source
   kind: {status: decision, source: "adding_a_policy.md"}
   cmd: {status: placeholder, source: "replace with the real command line of the server"}
   python: {status: derived, source: "host group"}

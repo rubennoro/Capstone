@@ -47,7 +47,7 @@ Layout (see PLAN.md §4):
 **Conventions:**
 - Each file has `schema: <group>/v1` and `id: <stem>`.
 - **Units in key names.** The loader rejects numeric leaves without a recognised suffix, except under the allow-listed keys `K`, `T_*`, `F_T_*`, `C_T_*`, `*_T_*`, `width_map` (a, b), `inertia_kgm2`, `impedance` matrices, ids, versions and counts (`n_*`, `seed`, `version`).
-- **Provenance.** A `provenance:` map keyed by dotted path, prefix-inherited: `{status: measured|placeholder|hw|datasheet|derived|decision, source, note?}`. Every leaf must resolve.
+- **Provenance.** A `provenance:` map keyed by dotted path, prefix-inherited: `{status: measured|placeholder|hw|datasheet|derived|decision|fitted, source, note?}`. Every leaf must resolve.
 - **`critical:` paths.** Real profiles refuse placeholder/hw values there; sim profiles warn. `allow_placeholders: [...]` overrides, and the override is logged.
 - **Interpolation:** `${group.path}`, resolved after load; cycles are errors.
 - **Overrides:** `path=value`, YAML-parsed.

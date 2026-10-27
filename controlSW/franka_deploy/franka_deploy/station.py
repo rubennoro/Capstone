@@ -36,7 +36,8 @@ RUN_GROUPS = ("policy", "link", "criteria", "sim", "sweeps")
 KINDS = {"station": STATION_GROUPS, "run": RUN_GROUPS}
 KIND_OF = {g: k for k, gs in KINDS.items() for g in gs}
 
-STATUSES = ("measured", "placeholder", "hw", "datasheet", "derived", "decision")
+STATUSES = ("measured", "placeholder", "hw", "datasheet", "derived", "decision", "fitted")
+# fitted = estimated from recorded data (e.g. a camera-check fit): usable, but not a hardware measurement or calibration
 PLACEHOLDER_STATUSES = ("placeholder", "hw")
 META_KEYS = ("schema", "id", "provenance", "critical")  # not data leaves
 

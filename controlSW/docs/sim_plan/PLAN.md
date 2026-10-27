@@ -90,7 +90,7 @@ controlSW/configs/
 **Conventions (enforced by the loader and by tests):**
 - Every file has `schema: <group>/v1` and `id`.
 - **Units are in key names.** Suffixes: `_m _rad _deg _s _hz _kg _n _nm _m_s _rad_s _px _ppm`. Matrices are `T_*` (4×4) or `K`.
-- **Provenance is machine-readable.** A `provenance:` map gives every leaf `{status: measured|placeholder|hw|datasheet|derived|decision, source}`.
+- **Provenance is machine-readable.** A `provenance:` map gives every leaf `{status: measured|placeholder|hw|datasheet|derived|decision|fitted, source}`.
 - **A `critical:` list per file.** Real profiles refuse placeholder or hw values in these paths; sim profiles only warn. Overrides go through `allow_placeholders`, and are logged.
 - **Interpolation:** `${group.path}` only. Overrides use `--set path=value` (used by sweeps). Precedence: group file < `station_set` < explicit `bridge.override`/`controller.override`. Contradictions are recorded in the snapshot.
 - **`deploy.yaml` profiles pick ids:** `station: {robot, tooling, sensor, scene, host}` + `run: {policy, link, criteria, sim}`.

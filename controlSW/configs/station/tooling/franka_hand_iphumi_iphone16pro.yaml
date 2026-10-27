@@ -89,7 +89,7 @@ provenance:
   F_T_TCP: {status: hw, source: "null on purpose (W10A review, TCP source of truth): derived in sim (launcher applies franka_sim.model.derived_tcp(station) as a station override, provenance derived (sim)); measured on hardware (fdcal handeye: F_T_TCP = F_T_C_main @ C_T_TCP, then status measured). Do not commit a numeric copy of the derived value"}
   C_T_TCP: {status: measured, source: "gripper_calibration.yaml iPhone17,1 via fdcal/handeye.py:24"}
   F_T_C_main: {status: hw, source: "CAD then fdcal handeye"}
-  C_main_T_C_uw: {status: measured, source: "camera-check fit on demos 6,16,25,34,44 (translation-only); holdout 10,20,30,39,42 p50 6.6/9.0 px and 8,13,22,28,37 p50 9.2/4.3 px; confounded with tag geometry; y +19 mm larger than SIFT/lens prior; render-only fit, not a lens measurement", note: "status measured: the schema has no fitted status"}
+  C_main_T_C_uw: {status: fitted, source: "camera-check fit on demos 6,16,25,34,44 (translation-only); holdout 10,20,30,39,42 p50 6.6/9.0 px and 8,13,22,28,37 p50 9.2/4.3 px; confounded with tag geometry; y +19 mm larger than SIFT/lens prior; render-only fit, not a lens measurement"}
   payload: {status: placeholder, source: "estimate: Franka Hand 0.73 kg + cradle 0.10 + iPhone 0.199 + adapters; weigh it"}
   tcp_x_along_hand: {status: placeholder, source: "CAD pending (which side of the hand the camera mount sits on)"}
   housing: {status: placeholder, source: "CAD pending"}
