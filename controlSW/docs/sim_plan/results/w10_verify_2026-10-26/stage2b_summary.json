@@ -1,0 +1,16 @@
+{
+ "schema": "sim_summary/v1",
+ "n_runs": 1,
+ "rows": [
+  {
+   "run": "2b_demo_replay_3c217fa0_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "2b",
+   "verdict": "INCOMPLETE",
+   "key_gates": "n_pairs_at_least=10 (n/a)"
+  }
+ ]
+}

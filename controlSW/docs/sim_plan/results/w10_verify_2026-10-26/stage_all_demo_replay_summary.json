@@ -1,0 +1,46 @@
+{
+ "schema": "sim_summary/v1",
+ "n_runs": 4,
+ "rows": [
+  {
+   "run": "1_demo_replay_3c217fa0_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "1",
+   "verdict": "FAIL",
+   "key_gates": "joint_margin_deg_min=1.473 (FAIL)"
+  },
+  {
+   "run": "1b_demo_replay_3c217fa0_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "1b",
+   "verdict": "FAIL",
+   "key_gates": "track_ok_fraction_min=0.1163 (FAIL); reflex_max=10 (FAIL)"
+  },
+  {
+   "run": "2a_demo_replay_3c217fa0_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "2a",
+   "verdict": "FAIL",
+   "key_gates": "chunk_joint_margin_deg_min=0 (FAIL)"
+  },
+  {
+   "run": "2b_demo_replay_3c217fa0_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "2b",
+   "verdict": "INCOMPLETE",
+   "key_gates": "live_vs_offline_pos_err_mm_p50_k15_max=n/a (n/a); live_vs_offline_pos_err_mm_p95_k15_max=n/a (n/a); n_pairs_at_least=n/a (n/a)"
+  }
+ ]
+}
