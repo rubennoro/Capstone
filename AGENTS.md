@@ -12,8 +12,10 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Current state (2026-10-27, branch `rnoro/jetson-sensors`)
 
-- **New C++ rig pipeline, `physicalSetup/` (this branch, worktree `/home/ruben/Capstone-jetson-sensors`): designed
-  and planned, no code yet.**
+- **New C++ rig pipeline, `physicalSetup/` (this branch, worktree `/home/ruben/Capstone-jetson-sensors`): Waves 0–1
+  built and committed (`0237513`, 2026-10-28); Wave 2 waits for the user's go-ahead.** Progress: [physicalSetup/docs/STATUS.md](physicalSetup/docs/STATUS.md).
+  - Wave 1: IMU driver + simulator, camera backends (Argus compile-checked only), capture/shm/package/config, image prep
+    (bit-exact with iPhUMI). 397–398 tests green in the default, ASan+UBSan, TSan and Python builds.
   - Design: [physicalSetup/docs/PIPELINE.md](physicalSetup/docs/PIPELINE.md). All decisions D1–D11 are resolved in
     its section 9.
   - Plan: [physicalSetup/docs/IMPLEMENTATION_PLAN.md](physicalSetup/docs/IMPLEMENTATION_PLAN.md).
@@ -77,8 +79,8 @@ Older state (2026-10-17, from `main`):
 
 ## Next time
 
-- **First:** with the user's go-ahead, run Wave 0 (T0 contracts) of `physicalSetup/docs/IMPLEMENTATION_PLAN.md`,
-  then Waves 1–2 before hardware day (2026-10-29). Then follow BRINGUP.md on hardware day.
+- **First:** on the user's go-ahead, run Wave 2 (T5–T8) of `physicalSetup/docs/IMPLEMENTATION_PLAN.md`. Carry the
+  notes in STATUS.md "Items for R1 / later tasks" into the briefs. Then hardware day per BRINGUP.md (T8).
 
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
