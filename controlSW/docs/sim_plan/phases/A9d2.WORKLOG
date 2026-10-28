@@ -1,0 +1,6 @@
+A9d2 (executor D2): finger-kit CLI + check-assets
+- new franka_sim/finger_kit_cli.py: check / pin / show / report (keys documented in module docstring); registered in __main__.py (+ MUJOCO_GL=egl default).
+- tools/check_assets.py: check_kits() verifies assets/finger_kits/*/SOURCE.md (mandatory), files, extras, kit sha line; finger_kits/ excluded from the top-level extra-file scan; check() includes it.
+- tests/test_finger_kit_cli.py: 14 tests (check/pin/report box+stock+kit/show/check-assets).
+- show: external views sidep/sidem/endp/endm (+ main/uw) x open/mid/closed; phone housing partly occludes side views.
+- sample outputs: $S/d2/{show,rep}

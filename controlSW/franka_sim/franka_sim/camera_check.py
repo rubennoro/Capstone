@@ -25,6 +25,9 @@ what the policy was trained on, so this command measures the gap on the recorded
    that is not the robot: no fingers, hand, tooling or arm). Floors with the same regions: ``jpeg_wire`` (the raw
    frame through the deploy wire: 960x720 resize, JPEG q90, decode, 224) and ``next_frame`` (the next zarr frame).
 
+Needs the finger tags: finger mode stock (and a kit whose sides place no tags) exits 2 with "camera-check needs finger
+tags; finger_adapter.mode=<m> variant=<v> has none" before any data is read.
+
 Outputs (--out, outside the repo): camera_check.json, <= 30 PNGs (< 1 MB each), renders.npz with the 224 RGB images
 of every frame ``predict_demos.deploy_obs`` reads for the queries (main fi-3, fi; UW per ``DemoZarr.uw_index``):
 keys ``<path>_d<demo>_f<frame>_main`` / ``<path>_d<demo>_g<uw global>_ultrawide`` for path in plain, rigb0179,
@@ -308,7 +311,13 @@ class SimSide:
         from franka_sim.render import Renderer
 
         self.st = station
-        self.sm = build_model(station)
+        try:
+            self.sm = build_model(station)
+        except ValueError as e:                  # kit side without tags: model.py refuses to build (A9c)
+            if "has no tags" in str(e):
+                raise NoTags(f"{no_tags_message(station)} ({e})") from e
+            raise
+        tag_guard(station, self.sm)
         self.r = Renderer(self.sm, station, rig=rig, colors=colors)
         self.kin = Kin(self.sm, "tcp")
         m = self.sm.model
@@ -467,10 +476,43 @@ def summarize_rel_poses(rel: list, C0: np.ndarray) -> dict:
                     f"{np.linalg.norm(C0[:3, 3]) * 1e3:.1f} mm"}
 
 
+class NoTags(RuntimeError):
+    """The built model has no finger tags (stock fingers, or a kit variant that places none)."""
+
+
+def no_tags_message(station) -> str:
+    fa = station.get("tooling.finger_adapter") or {}
+    from franka_sim.model import finger_mode
+
+    try:
+        mode = finger_mode(fa)
+    except ValueError:
+        mode = fa.get("mode")
+    return (f"camera-check needs finger tags; finger_adapter.mode={mode} variant={fa.get('kit_variant', 'full')} "
+            f"has none")
+
+
+def tag_guard(station, sm=None) -> None:
+    """Raise ``NoTags`` when the station's fingers carry no ArUco tags: before building (mode stock) or, given the built
+    model, when ``tag_l`` / ``tag_r`` are missing (e.g. a kit variant whose tag carriers are absent)."""
+    from franka_sim.model import finger_mode
+
+    if finger_mode(station.get("tooling.finger_adapter") or {}) == "stock":
+        raise NoTags(no_tags_message(station))
+    if sm is not None:
+        import mujoco
+
+        if any(mujoco.mj_name2id(sm.model, mujoco.mjtObj.mjOBJ_GEOM, f"tag_{s}") < 0 for s in ("l", "r")):
+            raise NoTags(no_tags_message(station))
+
+
 def run(args) -> int:
     sims: dict = {}
     try:
         return _run(args, sims)
+    except NoTags as e:
+        print(f"[camera-check] {e}", file=sys.stderr, flush=True)
+        return 2
     finally:
         for sd in sims.values():
             sd.close()
@@ -486,6 +528,9 @@ def _run(args, sims: dict) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     st, st_rig = _stations(args)
+    for s_ in (st, st_rig):                      # fail early, before any model is built (A9 stock fingers: no tags)
+        if s_ is not None:
+            tag_guard(s_)
     tooling_sets = list(args.set)
     colors = json.loads(args.colors) if args.colors else None
     sims["plain"] = SimSide(st, colors=colors)

@@ -241,3 +241,190 @@ def test_flange_speed_and_cone_gate(demo_npz):
     T_ee = dem[0]["T_zup"] @ c.TCP_T_EE
     r = s1._gate_safety(c, T_ee, np.arange(len(T_ee)), {"feasible": True, "first_fail": None, "reason": None})
     assert r["feasible"] is False and r["reason"] == "cone" and r["first_fail"] == 0
+
+
+# --------------------------------------------------------------------------------- A9d: sweep axis by finger mode
+
+HEAD_REF = "dad0ca3"          # stage1_replay.py before A9d (box-mode reference)
+A9_NEW_KEYS = {"finger_mode", "swept_key", "swept_value", "flange_to_tip_m", "tcp_at", "pad_length_m",
+               "flange_to_tip_m_by_robot"}
+GRID2 = [(0.5, 0.0, 0.0), (0.5, 0.0, np.pi)]
+
+
+def _args(npz, out, **kw):
+    import argparse
+
+    a = dict(zarr=str(npz), ids=",".join(f"{k}={v}" for k, v in IDS.items()), run="criteria=block_raise,sim=stage1",
+             root=None, set=[], robots="panda", finger_extensions=None, lengths=None, finger_mode=None,
+             camera_sides="+y,-y", demos="all", jobs=1, quick=True, out=str(out))
+    a.update(kw)
+    return argparse.Namespace(**a)
+
+
+def _sweep(mod, monkeypatch, args):
+    monkeypatch.setattr(mod, "placement_grid", lambda cfg, quick=False: list(GRID2))
+    return mod.sweep(args, log=lambda *_: None)
+
+
+def _no_times(x):
+    if isinstance(x, dict):
+        return {k: _no_times(v) for k, v in x.items() if k != "wall_s"}
+    if isinstance(x, list):
+        return [_no_times(v) for v in x]
+    return x
+
+
+def _superset(new, old, path="", extra=A9_NEW_KEYS):
+    """``new`` has every key/value of ``old`` (recursively); keys only in ``new`` must be A9d keys."""
+    if isinstance(old, dict):
+        assert isinstance(new, dict), path
+        assert set(old) <= set(new), (path, set(old) - set(new))
+        assert set(new) - set(old) <= extra, (path, set(new) - set(old))
+        for k in old:
+            _superset(new[k], old[k], f"{path}.{k}", extra)
+    elif isinstance(old, list):
+        assert isinstance(new, list) and len(new) == len(old), path
+        for i, (a, b) in enumerate(zip(new, old)):
+            _superset(a, b, f"{path}[{i}]", extra)
+    else:
+        assert new == old, (path, new, old)
+
+
+def _head_module(tmp_path):
+    import importlib.util
+    import subprocess
+
+    repo = Path(s1.__file__).resolve().parents[3]
+    r = subprocess.run(["git", "-C", str(repo), "show", f"{HEAD_REF}:controlSW/franka_sim/franka_sim/stage1_replay.py"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"git show {HEAD_REF} failed: {r.stderr[:200]}")
+    p = tmp_path / "stage1_replay_head.py"
+    p.write_text(r.stdout)
+    spec = importlib.util.spec_from_file_location("_stage1_replay_head", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_box_sweep_matches_head(demo_npz, tmp_path, monkeypatch):
+    """Box mode: the same combo dirs and, in stage1.json + design_summary.json, every pre-A9d key with the same value;
+    the only additions are the A9d design keys (finger_mode, swept_key/value, flange_to_tip_m, tcp_at, pad_length_m)."""
+    head = _head_module(tmp_path)
+    kw = dict(finger_extensions="0.05,0.1")
+    _sweep(head, monkeypatch, _args(demo_npz, tmp_path / "head", **kw))
+    summ = _sweep(s1, monkeypatch, _args(demo_npz, tmp_path / "new", **kw))
+    old_files = sorted(p.relative_to(tmp_path / "head") for p in (tmp_path / "head").rglob("*.json"))
+    new_files = sorted(p.relative_to(tmp_path / "new") for p in (tmp_path / "new").rglob("*.json"))
+    assert old_files == new_files and len(old_files) == 5           # 4 combos + design_summary.json
+    for f in old_files:
+        _superset(_no_times(json.loads((tmp_path / "new" / f).read_text())),
+                  _no_times(json.loads((tmp_path / "head" / f).read_text())), str(f))
+    for r in summ["rows"]:
+        assert r["finger_mode"] == "box" and r["swept_key"] == "extension_m" and r["swept_value"] == r["extension_m"]
+    f2t = {r["extension_m"]: r["flange_to_tip_m"] for r in summ["rows"]}
+    assert f2t[0.1] - f2t[0.05] == pytest.approx(0.05, abs=1e-9)
+    res = json.loads(next((tmp_path / "new").glob("panda_ext0.1_py/stage1.json")).read_text())
+    # box: TCP at the pad centre, tip = pad distal end
+    assert res["design"]["flange_to_tip_m"] == pytest.approx(res["F_T_TCP"][2][3] + res["design"]["pad_length_m"] / 2,
+                                                             abs=1e-12)
+    rec = summ["recommended"]
+    assert rec["swept_key"] == "extension_m" and rec["swept_value"] == rec["extension_m"]
+    assert rec["flange_to_tip_m"] == pytest.approx(f2t[rec["extension_m"]])
+    txt = (tmp_path / "new" / "summary.txt").read_text()
+    assert f"extension_m = {rec['extension_m']} m (flange_to_tip {rec['flange_to_tip_m']:.4f} m)" in txt
+    # --lengths is the same axis as --finger-extensions in box mode
+    summ2 = _sweep(s1, monkeypatch, _args(demo_npz, tmp_path / "new2", lengths="0.05,0.1"))
+    assert _no_times(summ2) == _no_times(summ)
+    with pytest.raises(SystemExit, match="not both"):
+        s1.sweep(_args(demo_npz, tmp_path / "x", lengths="0.1", finger_extensions="0.1"), log=lambda *_: None)
+
+
+@pytest.fixture(scope="module")
+def box_kit(tmp_path_factory):
+    from franka_sim import finger_kit as FK
+
+    d = FK.make_box_kit(tmp_path_factory.mktemp("kit") / "box_kit")
+    return d, FK.kit_digest(d)
+
+
+def _kit_sets(kit):
+    d, sha = kit
+    return ["tooling.finger_adapter.mode=kit", f"tooling.finger_adapter.kit={d}",
+            f'tooling.finger_adapter.kit_sha256="{sha}"']
+
+
+def test_kit_sweep_lengths_and_flange_to_tip(demo_npz, box_kit, tmp_path, monkeypatch):
+    """Kit mode on a make_box_kit kit: --lengths sweeps adapter_length_m (2 lengths x 2 sides); every row reports
+    flange_to_tip_m, and the box-equivalent L gives the box design's flange_to_tip (box and kit compare directly)."""
+    from franka_sim import finger_kit as FK
+    from franka_sim import model as M
+
+    box = s1.Ctx(s1.station_spec(IDS, RUN, "panda", 0.10, "+y"))
+    fl = box.sm.names["bodies"]["finger_l"]
+    J = FK.jaw_T(*M.jaw_mount(box.sm.model, fl))
+    L_eq = FK.box_equivalent_placement(J, M._finger_tip_z(box.sm.model, fl), 0.10,
+                                       box.st.get("tooling.finger_adapter.pad_size_m"))["L"]
+    assert L_eq > 0.0
+    summ = _sweep(s1, monkeypatch, _args(demo_npz, tmp_path, lengths=f"0.0,{L_eq!r}", set=_kit_sets(box_kit)))
+    dirs = sorted(p.parent.name for p in tmp_path.glob("*/stage1.json"))
+    assert dirs == sorted([s1.combo_dir("panda", L, sd, "kit") for L in (0.0, L_eq) for sd in ("+y", "-y")])
+    assert all(d.startswith("panda_len") for d in dirs)
+    assert len(summ["rows"]) == 4
+    for r in summ["rows"]:
+        assert r["finger_mode"] == "kit" and r["swept_key"] == "adapter_length_m"
+        assert np.isfinite(r["flange_to_tip_m"])
+    f2t = {(r["swept_value"], r["camera_side"]): r["flange_to_tip_m"] for r in summ["rows"]}
+    for sd in ("+y", "-y"):
+        assert f2t[(L_eq, sd)] - f2t[(0.0, sd)] == pytest.approx(L_eq, abs=1e-9)
+        assert f2t[(L_eq, sd)] == pytest.approx(s1.flange_to_tip_m(box.sm), abs=1e-9)
+    res = json.loads(next(tmp_path.glob("panda_len0_py/stage1.json")).read_text())
+    assert res["design"]["tcp_at"] == "tip" and res["design"]["adapter_length_m"] == 0.0
+    assert res["design"]["flange_to_tip_m"] == pytest.approx(res["F_T_TCP"][2][3], abs=1e-12)
+    assert res["design"]["finger_kit"]["sha"] == box_kit[1]
+    rec = summ["recommended"]
+    assert rec["finger_mode"] == "kit" and rec["swept_key"] == "adapter_length_m"
+    assert rec["adapter_length_m"] == rec["swept_value"] and rec["swept_value"] in (0.0, L_eq)
+    assert rec["flange_to_tip_m"] == pytest.approx(f2t[(rec["swept_value"], rec["camera_side"])])
+    txt = (tmp_path / "summary.txt").read_text()
+    assert "len_mm" in txt and "f2tip_mm" in txt and "adapter_length_m = " in txt and "flange_to_tip" in txt
+    # eval wrapper: the new fields reach the report metrics, the old keys are kept
+    from franka_sim.eval import stage1 as E
+
+    m, _ = E.metrics_from(res)
+    assert m["finger_mode"] == "kit" and m["swept_key"] == "adapter_length_m" and m["swept_value"] == 0.0
+    assert m["flange_to_tip_m"] == res["design"]["flange_to_tip_m"]
+    assert m["finger_extension_m"] == res["design"]["extension_m"] and m["camera_side"] == "+y"
+
+
+def test_stock_sweep_has_no_length_axis(demo_npz, tmp_path, monkeypatch):
+    summ = _sweep(s1, monkeypatch, _args(demo_npz, tmp_path, finger_mode="stock"))
+    dirs = sorted(p.parent.name for p in tmp_path.glob("*/stage1.json"))
+    assert dirs == ["panda_stock_my", "panda_stock_py"]
+    for r in summ["rows"]:
+        assert r["finger_mode"] == "stock" and r["swept_key"] is None and r["swept_value"] is None
+        assert 0.1 < r["flange_to_tip_m"] < 0.2
+    rec = summ["recommended"]
+    assert rec["swept_key"] is None and rec["flange_to_tip_m"] is not None
+    res = json.loads((tmp_path / "panda_stock_py" / "stage1.json").read_text())
+    assert res["design"]["tcp_at"] == "stock_pads"
+    assert "finger mode stock, no length axis (flange_to_tip" in (tmp_path / "summary.txt").read_text()
+    with pytest.raises(SystemExit, match="no length axis"):
+        s1.sweep(_args(demo_npz, tmp_path / "x", finger_mode="stock", lengths="0.1"), log=lambda *_: None)
+    with pytest.raises(ValueError, match="no length axis"):
+        s1.station_spec(IDS, RUN, "panda", 0.1, "+y", key=None)
+
+
+def test_eval_metrics_from_pre_a9d_json():
+    """A stage1.json written before A9d (design = extension_m + camera_side only) still maps; new fields are None."""
+    from franka_sim.eval import stage1 as E
+
+    row = {"name": "ep0", "feasible": True, "reach_fraction": 1.0, "min_margin_deg": 30.0, "min_tooling_clearance_m": 0.04,
+           "n_collisions": 0, "clamp_fraction": 0.0, "slowdown": 1.0, "mapped_p99_le_stroke": True, "gap_p99_m": 0.05}
+    res = {"summary": {"n_feasible": 1, "worst_joint_margin_all_demos_deg": 30.0, "worst_joint_margin_feasible_deg": 30.0,
+                       "worst_tooling_clearance_m": 0.04, "clamp_fraction": 0.0, "slowdown_mean": 1.0, "slowdown_max": 1.0},
+           "demos": [row], "recommendation": {"grid_point": {"gx": 0.5, "gy": 0.0}, "yaw_deg": 0.0}, "robot": "panda",
+           "design": {"extension_m": 0.1, "camera_side": "-y"}}
+    m, table = E.metrics_from(res)
+    assert m["finger_extension_m"] == 0.1 and m["camera_side"] == "-y" and len(table) == 1
+    assert m["finger_mode"] is None and m["swept_key"] is None and m["flange_to_tip_m"] is None

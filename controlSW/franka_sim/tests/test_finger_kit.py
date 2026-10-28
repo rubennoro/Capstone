@@ -349,3 +349,110 @@ def test_tip_and_tags_are_in_kit_coords(tmp_path):
         np.testing.assert_allclose(pa["tip"], pb["tip"], atol=1e-12)
         np.testing.assert_allclose(pa["tags"][0]["centre"], pb["tags"][0]["centre"], atol=1e-12)
         np.testing.assert_allclose(pa["tags"][0]["body_T_tag"], pb["tags"][0]["body_T_tag"], atol=1e-12)
+
+
+# ----------------------------------------------------------------------------------------- A9 addendum: variants
+
+
+@pytest.fixture
+def vbox(tmp_path):
+    return fk.make_box_kit(tmp_path / "vbox", variants=True)
+
+
+def test_variants_kit_loads(vbox):
+    k = fk.load_kit(vbox)
+    assert set(k.parts) == {"pad", "holder_left", "holder_right"}
+    assert k.parts["holder_left"].role == "structure" and k.parts["holder_left"].mass_kg > 0
+    assert k.variants == {"full": {"left": ("pad", "holder_left"), "right": ("pad", "holder_right")},
+                          "finger_only": {"left": ("pad",), "right": ("pad",)}}
+    assert [t.on for t in k.sides["left"].tags] == ["holder_left"] and k.sides["right"].tags[0].on == "holder_right"
+    # the tag centre lies on the holder plate's camera-facing x face (M frame = kit coords here)
+    for side, sgn in (("left", 1), ("right", -1)):
+        v, c = k.parts[f"holder_{side}"].vertices, k.sides[side].tags[0].centre
+        assert c[0] == pytest.approx(v[:, 0].max() if sgn > 0 else v[:, 0].min(), abs=1e-15)
+        assert v[:, 1].min() < c[1] < v[:, 1].max() and v[:, 2].min() < c[2] < v[:, 2].max()
+
+
+def test_no_variants_means_only_full_and_default_carrier(box, tmp_path):
+    k = fk.load_kit(box)
+    assert k.variants == {"full": {"left": ("pad",), "right": ("pad",)}}
+    assert k.sides["left"].tags[0].on == "pad"                   # no structure part: the contact part carries it
+    # with structure parts (no 'on'): the side's first structure part in its parts order
+    d = fk.make_box_kit(tmp_path / "v", variants=True)
+
+    def ed(doc):
+        for sd in doc["sides"].values():
+            for t in sd["tags"]:
+                t.pop("on")
+        doc["sides"]["left"]["parts"] = ["holder_left", "pad"]
+    _edit(d, ed)
+    k = fk.load_kit(d)
+    assert k.sides["left"].tags[0].on == "holder_left" and k.sides["right"].tags[0].on == "holder_right"
+
+
+def test_place_variants(vbox, box):
+    kv, k0 = fk.load_kit(vbox), fk.load_kit(box)
+    for side in ("left", "right"):
+        full = fk.place(kv, side, J, 0.1, -0.0144, 5.0)
+        same = fk.place(kv, side, J, 0.1, -0.0144, 5.0, variant="full")
+        only = fk.place(kv, side, J, 0.1, -0.0144, 5.0, variant="finger_only")
+        ref = fk.place(k0, side, J, 0.1, -0.0144, 5.0)
+        assert list(full["parts"]) == ["pad", f"holder_{side}"] and full["variant"] == "full"
+        assert list(only["parts"]) == ["pad"] and only["variant"] == "finger_only"
+        assert only["tags"] == [] and only["tags_skipped"] == [{"id": 0 if side == "left" else 1, "on": f"holder_{side}"}]
+        assert full["tags_skipped"] == [] and ref["tags_skipped"] == [] and ref["variant"] == "full"
+        for o in (full, same, only):          # pad pose and tip do not depend on the variant / holder presence
+            np.testing.assert_array_equal(o["parts"]["pad"], ref["parts"]["pad"])
+            np.testing.assert_array_equal(o["tip"], ref["tip"])
+        for o in (full, same):                # the tag moved onto the holder sits exactly where the box kit put it
+            np.testing.assert_array_equal(o["tags"][0]["body_T_tag"], ref["tags"][0]["body_T_tag"])
+            assert o["tags"][0]["on"] == f"holder_{side}"
+        assert fk.auto_dy(kv, side, J, 0.1) == fk.auto_dy(k0, side, J, 0.1)
+    with pytest.raises(fk.KitError, match=r"unknown variant 'tips' \(variants: \['finger_only', 'full'\]\)"):
+        fk.place(kv, "left", J, 0.1, 0.0, variant="tips")
+    with pytest.raises(fk.KitError, match=r"unknown variant 'finger_only' \(variants: \['full'\]\)"):
+        fk.place(k0, "left", J, 0.1, 0.0, variant="finger_only")
+
+
+def test_variant_parts_in_side_order(vbox):
+    _edit(vbox, lambda d: d["variants"].update(both={"left": ["holder_left", "pad"], "right": ["pad", "holder_right"]}))
+    k = fk.load_kit(vbox)
+    assert fk.variant_parts(k, "both", "left") == ("pad", "holder_left") == k.variants["full"]["left"]
+
+
+def test_full_may_be_listed_only_unchanged(vbox):
+    _edit(vbox, lambda d: d["variants"].update(full={"left": ["holder_left", "pad"], "right": ["pad", "holder_right"]}))
+    assert fk.load_kit(vbox).variants["full"]["left"] == ("pad", "holder_left")
+    _edit(vbox, lambda d: d["variants"].update(full={"left": ["pad"], "right": ["pad", "holder_right"]}))
+    with pytest.raises(fk.KitError, match="variants.full must equal the sides' own parts"):
+        fk.load_kit(vbox)
+
+
+@pytest.mark.parametrize("edit, msg", [
+    (lambda d: d.update(variants=[]), "variants must be a non-empty mapping"),
+    (lambda d: d.update(variants={}), "variants must be a non-empty mapping"),
+    (lambda d: d["variants"].update({"Finger-Only": {"left": ["pad"], "right": ["pad"]}}), "must match \\[a-z0-9_\\]\\+"),
+    (lambda d: d["variants"].update(x={"left": ["pad"]}), "variants.x must have exactly 'left' and 'right'"),
+    (lambda d: d["variants"].update(x={"left": ["pad"], "right": ["pad"], "mid": []}), "exactly 'left' and 'right'"),
+    (lambda d: d["variants"].update(x={"left": "pad", "right": ["pad"]}), "variants.x.left must be a list"),
+    (lambda d: d["variants"].update(x={"left": ["pad", "pad"], "right": ["pad"]}), "without duplicates"),
+    (lambda d: d["variants"].update(x={"left": ["pad", "ghost"], "right": ["pad"]}), "unknown part 'ghost'"),
+    (lambda d: d["variants"].update(x={"left": ["pad", "holder_right"], "right": ["pad"]}),
+     "variants.x.left part 'holder_right' is not in sides.left.parts"),
+    (lambda d: d["variants"].update(x={"left": ["holder_left"], "right": ["pad"]}),
+     "variants.x.left must have exactly one role: contact part, got \\[\\]"),
+    (lambda d: d["variants"].update(x={"left": [], "right": ["pad"]}), "exactly one role: contact part"),
+    (lambda d: d["sides"]["left"]["tags"][0].update(on="ghost"), "tags\\[0\\].on 'ghost' must be one of sides.left.parts"),
+    (lambda d: d["sides"]["left"]["tags"][0].update(on="holder_right"), "on 'holder_right' must be one of"),
+    (lambda d: d["sides"]["left"]["tags"][0].update(where="x"), "must have exactly id, centre, normal, up, size"),
+])
+def test_bad_variants(vbox, edit, msg):
+    _edit(vbox, edit)
+    with pytest.raises(fk.KitError, match=msg):
+        fk.load_kit(vbox)
+
+
+def test_variants_change_the_digest(tmp_path):
+    a = fk.kit_digest(fk.make_box_kit(tmp_path / "a"))
+    b = fk.kit_digest(fk.make_box_kit(tmp_path / "b", variants=True))
+    assert a != b and a == fk.kit_digest(fk.make_box_kit(tmp_path / "c"))

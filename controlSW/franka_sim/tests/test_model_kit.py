@@ -404,13 +404,75 @@ def test_finger_mode_defaults():
         M.finger_mode({"mode": "boxes"})
 
 
-def test_kit_variant_other_than_full_not_supported_yet(tmp_path):
+def test_kit_variant_unknown_lists_the_kits_variants(tmp_path):
     d = FK.make_box_kit(tmp_path / "kit")
     st = _kit_station(_spec("sim-iphone", "panda"), d, 0.02, "auto", ["tooling.finger_adapter.kit_variant=finger_only"])
-    with pytest.raises(ValueError, match="only 'full'"):
+    with pytest.raises(ValueError, match=r"kit_variant 'finger_only' is not a variant of finger kit box_equivalent "
+                                         r"\(variants: \['full'\]\)"):
         M.build_model(st, with_scene=False)
     sm = M.build_model(_kit_station(_spec("sim-iphone", "panda"), d, 0.02, "auto"), with_scene=False)
-    assert sm.info["finger_kit"]["variant"] == "full"
+    assert sm.info["finger_kit"]["variant"] == "full" and sm.info["finger_kit"]["tags_skipped"] == []
+
+
+@pytest.fixture(scope="module")
+def variants(tmp_path_factory):
+    """panda, sim-iphone, both camera sides x {plain box kit, variants kit full, variants kit finger_only}."""
+    base = tmp_path_factory.mktemp("variants")
+    plain, vk = FK.make_box_kit(base / "plain"), FK.make_box_kit(base / "vk", variants=True)
+    spec, out = _spec("sim-iphone", "panda"), {}
+    for cam in ("+y", "-y"):
+        side = [f"tooling.tcp_x_along_hand={cam}"]
+        out[cam, "plain"] = M.build_model(_kit_station(spec, plain, 0.02, "auto", side))
+        for v in ("full", "finger_only"):
+            out[cam, v] = M.build_model(_kit_station(spec, vk, 0.02, "auto",
+                                                     side + [f"tooling.finger_adapter.kit_variant={v}"]))
+    return out
+
+
+def _geoms(m, pat):
+    return sorted(m.geom(i).name for i in range(m.ngeom) if m.geom(i).name.startswith(pat))
+
+
+def _gpose(sm, name):
+    g = M._id(sm.model, "geom", name)
+    return np.r_[sm.model.geom_pos[g], sm.model.geom_quat[g], sm.model.geom_size[g], sm.model.geom_bodyid[g]]
+
+
+@pytest.mark.parametrize("cam", ["+y", "-y"])
+def test_kit_variant_full_places_holders_and_tags(variants, cam):
+    sm, ref = variants[cam, "full"], variants[cam, "plain"]
+    fk = sm.info["finger_kit"]
+    assert fk["variant"] == "full" and fk["tags_skipped"] == []
+    assert _geoms(sm.model, "finger_holder") == ["finger_holder_l", "finger_holder_r"]
+    assert set(fk["masses_kg"]) >= {"finger_holder_l", "finger_holder_r"}
+    fr, fr0 = M.export_frames(sm), M.export_frames(ref)
+    for k in ("F_T_TCP", "TCP_T_tag_left", "TCP_T_tag_right"):     # pads/tags/TCP = the plain box kit's
+        np.testing.assert_allclose(fr[k], fr0[k], atol=1e-12)
+    for g in ("pad_l", "pad_r", "tag_l", "tag_r", "tag_l_ink", "tag_r_ink"):
+        np.testing.assert_allclose(_gpose(sm, g), _gpose(ref, g), atol=1e-12)
+    assert fk["tag_separation_closed_m"] == pytest.approx(ref.info["finger_kit"]["tag_separation_closed_m"], abs=1e-12)
+    d = M.forward_at(sm)        # the holder plates touch nothing at the home pose
+    m = sm.model
+    assert not [i for i in range(d.ncon) if "finger_holder" in m.geom(d.contact[i].geom1).name + m.geom(d.contact[i].geom2).name]
+
+
+@pytest.mark.parametrize("cam", ["+y", "-y"])
+def test_kit_variant_finger_only_no_holder_tags_skipped(variants, cam):
+    sm, full = variants[cam, "finger_only"], variants[cam, "full"]
+    fk = sm.info["finger_kit"]
+    assert fk["variant"] == "finger_only" and fk["side_for_finger"] == full.info["finger_kit"]["side_for_finger"]
+    assert _geoms(sm.model, "finger_holder") == [] and _geoms(sm.model, "tag_") == []
+    assert not any(k.startswith("finger_holder") for k in fk["masses_kg"])
+    sides = fk["side_for_finger"]
+    assert sorted((t["finger"], t["side"], t["id"], t["on"]) for t in fk["tags_skipped"]) == sorted(
+        (s, sides[s], 0 if sides[s] == "left" else 1, f"holder_{sides[s]}") for s in ("l", "r"))
+    assert fk["tag_separation_closed_m"] is None
+    fr, frf = M.export_frames(sm), M.export_frames(full)
+    assert fr["TCP_T_tag_left"] is None and fr["TCP_T_tag_right"] is None
+    np.testing.assert_allclose(fr["F_T_TCP"], frf["F_T_TCP"], atol=1e-12)        # TCP from the tips: unchanged
+    for g in ("pad_l", "pad_r", "finger_adapter_l", "finger_adapter_r"):
+        np.testing.assert_allclose(_gpose(sm, g), _gpose(full, g), atol=1e-12)
+    assert fk["dy"] == full.info["finger_kit"]["dy"]
 
 
 @pytest.fixture(scope="module")

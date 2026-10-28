@@ -73,3 +73,43 @@ def test_camera_check_quick(tmp_path):
     assert npz[f"plain_d11_f{f}_main"].shape == (224, 224, 3) and npz[f"plain_d11_f{f - 3}_main"].dtype == np.uint8
     assert npz[f"roi_d11_f{f}_main"].dtype == bool
     print(CC.summary_text(r))
+
+
+# ------------------------------------------------------------------------- A9d: no finger tags -> clean failure
+
+
+def test_camera_check_stock_fingers_fail_early(tmp_path, capsys):
+    """Stock fingers carry no tags: exit code 2 with a clear message, before the zarr / stage1 / raw data are read."""
+    rc = CC.main(["--zarr", str(tmp_path / "missing.zarr.zip"), "--stage1", str(tmp_path / "missing.json"),
+                  "--raw", str(tmp_path), "--set", "tooling.finger_adapter.mode=stock", "--out", str(tmp_path / "o")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "camera-check needs finger tags; finger_adapter.mode=stock variant=full has none" in err
+
+
+def test_camera_check_kit_without_tags_fails_cleanly(tmp_path, capsys):
+    """A kit whose sides place no tags: the model refuses (or builds without tag_l/tag_r) -> the same message, rc 2."""
+    import yaml
+
+    from franka_sim import finger_kit as FK
+
+    d = FK.make_box_kit(tmp_path / "kit")
+    doc = yaml.safe_load((d / "kit.yaml").read_text())
+    for sd in doc["sides"].values():
+        sd["tags"] = []
+    (d / "kit.yaml").write_text(yaml.safe_dump(doc, sort_keys=False, default_flow_style=None))
+    FK.write_source_md(d, "no_tags")
+    rc = CC.main(["--zarr", str(tmp_path / "missing.zarr.zip"), "--stage1", str(tmp_path / "missing.json"),
+                  "--raw", str(tmp_path), "--rig", "none", "--set", "tooling.finger_adapter.mode=kit",
+                  f"tooling.finger_adapter.kit={d}", f'tooling.finger_adapter.kit_sha256="{FK.kit_digest(d)}"',
+                  "--out", str(tmp_path / "o")])
+    assert rc == 2
+    assert "camera-check needs finger tags; finger_adapter.mode=kit variant=full has none" in capsys.readouterr().err
+
+
+def test_tag_guard_passes_box_mode():
+    from franka_sim.model import PROFILES, build_model
+
+    st = CC.load_station({k: dict(v) for k, v in PROFILES["sim-iphone"].items()})
+    CC.tag_guard(st)
+    CC.tag_guard(st, build_model(st, with_scene=False))

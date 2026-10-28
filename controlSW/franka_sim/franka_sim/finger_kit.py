@@ -12,17 +12,26 @@ Meshes, ``tip`` and the tags are in kit (CAD) coordinates (one assembly frame, a
 ``inv(kit_T_M)``: ``body_T_kit = J · J_T_M · inv(kit_T_M)``. Only ``camera_face`` is about the side's M axes. A tag ``centre`` is the point on the part's
 surface where the tag is stuck (its back face); ``normal`` points out of the tag face toward the camera.
 
+Variants (A9 addendum, ``tooling.finger_adapter.kit_variant``, default ``full``): kit.yaml may carry an optional top-level
+``variants: {<name>: {left: [parts], right: [parts]}}`` (names ``[a-z0-9_]+``). A variant picks a subset of each side's
+own ``parts`` (in the side's order, whatever order the variant lists them in) with exactly one contact part per side.
+``full`` always exists and equals the sides' own parts; listing it is allowed only with exactly those parts. Each tag
+has a carrier part ``on: <part>`` (one of its side's parts); default = the side's first ``role: structure`` part in its
+``parts`` order, else its contact part. ``place(..., variant=v)`` returns only v's parts and the tags whose carrier is in
+v; the others are listed in ``tags_skipped``.
+
 kit sha256 (``kit_digest``) = sha256 over the ``kit.yaml`` bytes followed by the ASCII sha256 hex of every file kit.yaml
 lists (meshes and collision meshes), in sorted relative-path order.
 
 Usage: kit = load_kit(dir, expect_sha=tooling["finger_adapter"]["kit_sha256"])
-       out = place(kit, "left", J, L, dy, yaw_deg); dy = auto_dy(kit, "left", J, L, yaw_deg)
+       out = place(kit, "left", J, L, dy, yaw_deg, variant="full"); dy = auto_dy(kit, "left", J, L, yaw_deg)
        make_box_kit(tmp) + box_equivalent_placement(J, tip_z, extension, pad_size) = today's box pads (A9c test)
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -38,6 +47,10 @@ UNITS = {"mm": 1e-3, "m": 1.0}
 ROLES = ("contact", "structure")
 PROV_STATUS = ("measured", "derived", "placeholder", "decision", "datasheet")
 TOP_KEYS = ("schema", "id", "units", "parts", "materials", "sides", "contact", "provenance")
+OPTIONAL_TOP_KEYS = ("variants",)
+FULL = "full"                # the implicit variant: every side's own parts
+VARIANT_NAME = re.compile(r"[a-z0-9_]+")
+TAG_KEYS = {"id", "centre", "normal", "up", "size"}
 TAG_LIFT_M = 0.0005          # white tag box centre above the surface (half its 1 mm thickness): model.py step 3
 ROT_TOL = 1e-3               # kit_T_M rotation must be orthonormal to this (CAD exports carry few digits)
 
@@ -69,6 +82,7 @@ class Tag:
     normal: np.ndarray               # unit, kit coords, out of the tag face
     up: np.ndarray                   # unit, kit coords, orthogonal to normal
     size_m: float
+    on: str = ""                     # carrier part (default: the side's first structure part, else its contact part)
 
 
 @dataclass
@@ -93,6 +107,7 @@ class Kit:
     materials: dict
     contact: dict                    # friction (3 floats), solref / solimp (None -> model.grip_contact())
     provenance: dict
+    variants: dict = field(default_factory=dict)   # name -> {left: (parts,), right: (parts,)}; always has "full"
 
 
 # --------------------------------------------------------------------------------------------------- small math
@@ -316,7 +331,7 @@ def load_kit(path, expect_sha: str | None = None) -> Kit:
     missing = [k for k in TOP_KEYS if k not in doc]
     if missing:
         raise KitError(f"finger kit {d}: missing top-level keys {missing}")
-    unknown = sorted(set(doc) - set(TOP_KEYS))
+    unknown = sorted(set(doc) - set(TOP_KEYS) - set(OPTIONAL_TOP_KEYS))
     if unknown:
         raise KitError(f"finger kit {d}: unknown top-level keys {unknown}")
     if doc["schema"] != SCHEMA:
@@ -416,8 +431,8 @@ def load_kit(path, expect_sha: str | None = None) -> Kit:
             raise KitError(f"finger kit {d}: {w}.tags must be a list")
         for i, t in enumerate(sd["tags"]):
             wt = f"{w}.tags[{i}]"
-            if not isinstance(t, dict) or set(t) != {"id", "centre", "normal", "up", "size"}:
-                raise KitError(f"finger kit {d}: {wt} must have exactly id, centre, normal, up, size")
+            if not isinstance(t, dict) or not TAG_KEYS <= set(t) or set(t) - TAG_KEYS - {"on"}:
+                raise KitError(f"finger kit {d}: {wt} must have exactly id, centre, normal, up, size (+ optional on)")
             if not isinstance(t["id"], int) or isinstance(t["id"], bool) or t["id"] < 0:
                 raise KitError(f"finger kit {d}: {wt}.id must be a non-negative int")
             if not isinstance(t["size"], (int, float)) or isinstance(t["size"], bool) or t["size"] <= 0:
@@ -426,8 +441,12 @@ def load_kit(path, expect_sha: str | None = None) -> Kit:
             if abs(n_ @ u_) > 1e-3:
                 raise KitError(f"finger kit {d}: {wt}.up must be orthogonal to normal (|cos| = {abs(n_ @ u_):.3g})")
             u_ = u_ - (n_ @ u_) * n_
+            struct_ = [pn for pn in pl if parts[pn].role == "structure"]
+            on = t.get("on", struct_[0] if struct_ else contact[0])
+            if on not in pl:
+                raise KitError(f"finger kit {d}: {wt}.on {on!r} must be one of {w}.parts {pl}")
             tags.append(Tag(t["id"], _vec(d, t["centre"], 3, f"{wt}.centre") * s, n_, u_ / np.linalg.norm(u_),
-                            float(t["size"]) * s))
+                            float(t["size"]) * s, on))
         sides[sn] = Side(sn, tuple(pl), contact[0], _pose(d, sd["kit_T_M"], s, f"{w}.kit_T_M"),
                          1.0 if sd["camera_face"] == "+x" else -1.0, _vec(d, sd["tip"], 3, f"{w}.tip") * s, tags)
     ids = [t.id for sd in sides.values() for t in sd.tags]
@@ -463,7 +482,42 @@ def load_kit(path, expect_sha: str | None = None) -> Kit:
     for k, v in prov.items():
         if not isinstance(v, dict) or v.get("status") not in PROV_STATUS or not isinstance(v.get("source"), str):
             raise KitError(f"finger kit {d}: provenance.{k} must be {{status: {'|'.join(PROV_STATUS)}, source: str}}")
-    return Kit(doc["id"], d, sha, doc["units"], parts, sides, dict(mats), contact, dict(prov))
+    variants = _variants(d, doc.get("variants"), sides, parts) if "variants" in doc else \
+        {FULL: {sn: sd.parts for sn, sd in sides.items()}}
+    return Kit(doc["id"], d, sha, doc["units"], parts, sides, dict(mats), contact, dict(prov), variants)
+
+
+def _variants(d, doc, sides: dict, parts: dict) -> dict:
+    """Validate kit.yaml 'variants'; each variant's parts are returned in the side's own order; 'full' first."""
+    if not isinstance(doc, dict) or not doc:
+        raise KitError(f"finger kit {d}: variants must be a non-empty mapping {{name: {{left: [..], right: [..]}}}}")
+    full = {sn: sd.parts for sn, sd in sides.items()}
+    out = {FULL: full}
+    for vn, vd in doc.items():
+        w = f"variants.{vn}"
+        if not isinstance(vn, str) or not VARIANT_NAME.fullmatch(vn):
+            raise KitError(f"finger kit {d}: variant name {vn!r} must match [a-z0-9_]+")
+        if not isinstance(vd, dict) or set(vd) != {"left", "right"}:
+            raise KitError(f"finger kit {d}: {w} must have exactly 'left' and 'right' part lists")
+        v = {}
+        for sn in ("left", "right"):
+            pl = vd[sn]
+            if not isinstance(pl, list) or len(set(map(str, pl))) != len(pl):
+                raise KitError(f"finger kit {d}: {w}.{sn} must be a list of part names without duplicates")
+            for pn in pl:
+                if pn not in parts:
+                    raise KitError(f"finger kit {d}: {w}.{sn} names unknown part {pn!r} (parts: {sorted(parts)})")
+                if pn not in full[sn]:
+                    raise KitError(f"finger kit {d}: {w}.{sn} part {pn!r} is not in sides.{sn}.parts {list(full[sn])}")
+            contact = [pn for pn in pl if parts[pn].role == "contact"]
+            if len(contact) != 1:
+                raise KitError(f"finger kit {d}: {w}.{sn} must have exactly one role: contact part, got {contact}")
+            v[sn] = tuple(pn for pn in full[sn] if pn in pl)
+        if vn == FULL and v != full:
+            raise KitError(f"finger kit {d}: variants.full must equal the sides' own parts "
+                           f"{ {k: list(x) for k, x in full.items()} } (it is implicit; omit it)")
+        out[vn] = v
+    return out
 
 
 # --------------------------------------------------------------------------------------------------- placement
@@ -475,23 +529,38 @@ def _side(kit: Kit, side: str) -> Side:
     return kit.sides[side]
 
 
-def place(kit: Kit, side: str, J, L: float, dy: float, yaw_deg: float = 0.0) -> dict:
+def variant_parts(kit: Kit, variant: str, side: str) -> tuple[str, ...]:
+    """The parts of ``side`` in ``variant`` (side order); KitError listing the kit's variants if unknown."""
+    if variant not in kit.variants:
+        raise KitError(f"finger kit {kit.id}: unknown variant {variant!r} (variants: {sorted(kit.variants)})")
+    _side(kit, side)
+    return kit.variants[variant][side]
+
+
+def place(kit: Kit, side: str, J, L: float, dy: float, yaw_deg: float = 0.0, variant: str = FULL) -> dict:
     """Poses of one kit side in the Franka finger body frame (J = jaw mount 4x4 in that frame).
 
-    Returns {body_T_M, body_T_kit, parts: {name: body_T_part}, contact_part, camera_face, tip (3,),
-    tags: [{id, size_m, centre, normal, up, body_T_tag}]}; body_T_tag has x = normal, z = up, origin = centre (on the
-    surface; model.py's white tag box goes at centre + 0.5 mm * normal)."""
+    Returns {body_T_M, body_T_kit, variant, parts: {name: body_T_part} (only the variant's parts, side order),
+    contact_part, camera_face, tip (3,), tags: [{id, on, size_m, centre, normal, up, body_T_tag}] (only tags whose
+    carrier part is in the variant), tags_skipped: [{id, on}]}; body_T_tag has x = normal, z = up, origin = centre (on
+    the surface; model.py's white tag box goes at centre + 0.5 mm * normal). The tip is the contact part's and is
+    always returned (every variant has the contact part)."""
     sd = _side(kit, side)
+    keep = variant_parts(kit, variant, side)
     bM = np.asarray(J, float) @ J_T_M(L, dy, yaw_deg)
     bK = bM @ _inv(sd.kit_T_M)
-    tags = []
+    tags, skipped = [], []
     for t in sd.tags:
+        if t.on not in keep:
+            skipped.append({"id": t.id, "on": t.on})
+            continue
         n_, u_ = bK[:3, :3] @ t.normal, bK[:3, :3] @ t.up
         c_ = _apply(bK, t.centre)
-        tags.append({"id": t.id, "size_m": t.size_m, "centre": c_, "normal": n_, "up": u_,
+        tags.append({"id": t.id, "on": t.on, "size_m": t.size_m, "centre": c_, "normal": n_, "up": u_,
                      "body_T_tag": _T(np.column_stack([n_, np.cross(u_, n_), u_]), c_)})
-    return {"body_T_M": bM, "body_T_kit": bK, "parts": {pn: bK.copy() for pn in sd.parts},
-            "contact_part": sd.contact_part, "camera_face": sd.camera_face, "tip": _apply(bK, sd.tip), "tags": tags}
+    return {"body_T_M": bM, "body_T_kit": bK, "variant": variant, "parts": {pn: bK.copy() for pn in keep},
+            "contact_part": sd.contact_part, "camera_face": sd.camera_face, "tip": _apply(bK, sd.tip), "tags": tags,
+            "tags_skipped": skipped}
 
 
 def auto_dy(kit: Kit, side: str, J, L: float, yaw_deg: float = 0.0) -> float:
@@ -519,7 +588,7 @@ def _box_mesh(lo, hi) -> tuple[np.ndarray, np.ndarray]:
 def make_box_kit(d, pad_size_m=(0.02, 0.008, 0.03), pad_offset_m: float = 0.008, tag_y_extra_m: float = 0.0312,
                  tag_z_from_pad_m: float = -0.108, tag_size_m: float = 0.016, *, friction=(1.0, 0.005, 0.0001),
                  kit_T_M_left=None, kit_T_M_right=None, units: str = "m", ascii: bool = True,
-                 density_kg_m3: float = 1000.0, kit_id: str = "box_equivalent") -> Path:
+                 density_kg_m3: float = 1000.0, kit_id: str = "box_equivalent", variants: bool = False) -> Path:
     """Write a kit that reproduces model.py's box pads + tags (defaults = model.py constants and the tooling YAMLs).
 
     M frame of each side (body axes): origin at the pad's proximal face on the gripper centre plane, i.e. the pad
@@ -537,7 +606,13 @@ def make_box_kit(d, pad_size_m=(0.02, 0.008, 0.03), pad_offset_m: float = 0.008,
     geometry is the same for any rigid kit_T_M (exercises the inv(kit_T_M) path). Both sides share one pad STL when
     their kit_T_M are equal, else each side gets its own. Mass: density 1000 = MuJoCo's default geom density (box mode
     pads have no explicit mass). ascii=True (default) keeps float64 vertices (17 digits); binary STL is float32
-    (~1e-9 m rounding at 30 mm), too coarse for a 1e-9 equivalence test."""
+    (~1e-9 m rounding at 30 mm), too coarse for a 1e-9 equivalence test.
+
+    variants=True (A9 addendum) adds per side a structure part ``holder_<side>``: a tag plate, box x in [-px/2, px/2],
+    y and z = the tag square +- 2 mm (so the tag centre lies on its camera-facing x face); the tag gets
+    ``on: holder_<side>``, the sides list [pad, holder_<side>] and kit.yaml gets ``variants: {finger_only: {left: [pad],
+    right: [pad]}}``. Pads, tips and tags are unchanged; finger_only places no holder and skips both tags.
+    variants=False (default) writes exactly the pre-addendum kit (no holder, no 'on', no 'variants')."""
     d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
     s = 1.0 / UNITS[units]
@@ -557,17 +632,28 @@ def make_box_kit(d, pad_size_m=(0.02, 0.008, 0.03), pad_offset_m: float = 0.008,
         Tk[:3, 3] *= s
         Rk = Ts[sn][:3, :3]
         tip = _apply(Ts[sn], [0.0, b / 2, pl]) * s
-        centre = _apply(Ts[sn], [cf * px / 2, b / 2 + tag_size_m / 2 + tag_y_extra_m, pl / 2 + tag_z_from_pad_m]) * s
-        sides[sn] = {"parts": [pn], "kit_T_M": Tk.tolist(), "camera_face": "+x" if cf > 0 else "-x",
-                     "tip": [float(x) for x in tip],
-                     "tags": [{"id": 0 if sn == "left" else 1, "centre": [float(x) for x in centre],
-                               "normal": [float(x) for x in Rk @ [cf, 0.0, 0.0]],
-                               "up": [float(x) for x in Rk @ [0.0, 0.0, 1.0]], "size": tag_size_m * s}]}
+        tag_yz = np.array([b / 2 + tag_size_m / 2 + tag_y_extra_m, pl / 2 + tag_z_from_pad_m])
+        centre = _apply(Ts[sn], [cf * px / 2, *tag_yz]) * s
+        tag = {"id": 0 if sn == "left" else 1, "centre": [float(x) for x in centre],
+               "normal": [float(x) for x in Rk @ [cf, 0.0, 0.0]],
+               "up": [float(x) for x in Rk @ [0.0, 0.0, 1.0]], "size": tag_size_m * s}
+        side_parts = [pn]
+        if variants:
+            hn, half = f"holder_{sn}", tag_size_m / 2 + 0.002
+            hv, hf = _box_mesh([-px / 2, *(tag_yz - half)], [px / 2, *(tag_yz + half)])
+            write_stl(d / f"{hn}.stl", _apply(Ts[sn], hv) * s, hf, ascii=ascii)
+            parts[hn] = {"mesh": f"{hn}.stl", "role": "structure", "material": "pad", "collision": "hull"}
+            side_parts.append(hn)
+            tag["on"] = hn
+        sides[sn] = {"parts": side_parts, "kit_T_M": Tk.tolist(), "camera_face": "+x" if cf > 0 else "-x",
+                     "tip": [float(x) for x in tip], "tags": [tag]}
     doc = {"schema": SCHEMA, "id": kit_id, "units": units, "parts": parts,
            "materials": {"pad": {"density_kg_m3": float(density_kg_m3)}}, "sides": sides,
            "contact": {"friction": [float(x) for x in np.atleast_1d(friction)], "solref": None, "solimp": None},
            "provenance": {"geometry": {"status": "placeholder", "source": "make_box_kit: model.py box pads"},
                           "tags": {"status": "derived", "source": "model.py TAG_Y_EXTRA_M / TAG_Z_FROM_PAD_M"}}}
+    if variants:
+        doc["variants"] = {"finger_only": {"left": [sides["left"]["parts"][0]], "right": [sides["right"]["parts"][0]]}}
     (d / KIT_YAML).write_text(yaml.safe_dump(doc, sort_keys=False, default_flow_style=None))
     write_source_md(d, kit_id)
     return d

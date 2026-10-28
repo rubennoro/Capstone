@@ -1,6 +1,7 @@
 """Stage 1 wrapper: ``python -m franka_sim stage1`` (A3) for the profile's station, then gates from ``criteria.stage1``.
 
-The design sweep is not repeated: the station's current tooling values (finger extension, camera side) are used.
+The design sweep is not repeated: the station's current tooling values (finger mode and its length, camera side) are
+used; the metrics carry ``finger_mode``, ``swept_key`` / ``swept_value`` and ``flange_to_tip_m`` (A9d).
 The placement search runs in a subprocess (one BLAS thread per worker, as A3's entry point sets up); its stage1.json is
 kept in the run dir (``stage1/<combo>/stage1.json``) and read by Stage 2a (``--stage1``).
 """
@@ -67,6 +68,9 @@ def metrics_from(res: dict) -> tuple[dict, list]:
         "width_gap_p99_m": max(r["gap_p99_m"] for r in rows),
         "recommended_placement": res["recommendation"]["grid_point"] | {"yaw_deg": res["recommendation"]["yaw_deg"]},
         "robot": res["robot"], "finger_extension_m": res["design"]["extension_m"], "camera_side": res["design"]["camera_side"],
+        # A9 (absent in stage1.json written before A9d -> None): finger mode, the swept length key, flange to fingertip
+        "finger_mode": res["design"].get("finger_mode"), "swept_key": res["design"].get("swept_key"),
+        "swept_value": res["design"].get("swept_value"), "flange_to_tip_m": res["design"].get("flange_to_tip_m"),
     }
     table = [{"demo": r["name"][:30], "feasible": r["feasible"], "reach_fraction": round(r["reach_fraction"], 3),
               "min_margin_deg": round(r["min_margin_deg"], 1), "min_tooling_clearance_m": round(r["min_tooling_clearance_m"], 4),
@@ -83,6 +87,12 @@ def run(R: rn.Run, d: Path, results: dict) -> dict:
     res = json.loads(p.read_text())
     m, table = metrics_from(res)
     results["stage1_json"] = p
-    notes = [f"stage1.json: {p}", f"{res['quick'] and 'quick grid' or 'full grid'}; robot {res['robot']}, finger extension "
-             f"{m['finger_extension_m']} m, camera side {m['camera_side']}; recommended placement {m['recommended_placement']}"]
+    if m["swept_key"] is None and m["finger_mode"] is None:     # stage1.json from before A9d
+        fing = f"finger extension {m['finger_extension_m']} m"
+    else:
+        fing = (f"finger mode {m['finger_mode']}, "
+                + (f"{m['swept_key']} {m['swept_value']} m" if m["swept_key"] else "no length axis")
+                + (f", flange_to_tip {m['flange_to_tip_m']:.4f} m" if m["flange_to_tip_m"] is not None else ""))
+    notes = [f"stage1.json: {p}", f"{res['quick'] and 'quick grid' or 'full grid'}; robot {res['robot']}, {fing}, "
+             f"camera side {m['camera_side']}; recommended placement {m['recommended_placement']}"]
     return {"metrics": m, "rows": table, "notes": notes}

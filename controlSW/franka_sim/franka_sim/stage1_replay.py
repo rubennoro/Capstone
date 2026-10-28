@@ -18,13 +18,19 @@ no collision (distance < 0), tooling clearance >= 0.010 m and no joint-velocity 
 Joint margin: IK keeps 0.02 rad from the limits; a frame whose margin is below the criterion is re-solved once with the
 IK limit margin raised to the criterion (warm start), so a feasible null-space choice is not missed.
 
-Design sweep: robots x finger extensions x camera sides; each combination rebuilds the model through the station
-``sets`` (``tooling.finger_adapter.extension_m``, ``tooling.tcp_x_along_hand``).
+Design sweep: robots x finger lengths x camera sides; each combination rebuilds the model through the station
+``sets``. The length axis depends on ``tooling.finger_adapter.mode`` (A9): ``box`` sweeps
+``tooling.finger_adapter.extension_m`` (unchanged), ``kit`` sweeps ``tooling.finger_adapter.adapter_length_m``,
+``stock`` has no length axis (camera side only). The side is ``tooling.tcp_x_along_hand``. Every combo row and the
+recommendation also report ``flange_to_tip_m`` (flange to the fingertip along flange z, from the built model), so box
+and kit designs compare directly. ``--lengths`` maps to the mode's key; ``--finger-extensions`` is its old alias.
 
 Usage: python -m franka_sim stage1 --zarr Z --ids robot=panda,tooling=...,sensor=...,scene=... \\
-           [--run criteria=block_raise,sim=stage1] [--robots panda,fr3] [--finger-extensions 0,0.05,0.1] \\
+           [--run criteria=block_raise,sim=stage1] [--robots panda,fr3] [--finger-mode stock|box|kit] \\
+           [--lengths 0,0.05,0.1 | --finger-extensions 0,0.05,0.1] \\
            [--camera-sides +y,-y] [--demos all|0,3,7] [--jobs 4] [--quick] --out DIR
-Outputs (DIR, outside the repo): <robot>_ext<e>_<side>/stage1.json (schema stage1/v1), design_summary.json, summary.txt.
+Outputs (DIR, outside the repo): <combo>/stage1.json (schema stage1/v1), design_summary.json, summary.txt; <combo> =
+<robot>_ext<e>_<side> (box, unchanged), <robot>_len<L>_<side> (kit), <robot>_stock_<side> (stock).
 """
 
 from __future__ import annotations
@@ -128,10 +134,17 @@ def placement_grid(cfg: dict, quick: bool = False) -> list[tuple[float, float, f
     return [(float(x), float(y), float(w)) for x in xs for y in ys for w in yaws]
 
 
-def station_spec(ids: dict, run: dict, robot: str, ext, side: str, sets=()) -> dict:
+# tooling.finger_adapter.mode -> the swept length key (None: no length axis)
+SWEEP_KEY = {"box": "extension_m", "kit": "adapter_length_m", "stock": None}
+
+
+def station_spec(ids: dict, run: dict, robot: str, ext, side: str, sets=(), key: str | None = "extension_m") -> dict:
+    """Station spec for one combo; ``ext`` is the value of ``tooling.finger_adapter.<key>`` (None = station value)."""
     s = list(sets)
     if ext is not None:
-        s.append(f"tooling.finger_adapter.extension_m={ext}")
+        if key is None:
+            raise ValueError("finger mode stock has no length axis: drop --lengths / --finger-extensions")
+        s.append(f"tooling.finger_adapter.{key}={ext}")
     if side is not None:
         s.append(f"tooling.tcp_x_along_hand={side}")
     return {"station": {**ids, "robot": robot}, "run": dict(run), "sets": s}
@@ -737,7 +750,7 @@ def run_combo(spec: dict, demos: list[dict], *, root=None, jobs: int = 1, quick:
                        for i, r in enumerate(rows) if not r["feasible"]},
     }
     design = {"extension_m": float(ctx.st.get("tooling.finger_adapter.extension_m")),
-              "camera_side": str(ctx.st.get("tooling.tcp_x_along_hand"))}
+              "camera_side": str(ctx.st.get("tooling.tcp_x_along_hand")), **design_fields(ctx)}
     return {"schema": SCHEMA, "robot": ctx.sm.robot, "design": design, "station_ids": ctx.st.ids, "station_sets": spec["sets"],
             "station_fingerprint": ctx.sm.station_fingerprint, "quick": quick, "coarse_hz": ctx.cfg["coarse_hz"],
             "config": ctx.cfg, "criteria": {"joint_margin_deg_min": float(np.rad2deg(ctx.margin_req)),
@@ -779,8 +792,42 @@ def _recommend(ctx: Ctx, demos, rows, gp) -> dict:
 # ------------------------------------------------------------------------------------------------ sweep
 
 
-def combo_dir(robot, ext, side) -> str:
-    return f"{robot}_ext{ext:g}_{'p' if side == '+y' else 'm'}y"
+def flange_to_tip_m(sm) -> float:
+    """Flange to the fingertip along flange z (m), from the built model, for every finger mode: kit =
+    ``info["finger_kit"]["flange_to_tip_m"]`` (TCP at the tips); box / stock = derived TCP z + pad_length/2 (TCP at the
+    pad centre; the tip = the pads' distal end). The derived TCP (not a station F_T_TCP override) is the geometry."""
+    info = sm.info
+    fk = info.get("finger_kit") or {}
+    if fk.get("flange_to_tip_m") is not None:
+        return float(fk["flange_to_tip_m"])
+    z = float(np.asarray(info["F_T_TCP_derived"], float)[2, 3])
+    return z if info.get("tcp_at") == "tip" else z + float(info["pad_length_m"]) / 2
+
+
+def design_fields(ctx) -> dict:
+    """A9 design keys of one combo: finger mode, the swept key and its value, flange_to_tip, TCP definition."""
+    info = ctx.sm.info
+    mode = str(info.get("finger_mode", "box"))
+    key = SWEEP_KEY[mode]
+    d = {"finger_mode": mode, "swept_key": key,
+         "swept_value": None if key is None else float(ctx.st.get(f"tooling.finger_adapter.{key}")),
+         "flange_to_tip_m": flange_to_tip_m(ctx.sm), "tcp_at": info.get("tcp_at"),
+         "pad_length_m": float(info["pad_length_m"])}
+    if mode == "kit":
+        d["adapter_length_m"] = d["swept_value"]
+        fk = info.get("finger_kit") or {}
+        d["finger_kit"] = {k: fk.get(k) for k in ("id", "sha", "variant")}
+    return d
+
+
+def combo_dir(robot, ext, side, mode: str = "box") -> str:
+    """Box: ``<robot>_ext<e>_<py|my>`` (unchanged); kit: ``<robot>_len<L>_<side>``; stock: ``<robot>_stock_<side>``."""
+    sd = f"{'p' if side == '+y' else 'm'}y"
+    if mode == "kit":
+        return f"{robot}_len{ext:g}_{sd}"
+    if mode == "stock":
+        return f"{robot}_stock_{sd}"
+    return f"{robot}_ext{ext:g}_{sd}"
 
 
 def _json(obj) -> str:
@@ -793,7 +840,9 @@ def strip_times(d: dict) -> dict:
 
 def design_row(res: dict, robot, ext, side) -> dict:
     s = res["summary"]
-    return {"robot": robot, "extension_m": res["design"]["extension_m"], "camera_side": res["design"]["camera_side"],
+    dz = res["design"]
+    return {"robot": robot, "extension_m": dz["extension_m"], "camera_side": dz["camera_side"],
+            **{k: dz.get(k) for k in ("finger_mode", "swept_key", "swept_value", "flange_to_tip_m")},
             "n_feasible": s["n_feasible"],
             "n_feasible_dq_ok": s["n_feasible_dq_ok"], "peak_dq_ratio_median": s["peak_dq_ratio_median"],
             "n_demos": s["n_demos"], "worst_tooling_clearance_m": s["worst_tooling_clearance_m"],
@@ -815,11 +864,18 @@ def _wm(r) -> float:
     return -1e9 if m is None else m
 
 
+def _sv(r):
+    """The row's swept length (A9: extension_m in box mode, adapter_length_m in kit, None in stock)."""
+    return r["extension_m"] if r.get("finger_mode") is None else r["swept_value"]
+
+
 def recommend_design(rows: list[dict]) -> dict:
-    """Per robot: the best (extension, side) by (n_feasible, worst tooling clearance, worst feasible-demo margin,
-    -clamp fraction). Overall: the (extension, side) with the best worst-robot score if some design suits every robot
+    """Per robot: the best (length, side) by (n_feasible, worst tooling clearance, worst feasible-demo margin,
+    -clamp fraction). Overall: the (length, side) with the best worst-robot score if some design suits every robot
     (``robot_agnostic``: every robot reaches >= 95 % of the demos), else the best design of the robot with the most
-    feasible demos. ``feasible_fraction_by_robot`` is reported either way."""
+    feasible demos. ``feasible_fraction_by_robot`` is reported either way. The length is the swept key of the finger
+    mode (``swept_key``; box: ``extension_m``, kit: ``adapter_length_m``, stock: none); the chosen design's
+    ``flange_to_tip_m`` is reported (``flange_to_tip_m_by_robot`` per robot)."""
     def key(r):
         return (r["n_feasible"], r["worst_tooling_clearance_m"], _wm(r), -r["clamp_fraction"])
 
@@ -827,33 +883,47 @@ def recommend_design(rows: list[dict]) -> dict:
     best = {rb: max((r for r in rows if r["robot"] == rb), key=key) for rb in robots}
     groups = {}
     for r in rows:
-        groups.setdefault((r["extension_m"], r["camera_side"]), []).append(r)
+        groups.setdefault((_sv(r), r["camera_side"]), []).append(r)
     agn = max(groups, key=lambda g: (min(x["n_feasible"] for x in groups[g]),
                                      min(_wm(x) for x in groups[g]),
                                      -max(x["clamp_fraction"] for x in groups[g])))
     n_demos = rows[0]["n_demos"]
     agnostic = min(x["n_feasible"] for x in groups[agn]) >= 0.95 * n_demos
     lead = max(robots, key=lambda rb: key(best[rb]))
-    ch = (agn if agnostic else (best[lead]["extension_m"], best[lead]["camera_side"]))
-    fields = ("extension_m", "camera_side", "n_feasible", "n_feasible_dq_ok", "worst_joint_margin_feasible_deg",
+    ch = (agn if agnostic else (_sv(best[lead]), best[lead]["camera_side"]))
+    key0 = rows[0].get("swept_key", "extension_m")
+    fields = ("extension_m", "camera_side", "finger_mode", "swept_key", "swept_value", "flange_to_tip_m", "n_feasible", "n_feasible_dq_ok", "worst_joint_margin_feasible_deg",
               "worst_joint_margin_all_demos_deg", "worst_tooling_clearance_m", "clamp_fraction", "placement")
     frac = {x["robot"]: x["n_feasible"] / x["n_demos"] for x in groups[ch]} if ch in groups else {}
-    return {"extension_m": ch[0], "camera_side": ch[1], "robot_agnostic": agnostic, "robot": None if agnostic else lead,
-            "robot_agnostic_rule": "every robot >= 95 % of the demos feasible with the same design",
-            "feasible_fraction_by_robot": frac,
-            "per_robot_best": {rb: {k: best[rb][k] for k in fields} for rb in robots}}
+    chosen = groups.get(ch, [])
+    f2t = {x["robot"]: x.get("flange_to_tip_m") for x in chosen}
+    lead_row = next((x for x in chosen if x["robot"] == lead), chosen[0] if chosen else {})
+    out = {"extension_m": ch[0] if key0 == "extension_m" else lead_row.get("extension_m"),
+           "camera_side": ch[1], "robot_agnostic": agnostic, "robot": None if agnostic else lead,
+           "robot_agnostic_rule": "every robot >= 95 % of the demos feasible with the same design",
+           "feasible_fraction_by_robot": frac,
+           "per_robot_best": {rb: {k: best[rb].get(k) for k in fields} for rb in robots}}
+    if "swept_key" in rows[0]:
+        out.update(finger_mode=rows[0]["finger_mode"], swept_key=key0, swept_value=ch[0],
+                   flange_to_tip_m=lead_row.get("flange_to_tip_m"), flange_to_tip_m_by_robot=f2t)
+        if key0 not in (None, "extension_m"):
+            out[key0] = ch[0]
+    return out
 
 
 def summary_text(rows, rec) -> str:
     f = lambda x, k=1.0, fmt="{:.1f}": "-" if x is None else fmt.format(x * k)  # noqa: E731
-    hdr = (f"{'robot':6s} {'ext_mm':>6s} {'side':>4s} {'feasible':>9s} {'tool_clr_mm':>11s} {'clr_feas_mm':>11s} "
+    key0 = rows[0].get("swept_key", "extension_m") if rows else "extension_m"
+    lab = {"extension_m": "ext_mm", "adapter_length_m": "len_mm"}.get(key0, "len_mm")
+    hdr = (f"{'robot':6s} {lab:>6s} {'f2tip_mm':>8s} {'side':>4s} {'feasible':>9s} {'tool_clr_mm':>11s} {'clr_feas_mm':>11s} "
            f"{'marg_feas':>9s} {'marg_all':>8s} {'clamp':>6s} {'t>vmax':>6s} {'tcp_t>v':>7s} {'slowdown':>9s} "
            f"{'cone>':>5s} {'cone_frac':>9s} {'cone_maxdeg':>11s} {'box>':>4s} {'dq<=1':>5s}  placement (gx, gy, yaw)")
     lines = [hdr]
     for r in rows:
         p = r["placement"]
-        lines.append(f"{r['robot']:6s} {r['extension_m'] * 1e3 if r['extension_m'] is not None else float('nan'):6.0f} "
-                     f"{r['camera_side']:>4s} {r['n_feasible']:>4d}/{r['n_demos']:<4d} "
+        v, ft = _sv(r), r.get("flange_to_tip_m")
+        lines.append(f"{r['robot']:6s} {v * 1e3 if v is not None else float('nan'):6.0f} "
+                     f"{ft * 1e3 if ft is not None else float('nan'):8.1f} {r['camera_side']:>4s} {r['n_feasible']:>4d}/{r['n_demos']:<4d} "
                      f"{r['worst_tooling_clearance_m'] * 1e3:11.1f} {f(r['worst_tooling_clearance_feasible_m'], 1e3):>11s} "
                      f"{f(r['worst_joint_margin_feasible_deg']):>9s} {r['worst_joint_margin_all_demos_deg']:8.1f} "
                      f"{r['clamp_fraction']:6.3f} {r['time_above_vmax_fraction']:6.3f} {r['tcp_time_above_vmax_fraction']:7.3f} "
@@ -861,13 +931,20 @@ def summary_text(rows, rec) -> str:
                      f"{r['cone_violation_fraction_mean']:9.3f} {r['cone_max_angle_deg']:11.1f} {r['n_demos_outside_box']:4d} "
                      f"{r['n_feasible_dq_ok']:5d} ({p['gx']:.2f}, {p['gy']:.2f}, {p['yaw_deg']:.0f})")
     g = rows[0]["gates"] if rows else {}
-    lines.append("columns: tool_clr = worst tooling clearance over all demos, clr_feas / marg_feas = over feasible demos, "
+    lines.append(f"columns: {lab} = tooling.finger_adapter.{key0} (finger mode {rows[0].get('finger_mode', 'box') if rows else '?'}"
+                 f"{'; stock fingers have no length axis' if key0 is None else ''}), f2tip = flange to fingertip along "
+                 "flange z (from the built model); tool_clr = worst tooling clearance over all demos, clr_feas / marg_feas = over feasible demos, "
                  "marg_all = worst joint margin over all demos (incl. infeasible); clamp = SafetyFilter clamp fraction and "
                  "t>vmax = time above v_max, both on the flange path; tcp_t>v = time above v_max on the TCP path "
                  "(dataset statistic); cone> / box> = demos with any frame over the bridge cone "
                  f"({rows[0]['cone_max_deg'] if rows else '?'} deg) / outside the box; cone_frac = mean fraction of "
                  f"frames over the cone; gates cone={g.get('cone')} box={g.get('box')}")
-    lines.append(f"recommended design: extension {rec['extension_m']} m, camera side {rec['camera_side']}; "
+    k = rec.get("swept_key", "extension_m")
+    ft = rec.get("flange_to_tip_m")
+    what = (f"finger mode {rec.get('finger_mode', 'box')}, " +
+            ("no length axis" if k is None else f"{k} = {rec.get('swept_value', rec['extension_m'])} m") +
+            (f" (flange_to_tip {ft:.4f} m)" if ft is not None else ""))
+    lines.append(f"recommended design: {what}, camera side {rec['camera_side']}; "
                  f"robot-agnostic (>= 95 % on every robot): {rec['robot_agnostic']}; feasible fraction by robot "
                  f"{json.dumps({k: round(v, 3) for k, v in rec['feasible_fraction_by_robot'].items()})}; best per robot "
                  f"{json.dumps(rec['per_robot_best'], default=float)}")
@@ -882,7 +959,18 @@ def sweep(args, log=print) -> dict:
     run.setdefault("criteria", "block_raise")
     run.setdefault("sim", "stage1")
     robots = args.robots.split(",") if args.robots else [ids.get("robot", "panda")]
-    exts = [float(x) for x in args.finger_extensions.split(",")] if args.finger_extensions else [None]
+    sets = list(args.set)
+    if getattr(args, "finger_mode", None):
+        sets.append(f"tooling.finger_adapter.mode={args.finger_mode}")
+    lengths = getattr(args, "lengths", None)
+    if lengths and args.finger_extensions:
+        raise SystemExit("give --lengths or its alias --finger-extensions, not both")
+    lengths = lengths or args.finger_extensions
+    mode = sweep_mode(ids, run, robots[0], sets, args.root)
+    key = SWEEP_KEY[mode]
+    if lengths and key is None:
+        raise SystemExit("finger_adapter.mode=stock has no length axis: drop --lengths / --finger-extensions")
+    exts = [float(x) for x in lengths.split(",")] if lengths else [None]
     sides = args.camera_sides.split(",") if args.camera_sides else [None]
     out = Path(args.out).resolve()
     try:
@@ -895,19 +983,23 @@ def sweep(args, log=print) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     sel = None if args.demos in (None, "all") else [int(x) for x in args.demos.split(",")]
     demos = [prepare_demo(d) for d in load_demos(args.zarr, sel)]
-    log(f"{len(demos)} demos; grasp from phases: {sum(d['grasp_from'] == 'phases' for d in demos)}")
+    log(f"{len(demos)} demos; grasp from phases: {sum(d['grasp_from'] == 'phases' for d in demos)}; finger mode "
+        f"{mode}, length axis {key and 'tooling.finger_adapter.' + key}")
     root = args.root or STATION_ROOT
     rows = []
     t0 = time.time()
     for robot, ext, side in itertools.product(robots, exts, sides):
-        spec = station_spec(ids, run, robot, ext, side, args.set)
-        log(f"[{time.time() - t0:.0f}s] {robot} ext={ext} side={side}")
+        spec = station_spec(ids, run, robot, ext, side, sets, key=key)
+        log(f"[{time.time() - t0:.0f}s] {robot} {key or 'stock'}={ext} side={side}")
         res = run_combo(spec, demos, root=root, jobs=args.jobs, quick=args.quick, log=log)
-        d = out / combo_dir(robot, res['design']['extension_m'], res['design']['camera_side'])
+        dz = res["design"]
+        if dz["finger_mode"] != mode:                                   # pragma: no cover (mode is per tooling)
+            raise SystemExit(f"robot {robot}: finger mode {dz['finger_mode']} != {mode} (sweep is per mode)")
+        d = out / combo_dir(robot, dz["extension_m"] if mode == "box" else dz["swept_value"], dz["camera_side"], mode)
         d.mkdir(exist_ok=True)
         (d / "stage1.json").write_text(_json(res))
         rows.append(design_row(res, robot, ext, side))
-        log("  " + json.dumps({k: rows[-1][k] for k in ("n_feasible", "worst_joint_margin_feasible_deg",
+        log("  " + json.dumps({k: rows[-1][k] for k in ("flange_to_tip_m", "n_feasible", "worst_joint_margin_feasible_deg",
                                                          "worst_tooling_clearance_m", "clamp_fraction")}, default=float))
     rec = recommend_design(rows)
     summ = {"schema": "stage1_design/v1", "rows": rows, "recommended": rec, "wall_s": round(time.time() - t0, 1)}
@@ -918,6 +1010,15 @@ def sweep(args, log=print) -> dict:
     return summ
 
 
+def sweep_mode(ids: dict, run: dict, robot: str, sets, root=None) -> str:
+    """The finger mode of the station the sweep starts from (decides the length key before any model is built)."""
+    from franka_sim.model import STATION_ROOT, finger_mode, load_station
+
+    st = load_station({"station": {**ids, "robot": robot}, "run": dict(run)},
+                      root=Path(root) if root else STATION_ROOT, sets=list(sets))
+    return finger_mode(st.get("tooling.finger_adapter"))
+
+
 def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--zarr", required=True, help="dataset zarr zip (low-dim arrays) or an npz fixture")
     p.add_argument("--ids", required=True, help="robot=panda,tooling=...,sensor=...,scene=...")
@@ -925,8 +1026,12 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--root", default=None, help="station config root")
     p.add_argument("--set", action="append", default=[], metavar="group.path=value")
     p.add_argument("--robots", help="comma list, e.g. panda,fr3")
-    p.add_argument("--finger-extensions", help="metres, e.g. 0,0.05,0.1")
-    p.add_argument("--camera-sides", help="+y,-y (tooling.tcp_x_along_hand)")
+    p.add_argument("--finger-mode", choices=sorted(SWEEP_KEY), default=None,
+                   help="sets tooling.finger_adapter.mode (default: the tooling's own mode)")
+    p.add_argument("--lengths", help="metres, e.g. 0,0.05,0.1: box -> finger_adapter.extension_m, kit -> "
+                                     "finger_adapter.adapter_length_m; not allowed in stock mode")
+    p.add_argument("--finger-extensions", help="alias of --lengths (kept for old scripts), metres, e.g. 0,0.05,0.1")
+    p.add_argument("--camera-sides", help="+y,-y (tooling.tcp_x_along_hand); a single -y needs the = form: --camera-sides=-y")
     p.add_argument("--demos", default="all", help="all or indices 0,3,7")
     p.add_argument("--jobs", type=int, default=1)
     p.add_argument("--quick", action="store_true", help="coarse 3x3 grid, one fine placement")

@@ -396,17 +396,19 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
     the mass), placeholder adapter -> box ``finger_adapter_{l|r}`` from J to the M plane over the stock footprint
     (omitted when L = 0), tags ``tag_{l|r}`` (+ ``_ink``) from the kit tag frames. The stock finger is replaced by the
     adapter (J = its base face): all its collisions are off and its visual meshes go to group 3 (not rendered).
-    TCP origin = (0, 0, z_mid) in the hand frame, z_mid = mean hand z of the two placed tips at gap 0."""
+    TCP origin = (0, 0, z_mid) in the hand frame, z_mid = mean hand z of the two placed tips at gap 0.
+    ``kit_variant`` (default full) selects the parts per side (finger_kit variants); a tag whose carrier part is not in
+    the variant is not placed and is listed in info finger_kit.tags_skipped (no tag_{l|r} -> TCP_T_tag_* None)."""
     import mujoco
 
     from franka_sim import finger_kit as FK
 
     fa = tool["finger_adapter"]
     kit = FK.load_kit(resolve_kit(str(fa["kit"])), expect_sha=fa.get("kit_sha256"))
-    variant = str(fa.get("kit_variant", "full"))
-    if variant != "full":     # A9 addendum: needs finger_kit.Kit.variants + Tag.on (load_kit does not parse them yet)
-        raise ValueError(f"tooling.finger_adapter.kit_variant {variant!r}: only 'full' (the sides' own parts) is "
-                         f"supported until finger_kit.load_kit parses kit.yaml 'variants' and tag 'on' carriers")
+    variant = str(fa.get("kit_variant") or FK.FULL)
+    if variant not in kit.variants:          # A9 addendum: kit.yaml 'variants' (+ the implicit 'full')
+        raise ValueError(f"tooling.finger_adapter.kit_variant {variant!r} is not a variant of finger kit {kit.id} "
+                         f"(variants: {sorted(kit.variants)})")
     L = float(fa.get("adapter_length_m", 0.0))
     yaw = float(fa.get("adapter_yaw_deg", 0.0))
     dy_cfg = fa.get("lateral_offset_m", "auto")
@@ -451,7 +453,8 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
                              f"along +-x (adapter_yaw_deg {yaw}): no kit side faces the camera")
         ks = next(n for n, sd in kit.sides.items() if sd.camera_face == np.sign(dir_M[0]))
         dy = FK.auto_dy(kit, ks, J, L, yaw) if dy_cfg == "auto" else float(dy_cfg)
-        pl_ = FK.place(kit, ks, J, L, dy, yaw)
+        pl_ = FK.place(kit, ks, J, L, dy, yaw, variant=variant)
+        rep["tags_skipped"] += [dict(t, finger=s, side=ks) for t in pl_["tags_skipped"]]
         rep["side_for_finger"][s], rep["dy"][s], rep["J_m"][s] = ks, dy, [0.0, y_c, z_base]
         masses = {}
         if L > 0:
@@ -459,7 +462,7 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
                  collide=True, mass=ADAPTER_DENSITY_KG_M3 * sx * sy * L)
             masses[f"finger_adapter_{s}"] = ADAPTER_DENSITY_KG_M3 * sx * sy * L
         k_struct = 0
-        for pn in kit.sides[ks].parts:
+        for pn in pl_["parts"]:                                # the variant's parts, side order
             part = kit.parts[pn]
             T = pl_["parts"][pn]
             if part.role == "contact":
@@ -482,8 +485,6 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
                         _mesh_geom(arm, body, f"{gname}_c{i}", mesh_for(pn, i), T, [0.85, 0.85, 0.8, 0],
                                    collide=True, mass=0.0)
             masses[gname] = part.mass_kg
-        if not pl_["tags"]:
-            raise ValueError(f"finger kit {kit.id}: side {ks} has no tags (tag_{s} is required by the frames export)")
         for i, t in enumerate(pl_["tags"]):
             tn = f"tag_{s}" + ("" if i == 0 else f"{i}")
             Rt = t["body_T_tag"][:3, :3]
@@ -504,8 +505,12 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
     info["stock_finger_mesh_inner_y_m"] = float(mesh_inner_y)
     info["pad_length_m"] = float(np.mean(pad_len))
     info["tcp_at"] = "tip"
+    if rep["tags_skipped"]:                 # no tag_{l|r} geom -> export_frames TCP_T_tag_* None (as stock mode)
+        print(f"[model] finger kit {kit.id} variant {variant}: tags skipped (carrier part not in the variant): "
+              f"{[(t['finger'], t['id'], t['on']) for t in rep['tags_skipped']]}", flush=True)
     rep.update(flange_to_tip_m=None, pad_length_m=info["pad_length_m"],
-               tag_separation_closed_m=float(np.linalg.norm(tag_h["l"] - tag_h["r"])),
+               tag_separation_closed_m=(float(np.linalg.norm(tag_h["l"] - tag_h["r"])) if {"l", "r"} <= set(tag_h)
+                                        else None),
                tcp_residual_mm=(mid[:2] * 1e3).tolist(), tips_hand_m={"l": tips_h[0].tolist(), "r": tips_h[1].tolist()},
                pad_offset_m=info["pad_offset_m"])
     info["finger_kit"] = rep

@@ -14,3 +14,5 @@ python -m franka_sim --help
 python -m franka_sim check-assets
 env -u PYTHONPATH python -m pytest -q tests     # mujoco tests skip when mujoco is missing
 ```
+
+Finger model (modes stock/box/kit, frames, numbers with sources, validation, known limits): [docs/finger_model.md](docs/finger_model.md).

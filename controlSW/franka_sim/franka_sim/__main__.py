@@ -4,6 +4,7 @@ Usage: ``python -m franka_sim --help`` | ``python -m franka_sim check-assets``
        | ``python -m franka_sim model --profile sim-iphone [--robot fr3] [--clearance]``
        | ``python -m franka_sim stage1 --zarr Z --ids robot=panda,... --out DIR``
        | ``python -m franka_sim camera-check ...`` (RE) | ``python -m franka_sim camera-gap ...`` (BP)
+       | ``python -m franka_sim finger-kit {check,pin,show,report} ...`` (A9d)
        | ``python -m franka_sim campaign --stage1 S --profile sim-iphone --demos all --speed 0.5 --out DIR`` (RE, A8).
 """
 
@@ -17,7 +18,7 @@ if __name__ == "__main__" and sys.argv[1:2] == ["stage1"]:
     for _k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         os.environ.setdefault(_k, "1")
 
-if __name__ == "__main__" and sys.argv[1:2] in (["camera-check"], ["campaign"]):
+if __name__ == "__main__" and sys.argv[1:2] in (["camera-check"], ["campaign"], ["finger-kit"]):
     os.environ.setdefault("MUJOCO_GL", "egl")           # headless renders (A7)
 
 from franka_sim import cli  # noqa: E402
@@ -115,6 +116,19 @@ def _register_builtins() -> None:
     cli.register("campaign", add_campaign, run_campaign,
                  help="A8 Stage 1b: replay every demo through the full sim stack (launcher, MuJoCo, hand, scene, render) "
                       "and measure tracking, reflexes, pad-table contacts, faults -> campaign.json (RE)")
+
+    def add_finger_kit(p):
+        from franka_sim import finger_kit_cli
+
+        finger_kit_cli.add_arguments(p)
+
+    def run_finger_kit(args):
+        from franka_sim import finger_kit_cli
+
+        return finger_kit_cli.run(args)
+
+    cli.register("finger-kit", add_finger_kit, run_finger_kit,
+                 help="A9d: finger kit check/pin, show (render hand with frame axes), report (finger numbers + provenance) (RE)")
 
 
 def main(argv: list[str] | None = None) -> int:
