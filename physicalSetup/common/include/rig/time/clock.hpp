@@ -46,14 +46,15 @@ struct ClockBracket {
 
 /// How ChipClockMapper fits host time against chip ticks.
 enum class ClockFitMethod : uint8_t {
-  kLowerEnvelope = 0,  ///< ("lower_envelope") line under the bracket `before` points: rejects late (preempted)
+  kLowerEnvelope = 0,  ///< ("lower_envelope") offset from the bracket envelopes (line under every `after` point
+                       ///< and over every `before` point; T1 chip_clock_mapper.cpp): rejects late (preempted)
                        ///< reads; default.
   kRobustLinear = 1,   ///< ("robust_linear") Huber/IRLS fit on bracket midpoints.
 };
 
 /// ChipClockMapper parameters. Mirrors rig.yaml `imu.driver.clock`.
 struct ChipClockConfig {
-  /// Nominal tick period [ns]. LSM6DSOX: 25 us/LSB nominal (DS13345), corrected by the driver with the chip's
+  /// Nominal tick period [ns]. LSM6DSOX: 25 us/LSB nominal (DS12814), corrected by the driver with the chip's
   /// INTERNAL_FREQ_FINE trim (AN5272) before the mapper is constructed.
   double nominal_tick_ns = 25000.0;
   /// The fitted slope is clamped to nominal_tick_ns * (1 +/- max_slope_deviation). 0.03 = +/-3 %.
@@ -64,6 +65,10 @@ struct ChipClockConfig {
   int64_t max_bracket_width_ns = 2000000;
   /// Fit method.
   ClockFitMethod method = ClockFitMethod::kLowerEnvelope;
+  /// (T1 additive) Once the fit has >= 10 brackets, a bracket whose [before, after] interval lies farther than this
+  /// from the predicted time [ns] is rejected as an outlier (e.g. a torn counter read). 5 consecutive outliers
+  /// restart the window (the clock relation really changed). 0 disables the gate.
+  int64_t outlier_gate_ns = 1000000;
 };
 
 /// Current fit: t_host(ticks) = offset_ns + slope_ns_per_tick * (ticks - ref_ticks).

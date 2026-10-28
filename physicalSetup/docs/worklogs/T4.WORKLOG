@@ -1,0 +1,89 @@
+T4 WORKLOG: camera models + RemapTable + image prep + pybind11 bindings
+======================================================================
+State: DONE incl. R1 F16 fix (2026-10-28). Nothing in progress.
+
+R1 F16 (colour range) - done 2026-10-28
+- frame_to_bgr honours FrameMeta::color_range (T2's additive field, types.hpp ColorRange): kFull -> JFIF conversion
+  identical to libjpeg's decoder; kLimited -> OpenCV COLOR_YUV2BGR_NV12 / YUYV (unchanged); kUnknown -> limited +
+  process-wide counter + one spdlog warning. Applies to NV12 and YUYV; BGR/RGB/GRAY/JPEG unaffected.
+- NEW header rig/imageprep/color.hpp + common/imageprep/color.cpp: nv12_full_range_to_bgr (libjpeg-turbo jdsample.c
+  h2v2_fancy_upsample + jdmainct.c edge-row replication + jdcolor.c integer tables), yuyv_full_range_to_bgr (tables,
+  sample replication), frame_to_bgr_unknown_range_count().
+- tests/imageprep/test_color.cpp (libjpeg raw API in the test):
+  * full vs cv::imdecode of a JPEG whose own decoded planes (raw_data_out) are the NV12: BIT-EXACT (2 real crops);
+  * full vs JPEG encoded from the same NV12 with libjpeg raw_data_in (recorder path; ISP-like planes = BGR2YCrCb +
+    2x2 INTER_AREA chroma): measured q100 max 3 / mean 0.15, q90 max 19 / mean 1.2 LSB; asserted q100 max <= 4,
+    mean <= 0.3; q90 max <= 32, mean <= 2.0 (DCT loss only). Limited conversion of the same planes: mean ~11, max ~52;
+  * limited bit-identical to cvtColorTwoPlane; unknown == limited and increments the counter; gray/primaries.
+- Letterbox / remap goldens unchanged and green.
+- tests/imageprep/golden_util.cpp: under __SANITIZE_ADDRESS__ adds __lsan_default_suppressions "leak:libtbb.so"
+  (system OpenCV's TBB pool intermittently leaves ~12 KB at exit; stack entirely in libtbb).
+- For T5 (RawWriter): encode with libjpeg raw_data_in from the full-range NV12 planes, 4:2:0, JFIF; then
+  decode == frame_to_bgr(kFull) up to the DCT loss above. Do not convert to BGR first.
+
+Done
+- venv: $SCRATCH/venv (/usr/bin/python3 3.10.12; numpy 2.2.6 + opencv-python-headless 4.12.0.88 = the iPhUMI
+  environment.yml versions; pybind11 3.1.0). 233 MB. Kept for later tasks.
+- common/camera_model/model_math.hpp (ports of camera_model.py _first_nonpositive / _monotone_inverse),
+  camera_model.cpp (PinholeRadtan, KannalaBrandt4, DoubleSphere, Eucm, VirtualPinhole, make_camera_model; Jacobians
+  for all), remap.cpp (build_remap, RemapTable::apply, coverage_report).
+- common/include/rig/camera_model/coverage.hpp (NEW header in own module): CoverageReport + coverage_report().
+- common/imageprep/imageprep.cpp: letterbox_square_resize, frame_to_bgr (NV12/GRAY8/BGR8/RGB8/YUYV/JPEG),
+  ImagePrep::create(RigConfig) (+ impl class).
+- common/python/{CMakeLists.txt, rigpy.cpp, tests/test_rigpy.py}: module rigpy (submodules camera_model, imageprep),
+  ctest `rigpy.bindings` (only with RIG_WITH_PYTHON=ON).
+- tests/imageprep/{gen_golden.py, golden_util.{hpp,cpp}, test_golden.cpp, test_remap_golden.cpp, test_imageprep.cpp,
+  data/ (7 PNG crops of real firstreal frames + golden.txt + remap_golden.txt)};
+  tests/camera_model/{test_python_parity.cpp, test_models.cpp, test_coverage.cpp, data/parity.txt}. Fixtures 436 KB.
+- Extended (scratch only, not committed): `venv/bin/python -I tests/imageprep/gen_golden.py extended $SCRATCH/t4ext
+  /home/ruben/Capstone/data/raw/2026-10-01` (60 MB); the tests use it when RIG_T4_EXTENDED_DIR=$SCRATCH/t4ext.
+
+Results
+- Letterbox: BIT-EXACT vs cv_util.py in cv2 4.12 (C++ uses system OpenCV 4.5.4): 26 committed crop cases
+  (down non-integer, integer 2x, pad-only, upscale, gray, swap) + 36 full-size real frames (1920x1440 main,
+  640x480 uw, 3 episodes) + 60 random-size images in-process (rigpy).
+- Remap: float32 maps identical to camera_model.py element for element; CV_16SC2 maps, mask, remapped image and
+  224 output bit-exact (3 synthetic cases + 27 real-texture cases, incl. distorted KB4 + rotation, radtan partial).
+- Models vs camera_model.py (5 models x 20000 random points/pixels): project max |duv| = 0 (bit-identical), flags
+  identical; unproject max |dray| 2.1e-14. DS/EUCM: round trip < 1e-8 px, Jacobians vs central differences,
+  DS(xi=0) == EUCM(beta=1) to 1e-9.
+- Coverage: nominal 160 deg KB4 (f 735, 1640x1232) -> virtual iPhone uw (640x480, fx 246.64919): 100 %
+  (min margin 49.0 px vertical, max ray angle 58.3 deg, src u [147, 1490] v [49, 1182]).
+
+Next
+- [ ] R1 review findings (if any).
+- [ ] Later (T12/deployment): bind ImagePrep::create from a rig.yaml once T3's load_rig_config is in (not bound now
+      so rigpy does not depend on T3's loader).
+
+Decisions + contract notes
+- No frozen public declaration changed. Private members added to PinholeRadtan (r_valid_) and KannalaBrandt4
+  (theta_valid_), and their private constructors take them (header: private members belong to T4).
+- New header rig/camera_model/coverage.hpp (own module).
+- fov_max_deg: KB4 theta_max = fov/2 (0 -> 89 deg, the Python default); radtan r cap = min(tan 89 deg, tan(fov/2));
+  DS/EUCM/VirtualPinhole: ray angle <= fov/2. KB4/radtan/pinhole fov must be < 180, DS/EUCM < 360.
+- VirtualPinhole::project does NOT require in-image (Python does, camera_model.py:372); remap/coverage use the Python
+  bilinear-safe [0, W-1] rule. Invalid map value -16 (camera_model.py:36).
+- scaled() returns nullptr for a non-uniform scale (Python raises); half-pixel convention camera_model.py:42-44.
+- EUCM valid set: den > 0 and, for alpha > 0.5, z/den >= (alpha-1)/(2alpha-1) (reduces to the UCM rule at beta=1).
+- FIX found by the tests: copyMakeBorder on a ROI pads with the parent's pixels unless BORDER_ISOLATED; numpy views
+  never carry a parent, so letterbox uses BORDER_CONSTANT | BORDER_ISOLATED.
+- Colour: iPhUMI decodes mp4 with PyAV rgb24 and stores RGB unswapped (gen_replay_buffer_zarr.py:577-603). Rig
+  images are BGR, so iPhUMI-layout zarr images need swap_rb=true. frame_to_bgr NV12 = OpenCV COLOR_YUV2BGR_NV12
+  (BT.601 limited range); JPEG = cv::imdecode (JFIF full range).
+- gen_golden.py writes floats with repr(float(v)) (numpy 2 repr prints 'np.float64(..)'); C++ reads tokens via strtod
+  (libstdc++ >> rejects 'nan'). Image goldens are FNV-1a-64 hashes.
+- TSan: the tests/imageprep helper sets cv::setNumThreads(0) under __SANITIZE_THREAD__ (system OpenCV is not
+  instrumented, so its pool gives false races) and suppresses only `deadlock:libgdal.so` (Ubuntu's OpenCV imread
+  loads GDAL, whose CPL mutexes report an inversion inside libgdal).
+
+Last build+test F16 (RIG_T4_EXTENDED_DIR set, --jobs 4): check.sh build/t4fix -> PASS 393/393 (T4 labels 28/28);
+  --sanitize address,undefined -> PASS 393/393; --sanitize thread -> PASS 394/394; -DRIG_WITH_PYTHON=ON -> 393/394, rigpy.bindings PASS; the 1 failure is T1's DriverFaults.HostQueueOverflowCounted (not T4). Build trees deleted.
+  (An earlier default run had RigConfig.ExampleLoadsWithEveryValue failing: T3's, passed on rerun.)
+Earlier build+test (SCRATCH = /tmp/claude-1000/-home-ruben-Capstone/024e666a-499e-4cbd-801d-deb863b2bcb1/scratchpad;
+RIG_T4_EXTENDED_DIR=$SCRATCH/t4ext set)
+- scripts/check.sh $SCRATCH/build/t4                                   -> PASS 188/188 (whole tree)
+- scripts/check.sh $SCRATCH/build/t4py -- -DRIG_WITH_PYTHON=ON -DPython3_EXECUTABLE=$SCRATCH/venv/bin/python
+  -Dpybind11_DIR=$($SCRATCH/venv/bin/python -m pybind11 --cmakedir)   -> PASS 194/194 (incl. rigpy.bindings)
+- --sanitize address,undefined: all T4 tests pass; the only failure was T3's ShmRingMultiProcess (not T4).
+- --sanitize thread (ctest -L "camera_model|imageprep", setarch -R) -> 24/24 PASS.
+- Build trees deleted; venv and $SCRATCH/t4ext kept.

@@ -124,7 +124,7 @@ All poses are **relative to the current pose** (pose_repr_util.py:62-64). Conseq
 
 | Stream | Rate and mode | Why |
 |---|---|---|
-| Main | 60 Hz (1920x1080 or 1280x720, chosen at bring-up) | matches the 60 Hz grid |
+| Main | 60 Hz, captured at 1920x1080 (1280x720 is a 2/3 crop on the IMX519), stored at 1280x720 | matches the 60 Hz grid |
 | Ultrawide | 30 Hz at 1640x1232 | full FOV; better for SLAM than a 60 Hz crop |
 | IMU | 833 Hz over 400 kHz I2C, about 30 % bus load [I] | |
 
@@ -268,7 +268,7 @@ ec-process <session_dir> --status                     # table of every package a
     <ISO>_<5d>_<session>_demonstration_right/            naming identical to iPhUMI (ViewController.swift:1092-1100)
       manifest.json     schema version, kind, stage states (section 7.1)
       raw/
-        cam_main/  data.csv (#t_ns,filename) · frames/<t_ns>.jpg · frame_meta.csv (t_sof, exposure, gain, seq) · drops.csv
+        cam_main/  data.csv (#t_ns,filename) · data/<t_ns>.jpg · frame_meta.csv (t_sof, exposure, gain, seq, color_range) · drops.csv
         cam_uw/    same (EuRoC-compatible, so ORB-SLAM3 and Kalibr tooling read it directly)
         imu0/      data.csv (EuRoC: t_ns, w_xyz [rad/s], a_xyz [m/s²]) · chip.csv · clock_fit.json
         events.csv      arm, rec_start, rec_stop, warnings (t_ns, type, detail)
@@ -277,6 +277,8 @@ ec-process <session_dir> --status                     # table of every package a
       stages/<stage>/   each offline stage's outputs + result.json
       export/episode.zarr
 ```
+
+Main camera capture: 1920x1080 at 60 fps (IMX519 1280x720 is a 2/3 crop of the 16:9 field: R1 / upstream imx519.c), stored at 1280x720 via one shared resize function used by the recorder and deployment.
 
 Stored resolutions:
 - ultrawide at full 1640x1232: it is the offline SLAM and tag input;

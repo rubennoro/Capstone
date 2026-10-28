@@ -1,0 +1,133 @@
+T3 WORKLOG: time, config loader, CaptureService + StreamHub, shm bus, package format
+=================================================================================
+State: DONE, R1 fixes F1 F7 F8 F13 F14 F15 and re-check fixes F17-F21 applied (2026-10-28). Nothing in progress.
+
+Done
+- Read plan §0/§3 T3/§8, STATUS, T0 worklog, all frozen headers, PIPELINE §5/§6.1/§6.2/§7.1, example yaml,
+  iPhUMI naming (ViewController.swift:1092-1102, 1330-1351; group.py:36-38; generic_util.py:306-308, 368-370).
+
+- common/include/rig/package/sha256.hpp + common/package/sha256.cpp (FIPS 180-4; tests pending).
+- common/config/yaml_reader.{hpp,cpp} (strict typed MapReader: path-first errors with file:line, unknown + duplicate
+  keys, quoted-number rejection, hex ints), sensor_modes.{hpp,cpp} (nominal imx219/imx519 tables), enum_tables.hpp.
+- (Resumed once after an API rate-limit interruption, 2026-10-27; files above were intact.)
+
+- common/config/rig_config_load.cpp (loader + validation), rig_config_yaml.cpp (to_yaml, content_hash).
+- tests/config/test_rig_config.cpp (125 incl. ~115 parametrized error paths), test_yaml_scalars.cpp,
+  tests/package/test_sha256.cpp: all PASS (default build).
+
+- common/capture/stream_hub.cpp + tests/capture/test_stream_hub.cpp (8 tests incl. stress): PASS.
+- common/shm/ring.cpp, messages.cpp, publisher.cpp (+ new public header rig/shm/publisher.hpp);
+  tests/shm/test_ring.cpp (10: protocol, overrun, latest, wait, unlink, 1.5 s seqlock torture with 3 readers,
+  fork writer + 2 reader processes, SIGKILL writer + stale recovery, status channel), test_messages.cpp (5): PASS.
+
+- common/package/{naming,atomic_file,csv,manifest,session}.cpp + manifest_json.hpp (private); new public headers
+  rig/package/{atomic_file,csv,layout}.hpp. Tests: tests/package/test_{naming,manifest,session}.cpp (17) +
+  iphumi_name_parity.py (python3 -I, stdlib only, verifies the cited iPhUMI lines verbatim first): PASS.
+
+- common/capture/capture_service.cpp, thread_config.cpp (+ new header rig/capture/thread_config.hpp);
+  tests/capture/fake_backends.{hpp,cpp}, test_capture_service.cpp (7 incl. 60 s virtual @10x: 3600/1800/49980
+  delivered, 0 lossless overflows; FromRigConfig with T2 mock + T1 sim passes); tests/time/test_clock.cpp (3). PASS.
+
+- Fixes found by the sanitizer runs: multi-process reader test now starts its accounting at the first message
+  (messages older than the ring at open() are not "missed"); ShmFramePublisher no longer commits an empty
+  message on an encode error (slot stays odd and is reused).
+
+In progress
+- (none)
+
+Next (checklist)
+- [x] package/sha256 + FIPS vectors
+- [x] config loader/validator/to_yaml/content_hash + tests
+- [x] StreamHub/StreamSubscription + stress test (TSan run pending)
+- [x] shm ring + messages + multi-process tests (TSan run pending)
+- [x] package: naming, atomic file write, manifest, EventLog, CSV, Session, Package, discard, validate_layout
+- [x] naming parity test (python3 -I mirror of group.py split rule)
+- [x] CaptureService + fake backends; 60 s accelerated run, zero lossless drops
+- [x] shm publisher (frame/IMU rings, optional downscale)
+- [x] three configurations: default, ASan+UBSan, TSan
+
+Decisions + contract notes
+- SHA-256 implemented in-tree (rig/package/sha256.hpp, new header in own dir): no crypto lib on the allowed list.
+- to_yaml is a hand-written emitter (not YAML::Emitter): content_hash must not depend on the yaml-cpp version.
+- Numbers/booleans must be plain YAML scalars: `fps: "60"` is a type error. Booleans: true/false only (no yes/no).
+- Sensor-mode legality checked only for argus/gst backends (mock/replay synthesize any size). Ultrawide role must
+  use a full-FOV mode; main may use 16:9 crops. Nominal tables in common/config/sensor_modes.cpp [I]; reviewer:
+  cross-check with T2's mode tables.
+- imu.noise.* are REQUIRED (feed SLAM settings). live_checks / slam_live cross-checks (camera ids exist, fps
+  thresholds below camera fps, vocabulary path for orbslam3) run even when the section is omitted.
+- shm writer liveness = F_OFD_SETLK lock held for the writer's life (kernel drops it on any death; no pid
+  reuse issue); readers/new writers probe with F_OFD_GETLK. writer_alive() = pid exists && lock held && the name
+  still maps to the reader's inode. Same semantics as the frozen comment (which mentions kill(pid,0)).
+- Seqlock writer uses relaxed odd store + release fence (Boehm 2012); reader copies with relaxed atomic word loads
+  in a no_sanitize_thread function (benign race, validated by the seq re-check). Torture test: ~3M msgs, 0 torn.
+- encode_frame copies planes TIGHTLY; slot size = sizeof(ShmFrameHeader) + frame_payload_bytes(w,h,fmt).
+- StreamSubscription destructor marks its queue detached: the hub skips it, so a dropped lossless subscription
+  never latches lossless_overflow; stats() lists only live subscribers.
+- CONTRACT NOTE (private members only): Session gained private camera_ids_ / imu_id_ (read from the frozen
+  rig.yaml) so create_package() makes raw/cam_<id>/frames and raw/<imu id>/. No public declaration changed.
+- Layout constants (rig/package/layout.hpp) fix the exact CSV headers T5 must write: cam data.csv = EuRoC
+  "#timestamp [ns],filename"; imu data.csv = EuRoC header; chip.csv = brackets (t_host_before_ns,chip_ticks,
+  t_host_after_ns) per T0; per-sample chip ticks/temp/flags go to OPTIONAL imu0/sample_meta.csv (reviewer/T5:
+  confirm). frame_meta.csv / drops.csv / live_slam.csv headers defined there.
+- derive_state: skipped == passed; failed validate_raw or validate -> invalid; other failures keep the state.
+- Session::create builds in a hidden temp dir and publishes with renameat2(RENAME_NOREPLACE); Session::open
+  re-hashes rig.yaml and refuses a modified frozen config (kDataLoss). create_package writes manifest LAST.
+- discard(): logs -> aborted/<name>/ (fsync) -> rename pkg to .trash-<name> -> delete.
+- Manifest/session JSON: unknown keys rejected (kDataLoss); times kInvalidTime <-> null; "state" written for
+  humans, ignored on read.
+- Camera ids must also be <= 15 chars (ShmFrameHeader::camera_id is char[16]).
+
+Last build+test (SCRATCH = /tmp/claude-1000/-home-ruben-Capstone/024e666a-499e-4cbd-801d-deb863b2bcb1/scratchpad)
+- physicalSetup/scripts/check.sh $SCRATCH/build/t3                      -> PASS 369/369 (whole tree, 2026-10-27)
+- ASan+UBSan ($SCRATCH/build/t3-asan, ninja -k 0 + ctest): all 196 tests in labels config|capture|shm|package|
+  time|contract PASS; whole tree 364/369, the 5 failures are T2's GstCamera.* (glib 16 KiB leak, not T3).
+  shm tests re-run after the last two fixes: PASS.
+- TSan (cmake -DRIG_SANITIZE=thread; setarch -R ctest): T3 labels 196/196 PASS, 3 repeated runs; whole tree
+  357/369, failures are T2's GstCamera.* and ReplayTest.* only.
+- Build trees deleted. No /dev/shm/rigtest.* leftovers.
+
+R1 fixes (2026-10-28)
+- F1: CaptureService::start() spawns each sensor thread, which applies its ThreadConfig and THEN calls
+  backend->start() itself (Status back via std::promise); backends start in parallel; on failure the started
+  ones are stopped, threads joined, hubs closed. Backend-internal threads inherit affinity / SCHED_FIFO / nice.
+  spdlog registry is constructed in start() before any thread (TSan false positive on concurrent first use of
+  the uninstrumented libspdlog static). New test BackendStartRunsWithTheConfiguredPlacement (fake start() and a
+  thread it creates both observe cpus {0}, nice 5). ThreadPlacement test now pins a scratch thread, not gtest's.
+- F7: imu.driver.{timestamp_decimation (1|8|32), temperature_batch_hz (0|1.6|12.5|52), fifo_burst_words
+  (1..512), pair_by_tag_counter} and imu.driver.clock.outlier_gate_ns (0..1e9) are read, validated, written by
+  to_yaml (so in content_hash) and documented in the example yaml. Test NewImuKeysAreReadHashedAndBudgeted.
+- F8: poll budget = (odr * (2 + 1/timestamp_decimation) + temperature_batch_hz) * poll_s words, < 50 % of 512.
+- F13: DS13345 -> DS12814 in rig_config_load.cpp (no other T3 file had it).
+- F14: layout::kFramesDir = "data" (EuRoC cam0/data/); session.cpp + tests use the constant.
+- F15: common/config/sensor_modes.{hpp,cpp} deleted; the validator uses T2's known_sensor_modes() and
+  mode_supports_fps(). Rule: ultrawide = full_fov AND aspect of the full array; main = T2 full_fov (16:9 field),
+  1280x720 on imx519 is an error unless sensor_mode >= 0. Messages list modes in T2's table order
+  ("full-FOV modes are 3280x2464@21, 1640x1232@30"). Test MainMustCoverTheFull169FieldUnlessForced.
+- test_rig_config no longer hard-codes accel_noise_density (T1 F9 owns the value).
+- FromRigConfigWithMockBackends: under TSan only, steady state is not asserted (T2's full-size NV12 mock runs
+  below rate under TSan on a loaded machine); delivery + zero overflows still asserted.
+- One unreproduced TSan failure of StreamHub.StressManyConsumersBothPolicies during a load-average-24 run
+  (no output captured; possibly memory pressure: 200k-slot queue + TSan shadow). 10+ reruns incl.
+  ctest --repeat until-fail:3 under -j20 all PASS. Reviewer: watch for it.
+- Last: check.sh --jobs 4 default 393/393, address,undefined 393/393, thread 394/394 (whole tree). Trees deleted.
+
+R1 re-check fixes (2026-10-28)
+- F21: FromRigConfigWithMockBackends drains the lossless uw subscriber in a thread (scope-guarded join);
+  asserts drained > 0 and overflows == 0. TSan: ctest -R FromRig --repeat until-fail:5 -> 5/5 PASS.
+- F17: ShmFrameHeader.reserved0 (u32) -> color_range (u8) + reserved0[3]; size unchanged (new static_assert
+  sizeof == 200), kShmRingVersion not bumped (old zeroing writers read as kUnknown). decode rejects
+  color_range > kFull as data_loss. Test FrameCodec.ColorRangeRoundTrips (all three values + corrupt byte).
+- F18: example yaml imu.thread.cpus [1] -> [5]. Loader error at imu.thread.cpus when any IMU CPU is in a
+  camera's thread.cpus or (slam_live enabled) slam_live.thread.cpus. Two error-table cases added.
+  No writer ThreadConfig exists in the schema, so writers cannot be checked.
+- F19: fifo_burst_words range 1..256 (T1 driver limit); yaml comment says so; 0 and 257 cases.
+- F20: test asserts accel_noise_density == 7.845e-4 and imu.thread.cpus == {5}.
+- Last: check.sh --jobs 4 default 397/397, address,undefined 397/397, thread 398/398. Trees deleted.
+
+Notes for T5 / reviewer
+- Subscribe lossless consumers BEFORE CaptureService::start(); hubs: "cam_<id>", "<imu id>", "<imu id>_brackets".
+- CaptureService does not publish to shm itself: T5 runs StatusChannelWriter<CaptureStatus> on status() at
+  ~10 Hz and ShmFramePublisher/ShmImuPublisher (rig/shm/publisher.hpp) for viz/SLAM rings.
+- Use rig/package/layout.hpp headers, CsvWriter, EventLog, write_file_atomic for live_checks.json/clock_fit.json.
+- Reviewer: run CaptureService.FromRigConfigWithMockBackends (T2 mock + T1 sim; passes now) and cross-check
+  common/config/sensor_modes.cpp against T2's mode tables.

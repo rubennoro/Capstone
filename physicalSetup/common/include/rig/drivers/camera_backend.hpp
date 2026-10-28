@@ -132,6 +132,14 @@ struct CameraStats {
   double analog_gain = kNaN;        ///< Last frame's gain readback [x].
   FocusStatus focus_status = FocusStatus::kUnknown;
   int focus_position = -1;
+  // Added by T2 (additive, defaulted; T2.WORKLOG "contract notes"):
+  std::string time_source;          ///< Timestamp source and domain, e.g. "argus:sensor_ts(monotonic_raw)",
+                                    ///< "argus:tsc-offset_ns", "gst:pts(monotonic->raw)", "mock", "replay".
+  SummaryStats tsc_cross_check_ns;  ///< Argus: (TSC SOF - offset_ns) - getSensorTimestamp in RAW over the window
+                                    ///< [ns]; ~0 if both are the same SOF in the same domain. count 0 = unavailable.
+  uint64_t timestamp_anomalies = 0; ///< Frames rejected for non-monotonic time/seq, frames with t_arrival < t_sof,
+                                    ///< and Argus stamps up to 2 ms in the future of arrival (accepted; R1 F3).
+  std::string focus_detail;         ///< Imx519Focus result line (how the focus was set or why not).
 
   uint64_t drops_total() const noexcept { return drops_seq_gap + drops_time_gap + drops_backend_queue + drops_error; }
 };

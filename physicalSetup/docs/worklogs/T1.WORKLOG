@@ -1,0 +1,111 @@
+T1 WORKLOG: LSM6DSOX IMU driver + register-level simulator
+=========================================================
+State: DONE (R1 fix round F2 F4 F5 F6 F9 F13 done). Nothing in progress. Build trees and logs deleted.
+
+R1 fixes (2026-10-28)
+- F2: Lsm6dsoxSimOptions::from_config sets record_truth=false (backend "sim" no longer grows ~50 KB/s);
+  tests construct options directly (true). New test ImuFactory.SimBackendDoesNotKeepTruth.
+- F4: ec-imu-probe rate check expects odr_hz x (1 + 0.0015 x FREQ_FINE) +- 0.5 % (snippet already says so).
+- F5: --record DIR is created (std::filesystem::create_directories).
+- F6: probe writes layout::kImuData/kSampleMeta/kChip/kClockFit with layout.hpp headers (sample_meta.csv
+  t_ns,chip_ticks,temp_c,flags; chip.csv without '#'); snippet updated.
+- F9: yaml imu.noise.accel_noise_density 7.845e-4 (80 ug/rtHz at +-8 g, DS12814 Table 2).
+  -> BREAKS T3's tests/config/test_rig_config.cpp:56 (EXPECT 6.865e-4): T3 must update it to 7.845e-4.
+- F13: DS13345 -> DS12814 in the yaml, types.hpp, clock.hpp, imu_backend.hpp (comments only).
+- Fix-round results (2026-10-28):
+  - check.sh build/t1fix (default): 375/377; all 62 T1 tests pass. Failures: T3 RigConfig.ExampleLoadsWithEveryValue
+    (expects old 6.865e-4, see F9) and T2 ReplayTest.PackageFolderWithMetaAndRecordedDrops.
+  - check.sh --sanitize address,undefined and thread: the full-tree builds failed outside T1 (cc1plus OOM-killed
+    while other agents built in parallel; T2 test_gst_camera.cpp:198 compile error). Re-ran the same configure
+    (-DRIG_SANITIZE=...) building only test_imu_* + ec-imu-probe with -j4: ctest -L imu 62/62 under ASan+UBSan
+    and under TSan (setarch -R), no sanitizer reports; ec-imu-probe --sim ALL PASS.
+
+
+Done (files)
+- third_party/st_lsm6dsox/: lsm6dsox_reg.h (ST lsm6dsox-pid 2e86793125f7, unmodified, sha256 dc7c9cd4...),
+  LICENSE (BSD-3, sha256 b54f36a4...), README.md. Not compiled; citation target "ST reg.h:<line>".
+- common/include/rig/drivers/imu/ (new public headers, T1 module):
+  lsm6dsox_regs.hpp (every register/bit/code/scale with DS/ST/Linux citation), lsm6dsox_fifo.hpp (pure FIFO
+  decoder), lsm6dsox_sim.hpp (Lsm6dsoxSim : I2cBus), lsm6dsox_driver.hpp (driver factory, config sequence,
+  reset+configure, readback, diagnostics, clock_fit_json), imu_clock.hpp (real + virtual clock), imu_replay.hpp.
+- common/drivers/imu/: lsm6dsox_fifo.cpp, lsm6dsox_sim.cpp, lsm6dsox_driver.cpp, imu_clock.cpp, imu_replay.cpp,
+  imu_factory.cpp (replaces the T0 stub: lsm6dsox_i2c | sim | replay).
+- common/drivers/i2c/linux_i2c_bus.cpp: /dev/i2c-N, one I2C_RDWR with 2 msgs (repeated start), errno mapping.
+- common/time/chip_clock_mapper.cpp: ChipClockMapper (IRLS slope + envelope offset, outlier gate, clamp).
+- tests/imu/: imu_test_util.hpp, test_regs (9), test_fifo_decoder (12), test_clock_mapper (11 incl. 6 param),
+  test_sim_run (12 incl. param), test_driver_faults (13), test_factory (4) = 61 tests.
+- episode_collection/apps/ec-imu-probe/main.cpp (--config --bus --addr --duration --record --raw --sim --odr
+  --accel-fs --gyro-fs --ts-decimation --poll-ms --pairing --no-rest-check; PASS/FAIL vs H1, exit 0/1/2).
+- docs/bringup_snippets/T1_imu.md (for T8).
+
+Next (for R1 / hardware day)
+- [ ] R1: review; independent register derivation vs lsm6dsox_regs.hpp + DefaultSequenceExactBytes test.
+- [ ] H: run docs/bringup_snippets/T1_imu.md; resolve the [AN] items (below) from ec-imu-probe --raw output.
+- [ ] Obtain AN5272 by hand (browser) and confirm the [AN] items; st.com blocks scripted downloads here.
+
+Register configuration (applied after SW_RESET + BOOT, in this order; FIFO_CTRL4 last starts batching)
+  CTRL3_C    0x12 = 0x44  BDU | IF_INC                         DS Tab 56/57, ST reg.h:417
+  CTRL9_XL   0x18 = 0xE2  DEN defaults | I3C_disable           DS Tab 73/74 (note 1 recommends it)
+  FIFO_CTRL1 0x07 = 0x00  WTM[7:0] (256)                       DS Tab 32/33
+  FIFO_CTRL2 0x08 = 0x01  WTM8                                 DS Tab 34/35
+  FIFO_CTRL3 0x09 = 0x77  BDR_GY = BDR_XL = 833 Hz              DS Tab 36/37, ST reg.h:3694/3714
+  CTRL1_XL   0x10 = 0x7C  ODR 833 Hz, FS 11 = +-8 g             DS Tab 49-52, ST reg.h:2917-2936
+  CTRL2_G    0x11 = 0x7C  ODR 833 Hz, FS 110 = +-2000 dps       DS Tab 53-55, ST reg.h:2949-2969
+  CTRL10_C   0x19 = 0x20  TIMESTAMP_EN                         DS Tab 75/76, Linux timer_en BIT(5)
+  FIFO_CTRL4 0x0A = 0x66  DEC_TS=1, ODR_T=12.5 Hz, continuous    DS Tab 38/39, ST reg.h:3731/3743/3754
+Reset: FIFO_CTRL4=0 -> CTRL3_C=0x05 -> 50 ms -> poll SW_RESET clear -> CTRL3_C=0x84 -> 50 ms -> poll BOOT clear
+-> verify defaults (CTRL3_C 0x04, CTRL9_XL 0xE0, others 0) -> read INTERNAL_FREQ_FINE (Linux reset_device).
+
+Facts confirmed (DS12814 Rev 4 is the LSM6DSOX datasheet; the plan's "DS13345" is a wrong document number)
+- WHO_AM_I 0x0F = 0x6C; addr 0x6A/0x6B; sensitivities DS Table 2 = ST .c (0.061/0.122/0.244/0.488 mg/LSB;
+  4.375/8.75/17.5/35/70 mdps/LSB); FS/ODR/BDR codes = ST enums (checked by test_regs against the vendored header).
+- Tag byte: TAG_SENSOR[7:3], TAG_CNT[2:1], TAG_PARITY[0]; tags 1 gyro, 2 accel, 3 temp, 4 timestamp, 5 cfg.
+- FIFO_STATUS2: WTM_IA b7, OVR_IA b6, FULL_IA b5, COUNTER_BDR_IA b4, OVR_LATCHED b3 (clears on read), DIFF[9:8].
+- TIMESTAMP0..3 LE, 25 us/LSB; INTERNAL_FREQ_FINE int8, 0.15 %/LSB (DS Tab 174).
+[AN] = not confirmed without AN5272 (taken from ST driver / Linux / DS hints; checked by ec-imu-probe on H):
+- trim formula t = 25 us / (1 + 0.0015 * FREQ_FINE) (AN5192 for LSM6DSO quoted in Linux st_lsm6dsx.h:203-211);
+- burst read wraps 0x7E -> 0x78 (Linux reads 4 words per transaction from 0x78);
+- timestamp word first in a slot and shares TAG_CNT with its data (driver pairs by TAG_CNT, order-independent;
+  ts-first pairing available); timestamp word = 32-bit LE in data bytes 0..3 (Linux);
+- temperature word = int16 in data bytes 0..1; FIFO capacity 512 words; TAG_PARITY definition (unused).
+
+Clock mapping
+- Brackets: t0, TIMESTAMP0..3 read (4 B), t1; second read immediately after for the torn-read check (B-A must
+  fit the elapsed time). Every poll during the first 2 s, then every bracket_period_ms.
+- ChipClockMapper: slope = Huber-IRLS weighted LS on midpoints (w = 1/(width^2/12 + tick^2/12)), clamp
+  nominal*(1+-3 %); offset (lower_envelope) = midpoint of [max(before - b x), min(after - b x)] over inliers;
+  outlier gate 1 ms (5 consecutive restart the window). Window 300 brackets.
+- Results (virtual clock, 400 kHz bus, 40 us + exp(15 us) latency, 0.5 % spikes up to 1.5 ms):
+  60 s run: map error max 23.2 us, mean 18.5 us (mostly the constant latch-position bias); residual p99 33 us.
+  +-2 % drift: max 27.7 / 21.6 us; slope error 0.05-0.13 ppm (synthetic mapper test: worst live error 28 us).
+  100 kHz bus: constant bias 52 us, spread 7 us (bias is absorbed by the camera-IMU time offset).
+
+Contract notes (additive with defaults; worklog-note class per STATUS.md)
+- ImuConfig += timestamp_decimation=1, temperature_batch_hz=12.5, fifo_burst_words=32, pair_by_tag_counter=true
+  (no yaml keys yet; T3's loader/writer can add them).
+- ImuStats += freq_fine, fifo_words, fifo_full_flags, partial_slots, slots_without_timestamp,
+  torn_timestamp_reads, temperature_words.
+- ChipClockConfig += outlier_gate_ns=1000000.
+- clock.hpp: doc comment of ClockFitMethod::kLowerEnvelope corrected (comment only; "under the before points"
+  was the physically wrong side).
+- No frozen declaration changed. No CMake edits.
+- For T3: its poll budget check assumes 2 words per ODR; with timestamp batching it is 3 words per ODR.
+- For T3/T6: yaml imu.noise.accel_noise_density 70 ug/rtHz is the +-2 g value; DS Table 2 gives 80 at +-8 g.
+- For T3/T5: the poll thread inherits affinity/priority of the thread that calls start(); call it from the
+  pinned IMU capture thread. ImuSample.chip_ticks + read_brackets() allow an offline refit (chip.csv).
+
+Sources consulted
+- https://github.com/STMicroelectronics/lsm6dsox-pid (master 2e86793125f7f46b6195fce93a2b3cb76a51e564)
+- https://github.com/kodediy/kode_lsm6dsox/blob/main/LSM6DSOX_Datasheet_Rev4.pdf (DS12814 Rev 4, June 2024)
+- https://github.com/torvalds/linux/tree/master/drivers/iio/imu/st_lsm6dsx (facts only, no code copied)
+- st.com DS/AN5272: blocked (HTTP/2 error, timeouts); a header-spoofing retry was denied by the permission system.
+- Downloads kept for R1 in $SCRATCH/t1dl/ (st/, pdf/DS_lsm6dsox_rev4.pdf + ds.txt, kernel/).
+
+Last build+test ($SCRATCH = /tmp/claude-1000/-home-ruben-Capstone/024e666a-499e-4cbd-801d-deb863b2bcb1/scratchpad)
+- physicalSetup/scripts/check.sh $SCRATCH/build/t1                          -> PASS 369/369 (incl. 61 T1)
+- physicalSetup/scripts/check.sh $SCRATCH/build/t1-asan --sanitize address,undefined
+    -> all 61 T1 tests pass; 6 failures elsewhere (GstCamera x5 = T2, ImagePrep x1 = T4)
+- physicalSetup/scripts/check.sh $SCRATCH/build/t1-tsan --sanitize thread
+    -> all 61 T1 tests pass, no TSan report in T1 code; 12 failures elsewhere (GstCamera, ReplayTest = T2)
+- ec-imu-probe --sim --duration 3 -> ALL PASS; --sim --raw 12 OK; --sim --poll-ms 400 -> overruns detected.
+- Trees deleted afterwards.

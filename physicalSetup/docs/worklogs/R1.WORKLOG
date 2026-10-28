@@ -1,0 +1,42 @@
+R1 WORKLOG: Wave 1 reviewer (T1-T4 + integration)
+=================================================
+State: DONE (report delivered to the orchestrator). Nothing in progress. Build trees deleted.
+
+Done
+- Sequential clean builds ($SCRATCH/build/r1*, RIG_T4_EXTENDED_DIR=$SCRATCH/t4ext for asan/tsan/py):
+  default 375/375 (3 extended skipped: env unset), ASan+UBSan 375/375, TSan 375/375,
+  RIG_WITH_PYTHON=ON 376/376 (rigpy.bindings). Flaky-suspect tests (ShmRing*, GstCamera*, ReplayTest*, ImagePrep*,
+  CaptureService*) x5 under -j20: 37/37 every time. Earlier failures = concurrent builds / in-progress T3, not real.
+- Integration harness $SCRATCH/r1/it/r1_integration.cpp + build.sh (CaptureService from the example yaml,
+  backends -> mock gradient cams + sim IMU 150 ppm drift; lossless + DropOk subscriber per stream; T3 shm rings;
+  posix_spawn reader process checking decode/seq/time/pixel-vs-seq). Results: $SCRATCH/r1/it/run300.txt.
+  300 s: main 60.0000 Hz 17999 fr, uw 30.0000 Hz 8999 fr, IMU 833.458 Hz (+0.055 %), 0 gaps/overflows/torn,
+  clock slope -150.03 ppm (truth 150), residual p99 25.5 us; RSS +52 KB/s = Lsm6dsoxSim truth log (F2).
+  R1_NO_TRUTH=1 90 s: RSS flat 136.5 MB. TSan 90 s: no race in rig code (spdlog registry first use, uninstrumented
+  lib; rest = harness counter).
+- IMU register derivation from DS12814 done blind; diff vs T1: identical except FIFO_CTRL4 0x46 (mine) vs 0x66 (T1
+  adds 12.5 Hz temperature words, deliberate, harmless).
+- Argus header wording (docs.nvidia.com ICaptureMetadata) and IMX519 crops (lkml 2309.1/00390) checked online.
+- Independent letterbox golden ($SCRATCH/r1/py/golden_r1.py): iPhUMI cv_util vs rigpy, 160 cases, 0 diff.
+- ec-imu-probe / ec-cam-probe: every snippet command run with --sim / mock / gst videotestsrc.
+
+Findings: see the final report table (F1-F16). Owners: T1 F2 F5 F6 F7 F9 F13; T2 F3 F4 F10 F11 F12; T3 F1 F8 F14
+F15; T4 F16 (recommendation).
+
+Next (after the executors fix)
+- [ ] re-verify F1-F9 (rerun harness: build.sh <tree> <out>; ./r1it <yaml> 300 <reader_out>), then gate.
+
+R1 RE-CHECK (2026-10-28) — DONE. Verdict: GO for the Wave 1 gate once F21 (test-only) is fixed; F17/F18 before Wave 2/H.
+- Builds (--jobs 4, sequential, clean, RIG_T4_EXTENDED_DIR set): default 393/393, ASan+UBSan 393/393,
+  TSan 394/394 (incl. GstTsan death test), RIG_WITH_PYTHON=ON 394/394. All r1b* trees deleted.
+  Laptop shared with another session's franka_sim jobs (load ~30); timing-only probe results reflect that.
+- F1-F16 verified (see final report). F11: death test passes with the new called_from_lib set and FAILS with the
+  old race:libgst* set (TSAN_OPTIONS suppressions=$SCRATCH/r1/old_supp.txt) -> meaningful.
+- Integration 120 s ($SCRATCH/r1/it/run120.txt): 7201/3600/99972 delivered, 60.0000/30.0000/833.458 Hz,
+  0 lossless overflows, 0 torn, RSS flat 139.6 MB; /proc: IMU poll thread (2nd cap_imu0) cpus=1 inherited.
+- Flakes: HostQueueOverflowCounted 10/10 under load; StreamHub stress 5/5 TSan; FromRigConfigWithMockBackends
+  FAILS 2/3 under TSan at test_capture_service.cpp:321 (lossless sub never drained) -> F21.
+- New findings: F17 (T3 minor) color_range lost over shm; F18 (T0/T3 minor) main cam + IMU both on CPU 1;
+  F19 (T3 nit) fifo_burst_words 1..512 vs driver 1..256; F20 (T3 nit) accel_noise assertion weakened;
+  F21 (T3 minor, gate) FromRigConfig test drains nothing; F22 (nit) PIPELINE.md:271 still frames/.
+- Next: re-verify F21 (and F17/F18 when done): rerun test 5x under TSan.

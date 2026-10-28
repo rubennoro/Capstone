@@ -108,7 +108,18 @@ endif()
 
 if(RIG_WITH_PYTHON)
   find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-  find_package(pybind11 CONFIG REQUIRED)
+  # Prefer the pybind11 installed for the chosen interpreter (e.g. the venv) over a system copy: Ubuntu 22.04's
+  # /usr/lib/cmake/pybind11 is 2.9, whose numpy dtype checks break under numpy 2 ("expected a uint8 image").
+  if(NOT pybind11_DIR)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
+                    OUTPUT_VARIABLE _rig_pybind11_dir OUTPUT_STRIP_TRAILING_WHITESPACE
+                    RESULT_VARIABLE _rig_pybind11_rc ERROR_QUIET)
+    if(_rig_pybind11_rc EQUAL 0 AND EXISTS "${_rig_pybind11_dir}")
+      set(pybind11_DIR "${_rig_pybind11_dir}" CACHE PATH "pybind11 CMake dir (from ${Python3_EXECUTABLE})")
+    endif()
+  endif()
+  # >= 2.12 is the first pybind11 with numpy 2 support.
+  find_package(pybind11 2.12 CONFIG REQUIRED)
 endif()
 
 # CLI11 (vendored single header, v2.4.2, BSD-3-Clause; third_party/CLI11/LICENSE).

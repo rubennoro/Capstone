@@ -289,6 +289,8 @@ class Session {
   Session() = default;
   std::filesystem::path dir_;
   SessionInfo info_;
+  std::vector<std::string> camera_ids_;  ///< From the frozen rig.yaml (raw/cam_<id> dirs). T3 private member.
+  std::string imu_id_ = "imu0";          ///< From the frozen rig.yaml (raw/<imu id> dir). T3 private member.
 };
 
 }  // namespace rig

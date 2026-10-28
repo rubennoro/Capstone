@@ -43,9 +43,11 @@ struct ShmFrameHeader {
   int32_t sensor_mode;
   int32_t focus_position;
   uint32_t focus_status;     ///< FocusStatus.
-  uint32_t reserved0;
+  uint8_t color_range;       ///< ColorRange (R1 F17; was reserved, so a zeroing older writer reads as kUnknown).
+  uint8_t reserved0[3];
 };
 static_assert(std::is_trivially_copyable_v<ShmFrameHeader> && std::is_standard_layout_v<ShmFrameHeader>);
+static_assert(sizeof(ShmFrameHeader) == 200, "ShmFrameHeader layout changed: bump kShmRingVersion");
 
 /// One kImuSample payload.
 struct ShmImuSample {

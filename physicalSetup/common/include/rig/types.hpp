@@ -139,6 +139,25 @@ constexpr const char* to_string(FocusStatus s) noexcept {
   return "unknown";
 }
 
+/// Quantization range of the frame's YCbCr samples (CONTRACT CHANGE by T2, R1 F16; additive). Decides how a consumer
+/// converts NV12/YUYV/GRAY8 to RGB or JPEG: kFull = JFIF / "extended range" (Y, Cb, Cr all 0..255; what a baseline
+/// JPEG stores, so a JPEG encoded straight from these samples decodes correctly), kLimited = BT.601 video range
+/// (Y 16..235, CbCr 16..240). RGB/BGR frames are always full range. YAML/CSV strings in parentheses.
+enum class ColorRange : uint8_t {
+  kUnknown = 0,  ///< ("unknown") not stated by the source.
+  kLimited = 1,  ///< ("limited") BT.601 video range.
+  kFull = 2,     ///< ("full") JFIF full range (Argus NVBUF_COLOR_FORMAT_NV12_ER; mock/replay).
+};
+
+constexpr const char* to_string(ColorRange r) noexcept {
+  switch (r) {
+    case ColorRange::kUnknown: return "unknown";
+    case ColorRange::kLimited: return "limited";
+    case ColorRange::kFull: return "full";
+  }
+  return "unknown";
+}
+
 /// Per-frame sensor metadata (Argus ICaptureMetadata where available; mock/replay fill what they know).
 struct FrameMeta {
   int64_t exposure_ns = -1;      ///< Sensor exposure time [ns] (Argus getSensorExposureTime); -1 = unknown.
@@ -148,6 +167,7 @@ struct FrameMeta {
   int sensor_mode = -1;          ///< Index into CameraBackend::modes() in use.
   int focus_position = -1;       ///< Lens position written (VCM DAC code / V4L2 focus_absolute value); -1 = n/a.
   FocusStatus focus_status = FocusStatus::kUnknown;
+  ColorRange color_range = ColorRange::kUnknown;  ///< YCbCr range of the pixel data (T2 addition, R1 F16).
 };
 
 /// One camera frame. Value type, cheap to copy: pixel storage is shared and immutable.
@@ -204,7 +224,7 @@ enum ImuSampleFlags : uint32_t {
 ///
 /// Time: `t_ns` = CLOCK_MONOTONIC_RAW, mapped from the chip timestamp by ChipClockMapper (PIPELINE 5).
 /// `chip_ticks` = the unwrapped (64-bit) LSM6DSOX timestamp counter value paired with this sample (one tick is
-/// nominally 25 us, trimmed per chip; DS13345 / AN5272). Axes: IMU body frame (chip axes). Threading: value type.
+/// nominally 25 us, trimmed per chip; DS12814 / AN5272). Axes: IMU body frame (chip axes). Threading: value type.
 /// Eigen::Vector3d has no alignment requirement, so ImuSample is safe in std::vector.
 struct ImuSample {
   TimeNs t_ns = kInvalidTime;

@@ -56,7 +56,7 @@ struct ImuConfig {
   ImuBackendKind backend = ImuBackendKind::kLsm6dsoxI2c;
   int i2c_bus = 7;                  ///< Linux bus number (40-pin pins 3/5 = i2c-7 on the Orin Nano dev kit).
   int i2c_addr = 0x6A;              ///< 7-bit address (SDO/SA0 low; Modulino Movement default).
-  int expected_who_am_i = 0x6C;     ///< WHO_AM_I value for the LSM6DSOX (DS13345).
+  int expected_who_am_i = 0x6C;     ///< WHO_AM_I value for the LSM6DSOX (DS12814).
   double odr_hz = 833.0;            ///< Accel and gyro ODR [Hz]; one of 12.5, 26, 52, 104, 208, 416, 833, 1666,
                                     ///< 3332, 6667 (nominal values; actual = nominal * trim, AN5272).
   int accel_fs_g = 8;               ///< Accel full scale [g]: 2 | 4 | 8 | 16.
@@ -68,6 +68,13 @@ struct ImuConfig {
   int i2c_error_budget = 20;        ///< Errors allowed per 10 s before status() turns fatal.
   double gap_factor = 2.0;          ///< A sample interval > gap_factor / odr counts as a gap in ImuStats.
   std::size_t queue_capacity = 8192;  ///< Internal sample queue between poll thread and read() [samples].
+  // --- T1 additive fields (no yaml key yet; defaults = the PLAN T1 configuration) ---
+  int timestamp_decimation = 1;     ///< FIFO timestamp word every 1 | 8 | 32 slots (FIFO_CTRL4.DEC_TS_BATCH). 1 = one
+                                    ///< per sample (PLAN T1); 8 cuts I2C load by ~30 % if the bus is slow.
+  double temperature_batch_hz = 12.5;  ///< Temperature words in the FIFO: 0 (off) | 1.6 | 12.5 | 52 [Hz].
+  int fifo_burst_words = 32;        ///< Max FIFO words per I2C read transaction (address wraps 0x7E -> 0x78).
+  bool pair_by_tag_counter = true;  ///< Group gyro/accel/timestamp words into one sample by TAG_CNT (DS Table 195);
+                                    ///< false = a timestamp word starts a new sample (Linux st_lsm6dsx order).
   ChipClockConfig clock;            ///< `imu.driver.clock`.
   ImuSimConfig sim;                 ///< `imu.driver.sim` (backend sim only).
   ImuReplayConfig replay;           ///< `imu.driver.replay` (backend replay only).
@@ -90,6 +97,15 @@ struct ImuStats {
   uint64_t acc_saturations = 0;     ///< Samples with kImuFlagAccSaturated.
   uint64_t gyro_saturations = 0;    ///< Samples with kImuFlagGyroSaturated.
   double nominal_tick_ns = kNaN;    ///< Trimmed tick period used by the clock mapper [ns].
+  // --- T1 additive fields ---
+  int freq_fine = 0;                ///< INTERNAL_FREQ_FINE read at start() (int8; 0.15 %/LSB).
+  uint64_t fifo_words = 0;          ///< FIFO words read (all tags).
+  uint64_t fifo_full_flags = 0;     ///< Polls with FIFO_STATUS2.FIFO_FULL_IA set (an overrun is imminent).
+  uint64_t partial_slots = 0;       ///< Samples missing gyro or accel (stale value repeated; flagged).
+  uint64_t slots_without_timestamp = 0;  ///< Samples whose time was extrapolated from the previous timestamp word
+                                         ///< (expected 0 with timestamp_decimation = 1).
+  uint64_t torn_timestamp_reads = 0;  ///< Bracketed TIMESTAMP reads rejected by the double-read consistency check.
+  uint64_t temperature_words = 0;   ///< Temperature FIFO words decoded.
   ClockFitStats clock;              ///< ChipClockMapper diagnostics.
   TimeNs last_t_ns = kInvalidTime;
 };

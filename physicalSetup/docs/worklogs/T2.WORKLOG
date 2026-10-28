@@ -1,0 +1,119 @@
+T2 WORKLOG: camera backends (Argus primary, GStreamer fallback, mock, replay) + IMX519 focus + ec-cam-probe
+=========================================================================================================
+State: R1 fixes DONE (F3 F10 F11 F12 F14 F16), awaiting R1 re-verification. Nothing in progress; build trees deleted.
+
+R1 fixes (2026-10-27/28)
+- F3: sensor_clock: kMaxFutureCameraStampNs = 2 ms (configurable arg of classify_sensor_clock and
+  SensorClockResolver); Argus counts future stamps via CameraBase::count_timestamp_anomaly. Tests added.
+- F10: ec-cam-probe --focus-sweep refuses non-real cameras (mock/replay/gst override) and fails (exit 1) when no step
+  moved the lens; best position only over effective steps.
+- F11: gst test suppressions -> one `called_from_lib:` template per GLib/GStreamer module (TSan aborts if a template
+  matches two libraries; a GMutex locked in libglib and unlocked from a plugin must be ignored on both sides).
+  Consequence: GLib's pthread_create is ignored, so the start() -> streaming-thread and callback -> stop() edges are
+  declared with __tsan_release/__tsan_acquire on GstCamera::tsan_sync_ (TSan builds only); GstCamera also gained a
+  real armed_/inflight_ hand-over (no sample is processed while starting/stopping) and reads base time from the
+  appsink instead of pipeline_. TSan-only death test GstTsan.InjectedRaceInAppsinkCallbackIsReported proves a race
+  in an appsink callback is reported (it was hidden by the old race:libgst* suppressions).
+- F12: mock FIFO model: frames more than buffer_count periods late are lost (seq gaps); mock tests use
+  buffer_count = 256 for determinism under load; BehindRealTimeDropsBeyondFifo tests the overflow.
+  NOTE for T5: mock FIFO depth = driver.buffer_count; use a large value in deterministic tests.
+- F14: replay uses rig/package/layout.hpp (kFramesDir, kCamData, kFrameMeta); tests write kFrameMetaHeader.
+- F16: CONTRACT CHANGE (additive): types.hpp enum ColorRange {kUnknown, kLimited, kFull} + to_string, and
+  FrameMeta::color_range (default kUnknown). Argus: NVBUF_COLOR_FORMAT_NV12_ER (full range) for nv12/gray8, NV12
+  (video range) blit for bgr/rgb (OpenCV YUV2BGR_NV12 expects video range) -> kFull. GStreamer: from the caps
+  colorimetry (videotestsrc/videoconvert NV12 = kLimited; nvvidconv: checked on H). Mock/replay: JFIF YCbCr via
+  COLOR_BGR2YCrCb -> kFull (test: pure red -> Y 76, Cb 85, Cr 255).
+- Argus compile-only re-run with NV12_ER (headers re-extracted, same sha256, then deleted): OK.
+- Gates (--jobs 4): default PASS 393/393; TSan 394/394 (full ctest; the first check.sh pass had one failure in T3's
+  CaptureService.FromRigConfigWithMockBackends from a stale build of T3's concurrently edited test, passed after
+  rebuild); ASan+UBSan PASS 393/393, 0 UBSan runtime errors. All trees ($SCRATCH/build/t2fix*) deleted.
+- T3's layout rename (kFramesDir = "data") has landed; replay + tests use the constant (T1's earlier
+  ReplayTest.PackageFolderWithMetaAndRecordedDrops failure predates that).
+
+Done
+- Research (see Sources); r36.4.3 headers in $SCRATCH/t2mmapi (deb deleted); Focuser.py in $SCRATCH/t2ref.
+- Public headers common/include/rig/drivers/camera/: sensor_modes.hpp, frame_tracker.hpp, sensor_clock.hpp,
+  capture_plan.hpp, imx519_focus.hpp.
+- common/drivers/camera/: sensor_modes.cpp (+select_sensor_mode), frame_tracker.cpp, sensor_clock.cpp,
+  capture_plan.cpp, camera_internal.{hpp,cpp} (BufferPool, FrameQueue, CameraBase), mock_camera.cpp,
+  replay_camera.cpp, camera_factory.cpp, backends.hpp, gst/gst_camera.cpp.
+- common/drivers/focus/: imx519_focus.cpp, linux_focus_env.cpp.
+- tests/camera/: test_{sensor_modes,capture_plan,sensor_clock,frame_tracker,factory,focus,mock_camera,
+  replay_camera,probe_report,camera_base}.cpp, gst/test_gst_camera.cpp.
+- common/drivers/camera/argus/argus_camera.cpp, cmake/argus.cmake (compile-only checked).
+- common/include/rig/drivers/camera/probe_report.hpp + common/drivers/camera/probe_report.cpp;
+  episode_collection/apps/ec-cam-probe/main.cpp.
+- docs/bringup_snippets/T2_cameras.md (BRINGUP 10 + H2 + hardware-day verification list).
+
+In progress
+- (none)
+
+Next (checklist)
+- [x] argus backend + compile-only check (cmake/argus.cmake written; CMakeLists comment says T2 owns it)
+- [x] probe_report (lib) + episode_collection/apps/ec-cam-probe (smoke-run with gst videotestsrc and mock)
+- [x] docs/bringup_snippets/T2_cameras.md
+- [x] check.sh default, asan,undefined
+- [x] check.sh thread
+- [x] build trees and $SCRATCH/t2mmapi, t2ref, t2dl deleted
+- [ ] (R1 / H) hardware-day verification list: docs/bringup_snippets/T2_cameras.md
+- [ ] (orchestrator) align T3 common/config/sensor_modes.cpp full_fov with T2 (see notes)
+
+Decisions + contract notes (so far)
+- getSensorTimestamp() = "time that the first data from this capture arrives from the sensor"
+  (CaptureMetadata.h r36.4.3) = start of readout of row 0 = END of row 0 exposure. The frozen ImageFrame defines
+  t_sof_ns as "first row starts exposing", so ArgusCamera sets t_sof_ns = sensor_ts - exposure; then
+  mid_exposure_time() gives t_mid = sensor_ts - exposure/2 + readout/2. Using sensor_ts directly as t_sof would
+  make t_mid one full exposure late (8 ms main, 4 ms uw). No declaration change.
+- getFrameReadoutTime = "from the beginning of the first line to the beginning of the last line" -> +readout/2 for
+  the middle row. Cross-check: Ext::ISensorTimestampTsc EOF - SOF.
+- Clock domain conflicting (forum 268916: JerryChang says MONOTONIC_RAW, ShaneCCC says CLOCK_REALTIME; TSC SOF minus
+  /sys/devices/system/clocksource/clocksource0/offset_ns = MONOTONIC_RAW). Plan: classify at runtime against
+  raw/mono/realtime, prefer raw; cross-check with TSC - offset_ns; fail loudly if implausible.
+- Mode "full_fov" = no crop relative to the sensor's reference field: IMX219 = full 3280x2464 array; IMX519 = the
+  3840x2160 16:9 field (1920x1080 = 2x2 bin of it). IMX519 1280x720 is a 2x2 bin of a 2560x1440 crop -> narrower
+  FOV -> full_fov=false (finding: PIPELINE 3's "1920x1080 or 1280x720" choice changes the FOV; capture 1080p).
+- fps match needs tolerance: Argus reports 1080p60 as 59.999999 (Duration 16666667).
+- VCM is powered with the sensor: focus is written after streaming starts (first frame), else it is lost.
+- CONTRACT NOTE (additive): CameraStats gained time_source, tsc_cross_check_ns, timestamp_anomalies, focus_detail
+  (defaulted, at the end of the struct). New public headers under rig/drivers/camera/ (T2's own module).
+- T3 cross-check: common/config/sensor_modes.cpp marks imx519 1920x1080/3840x2160 full_fov=false; with the frozen
+  select_sensor_mode rule that would make the configured main mode unselectable. T2 uses the reference-field
+  definition (sensor_modes.hpp). Reviewer: align T3's table (and its 1280x720 = narrower crop).
+- Replay: end of data -> status kOutOfRange "end of replay"; images delivered at their stored size.
+- frame_meta.csv columns parsed by replay (proposal for T5): t_ns,t_sof_ns,t_arrival_ns,seq,exposure_ns,
+  analog_gain,digital_gain,readout_ns,sensor_mode,focus_position,focus_status (header row, any order).
+- GstCamera: timed settle (1 s) only with a real nvarguscamerasrc or after a focus write; deferred AE/AWB locks are
+  applied by g_object_set at runtime [H: verify nvarguscamerasrc honours a runtime awblock change].
+- Focus never fails start(); status recorded per frame and in stats.focus_detail.
+- LSan: libglib allocates 16 KiB in a loader-run constructor; gst test + ec-cam-probe define
+  __lsan_default_suppressions "leak:ld-linux" + __asan_default_options fast_unwind_on_malloc=0 (precise: only stacks
+  through the dynamic loader are suppressed).
+- TSan: GLib/GStreamer are uninstrumented (atomics/lock-free GstAtomicQueue invisible) -> module-scoped race
+  suppressions in tests/camera/gst/test_gst_camera.cpp only; the rig side of the queued backends is TSan-tested
+  without GStreamer in tests/camera/test_camera_base.cpp. Replay test: "deadlock:libgdal.so" (OpenCV imgcodecs loads
+  libgdal; single-thread lock-order report inside GDAL).
+
+Sources
+- Argus headers r36.4.3 (CaptureMetadata.h:367-397, Ext/SensorTimestampTsc.h, EGLStream.h:150-187).
+- https://forums.developer.nvidia.com/t/get-frame-system-time/268916?page=2
+- https://forums.developer.nvidia.com/t/camera-sof-timestamp-in-the-future/329038
+- https://github.com/ArduCAM/Jetson_IMX519_Focus_Example/blob/f0d9b29afd25ba270d2a4e459715eecfba44df90/Focuser.py
+- https://forum.arducam.com/t/imx519-autofocus-not-working-on-jetson-orin-nano-jetpack-6-2-l4t-36-4-3/8962 (UU on bus 10)
+- https://forum.arducam.com/t/imx519-and-jetson-orin-nano/8481 (Orin Nano IMX519 modes, gain 1-16, exp 13us-683ms)
+- https://lkml.iu.edu/hypermail/linux/kernel/2309.1/00390.html (imx519 mode crops)
+- https://forums.developer.nvidia.com/t/jetson-orin-imx219-csi-camera/246754 (IMX219 Argus mode dump)
+
+Last build+test (SCRATCH = /tmp/claude-1000/-home-ruben-Capstone/024e666a-499e-4cbd-801d-deb863b2bcb1/scratchpad),
+final code, whole tree at the time:
+- physicalSetup/scripts/check.sh $SCRATCH/build/t2                                   -> PASS 375/375 (94 camera)
+- physicalSetup/scripts/check.sh $SCRATCH/build/t2-asan --sanitize address,undefined -> PASS 375/375, 0 UBSan errors
+- physicalSetup/scripts/check.sh $SCRATCH/build/t2-tsan --sanitize thread            -> PASS 375/375
+- test_camera_camera_base 20x repeated under TSan -> clean.
+- Argus compile-only (gcc 9, x86_64, -Werror) against r36.4.3 headers: cmake -DRIG_WITH_ARGUS=ON
+  -DRIG_ARGUS_COMPILE_ONLY=ON -DRIG_ARGUS_ROOT=<extracted>/usr/src/jetson_multimedia_api; ninja
+  common/CMakeFiles/rigcommon.dir/drivers/camera/argus/argus_camera.cpp.o (+ camera_factory.cpp.o) -> OK.
+  To redo: download nvidia-l4t-jetson-multimedia-api_36.4.3-20250107174145_arm64.deb (75 MB, sha256
+  c82bb071be5d8b87ab25ba3a57fab7d758e5aab5a538709fd70e911364eeb162) from repo.download.nvidia.com/jetson/common,
+  extract argus/include + include/{nvbufsurface.h,nvbufsurftransform.h,Argus,EGLStream}.
+- ec-cam-probe smoke: --backend gst --gst-source "videotestsrc is-live=true pattern=ball" (PASS), --backend mock
+  (PASS), --config <example yaml> --list (loads via T3; argus unimplemented on the laptop, exit 2 as intended).

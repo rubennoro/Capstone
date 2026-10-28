@@ -62,7 +62,8 @@ class PinholeRadtan final : public CameraModel {
   std::unique_ptr<CameraModel> scaled(int width, int height) const override;
 
  private:
-  explicit PinholeRadtan(CameraModelParams params) : CameraModel(std::move(params)) {}
+  PinholeRadtan(CameraModelParams params, double r_valid) : CameraModel(std::move(params)), r_valid_(r_valid) {}
+  double r_valid_;  ///< Largest undistorted radius x/z on the monotonic branch (camera_model.py:177-180).
 };
 
 /// Equidistant Kannala-Brandt fisheye with 4 coefficients (ORB-SLAM3 KannalaBrandt8 / OpenCV fisheye).
@@ -74,7 +75,9 @@ class KannalaBrandt4 final : public CameraModel {
   std::unique_ptr<CameraModel> scaled(int width, int height) const override;
 
  private:
-  explicit KannalaBrandt4(CameraModelParams params) : CameraModel(std::move(params)) {}
+  KannalaBrandt4(CameraModelParams params, double theta_valid)
+      : CameraModel(std::move(params)), theta_valid_(theta_valid) {}
+  double theta_valid_;  ///< Largest incidence angle [rad] on the monotonic branch (camera_model.py:286-288).
 };
 
 /// Double Sphere [xi, alpha].

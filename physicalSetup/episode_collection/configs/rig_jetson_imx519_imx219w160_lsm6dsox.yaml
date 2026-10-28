@@ -180,7 +180,7 @@ imu:
     backend: lsm6dsox_i2c          # lsm6dsox_i2c | sim | replay.
     i2c_bus: 7                     # 40-pin pins 3 (SDA) / 5 (SCL) = /dev/i2c-7 on the Orin Nano dev kit.
     i2c_addr: 0x6A                 # 7-bit address (Modulino Movement default).
-    expected_who_am_i: 0x6C        # LSM6DSOX WHO_AM_I (DS13345).
+    expected_who_am_i: 0x6C        # LSM6DSOX WHO_AM_I (DS12814).
     odr_hz: 833.0                  # accel + gyro ODR [Hz]: 12.5|26|52|104|208|416|833|1666|3332|6667.
     accel_fs_g: 8                  # 2 | 4 | 8 | 16 [g].
     gyro_fs_dps: 2000              # 125 | 250 | 500 | 1000 | 2000 [dps].
@@ -191,12 +191,17 @@ imu:
     i2c_error_budget: 20           # failed transactions allowed per 10 s before the backend turns fatal.
     gap_factor: 2.0                # sample interval > factor / odr counts as a gap.
     queue_capacity: 8192           # host queue between poll thread and read() [samples] (~10 s).
+    timestamp_decimation: 1        # FIFO timestamp word every 1 | 8 | 32 samples (DS12814 FIFO_CTRL4.DEC_TS_BATCH).
+    temperature_batch_hz: 12.5     # temperature FIFO words: 0 (off) | 1.6 | 12.5 | 52 [Hz] (FIFO_CTRL4.ODR_T_BATCH).
+    fifo_burst_words: 32           # max FIFO words per I2C read transaction (1..256).
+    pair_by_tag_counter: true      # group gyro/accel/timestamp words by TAG_CNT (false = Linux st_lsm6dsx order).
     clock:                         # ChipClockConfig (rig/time/clock.hpp).
-      nominal_tick_ns: 25000.0     # [ns/LSB] (DS13345); the driver applies INTERNAL_FREQ_FINE (AN5272).
+      nominal_tick_ns: 25000.0     # [ns/LSB] (DS12814); the driver applies INTERNAL_FREQ_FINE (AN5272).
       max_slope_deviation: 0.03    # slope clamp: nominal * (1 +/- 0.03).
       window_brackets: 300         # sliding fit window [brackets] (30 s at 100 ms).
       max_bracket_width_ns: 2000000   # reject brackets wider than this [ns].
       method: lower_envelope       # lower_envelope | robust_linear.
+      outlier_gate_ns: 1000000     # reject brackets > this from the prediction [ns]; 0 = off.
     sim:                           # ImuSimConfig (backend sim only).
       chip_clock_drift_ppm: 0.0    # [ppm].
       chip_clock_offset_ticks: 0   # initial chip counter.
@@ -210,14 +215,14 @@ imu:
       realtime: true
       retime: true
   noise:                           # ImuNoiseConfig: continuous-time densities for ORB-SLAM3 / Kalibr.
-    accel_noise_density: 6.865e-4  # [m/s^2/sqrt(Hz)] = 70 ug/sqrt(Hz) (DS13345 high-performance mode) [I: T1 checks].
+    accel_noise_density: 7.845e-4  # [m/s^2/sqrt(Hz)] = 80 ug/sqrt(Hz) at +-8 g (DS12814 Table 2, high-performance mode).
     accel_random_walk: 1.0e-4      # [m/s^3/sqrt(Hz)] placeholder until Allan variance.
-    gyro_noise_density: 6.632e-5   # [rad/s/sqrt(Hz)] = 3.8 mdps/sqrt(Hz) (DS13345) [I: T1 checks].
+    gyro_noise_density: 6.632e-5   # [rad/s/sqrt(Hz)] = 3.8 mdps/sqrt(Hz) (DS12814 Table 2).
     gyro_random_walk: 1.0e-6       # [rad/s^2/sqrt(Hz)] placeholder until Allan variance.
     provenance: nominal
     note: "datasheet densities; Allan variance (Wave 4) replaces"
   thread:                          # IMU capture thread.
-    cpus: [1]
+    cpus: [5]                      # own core: no camera / SLAM thread may share it (validated, R1 F18).
     priority: 20
     nice: 0
   queue_samples: 16384             # lossless RawWriter queue [samples] (~20 s at 833 Hz).

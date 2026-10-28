@@ -32,7 +32,7 @@ questions. Sensors arrive **2026-10-29** (hardware day, "H").
 - **Sources of truth** that executors must cite in code comments (file:line or document section):
   - PIPELINE.md;
   - iPhUMI Swift/Python for every iPhone-parity rule;
-  - for the LSM6DSOX, ST's BSD-3 `lsm6dsox-pid` register header + datasheet DS13345 + AN5272;
+  - for the LSM6DSOX, ST's BSD-3 `lsm6dsox-pid` register header + datasheet DS12814 + AN5272;
   - for libargus, the Jetson Multimedia API reference r36.4.
 - **Rigor for sensor integration** (T1, T2, T3, T5, T8): every hardware-facing value (register address, bit field,
   scale factor, Argus call, timestamp domain) is cited, unit-tested against a simulator, and listed in BRINGUP.md
