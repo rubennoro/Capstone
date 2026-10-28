@@ -42,8 +42,8 @@ questions. Sensors arrive **2026-10-29** (hardware day, "H").
 
 | When | Work |
 |---|---|
-| Day 0 (2026-10-27/28) | Wave 0: T0 contracts + build skeleton (one executor), reviewed, committed |
-| Day 1 (2026-10-28) | Wave 1: T1 IMU, T2 cameras, T3 capture/shm/package, T4 camera model + image prep (4 executors in parallel) → reviewer R1 → gate → commit |
+| Day 0 (2026-10-27/28) | **Done** (`c94b13a`): Wave 0, T0 contracts + build skeleton (one executor), reviewed, committed |
+| Day 1 (2026-10-28) | **Done** (`0237513`): Wave 1, T1 IMU, T2 cameras, T3 capture/shm/package, T4 camera model + image prep (4 executors in parallel) → reviewer R1 → gate → commit |
 | Day 2 (2026-10-28/29) | Wave 2: T5 ec-record, T6 ec-viz + ec-slam-live, T7 ec-calibrate, T8 bring-up kit (4 executors) → reviewer R2 → gate → commit |
 | **H (2026-10-29+)** | Hardware bring-up per BRINGUP.md (section 5), with the user at the Jetson. Fix tasks are spawned as needed. |
 | H+1 … | Wave 3: offline pipeline (T9–T12). Wave 4: calibration tooling + arm test (after the Kalibr discussion). Wave 5: deployment scaffold. |
@@ -110,7 +110,7 @@ reviews and freezes them.
 
 **Clock:**
 - Read the 32-bit TIMESTAMP registers bracketed by host clock reads (`t0`, `ts`, `t1`) every 100 ms.
-- `ChipClockMapper` (shared with T3's time module): lower-envelope or robust linear fit of host versus chip ticks over
+- `ChipClockMapper` (implemented by T1, in `common/time/chip_clock_mapper.cpp`): lower-envelope or robust linear fit of host versus chip ticks over
   a sliding window, nominal 25 µs/LSB with the trim applied, configurable slope clamp.
 - Output: `t_ns` in MONOTONIC_RAW, fit residual stats, and `clock_fit.json`.
 
@@ -156,8 +156,9 @@ snippet (handed to T8) lists the exact `i2cdetect` / `i2cget` / `ec-imu-probe` c
 - Capture: EGLStream `IFrameConsumer`; copy to an NV12 CPU buffer via `NvBufSurface` / `NvBufSurfTransform`. The
   JPEG writer encodes from YUV directly, so there is no BGR conversion on the hot path.
 - Metadata: `ICaptureMetadata::getSensorTimestamp()` → `t_sof_ns`, plus `getSensorExposureTime`,
-  `getSensorAnalogGain` and `getFrameReadoutTime`. `t_mid = t_sof + exposure/2 + readout/2`, with the formula's
-  assumption cited and an H verification step.
+  `getSensorAnalogGain` and `getFrameReadoutTime`. As built: `getSensorTimestamp` = first data from the sensor (end
+  of row 0's exposure), so `t_sof = ts − exposure` and `t_mid = ts − exposure/2 + readout/2`, with an H verification
+  step (LED test).
 - Drops: detect from sequence and timestamp gaps; reason logged.
 - Optional: a compile-only check against extracted r36.4 headers.
 
@@ -192,8 +193,7 @@ outputs.
 
 **Owns:** `common/time/*`, `common/config/*`, `common/capture/*`, `common/shm/*`, `common/package/*` and their tests.
 
-- **time:** `now_raw_ns()`, `now_mono_ns()`, `now_unix_ns()` and session anchor sampling. Generic `ChipClockMapper`,
-  used by T1.
+- **time:** `now_raw_ns()`, `now_mono_ns()`, `now_unix_ns()` and session anchor sampling. (`ChipClockMapper` is T1's.)
 - **config:**
   - `rig.yaml` loader with full validation: every key typed and range-checked; errors carry the YAML path, for example
     `cameras.uw.mode: 1280x720@60 is a cropped mode on imx219; full-FOV modes are ...`;
@@ -263,7 +263,38 @@ lossless drops) once T1 and T2 land. The reviewer runs it.
 - Hardware-facing values all cited; BRINGUP snippets complete.
 - Findings go back to the owning executors (resumed, not respawned). The reviewer re-verifies, then the gate.
 
+**Wave 1 outcome (2026-10-28):**
+- R1 found 22 issues (F1–F22, in `worklogs/R1.WORKLOG`); all were fixed before the gate.
+- Gate: default 397/397, ASan+UBSan 397/397, TSan 398/398, Python 398/398.
+
+Lessons that now apply to every wave:
+- Run gate builds **one at a time with `--jobs 4`**. Parallel agent builds OOM'd the laptop and produced false
+  failures.
+- `RIG_WITH_PYTHON` takes pybind11 from the chosen interpreter and needs pybind11 ≥ 2.12. The system 2.9 breaks with
+  numpy 2.
+- Wrap exploratory commands that could block (`gst-launch`, probes) in `timeout`. One hung probe ran for 9.5 h.
+- Set `RIG_T4_EXTENDED_DIR=$SCRATCH/t4ext` to run the extended real-frame image goldens.
+
 ## 4. Wave 2: programs (4 executors in parallel)
+
+**Inputs from Wave 1 that every Wave 2 brief must carry** (from STATUS.md):
+- T5:
+  - JPEG-encode straight from the full-range NV12 planes (libjpeg raw data, 4:2:0, JFIF), never via BGR;
+  - subscribe lossless consumers before `CaptureService::start()`;
+  - T5 owns the shm publishers + the CaptureStatus channel;
+  - write CSVs with the `rig/package/layout.hpp` constants (EuRoC `data/`; `frame_meta.csv` columns are read by T2's
+    replay);
+  - one shared main-camera resize function (1080p → 720p), also used later by deployment;
+  - tests needing exact sequences set the mock's `driver.buffer_count` large (e.g. 256).
+- T6: `color_range` arrives over shm (F17). Viewers and SLAM must honour it via `imageprep::frame_to_bgr`.
+- T7: tag detection runs on the remapped ultrawide, with the virtual camera's K and zero distortion. Uncovered pixels
+  are 0. Call `in_image()` yourself, because `VirtualPinhole::project` no longer checks bounds.
+- T8: merge `docs/bringup_snippets/T1_imu.md` + `T2_cameras.md` into BRINGUP.md. Include:
+  - INT1 unconnected; i2c-7 ≥ 400 kHz; 224-byte Tegra I2C reads;
+  - root/rtprio for SCHED_FIFO; a step to confirm the IMU poll thread is pinned;
+  - CAM0/CAM1 I2C bus numbers (9/10 are guesses);
+  - timestamp-domain and NV12_ER full-range checks;
+  - building the remap maps on the Jetson (possible aarch64 FMA ±1 ULP).
 
 ### T5. `ec-record`: RawWriter, LiveChecks, supervisor, operator UI
 

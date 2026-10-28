@@ -1,5 +1,10 @@
 # Roadmap: from the Jetson sensor rig to a policy running on the Franka
 
+> **Update 2026-10-28:** the rig hardware and software plan has moved to [physicalSetup/](physicalSetup/README.md):
+> an IMX519 main + IMX219 160° ultrawide + LSM6DSOX (Modulino) on Jetson I2C, in C++. See
+> [physicalSetup/docs/PIPELINE.md](physicalSetup/docs/PIPELINE.md) and [STATUS.md](physicalSetup/docs/STATUS.md). The
+> IMX219-main / ICM-42688-P / Python `sensor_rig` plan below is kept as a reference.
+
 Replacing the iPhone on the iPhUMI gripper with separate parts: **2 CSI cameras + 1 IMU, all on one NVIDIA Jetson
 Orin Nano**. Two pieces:
 

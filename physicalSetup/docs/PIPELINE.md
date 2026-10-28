@@ -230,11 +230,19 @@ ec-process <session_dir> --status                     # table of every package a
 - **Process isolation.** Live SLAM and the viewers run as separate processes, started and supervised by `ec-record`.
   A viewer crash never touches recording. A SLAM stall or crash is detected by heartbeat and is an abort rule, because
   the pose check can no longer run.
-- **CPU placement.** Capture and writer threads get pinned cores and elevated priority. Live SLAM gets its own
-  pinned cores (it has a deadline now). Viewers run at normal priority and drop frames.
+- **CPU placement.** Capture and writer threads get pinned cores and elevated priority. Each backend's `start()` runs
+  on its own pinned sensor thread, so driver-internal threads (IMU poll, Argus acquire) inherit the placement. The IMU
+  has a core of its own: the config loader rejects an IMU core shared with a camera (or with live SLAM). Live SLAM
+  gets its own pinned cores (it has a deadline now). Viewers run at normal priority and drop frames. SCHED_FIFO needs
+  root or an rtprio limit; without it, placement failures are logged and counted, and capture continues.
 - **One clock.** Every timestamp is int64 ns `CLOCK_MONOTONIC_RAW`, the domain of Argus sensor timestamps and
   IIO/chip-mapped IMU stamps. This gets verified on hardware.
-  - Image time = sensor start-of-frame + exposure/2 + readout/2.
+  - Image time: Argus `getSensorTimestamp()` (r36.4.3) is "the time that the first data from this capture arrives
+    from the sensor", i.e. the end of row 0's exposure. So `t_sof = ts − exposure` and
+    `t_mid = ts − exposure/2 + readout/2` (mid-exposure, mid-frame).
+  - The Argus clock domain is not settled by NVIDIA's documentation. A resolver classifies the first frames
+    (MONOTONIC_RAW, TSC − offset, or converted MONOTONIC/REALTIME). It accepts stamps up to 2 ms in the future and
+    counts them as anomalies. Verified on hardware day.
   - IMU time = chip timestamp mapped to host by a lower-envelope linear fit over bracketed register reads.
   - Calibrated offsets (Kalibr camera↔IMU, LED camera↔camera) are applied **only** when consuming (offline stages and
     deployment), never baked into raw files.
@@ -247,8 +255,20 @@ ec-process <session_dir> --status                     # table of every package a
     ultrawide (≤ 4–8 ms, to limit motion blur for SLAM and tags).
   - IMX519: a fixed VCM focus position written once at start and recorded in the package; autofocus never runs.
   - A GStreamer `nvarguscamerasrc` backend exists as the bring-up fallback. Mock and replay backends exist for tests.
+  - **Colour path (one path for training and deployment):**
+    - Argus delivers **full-range NV12** (`NVBUF_COLOR_FORMAT_NV12_ER`, i.e. JFIF YCbCr), and every frame carries
+      `FrameMeta::color_range` (also over shm).
+    - The recorder JPEG-encodes **straight from the NV12 planes** (libjpeg raw data, 4:2:0, JFIF), never through BGR.
+    - `imageprep::frame_to_bgr` converts full-range frames exactly as libjpeg decodes them. Live frames and decoded
+      training JPEGs therefore differ only by compression loss (q90: mean 1.2, max 19 LSB).
+    - The main camera is captured at 1920x1080 and stored at 1280x720 through one shared resize function, used by
+      both the recorder and deployment.
 - **IMU:** a userspace `i2c-dev` driver for day one: FIFO with tagged accel/gyro/timestamp words, polled every 10 ms,
-  watermark and overflow detection. The kernel IIO `st_lsm6dsx` driver is a later alternative behind the same
+  watermark and overflow detection.
+  - Registers per datasheet DS12814, each one read back after writing. Timestamp batching adds one FIFO word per
+    sample, so the poll budget counts 3 words per ODR.
+  - Needs the I2C bus at ≥ 400 kHz (the FIFO stream is about 39 % of a 400 kHz bus). **INT1 must stay unconnected**:
+    INT1 high at power-up selects I3C-only mode. The kernel IIO `st_lsm6dsx` driver is a later alternative behind the same
   `ImuBackend` interface.
 
 ---

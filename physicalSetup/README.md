@@ -5,6 +5,15 @@ episode packages, the offline pipeline, and (later) policy deployment. Design: [
 Plan and task ownership: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). Progress:
 [docs/STATUS.md](docs/STATUS.md).
 
+**State (2026-10-28):** Waves 0–1 built, reviewed and committed.
+- **Built:** IMU driver + simulator, camera backends + focus lock, capture/shm/package/config, camera models + image
+  prep + `rigpy`.
+- **Not built yet:** the recording programs (`ec-record`, `ec-calibrate`, `ec-viz`, `ec-slam-live`, `ec-doctor`:
+  Wave 2) and the offline `ec-process` (Wave 3).
+- **Apps today:** `ec-imu-probe`, `ec-cam-probe`.
+- **Hardware:** the Argus backend is compile-checked against L4T r36.4.3 headers, but nothing has run on the Jetson
+  yet.
+
 Hardware: Jetson Orin Nano (JetPack 6.2 / L4T 36.4.3), Arducam IMX519 main camera, Arducam IMX219 160° ultrawide,
 ST LSM6DSOX IMU (Modulino Movement) on I2C bus 7. Example config:
 [episode_collection/configs/rig_jetson_imx519_imx219w160_lsm6dsox.yaml](episode_collection/configs/rig_jetson_imx519_imx219w160_lsm6dsox.yaml).
@@ -41,7 +50,15 @@ physicalSetup/scripts/check.sh /path/to/build                              # def
 physicalSetup/scripts/check.sh /path/to/build-asan --sanitize address,undefined
 physicalSetup/scripts/check.sh /path/to/build-tsan --sanitize thread
 physicalSetup/scripts/check.sh /path/to/build -- -DRIG_WITH_ARGUS=ON       # extra CMake args after --
+physicalSetup/scripts/check.sh /path/to/build --jobs 4                     # laptop: cap jobs (several builds OOM)
+physicalSetup/scripts/check.sh /path/to/build-py -- -DRIG_WITH_PYTHON=ON -DPython3_EXECUTABLE=<venv>/bin/python
 ```
+
+Notes:
+- `RIG_WITH_PYTHON` picks pybind11 from that interpreter (`python -m pybind11 --cmakedir`) and requires ≥ 2.12
+  (numpy 2).
+- TSan tests run under `setarch -R` (handled by `check.sh`).
+- `RIG_T4_EXTENDED_DIR=<dir>` enables the extended real-frame image goldens; they are skipped otherwise.
 
 Or by hand: `cmake -S physicalSetup -B <build> -G Ninja && cmake --build <build> && ctest --test-dir <build>`.
 
@@ -81,7 +98,7 @@ definitions `RIG_HAVE_{ARGUS,GST,ORBSLAM3,CERES,PYTHON}` (0/1) are PUBLIC on `ri
 | Header | What | Implemented by |
 |---|---|---|
 | `rig/status.hpp`, `rig/span.hpp`, `rig/types.hpp` | Status/Result, Span, TimeNs, ImageFrame, ImuSample, SummaryStats | T0 (inline) |
-| `rig/time/clock.hpp` | now_raw/mono/unix_ns, ClockAnchor, ClockBracket, ChipClockMapper | T0 (clocks), T3 (mapper) |
+| `rig/time/clock.hpp` | now_raw/mono/unix_ns, ClockAnchor, ClockBracket, ChipClockMapper | T0 (clocks), T1 (mapper) |
 | `rig/drivers/i2c_bus.hpp` | I2cBus, make_linux_i2c_bus | T1 |
 | `rig/drivers/imu_backend.hpp` | ImuConfig, ImuStats, ImuBackend, make_imu | T1 |
 | `rig/drivers/camera_backend.hpp` | CameraConfig, SensorMode, CameraStats, CameraBackend, make_camera, select_sensor_mode | T2 |
@@ -92,6 +109,16 @@ definitions `RIG_HAVE_{ARGUS,GST,ORBSLAM3,CERES,PYTHON}` (0/1) are PUBLIC on `ri
 | `rig/camera_model/*.hpp` | model kinds, CameraModel, RemapTable | T4 |
 | `rig/imageprep/imageprep.hpp` | letterbox_square_resize (cv_util.py parity), ImagePrep | T4 |
 | `rig/slam/slam_backend.hpp` | SlamSettings, SlamBackend, make_slam_backend | T6 |
+
+Additive public headers added in Wave 1 (each owned by its task):
+- `rig/drivers/imu/*` (T1);
+- `rig/drivers/camera/*` (T2: sensor modes, frame tracker, sensor clock, capture plan, IMX519 focus, probe report);
+- `rig/package/{layout,csv,atomic_file,sha256}.hpp`, `rig/shm/publisher.hpp`, `rig/capture/thread_config.hpp` (T3);
+- `rig/camera_model/coverage.hpp`, `rig/imageprep/color.hpp` (T4).
+
+Additive fields:
+- `FrameMeta::color_range`, `CameraStats` (+4 fields) (T2);
+- `ImuConfig`/`ImuStats`/`ChipClockConfig` fields (T1; yaml keys by T3).
 
 Changing a frozen public declaration requires a note to the orchestrator (IMPLEMENTATION_PLAN section 0). Adding a
 defaulted field to a config/stats struct, or a new header in one's own module, is additive: record it in the task
