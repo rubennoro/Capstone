@@ -1,0 +1,12 @@
+finger-kit show: robot=panda mode=kit tcp_at=tip fingerprint=e6af07b9c67a1dd4
+axes: x red, y green, z blue; lengths flange 40 mm, TCP 30 mm, J 20 mm, M 15 mm, tag centre 10 mm
+views: sidep/sidem/endp/endm = external free camera at the hand (forward along +-TCP y / +-TCP x, pitched 20 deg up), main/uw = cam_main/cam_uw (no axes); gaps open/mid/closed = open 80.0 mm, mid 40.0 mm, closed 0.0 mm
+frame flange  world xyz_mm=[307.02, -0.00, 590.27] (gap closed)
+frame tcp     world xyz_mm=[307.02, -0.00, 366.39] (gap closed)
+frame J_l     world xyz_mm=[307.03, -14.41, 531.74] (gap closed)
+frame M_l     world xyz_mm=[307.03, -22.55, 523.74] (gap closed)
+frame tag_l   world xyz_mm=[287.73, -20.01, 480.24] (gap closed)
+frame J_r     world xyz_mm=[307.01, 14.41, 531.74] (gap closed)
+frame M_r     world xyz_mm=[307.01, 23.12, 523.74] (gap closed)
+frame tag_r   world xyz_mm=[287.71, 20.57, 480.24] (gap closed)
+files: sidep_open.png sidem_open.png endp_open.png endm_open.png main_open.png uw_open.png sidep_mid.png sidem_mid.png endp_mid.png endm_mid.png main_mid.png uw_mid.png sidep_closed.png sidem_closed.png endp_closed.png endm_closed.png main_closed.png uw_closed.png

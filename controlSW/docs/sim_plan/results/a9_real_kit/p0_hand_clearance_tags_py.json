@@ -1,0 +1,486 @@
+{
+ "L0.0": {
+  "gap0.0": {
+   "pad_l": [
+    26.52,
+    "geom62"
+   ],
+   "finger_holder_l": [
+    -7.39,
+    "geom62"
+   ],
+   "pad_r": [
+    26.52,
+    "geom62"
+   ],
+   "finger_holder_r": [
+    -7.39,
+    "geom62"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom77": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    28.49,
+    "geom62"
+   ],
+   "geom79": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "gap0.08": {
+   "pad_l": [
+    26.52,
+    "geom62"
+   ],
+   "finger_holder_l": [
+    -7.39,
+    "geom62"
+   ],
+   "pad_r": [
+    26.52,
+    "geom62"
+   ],
+   "finger_holder_r": [
+    -7.39,
+    "geom62"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom77": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    28.49,
+    "geom62"
+   ],
+   "geom79": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "tag_image_x_norm": {
+   "tag_l": 0.5756407470081025,
+   "tag_r": -0.22554635477022253
+  },
+  "tag_ids": {
+   "tag_l": 1,
+   "tag_r": 0
+  },
+  "side_for_finger": {
+   "l": "right",
+   "r": "left"
+  },
+  "flange_to_tcp_m": 0.21588094923906614,
+  "dy": {
+   "l": 0.008703774196585398,
+   "r": 0.00813466532297967
+  },
+  "tcp_residual_mm": [
+   -9.310923837138127e-23,
+   4.43680286607572e-06
+  ],
+  "pad_offset_m": 0.0,
+  "tag_sep_closed_m": 0.040577038079500125
+ },
+ "L0.008": {
+  "gap0.0": {
+   "finger_adapter_l": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_l": [
+    34.52,
+    "geom62"
+   ],
+   "finger_holder_l": [
+    0.61,
+    "geom62"
+   ],
+   "finger_adapter_r": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_r": [
+    34.52,
+    "geom62"
+   ],
+   "finger_holder_r": [
+    0.61,
+    "geom62"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    -7.47,
+    "geom62"
+   ],
+   "geom79": [
+    28.49,
+    "geom62"
+   ],
+   "geom80": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "gap0.08": {
+   "finger_adapter_l": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_l": [
+    34.52,
+    "geom62"
+   ],
+   "finger_holder_l": [
+    0.61,
+    "geom62"
+   ],
+   "finger_adapter_r": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_r": [
+    34.52,
+    "geom62"
+   ],
+   "finger_holder_r": [
+    0.61,
+    "geom62"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    -7.47,
+    "geom62"
+   ],
+   "geom79": [
+    28.49,
+    "geom62"
+   ],
+   "geom80": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "tag_image_x_norm": {
+   "tag_l": 0.5756407470081029,
+   "tag_r": -0.22554635477022267
+  },
+  "tag_ids": {
+   "tag_l": 1,
+   "tag_r": 0
+  },
+  "side_for_finger": {
+   "l": "right",
+   "r": "left"
+  },
+  "flange_to_tcp_m": 0.22388094923906615,
+  "dy": {
+   "l": 0.008703774196585398,
+   "r": 0.00813466532297967
+  },
+  "tcp_residual_mm": [
+   -9.310923837138127e-23,
+   4.43680286607572e-06
+  ],
+  "pad_offset_m": 0.0,
+  "tag_sep_closed_m": 0.040577038079500125
+ },
+ "L0.02": {
+  "gap0.0": {
+   "finger_adapter_l": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_l": [
+    46.52,
+    "geom62"
+   ],
+   "finger_holder_l": [
+    12.61,
+    "geom62"
+   ],
+   "finger_adapter_r": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_r": [
+    46.52,
+    "geom62"
+   ],
+   "finger_holder_r": [
+    12.61,
+    "geom62"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    -7.47,
+    "geom62"
+   ],
+   "geom79": [
+    28.49,
+    "geom62"
+   ],
+   "geom80": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "gap0.08": {
+   "finger_adapter_l": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_l": [
+    46.52,
+    "geom62"
+   ],
+   "finger_holder_l": [
+    12.61,
+    "geom62"
+   ],
+   "finger_adapter_r": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_r": [
+    46.52,
+    "geom62"
+   ],
+   "finger_holder_r": [
+    12.61,
+    "geom62"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    -7.47,
+    "geom62"
+   ],
+   "geom79": [
+    28.49,
+    "geom62"
+   ],
+   "geom80": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "tag_image_x_norm": {
+   "tag_l": 0.5756407470081023,
+   "tag_r": -0.22554635477022245
+  },
+  "tag_ids": {
+   "tag_l": 1,
+   "tag_r": 0
+  },
+  "side_for_finger": {
+   "l": "right",
+   "r": "left"
+  },
+  "flange_to_tcp_m": 0.2358809492390661,
+  "dy": {
+   "l": 0.008703774196585398,
+   "r": 0.00813466532297967
+  },
+  "tcp_residual_mm": [
+   -9.310923837138127e-23,
+   4.43680286607572e-06
+  ],
+  "pad_offset_m": 0.0,
+  "tag_sep_closed_m": 0.040577038079500125
+ },
+ "L0.1": {
+  "gap0.0": {
+   "finger_adapter_l": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_l": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "finger_holder_l": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "finger_adapter_r": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_r": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "finger_holder_r": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    -7.47,
+    "geom62"
+   ],
+   "geom79": [
+    28.49,
+    "geom62"
+   ],
+   "geom80": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "gap0.08": {
+   "finger_adapter_l": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_l": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "finger_holder_l": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "finger_adapter_r": [
+    -7.47,
+    "geom62"
+   ],
+   "pad_r": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "finger_holder_r": [
+    10000000000000.0,
+    "geom59"
+   ],
+   "geom65": [
+    -7.47,
+    "geom62"
+   ],
+   "geom66": [
+    28.49,
+    "geom62"
+   ],
+   "geom67": [
+    -7.47,
+    "geom62"
+   ],
+   "geom78": [
+    -7.47,
+    "geom62"
+   ],
+   "geom79": [
+    28.49,
+    "geom62"
+   ],
+   "geom80": [
+    -7.47,
+    "geom62"
+   ]
+  },
+  "tag_image_x_norm": {
+   "tag_l": 0.5756407470081013,
+   "tag_r": -0.22554635477022206
+  },
+  "tag_ids": {
+   "tag_l": 1,
+   "tag_r": 0
+  },
+  "side_for_finger": {
+   "l": "right",
+   "r": "left"
+  },
+  "flange_to_tcp_m": 0.3158809492390659,
+  "dy": {
+   "l": 0.008703774196585398,
+   "r": 0.00813466532297967
+  },
+  "tcp_residual_mm": [
+   -9.310923837138127e-23,
+   4.43680286607572e-06
+  ],
+  "pad_offset_m": 0.0,
+  "tag_sep_closed_m": 0.040577038079500125
+ }
+}

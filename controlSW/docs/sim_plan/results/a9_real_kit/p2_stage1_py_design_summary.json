@@ -1,0 +1,193 @@
+{
+ "schema": "stage1_design/v1",
+ "rows": [
+  {
+   "robot": "panda",
+   "extension_m": 0.0,
+   "camera_side": "+y",
+   "finger_mode": "kit",
+   "swept_key": "adapter_length_m",
+   "swept_value": 0.008,
+   "flange_to_tip_m": 0.22388094923906615,
+   "n_feasible": 41,
+   "n_feasible_dq_ok": 7,
+   "peak_dq_ratio_median": 2.9705597143498723,
+   "n_demos": 45,
+   "worst_tooling_clearance_m": -0.017266981953386717,
+   "worst_tooling_clearance_feasible_m": 0.0686074008530283,
+   "worst_joint_margin_feasible_deg": 10.549685590093915,
+   "worst_joint_margin_all_demos_deg": 1.1459155902616476,
+   "clamp_fraction": 0.08259090727756883,
+   "time_above_vmax_fraction": 0.04981091119233929,
+   "tcp_time_above_vmax_fraction": 0.07609495140717094,
+   "n_demos_over_cone": 37,
+   "cone_violation_fraction_mean": 0.2442636783624292,
+   "cone_max_angle_deg": 86.21542807302512,
+   "cone_max_deg": 60.0,
+   "n_demos_outside_box": 45,
+   "gates": {
+    "cone": false,
+    "box": false
+   },
+   "slowdown_mean": 0.9998570130267622,
+   "slowdown_max": 1.0,
+   "placement": {
+    "gx": 0.39999999999999997,
+    "gy": 0.1333333333333333,
+    "yaw_deg": 315.0
+   },
+   "wall_s": 1493.5
+  },
+  {
+   "robot": "panda",
+   "extension_m": 0.0,
+   "camera_side": "+y",
+   "finger_mode": "kit",
+   "swept_key": "adapter_length_m",
+   "swept_value": 0.02,
+   "flange_to_tip_m": 0.2358809492390661,
+   "n_feasible": 39,
+   "n_feasible_dq_ok": 8,
+   "peak_dq_ratio_median": 2.972054651870177,
+   "n_demos": 45,
+   "worst_tooling_clearance_m": 0.024726107175007405,
+   "worst_tooling_clearance_feasible_m": 0.08006067261922045,
+   "worst_joint_margin_feasible_deg": 10.000000000000002,
+   "worst_joint_margin_all_demos_deg": 1.1459155902616476,
+   "clamp_fraction": 0.08123455687924198,
+   "time_above_vmax_fraction": 0.04945986728137543,
+   "tcp_time_above_vmax_fraction": 0.07609495140717094,
+   "n_demos_over_cone": 37,
+   "cone_violation_fraction_mean": 0.2442636783624292,
+   "cone_max_angle_deg": 86.21542807302512,
+   "cone_max_deg": 60.0,
+   "n_demos_outside_box": 45,
+   "gates": {
+    "cone": false,
+    "box": false
+   },
+   "slowdown_mean": 0.9998570130267622,
+   "slowdown_max": 1.0,
+   "placement": {
+    "gx": 0.3,
+    "gy": 0.4,
+    "yaw_deg": 0.0
+   },
+   "wall_s": 1390.0
+  },
+  {
+   "robot": "panda",
+   "extension_m": 0.0,
+   "camera_side": "+y",
+   "finger_mode": "kit",
+   "swept_key": "adapter_length_m",
+   "swept_value": 0.035,
+   "flange_to_tip_m": 0.250880949239066,
+   "n_feasible": 36,
+   "n_feasible_dq_ok": 5,
+   "peak_dq_ratio_median": 3.279205941928123,
+   "n_demos": 45,
+   "worst_tooling_clearance_m": 0.09120852817652525,
+   "worst_tooling_clearance_feasible_m": 0.09456812949377731,
+   "worst_joint_margin_feasible_deg": 10.000000000000002,
+   "worst_joint_margin_all_demos_deg": 1.1459155902616476,
+   "clamp_fraction": 0.08001041297505548,
+   "time_above_vmax_fraction": 0.04892630860624107,
+   "tcp_time_above_vmax_fraction": 0.07609495140717094,
+   "n_demos_over_cone": 37,
+   "cone_violation_fraction_mean": 0.2442636783624292,
+   "cone_max_angle_deg": 86.21542807302512,
+   "cone_max_deg": 60.0,
+   "n_demos_outside_box": 45,
+   "gates": {
+    "cone": false,
+    "box": false
+   },
+   "slowdown_mean": 0.9998570130267622,
+   "slowdown_max": 1.0,
+   "placement": {
+    "gx": 0.39999999999999997,
+    "gy": 0.4,
+    "yaw_deg": 0.0
+   },
+   "wall_s": 871.6
+  },
+  {
+   "robot": "panda",
+   "extension_m": 0.0,
+   "camera_side": "+y",
+   "finger_mode": "kit",
+   "swept_key": "adapter_length_m",
+   "swept_value": 0.05,
+   "flange_to_tip_m": 0.265880949239066,
+   "n_feasible": 38,
+   "n_feasible_dq_ok": 2,
+   "peak_dq_ratio_median": 2.3626949073972585,
+   "n_demos": 45,
+   "worst_tooling_clearance_m": -0.039580681735644975,
+   "worst_tooling_clearance_feasible_m": 0.08099600799663047,
+   "worst_joint_margin_feasible_deg": 10.200951910113938,
+   "worst_joint_margin_all_demos_deg": 1.1459155902616476,
+   "clamp_fraction": 0.07898382604666847,
+   "time_above_vmax_fraction": 0.04852556986941396,
+   "tcp_time_above_vmax_fraction": 0.07609495140717094,
+   "n_demos_over_cone": 37,
+   "cone_violation_fraction_mean": 0.2442636783624292,
+   "cone_max_angle_deg": 86.21542807302512,
+   "cone_max_deg": 60.0,
+   "n_demos_outside_box": 45,
+   "gates": {
+    "cone": false,
+    "box": false
+   },
+   "slowdown_mean": 0.9998570130267622,
+   "slowdown_max": 1.0,
+   "placement": {
+    "gx": 0.39999999999999997,
+    "gy": 0.1333333333333333,
+    "yaw_deg": 315.0
+   },
+   "wall_s": 763.9
+  }
+ ],
+ "recommended": {
+  "extension_m": 0.0,
+  "camera_side": "+y",
+  "robot_agnostic": false,
+  "robot": "panda",
+  "robot_agnostic_rule": "every robot >= 95 % of the demos feasible with the same design",
+  "feasible_fraction_by_robot": {
+   "panda": 0.9111111111111111
+  },
+  "per_robot_best": {
+   "panda": {
+    "extension_m": 0.0,
+    "camera_side": "+y",
+    "finger_mode": "kit",
+    "swept_key": "adapter_length_m",
+    "swept_value": 0.008,
+    "flange_to_tip_m": 0.22388094923906615,
+    "n_feasible": 41,
+    "n_feasible_dq_ok": 7,
+    "worst_joint_margin_feasible_deg": 10.549685590093915,
+    "worst_joint_margin_all_demos_deg": 1.1459155902616476,
+    "worst_tooling_clearance_m": -0.017266981953386717,
+    "clamp_fraction": 0.08259090727756883,
+    "placement": {
+     "gx": 0.39999999999999997,
+     "gy": 0.1333333333333333,
+     "yaw_deg": 315.0
+    }
+   }
+  },
+  "finger_mode": "kit",
+  "swept_key": "adapter_length_m",
+  "swept_value": 0.008,
+  "flange_to_tip_m": 0.22388094923906615,
+  "flange_to_tip_m_by_robot": {
+   "panda": 0.22388094923906615
+  },
+  "adapter_length_m": 0.008
+ },
+ "wall_s": 4519.5
+}

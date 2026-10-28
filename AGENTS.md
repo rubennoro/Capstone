@@ -10,16 +10,21 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-27)
+## Current state (2026-10-28)
 
 - **Franka simulation evaluator: all 19 phases built and committed; W10 end-to-end verification run (all but the
-  viewer).** Resume from [controlSW/docs/sim_plan/STATUS.md](controlSW/docs/sim_plan/STATUS.md).
+  viewer); A9 finger kit built and reviewed.** Resume from [controlSW/docs/sim_plan/STATUS.md](controlSW/docs/sim_plan/STATUS.md);
+  open work in order: [controlSW/docs/sim_plan/TODO.md](controlSW/docs/sim_plan/TODO.md).
   - Branch `sim-eval` (local; `origin/sim-eval` is at `3bfadbf`) now holds everything.
     - `sim-eval-w10b` was brought in commit by commit on 2026-10-27, and its worktree can be removed.
-  - **A9 finger kit (2026-10-27):** finger modes `stock | box | kit`, set by `tooling.finger_adapter.mode`.
-    - Docs: `controlSW/franka_sim/docs/finger_model.md`.
-    - Review FIX open: kit masses, camera-check tag ids.
-    - The real UMI finger kit from the user's Onshape STLs is built but still in the scratchpad.
+  - **A9 finger kit (2026-10-27/28):** finger modes `stock | box | kit`, set by `tooling.finger_adapter.mode`. Box stays the default.
+    - Docs: `controlSW/franka_sim/docs/finger_model.md` (section 7 = real-kit evidence).
+    - The real kit `iphumi_umi_soft_v1` (from the user's Onshape STLs) is in `franka_sim/franka_sim/assets/finger_kits/`, opt-in.
+    - Review 2 (`phases/A9.REVIEW2.md`) is FIX:
+      - placement and Stage 1 pass (8 mm adapter, phone −y, 43/45, +39 mm clearance);
+      - the camera check fails: the kit's tags sit 23 mm too far inward per side, which needs a measurement of the real gripper;
+      - Stage 1b regresses: 9/45 lifts vs 36/45 for box.
+    - The user stopped here on 2026-10-28: the findings are in the sim TODO, not fixed.
   - Covers: station configs, MuJoCo Panda + Franka Hand + printed fingers + phone/rig mount, SimCore/MuJoCo arm
     and hand, scene + ground truth, renderer, wireless sensor path, eval runner with Stages 1/1b/2a/2b/3, judge,
     sweeps, hardware-day tools. `python -m franka_sim eval --profile sim-iphone --stage all --out DIR`.
@@ -27,8 +32,8 @@ Running status between working sessions. Update it at the end of each conversati
   - Verified 2026-10-26/27: suites + regression guard green; Stages 1-2b on iPhone and rig; bp_run001 passes the
     policy contract and runs closed loop on the laptop GPU (fails tracking/obs-motion gates, 0/1 success); smoke sweep
     works. FAILs are findings (2 infeasible demos, the 60 deg bridge cone/box clamps refuse every sim-rig 1b start).
-  - Waiting on the user: confirm fingers +10 cm / phone -y (tooling YAMLs still stock); cone/workspace box; how
-    1b/2a gates treat infeasible demos; merge. Not yet run: the viewer (needs a display).
+  - Waiting on the user: D9 (box +10 cm or the real kit at 8 mm, phone -y; tooling YAMLs still extension 0 / +y);
+    cone/workspace box; how 1b/2a gates treat infeasible demos; merge. Not yet run: the viewer (needs a display).
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -77,8 +82,9 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-- **First:** A9 fixes, the real kit into `assets/finger_kits/`, and the real-kit checks. Also confirm the cone/workspace box.
-  Then continue from `controlSW/docs/sim_plan/STATUS.md` ("Next actions").
+- **First:** work through `controlSW/docs/sim_plan/TODO.md`:
+  - section 1: the finger kit. It starts with measuring the real gripper's tags, then the 1b regression.
+  - section 2: the decisions: D9, the cone/workspace box, the infeasible-demo gates, push.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: gripper actuator; buy cameras (B0180 + 2.1 mm main lens; B0179 175° ultrawide, IR-cut version: decided 2026-10-19); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.

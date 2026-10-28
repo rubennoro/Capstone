@@ -27,7 +27,7 @@ Source tags: `A9.md` = `controlSW/docs/sim_plan/phases/A9.md`; `A9c.WORKLOG` ste
 |---|---|---|---|---|
 | `stock` | Unmodified menagerie fingers, all stock fingertip pad collisions on. No adapter, no printed parts. `fingertip_pad_collision_1` of each finger is renamed `pad_l`/`pad_r` so scene and campaign code resolves the pads (`model.py` `_stock_fingers`, A9c.WORKLOG step 10). | midpoint of the two stock pad centres, `tcp_at = "stock_pads"` | none | grasp physics and reach comparison only. **Not vision-equivalent** (no tags in the images). |
 | `box` (default) | Stock finger collisions off where they would intrude; two rigid box pads `pad_l/pad_r` (20 x 8 x 30 mm) at `extension_m`, tag patches at fitted offsets (`model.py` box branch of build_model step 3). | midpoint of the pad centres, `tcp_at = "pad_centre"` | fitted patches (section 6) | everything today; byte-identical to before A9 (section 5.1) |
-| `kit` | STL finger kit (`finger_kit/v1`): TPU finger as one mesh geom `pad_{l,r}`, UMI holder as `finger_holder_{l,r}`, placeholder adapter block `finger_adapter_{l,r}`, tags from the kit's frames (`model.py` `_mount_kit`). | midpoint of the two kit `tip` points, `tcp_at = "tip"` | from CAD frames | the target configuration; **no real kit exists yet** |
+| `kit` | STL finger kit (`finger_kit/v1`): TPU finger as one mesh geom `pad_{l,r}`, UMI holder as `finger_holder_{l,r}`, placeholder adapter block `finger_adapter_{l,r}`, tags from the kit's frames (`model.py` `_mount_kit`). | midpoint of the two kit `tip` points, `tcp_at = "tip"` | from CAD frames | the target configuration. The real kit `iphumi_umi_soft_v1` (from the user's Onshape STLs) is shipped and opt-in; it fails the camera acceptance test P1 (section 7), so it is **not** the default |
 
 Kit variants (`kit_variant`): `full` (soft finger + holder, tags) and `finger_only` (soft fingers only, defined in
 the kit's `kit.yaml` under `variants`). Both now work (A9c.WORKLOG step 11 had `finger_only` raising; D1 implemented it afterwards). A tag whose carrier
@@ -56,7 +56,7 @@ finger_adapter:
 --set tooling.finger_adapter.kit_variant=finger_only
 ```
 
-(the path under `kit:` above is illustrative: no kit directory is shipped yet.) `mode: kit` with `kit: null` is an error;
+(the real kit is `kit: franka_sim/franka_sim/assets/finger_kits/iphumi_umi_soft_v1`, `kit_sha256: 1e7778bcec2b1287387275c9d18839e6d7e5cab999b57432ca6442fc8e0f34d4`, with `adapter_length_m >= 0.008` and `tooling.tcp_x_along_hand: -y`.) `mode: kit` with `kit: null` is an error;
 `kit` set with `mode: box|stock` logs one line `finger_adapter.kit is set but mode=<m>: kit ignored` and records
 `info["finger_kit_ignored"]` (`model.py` build_model step 3, A9f.REVIEW). Both YAMLs currently carry `mode: box`, `kit: null`.
 
@@ -105,7 +105,7 @@ Full chain: `body_T_kit = J . J_T_M . inv(kit_T_M)` (`finger_kit.py:1-24`). Only
   fingers" (`compute_iphone15pro_calibration.py:8`). The kit mode follows it literally (fingertip, mid-gap). Box mode puts the
   TCP at the pad centre, 15 mm higher; the camera calibration `C_T_TCP` (section 4) is fixed relative to the TCP, so this
   difference moves the camera in the sim by the same amount. Unverified: which of the two matches the real iPhUMI mount to
-  the millimetre (see pending item P1).
+  the millimetre: P1 (section 7) failed on the tag positions of the real kit, so this is still open.
 - **Tags:** in kit mode a tag is the kit's centre, normal (out of the tag face, toward the camera), up, id and size, placed as
   `tag_{l,r}` (white, 1 mm thick, centre lifted 0.5 mm off the surface) and `tag_{l,r}_ink` (black, 0.6 x size, 0.1 mm proud
   of the white) (`model.py` `_mount_kit`, `finger_kit.py:41`). Box mode places them with the fitted offsets (next section).
@@ -162,7 +162,7 @@ Two different "widths" must not be mixed up: the **training width** (0.0431 m at
 the data) and the **pad offset** (8 mm box placeholder, a geometric gap between pad faces). the `PAD_OFFSET_M` comment in `model.py` records
 the earlier mistake of tying them together.
 
-## 5. Validation evidence so far
+## 5. Validation evidence (synthetic kits; the real kit is in section 7)
 
 ### 5.1 Box mode byte identity (A9c.WORKLOG steps 1, 3, 6)
 
@@ -230,7 +230,7 @@ Scripted pick with the stock pads (contact parameters from `grip_contact()`): 2 
 |---|---|---|
 | **Rigid TPU.** The soft finger is a convex hull with stiff contact (solref 0.002 s), friction a placeholder. | 1b, 3 (grasp) | A real soft finger conforms, spreads the load and tolerates more width error; the sim grasp is stricter on pad alignment and has no compliance in squeeze. Lift success is not calibrated against real TPU. Magnitude: unknown (**unverified**). |
 | **Single-point mesh contact** (MuJoCo mesh-vs-box). Fixed by MULTICCD in kit mode only. | 1b, 3 (kit) | After the fix peak force 5.0-6.2 N vs 5.1 N for box (section 5.5). Box mode is not changed so its contacts are as before. MULTICCD costs run time (unmeasured). |
-| **Placeholder adapter block** (length, section, yaw, lateral offset). | 1 (phone reach), 1b, 3 | Finger length sets how far the phone sits from the arm. Stage 1 gave +10 cm for box fingers (42/45 demos on the Panda). The real adapter's length changes `flange_to_tip_m` and so the whole 1/1b result; **Stage 1 must be re-run** (P2). |
+| **Placeholder adapter block** (length, section, yaw, lateral offset). | 1 (phone reach), 1b, 3 | Finger length sets how far the phone sits from the arm. Stage 1 gave +10 cm for box fingers (43/45 demos on the Panda). With the real kit, Stage 1 recommends L = 0.008 m (the kit minimum), flange_to_tip 0.2239 m, 43/45 (P2, section 7). The adapter CAD should be designed to that length. |
 | **J from the menagerie mesh, not Franka's finger-interface drawing.** | all kit results | A footprint error of a few tenths of a mm shifts the pad position by the same amount. Confirm on hardware day. Magnitude **unverified**. |
 | **Friction placeholder.** | 1b, 3 | Eraser holds in sim with friction 1.0 and 30 N; the real margin is unknown. |
 | **Stock mode has no tags.** | 2a, 2b, 3 (anything that reads images) | The policy cannot run in stock mode with a faithful image. Use stock only for reach and grasp-physics comparisons. |
@@ -241,23 +241,28 @@ Scripted pick with the stock pads (contact parameters from `grip_contact()`): 2 
 | **Stage 1b today** (box, +10 cm, `-y`): 3/43 demos within the tracking criterion at 0.5 speed, 36/45 reached the lift (ground-truth success) | 1b | The campaign is an arm-dynamics and speed-clamp result more than a finger result (most failures are `safety_clamp`); do not read finger accuracy from it. `controlSW/docs/sim_plan/results/stage1b/campaign.txt`. The 36/45 figure also appears in the plan file. |
 | **Training-camera link `C_T_TCP` copied** for the 16 Pro and the Jetson rig. | CC, 2, 3 | The camera position relative to the TCP is assumed equal to the iPhone 15 Pro mount (`gripper_calibration.yaml:12`); the rig value is a copy to be measured. |
 
-## 7. Pending evidence (needs the real STLs)
+## 7. Real-kit evidence (`iphumi_umi_soft_v1`, A9.REVIEW2, 2026-10-28)
 
 Acceptance thresholds are from `A9.md` and the plan file `/home/ruben/.claude/plans/pasted-content-id-b776-1-the-sprightly-cloud.md`
-section "Verification". None of these has been run.
+section "Verification". All runs: Panda, sim-iphone, dataset firstreal-single. Review: `controlSW/docs/sim_plan/phases/A9.REVIEW2.md`;
+evidence (JSON/txt): `controlSW/docs/sim_plan/results/a9_real_kit/`.
 
-| # | Check | Acceptance threshold | State |
+| # | Check | Acceptance threshold | Result |
 |---|---|---|---|
-| P0 | Placement: `finger-kit check` and `show` on the real kit | tags face the camera, ids 0 and 1 on the expected image sides; fingers touch at gap 0 (`auto_dy`); no kit geom intersects the Hand body at gap 0 or 0.08 | pending (kit not delivered; CLI by D2) |
-| P1 | camera-check with the real kit, no tag fitting (`python -m franka_sim camera-check --zarr $ZARR --stage1 S1/stage1.json --out DIR`) | tag pixel error p50 <= today's fitted result (holdout main 6.6 px / UW 9.0 px); real vs sim tag separation within a few mm; TCP-to-tag z offset about 0.098 m (`artag_z_distance_from_ultrawide`) | pending. This is the acceptance test that the CAD placement matches the training geometry. |
-| P2 | Stage 1 re-run on the Panda over `adapter_length_m` x camera side | new recommended adapter length; `flange_to_tip_m` compared to the old +10 cm box result (0.1973 m flange to TCP) | pending (D3 prepares the sweep) |
-| P3 | Stage 1b campaign with the real kit (about 1 h) | grasp gap for the eraser about 0.020 m (training width 0.063); lift count compared to 36/45 | pending |
-| P4 | Gates | franka_sim and franka_deploy suites, `scripts/regression/check_protected.sh`, `test_iphone_deploy_unchanged.py` | per-piece reviewers passed their parts; final integration review pending (`A9.REVIEW.md`) |
-| P5 | Confirm J against Franka's finger-interface drawing | hardware day | pending |
-| P6 | Measure TPU friction, a real TCP (`C_T_TCP` for the rig), adapter dimensions | replace placeholders in the YAML provenance | pending |
+| P0 | Placement: `finger-kit check` and `show` (L 0 / 0.008 / 0.10) | tags face the camera, ids 0 and 1 on the expected image sides; fingers touch at gap 0 (`auto_dy`); no kit geom intersects the Hand | **PASS at L >= 0.008.** Fingers parallel to hand z, touching at gap 0 (auto dy 8.13 / 8.70 mm, TCP residual 4e-6 mm); tags on the holder tops facing the phone, id 0 image-left. Holder vs Hand hull -7.39 mm at L 0 (the stock finger itself is -7.47), +0.61 mm at L 0.008: the kit minimum is about 0.0074 m. |
+| P1 | camera-check, demos 10, 20, 30, 39, 42, no tag fitting | tag pixel error p50 <= the fitted box result (6.56 / 9.00 px on the same demos); tag separation within a few mm; camera-to-tag z about 0.098 m | **FAIL.** p50 56.6 / 47.5 px. Sim tags sit 23 mm too far inward per side (closed separation 40.6 mm in the kit vs about 88 mm in the training data, a constant offset over widths 49-79 mm) and about 8 mm too close in depth (sim 96.7 mm). Pairing by id works: a kit with swapped ids fails at about 200 px. Cause: the kit.yaml tag centres (on the engraved outline of this Onshape assembly) do not match the training gripper; needs a measurement (see the sim TODO). |
+| P2 | Stage 1, 45 demos, `adapter_length_m` x camera side | recommended adapter length; compare with box +10 cm (43/45, +23.8 mm, flange_to_tip 0.2123 m) | **PASS.** `-y`: L 0.008 43/45, clearance +38.8 mm (flange_to_tip 0.2239 m); 0.02 43/45 +46.3; 0.035 43/45 +55.2; 0.05 42/45. `+y` is worse at every L (36-41/45). Recommended: **L = 0.008 m, phone on -y**. Infeasible demos as box: 18 (collision), 32 (unreachable). |
+| P3 | Stage 1b campaign at L 0.008, `-y`, speed 0.5 | grasp gap about 0.020 m; lifts compared with box 36/45 | **FAIL (regression).** Grasp gap p50 0.0196 m (as expected), but lifts 9/45 vs 36/45, reflex runs 40/45 (most within 2 s of grasp start), pad-table contacts 35/175 with force (p50 4.3 N). A scripted straight-down pick lifts 5/5, so the MULTICCD contact fix holds on the real mesh; the failures come from replayed demo approaches (tilt plus 10-15 mm tracking error) with the tip at 5 mm and 26 mm wide tips. A 1b run in parallel with other heavy jobs is invalid (render fps preflight faults): run it on an idle machine. |
+| P4 | Gates | franka_sim and franka_deploy suites, `check_protected.sh`, `test_iphone_deploy_unchanged.py` | **PASS** (franka_deploy 488 passed; franka_sim green, with 9 load-induced preflight failures that pass rerun alone; regression guard PASS). A9.REVIEW2 Part 3 |
+| P5 | Confirm J against Franka's finger-interface drawing | hardware day | open |
+| P6 | Measure TPU friction, weigh the printed parts, a real TCP (`C_T_TCP` for the rig), adapter dimensions | replace placeholders in the YAML provenance | open |
 
-Until P1 passes, nothing in the kit mode is claimed to reproduce the training images; until the real kit replaces the box fingers
-in the tooling YAML (gated on the final reviewer), `mode: box` stays the default.
+Also from A9.REVIEW2: the kit masses reach the finger bodies (0.1178 kg each at L 0.008, checked against MuJoCo's own mesh
+inertia). The configured `payload.mass_kg` 1.15 kg is about 0.115 kg below the modelled payload with the kit (the sim compensates
+gravity from the model masses, so only the report and the real robot use it); raise it to about 1.27 kg when the kit becomes the default.
+
+Until P1 passes, nothing in the kit mode is claimed to reproduce the training images, and `mode: box` stays the default in both
+tooling YAMLs.
 
 ## 8. Generated numbers
 
@@ -265,7 +270,7 @@ The tables below are produced by the tooling, not typed. Regenerate with
 `python -m franka_sim finger-kit report --profile sim-iphone [--set ...] --out DIR` and paste `finger_report.md` between the markers.
 
 <!-- BEGIN finger-kit report: python -m franka_sim finger-kit report --profile sim-iphone --out DIR -->
-Run on 2026-10-27, profile sim-iphone, panda, with the working tree of that day. The kit is the throwaway box-equivalent kit from `make_box_kit` in `$S/d4/kit` (id `box_equivalent`, pinned with `finger-kit pin`), not a real finger. Long paths in the overrides are shortened. Rows `mount_mass_kg`, stock `friction` and `flange_to_mesh_tip_m` and the stock `flange_to_tip_m` label were updated by hand after A9h2 changed the report (regenerate to confirm).
+Run on 2026-10-27, profile sim-iphone, panda, with the working tree of that day. The kit is the throwaway box-equivalent kit from `make_box_kit` in `$S/d4/kit` (id `box_equivalent`, pinned with `finger-kit pin`), not a real finger. Long paths in the overrides are shortened. Rows `mount_mass_kg`, stock `friction` and `flange_to_mesh_tip_m` and the stock `flange_to_tip_m` label were updated by hand after A9h2 changed the report; A9.REVIEW2 regenerated all four blocks and they are byte-identical.
 
 #### (a) box mode (default)
 

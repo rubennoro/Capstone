@@ -1,0 +1,186 @@
+{
+ "box_ext0.10": [
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.1,
+   "F_peak_xyz": [
+    2.1,
+    5.8,
+    6.1,
+    1.3,
+    0.4,
+    0.1
+   ],
+   "slip_m": 0.0,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "pad_l|eraser": 3,
+    "pad_r|eraser": 4
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.2,
+   "F_peak_xyz": [
+    1.7,
+    6.0,
+    6.2,
+    1.3,
+    0.3,
+    0.1
+   ],
+   "slip_m": 0.0,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "pad_l|eraser": 4,
+    "pad_r|eraser": 3
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.2,
+   "F_peak_xyz": [
+    1.5,
+    6.0,
+    6.2,
+    1.3,
+    0.3,
+    0.1
+   ],
+   "slip_m": 0.0,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "pad_l|eraser": 3,
+    "pad_r|eraser": 4
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.2,
+   "F_peak_xyz": [
+    1.4,
+    6.0,
+    6.2,
+    1.3,
+    0.3,
+    0.1
+   ],
+   "slip_m": 0.0,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "pad_l|eraser": 4,
+    "pad_r|eraser": 3
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.0,
+   "F_peak_xyz": [
+    2.1,
+    5.7,
+    6.0,
+    1.3,
+    0.4,
+    0.1
+   ],
+   "slip_m": 0.0,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "pad_l|eraser": 4,
+    "pad_r|eraser": 3
+   }
+  }
+ ],
+ "realkit_L0.008": [
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.5,
+   "F_peak_xyz": [
+    2.0,
+    6.2,
+    6.5,
+    1.5,
+    0.4,
+    0.1
+   ],
+   "slip_m": 2e-05,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "eraser|pad_l": 4,
+    "eraser|pad_r": 4
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 6.5,
+   "F_peak_xyz": [
+    1.6,
+    6.3,
+    6.5,
+    1.5,
+    0.3,
+    0.1
+   ],
+   "slip_m": 2e-05,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "eraser|pad_l": 4,
+    "eraser|pad_r": 4
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 8.6,
+   "F_peak_xyz": [
+    1.8,
+    8.4,
+    8.6,
+    2.0,
+    0.3,
+    0.1
+   ],
+   "slip_m": 2e-05,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "eraser|pad_l": 4,
+    "eraser|pad_r": 4
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 8.6,
+   "F_peak_xyz": [
+    1.7,
+    8.4,
+    8.6,
+    2.0,
+    0.3,
+    0.1
+   ],
+   "slip_m": 2e-05,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "eraser|pad_l": 4,
+    "eraser|pad_r": 4
+   }
+  },
+  {
+   "success": true,
+   "grasp_Fz_peak_N": 8.5,
+   "F_peak_xyz": [
+    2.6,
+    8.1,
+    8.5,
+    1.9,
+    0.6,
+    0.2
+   ],
+   "slip_m": 2e-05,
+   "reason": "lift_held",
+   "pad_contacts_last": {
+    "eraser|pad_l": 4,
+    "eraser|pad_r": 4
+   }
+  }
+ ]
+}

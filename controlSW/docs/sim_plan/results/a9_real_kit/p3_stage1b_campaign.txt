@@ -1,0 +1,53 @@
+Stage 1b campaign (sim_campaign/v1), profile sim-iphone, robot panda, fingerprint 316b48cd6f232d2c
+overrides: tooling.finger_adapter.kit=franka_sim/franka_sim/assets/finger_kits/iphumi_umi_soft_v1 tooling.finger_adapter.kit_sha256=1e7778bcec2b1287387275c9d18839e6d7e5cab999b57432ca6442fc8e0f34d4 tooling.finger_adapter.lateral_offset_m=auto tooling.finger_adapter.mode=kit tooling.finger_adapter.adapter_length_m=0.008 tooling.tcp_x_along_hand=-y tooling.F_T_TCP=[[-0.707106756, 0.707106806, 0.0, 0.0], [-0.707106806, -0.707106756, 0.0, 0.0], [0.0, 0.0, 1.0, 0.223880949], [0.0, 0.0, 0.0, 1.0]]
+criteria.stage1b: {"track_pos_m": 0.01, "track_rot_deg": 3, "track_ok_fraction_min": 0.9, "reflex_max": 0}; v_max 0.25 m/s; grasp height scene (anchor dz -0.005 m); jobs 3
+
+speed    n  inf  faults  track_ok        p   ci95            reflex(runs/total)  pad_table(runs/total)  gt_success  clamps  run_s(med)
+  0.5   45    2       0    7/43    0.163 [0.081, 0.300]      40/40               35/175              9/45      218   143.5
+
+run       demo  s1_feas  track   pos_p95mm  rot_p95deg  lag_s  reflex  pad_tbl  gt   grasp_s  F_ext_max  cause
+d00_s0.5     0  y        0.484       14.3        3.78   0.09       1        7  n    17.6964       15.4  reflex
+d01_s0.5     1  y        0.704       10.7        3.21   0.12       1        9  n    22.2996        3.9  reflex
+d02_s0.5     2  y        0.000       37.2        9.62   0.10       0        6  y    19.7721        8.5  safety_clamp
+d03_s0.5     3  y        0.880        9.9        2.61   0.10       1        3  n    16.1514        9.5  reflex
+d04_s0.5     4  y        0.000       15.5        4.13   0.12       1        5  n     18.606       31.8  reflex
+d05_s0.5     5  y        1.000        7.4        2.21   0.13       1        2  n    21.5184       14.6  reflex
+d06_s0.5     6  y        0.584       18.0        3.45   0.06       1        0  n    17.0027       10.8  reflex
+d07_s0.5     7  y        0.000       27.5        7.33   0.09       0        5  y    17.2893        4.3  safety_clamp
+d08_s0.5     8  y        0.000       38.5        9.92   0.00       1        4  n    16.3799        7.8  reflex
+d09_s0.5     9  y        0.000       30.9        7.94   0.04       1        7  n          -       51.5  reflex
+d10_s0.5    10  y        0.600       15.1        2.16   0.12       1        0  n    16.7702       29.4  reflex
+d11_s0.5    11  y        0.000       35.5        9.09   0.00       1        5  n    15.5398        9.4  reflex
+d12_s0.5    12  y        0.592       13.2        3.39   0.03       1        6  n    14.4092        7.5  reflex
+d13_s0.5    13  y        0.984        8.5        2.38   0.06       1        2  n    16.2218        3.7  reflex
+d14_s0.5    14  y        1.000        7.2        2.18   0.10       1        5  y    14.0233       10.9  reflex
+d15_s0.5    15  y        0.224       17.9        4.71   0.16       1        0  n    16.4945        7.4  reflex
+d16_s0.5    16  y        1.000        6.7        1.82   0.11       1        3  n    16.5917       15.1  reflex
+d17_s0.5    17  y        1.000        7.0        1.85   0.13       1        3  n    18.0945        7.6  reflex
+d18_s0.5    18  n        0.000       32.5        8.67   0.24       1        0  n          -       10.1  reflex
+d19_s0.5    19  y        0.388       16.6        2.44   0.13       1        0  n    16.5951       12.0  reflex
+d20_s0.5    20  y        0.976        8.4        2.06   0.12       1        2  n    14.6867       19.3  reflex
+d21_s0.5    21  y        0.008       29.0        7.35   0.10       1        9  y    12.0149        7.9  reflex
+d22_s0.5    22  y        0.488       16.2        3.18   0.06       1        0  n    14.1698       22.7  reflex
+d23_s0.5    23  y        0.832       10.1        2.51   0.07       1        4  n    16.0143       22.6  reflex
+d24_s0.5    24  y        0.664       11.1        2.52   0.11       1        1  n          -        6.9  reflex
+d25_s0.5    25  y        0.520       10.9        2.62   0.08       1        9  y    12.5466       14.5  reflex
+d26_s0.5    26  y        0.612       10.9        2.55   0.10       1       12  y    13.2206       19.7  reflex
+d27_s0.5    27  y        0.064       21.2        5.45   0.05       1        4  n    15.1877       10.8  reflex
+d28_s0.5    28  y        0.000       35.7        9.33   0.02       1        0  n    13.9515       27.5  reflex
+d29_s0.5    29  y        0.000       16.2        4.17   0.11       1        3  n    14.0941        4.6  reflex
+d30_s0.5    30  y        0.316       17.3        4.44   0.06       1        6  n    13.3249        6.1  reflex
+d31_s0.5    31  y        0.204       13.8        3.76   0.06       1        1  n          -       13.6  reflex
+d32_s0.5    32  n        0.000      163.1        3.27   0.18       0        3  n          -       19.0  safety_clamp
+d33_s0.5    33  y        0.772       10.6        2.95   0.09       1        9  y     13.075       13.2  reflex
+d34_s0.5    34  y        0.492       15.7        2.16   0.08       1        0  n    12.9939       29.2  reflex
+d35_s0.5    35  y        0.936        9.2        2.12   0.10       1        3  n     14.773        8.2  reflex
+d36_s0.5    36  y        0.052       32.3        8.12   0.02       1        0  n    14.0072       29.5  reflex
+d37_s0.5    37  y        0.000       45.0       11.69   0.07       1        4  n    11.1923        9.0  reflex
+d38_s0.5    38  y        0.000       50.6       19.92   0.07       0        9  y    12.3637       13.9  safety_clamp
+d39_s0.5    39  y        0.068       83.9       21.63   0.08       1        4  n     12.184        4.1  reflex
+d40_s0.5    40  y        0.080       66.3       17.12   0.05       1        5  n    10.2403       25.5  reflex
+d41_s0.5    41  y        0.000      137.6       25.04   0.07       0        0  n          -        3.0  safety_clamp
+d42_s0.5    42  y        0.028       73.2       18.75   0.04       1        6  n     12.449        6.1  reflex
+d43_s0.5    43  y        0.000       53.1       16.47   0.05       1        5  y    11.7365       10.7  reflex
+d44_s0.5    44  y        0.240       27.7        7.01   0.04       1        4  n    10.7856        5.2  reflex

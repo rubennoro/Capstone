@@ -1,6 +1,6 @@
-# Sim evaluator build: all phases built; W10 verification run except the viewer (2026-10-27). Resume here.
+# Sim evaluator build: all phases built; W10 verification run except the viewer; A9 finger kit built and reviewed (2026-10-28). Resume here.
 
-This is the one page to read before continuing. The approved plan is [PLAN.md](PLAN.md). Process rules, environments and carry-over notes are in [README.md](README.md) (its wave table has every commit). Cross-track contracts are in [INTERFACES.md](INTERFACES.md). Per-phase specs, worklogs and reviews are in `phases/`.
+This is the one page to read before continuing. The approved plan is [PLAN.md](PLAN.md). Process rules, environments and carry-over notes are in [README.md](README.md) (its wave table has every commit). Cross-track contracts are in [INTERFACES.md](INTERFACES.md). Per-phase specs, worklogs and reviews are in `phases/`. **Open work, in order: [TODO.md](TODO.md).**
 
 Branches, all local and **nothing pushed**:
 - **`sim-eval`** has everything: all phases, W10B, the W10 verification and fixes, and the A9 finger kit (2026-10-27).
@@ -9,19 +9,23 @@ Branches, all local and **nothing pushed**:
   - Taken as-is: the verification results, `cd2dac6`, `cca6efb`, `f112457`, and these docs.
   - The worktree can now be removed.
 
-## A9: plug-and-play finger kit (2026-10-27, on `sim-eval`)
+## A9: plug-and-play finger kit (2026-10-27/28, on `sim-eval`)
 
-- `tooling.finger_adapter.mode: stock | box | kit` (+ `kit_variant: full | finger_only`). Box stays the default. Spec: [phases/A9.md](phases/A9.md).
-- Model and justification: [../../franka_sim/docs/finger_model.md](../../franka_sim/docs/finger_model.md).
-- Final review: [phases/A9.REVIEW.md](phases/A9.REVIEW.md). Verdict FIX, with two open findings:
-  - the kit masses don't reach the finger bodies;
-  - camera-check pairs tags by image order, not by tag id.
-- The real kit was built from the user's Onshape STLs (UMI soft finger + holders). It is still in the scratchpad (`$S/a9e/`, the finger-centred `alt/` version), not yet in `assets/finger_kits/`.
+- `tooling.finger_adapter.mode: stock | box | kit` (+ `kit_variant: full | finger_only`). Box stays the default in both tooling YAMLs. Spec: [phases/A9.md](phases/A9.md).
+- Model and justification, with every number's source and the real-kit evidence: [../../franka_sim/docs/finger_model.md](../../franka_sim/docs/finger_model.md).
+- Review 1 ([phases/A9.REVIEW.md](phases/A9.REVIEW.md), FIX): kit masses never reached the dynamics, and camera-check paired tags by image order. Both are fixed in `01adc08`.
+- The real kit `iphumi_umi_soft_v1` (UMI soft finger + holders from the user's Onshape STLs, `kit_sha256` `1e7778bc…`) is in `franka_sim/franka_sim/assets/finger_kits/` and opt-in via `--set`.
+- Review 2 ([phases/A9.REVIEW2.md](phases/A9.REVIEW2.md), **FIX**, 2026-10-28), Panda, sim-iphone. Evidence in [results/a9_real_kit/](results/a9_real_kit/).
+  - P0 placement: **PASS** for L >= 0.008 m.
+  - P2 Stage 1: **PASS**, 43/45 at L 0.008 / -y, clearance +38.8 mm.
+  - P1 camera check: **FAIL**, tag p50 56.6 / 47.5 px vs 6.6 / 9.0 px for the fitted box. The kit tags sit 23 mm too far inward per side, which needs a measurement of the real gripper.
+  - P3 Stage 1b: **FAIL**, 9/45 lifts vs 36/45 for box, reflex in 40/45.
+- Stopped there on 2026-10-28 by the user: the findings are recorded in [TODO.md](TODO.md) section 1, not fixed.
 
 ## How to resume (copy into a new session)
 
 > Resume the Franka sim evaluator. Read `controlSW/docs/sim_plan/STATUS.md` first, then README.md and INTERFACES.md
-> in that folder. Continue from "Next actions" below (executor + reviewer agents for code changes, local commits,
+> in that folder. Continue from TODO.md (one executor per task, then one reviewer over all of them; local commits,
 > never push).
 
 ## Progress: 19 of 19 phases built and committed
@@ -51,31 +55,25 @@ Read: the stack runs end to end at the recommended design, with the real policy 
 |---|---|---|---|---|
 | Panda | stock | −y | 8 | −59 mm (hits) |
 | Panda | **+10 cm** | **−y** | **43** | **+24 mm** |
+| Panda | real kit, adapter 8 mm (tip 0.2239 m) | −y | 43 | +39 mm |
+| Panda | real kit, adapter 8 mm | +y | 41 | −17 mm (hits) |
 | FR3 | stock | −y | 27 | −62 mm (hits) |
 | FR3 | +10 cm | −y | 43 | +10 mm |
 
 The arm is the **Panda** (user decision 2026-10-27, on the advisor's recommendation): FR3 rows are for reference only.
 
-(These are 2026-10-26 numbers with the W10 TCP code. The 2026-10-18 sweep gave 42/43 and a full ext × side grid: see [results/stage1/](results/stage1/).)
+(Real-kit rows: A9.REVIEW2, 2026-10-28; adapter lengths 8-35 mm all give 43/45 on −y. The rest are 2026-10-26 numbers with the W10 TCP code. The 2026-10-18 sweep gave 42/43 and a full ext × side grid: see [results/stage1/](results/stage1/).)
 
 ## Decisions waiting on the user
 
-1. **Confirm the tooling design (D9):** printed fingers +10 cm, phone on −y. Then set `tooling.finger_adapter.extension_m: 0.10` and `tooling.tcp_x_along_hand: "-y"` in both tooling YAMLs (with provenance `decision`). Until then, default sim runs use the stock design and fail Stage 1.
+1. **Confirm the tooling design (D9):** phone on −y, with either box fingers +10 cm (`tooling.finger_adapter.extension_m: 0.10`) or the real kit at `adapter_length_m: 0.008` (only after TODO 1.1/1.2). Then set `tooling.tcp_x_along_hand: "-y"` too in both tooling YAMLs (provenance `decision`). Until then, default sim runs use extension 0 / +y and fail Stage 1.
 2. **Bridge cone (60°) and workspace box (placeholder):** they drive the iPhone 1b tracking FAILs and refuse every sim-rig 1b start (demos tilt 68-72°). Options: widen the cone for the rig/eval, give a measured workspace box, or let the campaign start inside the cone. Related: a refused start is filed as `system_fault` (INCOMPLETE), not as a safety-clamp finding.
 3. **What counts as done for 1b / 2a:** the `min`-over-all-demos gates fail on the 2 infeasible demos. Options: exclude the Stage-1-infeasible demos from those gates, or accept them as FAIL-by-finding.
 4. Whether to push `sim-eval`.
 
-## Next actions (in order)
+## Next actions
 
-1. A9:
-   1. Fix the two review findings.
-   2. Copy the real kit into `assets/finger_kits/iphumi_umi_soft_v1/`.
-   3. Run the real-kit checks P0–P3 (finger_model.md section 7).
-   4. Then remove the w10b worktree: `git worktree remove .claude/worktrees/w10b` (remove its `data` symlink first).
-2. After D9: update the tooling YAMLs, rerun `eval --profile sim-iphone --stage 1 --out DIR` without `--set` (expect 43/45 + clearance PASS).
-3. After the cone/box decision: rerun sim-rig `--stage 1b` (and the iPhone 1b) and a longer bp_run001 Stage 3 (`--poses 3 --episodes-per-pose 3`; 4 GB GPU is enough).
-4. §11 step 7: a viewer run (user, display): copy deploy.yaml with `profiles.sim-iphone.bridge.override.backend.mujoco.viewer: true`.
-5. Still open: the Stage 1 1.1–1.5° worst-margin demo; whether the real policy's Stage 3 tracking 8 mm / obs motion 5.4 mm is the policy or the sim (compare with a real-robot run on hardware day).
+Moved to [TODO.md](TODO.md): the A9 findings (section 1), the decisions above (section 2), the runs still to do (section 3) and housekeeping (section 4).
 
 ## Gotchas learned
 
@@ -85,6 +83,7 @@ The arm is the **Panda** (user decision 2026-10-27, on the advisor's recommendat
 - **Rate limits:** on 429, wait, then SendMessage the same agent to continue from its WORKLOG. A user-stopped agent cannot be resumed.
 - **The suite lock (`$LOCK`) is often busy:** run lock-wrapped tests with `run_in_background`.
 - **Timing tests flake under load** (sensor_rig slow-link, wireless stamp warnings). Rerun alone before calling it a regression.
+- **Stage 1b needs an idle machine:** run beside a Stage 1 sweep, 43/45 runs failed the render-fps preflight (A9.REVIEW2).
 - **Reviewers miss cross-config issues:** test both camera sides, both sensors (iPhone and rig), and a Stage 1 made by `eval` as well as by the `stage1` CLI (two of the W10 bugs only showed up that way).
-- **Disk:** about 5 GB free. Outputs go to scratch; copy only small files into `results/`.
+- **Disk:** about 10 GB free on `/` (the scratchpad) and 12 GB on `/home` (2026-10-28). Outputs go to scratch; copy only small files into `results/`.
 - **Scratch env paths** (`/tmp/claude-1000/.../299e5dab.../scratchpad/env_*`) are hardcoded in README.md, `station/host/pc_laptop.yaml` and the sim profiles in `deploy.yaml`. If the scratchpad is purged, recreate the envs and update those paths.

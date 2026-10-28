@@ -1,0 +1,18 @@
+kit iphumi_umi_soft_v1  units=m  path=/home/ruben/Capstone/controlSW/franka_sim/franka_sim/assets/finger_kits/iphumi_umi_soft_v1
+parts:
+  finger_left      role=contact   material=tpu vertices=936 faces=1944 bbox_mm=[-80.00, 77.99, -15.10]..[-40.00, 201.35, 10.70] volume_cm3=46.981 mass_g=56.85 (density) collision=hull
+  finger_right     role=contact   material=tpu vertices=936 faces=1944 bbox_mm=[39.43, 77.98, -15.10]..[79.43, 201.35, 10.70] volume_cm3=46.981 mass_g=56.85 (density) collision=hull
+  finger_holder_left role=structure material=pla vertices=3715 faces=7466 bbox_mm=[-85.09, 44.00, -21.40]..[-40.00, 123.30, 16.60] volume_cm3=33.009 mass_g=40.93 (density) collision=hull
+  finger_holder_right role=structure material=pla vertices=3705 faces=7446 bbox_mm=[40.00, 44.00, -21.40]..[85.09, 123.30, 16.60] volume_cm3=33.009 mass_g=40.93 (density) collision=hull
+sides:
+  left: parts=['finger_left', 'finger_holder_left'] contact_part=finger_left camera_face=-1
+     kit_T_M rows: [0.0000, -1.0000, 0.0000, -0.0625]; [0.0000, 0.0000, 1.0000, 0.0440]; [-1.0000, 0.0000, 0.0000, -0.0022]; [0.0000, 0.0000, 0.0000, 1.0000]
+     tip_mm=[-40.00, 201.35, -2.20]
+     tag id=0 size_mm=16.0 centre_mm=[-60.00, 87.50, 16.60] normal=[0.000, 0.000, 1.000] up=[0.000, 1.000, 0.000] on=finger_holder_left
+  right: parts=['finger_right', 'finger_holder_right'] contact_part=finger_right camera_face=+1
+     kit_T_M rows: [0.0000, 1.0000, 0.0000, 0.0625]; [0.0000, 0.0000, 1.0000, 0.0440]; [1.0000, 0.0000, 0.0000, -0.0022]; [0.0000, 0.0000, 0.0000, 1.0000]
+     tip_mm=[39.43, 201.35, -2.20]
+     tag id=1 size_mm=16.0 centre_mm=[60.00, 87.50, 16.60] normal=[0.000, 0.000, 1.000] up=[0.000, 1.000, 0.000] on=finger_holder_right
+variants: full: left=['finger_left', 'finger_holder_left'], right=['finger_right', 'finger_holder_right']; finger_only: left=['finger_left'], right=['finger_right']
+contact: {'friction': [1.0, 0.005, 0.0001], 'solref': None, 'solimp': None}
+digest: 1e7778bcec2b1287387275c9d18839e6d7e5cab999b57432ca6442fc8e0f34d4

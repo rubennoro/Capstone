@@ -4,11 +4,14 @@ This folder is the working area for the Franka simulation evaluator: MuJoCo, iPh
 station. The approved plan is copied in [PLAN.md](PLAN.md). Design detail per track is in [design_track_a.md](design_track_a.md)
 (sim core) and [design_track_b.md](design_track_b.md) (config, wireless sensor path, policy slot, eval runner).
 Cross-track contracts are in [INTERFACES.md](INTERFACES.md). Each phase has a spec in `phases/<id>.md`, an append-only
-`phases/<id>.WORKLOG` and a `phases/<id>.REVIEW.md`.
+`phases/<id>.WORKLOG` and a `phases/<id>.REVIEW.md`. Current status: [STATUS.md](STATUS.md); open work: [TODO.md](TODO.md).
 
 If PLAN.md, a design doc and a spec disagree, the more specific one wins: **spec > INTERFACES > PLAN > design docs**.
 
 ## Roles
+
+Since A9 (2026-10-27) the user's rule is one executor per task, then **one** reviewer over all the executors' work and how
+it fits together (no per-piece reviewer pairs). The roles below are otherwise unchanged.
 
 - **Executor** (one per track): implements exactly one phase spec at a time.
   - Edits only files in its track's ownership list (INTERFACES.md §1).
@@ -102,6 +105,7 @@ the same files.
 | W10B | sim TCP derivation in eval/deploy, judge offline fixes (9682000) | docs review fixes (45c190c) | on `sim-eval` via 3bfadbf + ba15402 (test fixes) |
 | W10 verify | PLAN §11 steps 1-6 (iPhone + rig, demo_replay, bp_run001 Stage 3, smoke sweep, bp contract); step 7 (viewer) open | — | see STATUS.md "W10 verification" |
 | W10 fixes | 1b on a Stage 1 subset + campaign port shift kept (cca6efb) | 2b/3 station ids + replay_run overrides (cd2dac6); `fitted` status (f112457) | cherry-picked onto `sim-eval` |
-| W11 (A9) | finger kit: loader, model modes stock/box/kit, variants, Stage 1 length sweep, camera-check guard (f230a96, dad0ca3, 73c57cb) | finger_adapter keys + mode/variant validator (538b074, 54be744) | committed; final review FIX open (A9.REVIEW.md) |
+| W11 (A9) | finger kit: loader, model modes stock/box/kit, variants, Stage 1 length sweep, camera-check guard (f230a96, dad0ca3, 73c57cb) | finger_adapter keys + mode/variant validator (538b074, 54be744) | committed; review 1 FIX (A9.REVIEW.md) |
+| W11f (A9) | review 1 fixes: kit masses in the finger inertials, tag ids, camera-check by id; real kit `iphumi_umi_soft_v1` (01adc08) | — | committed; review 2 FIX (A9.REVIEW2.md: real-kit P1 tags and P3 1b fail), findings in TODO.md, box stays default |
 
 Test baselines and the resume point: see [STATUS.md](STATUS.md). Full history: `git log --oneline 4be9982..HEAD`.
