@@ -137,7 +137,7 @@ All three are command-line programs on the Jetson. `ec-process` also builds and 
 ### 4.1 `ec-calibrate`: the per-session gripper calibration run
 
 ```
-ec-calibrate --session block_raise_2026-10-30        # start; follow on-screen instructions; press Enter to end
+ec-calibrate --session block-raise-2026-10-30        # start; follow on-screen instructions; press Enter to end
 ```
 
 1. Starts the cameras and IMU, then shows the camera view with live tag overlays, so you can check that both finger
@@ -159,7 +159,7 @@ format, and the matching offline tools consume it.
 ### 4.2 `ec-record`: one demonstration per run
 
 ```
-ec-record --session block_raise_2026-10-30 --task block_raise [--viz cameras|slam|both|none]
+ec-record --session block-raise-2026-10-30 --task block_raise [--viz cameras|slam|both|none]
 ```
 
 1. **Arming.**
@@ -258,7 +258,7 @@ ec-process <session_dir> --status                     # table of every package a
 ### 6.1 Session and package layout
 
 ```
-<data_root>/<session>/                                   e.g. /data/rig/block_raise_2026-10-30/
+<data_root>/<session>/                                   e.g. /data/rig/block-raise-2026-10-30/  (session: [A-Za-z0-9-]+, no "_": iPhUMI group.py:36-37 splits names on "_")
   session.json          session id, task, operator, created, rig.yaml hash, software version
   rig.yaml              frozen copy of the rig config used for every package in this session
   calibration/

@@ -1,0 +1,331 @@
+# rig.yaml: Jetson Orin Nano + Arducam IMX519 (main) + Arducam IMX219 160 deg (ultrawide) + ST LSM6DSOX (IMU).
+#
+# Schema: common/include/rig/config/rig_config.hpp (struct RigConfig). Every mapping below is one struct and every key
+# is the struct field of the same name; unknown keys are errors (T3 loader). Defaults in the header apply to keys
+# left out; this example writes every key.
+# Conventions:
+#   - Times: int64 ns of CLOCK_MONOTONIC_RAW. Units are in the key name or the comment. SI otherwise.
+#   - T_a_b maps points in frame b to frame a (pose of b in a): rotation = 3 rows (row-major), translation_m [m].
+#   - Camera frames are OpenCV optical (x right, y down, z forward). The IMU body frame is the LSM6DSOX chip frame.
+#   - provenance: nominal | cad | kalibr | measured | manual (rig/types.hpp Provenance).
+# Every intrinsic/extrinsic here is provenance: nominal (lens spec + guesses) until Kalibr (PIPELINE D7) and the
+# mount CAD (D6) replace them. Values tagged [I] are inferred and must be checked on hardware day (BRINGUP.md).
+
+schema_version: 1                  # int; must equal kRigConfigSchemaVersion (1).
+rig_name: jetson-imx519-imx219w160-lsm6dsox   # free identifier, written to session.json.
+notes: >                           # free text.
+  Main: Arducam IMX519 16 MP autofocus, 1920x1080@60 capture (16:9), stored 1280x720, focus locked (VCM 0x0C).
+  Ultrawide: Arducam IMX219 160 deg fisheye, 1640x1232@30 (full-FOV 2x2 binned mode), SLAM + tag camera.
+  IMU: Arduino Modulino Movement (LSM6DSOX) wired directly to the 40-pin header I2C (bus 7, 0x6A), 833 Hz.
+
+# ------------------------------------------------------------------------------------------------------------------
+# cameras.<id>: RigCameraConfig. ids match [a-z0-9_]+; package dirs are raw/cam_<id>/. Exactly one role: main and
+# one role: ultrawide.
+# ------------------------------------------------------------------------------------------------------------------
+cameras:
+  main:
+    role: main                     # main | ultrawide.
+    driver:                        # CameraConfig (rig/drivers/camera_backend.hpp); `id` = this map key.
+      backend: argus               # argus | gst | mock | replay (argus needs RIG_WITH_ARGUS; gst is the fallback).
+      sensor: imx519               # imx519 | imx219: selects T2's mode table and validation.
+      sensor_id: 0                 # Argus sensor index / nvarguscamerasrc sensor-id (CAM0 port) [I].
+      width: 1920                  # capture width [px]. PIPELINE 3: 1920x1080 or 1280x720 @60, chosen on day H.
+      height: 1080                 # capture height [px].
+      fps: 60.0                    # [Hz]; frame duration fixed at 1/fps (PIPELINE D5).
+      sensor_mode: -1              # -1 = select by width x height @ fps; >= 0 forces a driver mode index.
+      pixel_format: nv12           # nv12 | gray8 | bgr8 | rgb8 | yuyv: format delivered to consumers (JPEG input).
+      exposure_ns: 8000000         # locked exposure [ns] (range min = max); < 16.6 ms at 60 fps. Set under the lab
+                                   # lighting on day H. 0 = AE free (bring-up only).
+      analog_gain: 2.0             # locked analog gain [x] (range min = max). 0 = free.
+      isp_digital_gain: 1.0        # ISP digital gain range min = max [x] (PLAN T2: 1-1).
+      ae_lock: true                # Argus AE lock.
+      awb_lock: true               # Argus AWB lock.
+      awb_mode: auto               # AWB mode before the lock: off | auto | incandescent | fluorescent | daylight |
+                                   # cloudy_daylight | twilight | shade (Argus AwbMode; T2 maps).
+      denoise: false               # ISP noise reduction (off: raw texture for SLAM/tags; PLAN T2).
+      edge_enhance: false          # ISP edge enhancement.
+      buffer_count: 4              # driver/EGLStream buffers in flight.
+      drop_gap_factor: 1.5         # SOF gap > factor/fps counts as a drop.
+      focus:                       # FocusConfig (PLAN T2 Imx519Focus).
+        mode: fixed                # none | fixed: write `position` once at start; autofocus never runs.
+        position: 512              # VCM DAC code; range and register sequence per Arducam Focuser.py (T2 cites) [I].
+        i2c_bus: 9                 # I2C bus of the CAM0 mux channel on the Orin Nano dev kit [I] (i2cdetect on H).
+        i2c_addr: 0x0C             # VCM 7-bit address (PIPELINE 3).
+        allow_v4l2_fallback: true  # if 0x0C shows UU, use V4L2 focus_absolute on the sensor subdev.
+        v4l2_subdev: ""            # subdev node for the fallback; "" = auto-detect.
+      gst:                         # GstCameraConfig (backend gst only).
+        source_override: ""        # replaces nvarguscamerasrc (laptop: "videotestsrc is-live=true pattern=ball").
+      mock:                        # MockCameraConfig (backend mock only).
+        pattern: checker           # checker | gradient | noise | counter.
+        jitter_ns: 0               # uniform +/- jitter on SOF times [ns].
+        drop_every_n: 0            # drop one frame every N; 0 = never.
+        stall_after_frames: -1     # stall after N frames; -1 = never.
+        stall_ns: 0                # stall length [ns]; 0 = forever.
+        seed: 1                    # RNG seed.
+      replay:                      # ReplayCameraConfig (backend replay only).
+        path: ""                   # package raw/cam_main dir or EuRoC-style folder.
+        realtime: true             # pace by timestamps.
+        loop: false                # restart at the end.
+        retime: true               # first frame at now_raw_ns() at start().
+    model:                         # CameraModelParams (rig/camera_model/model_params.hpp), at driver width x height.
+      kind: pinhole-radtan         # pinhole-radtan | kannala-brandt4 | double-sphere | eucm | pinhole.
+      width: 1920                  # [px]; must equal driver.width.
+      height: 1080                 # [px]; must equal driver.height.
+      fx: 1478.0                   # [px] nominal: 66 deg horizontal FoV at 1920 px (PIPELINE 2: stock lens ~66x38
+      fy: 1478.0                   #   deg at 16:9): fx = 960 / tan(33 deg) [I].
+      cx: 959.5                    # [px] image centre (OpenCV pixel-centre convention).
+      cy: 539.5
+      distortion: [0.0, 0.0, 0.0, 0.0]   # radtan [k1, k2, p1, p2]; zero until Kalibr.
+      fov_max_deg: 0.0             # 0 = no FoV limit (pinhole).
+      provenance: nominal
+      note: "lens spec (PIPELINE 2); replace with Kalibr pinhole-radtan"
+    T_imu_cam:                     # Extrinsics: main camera pose in the IMU body frame.
+      rotation: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]   # R_imu_cam (orthonormal, det +1).
+      translation_m: [0.0, 0.0, 0.0]   # t_imu_cam [m].
+      provenance: nominal
+      note: "placeholder until the mount CAD (D6) / Kalibr"
+    time:                          # CameraTimeConfig; applied only when consuming (PIPELINE 5).
+      offset_ns: 0                 # t_true = t_mid_ns + offset_ns [ns] (Kalibr timeshift / LED test).
+      provenance: nominal
+    storage:                       # CameraStorageConfig (PIPELINE 6.1 "Stored resolutions").
+      width: 1280                  # stored JPEG width [px]; 0 = native. Same aspect ratio as the capture.
+      height: 720                  # stored JPEG height [px]; 0 = native.
+      jpeg_quality: 90             # libjpeg quality 1..100.
+      encoder_threads: 2           # JPEG workers for this camera (ec-bench-encode on H decides).
+      queue_frames: 120            # lossless RawWriter queue [frames] (2 s at 60 Hz); overflow = abort.
+    thread:                        # ThreadConfig: capture thread.
+      cpus: [1]                    # affinity (Orin Nano CPUs 0..5); [] = no pinning.
+      priority: 10                 # 0 = SCHED_OTHER; 1..99 = SCHED_FIFO.
+      nice: 0                      # -20..19 (SCHED_OTHER only).
+
+  uw:
+    role: ultrawide
+    driver:
+      backend: argus
+      sensor: imx219
+      sensor_id: 1                 # CAM1 port [I].
+      width: 1640                  # full-FOV 2x2 binned mode (only 1640x1232@30 and 3280x2464@21 are full FOV;
+      height: 1232                 #   sensor_rig picamera2_logic.py:99-104).
+      fps: 30.0
+      sensor_mode: -1
+      pixel_format: nv12
+      exposure_ns: 4000000         # short (<= 4-8 ms) to limit motion blur for SLAM and tags (PIPELINE 5).
+      analog_gain: 4.0
+      isp_digital_gain: 1.0
+      ae_lock: true
+      awb_lock: true
+      awb_mode: auto
+      denoise: false
+      edge_enhance: false
+      buffer_count: 4
+      drop_gap_factor: 1.5
+      focus:
+        mode: none                 # fixed-focus fisheye.
+        position: -1
+        i2c_bus: -1
+        i2c_addr: 0x0C
+        allow_v4l2_fallback: false
+        v4l2_subdev: ""
+      gst:
+        source_override: ""
+      mock:
+        pattern: checker
+        jitter_ns: 0
+        drop_every_n: 0
+        stall_after_frames: -1
+        stall_ns: 0
+        seed: 2
+      replay:
+        path: ""
+        realtime: true
+        loop: false
+        retime: true
+    model:
+      kind: kannala-brandt4        # equidistant fisheye (ORB-SLAM3 KannalaBrandt8; Kalibr ds/eucm above ~150 deg).
+      width: 1640
+      height: 1232
+      fx: 735.0                    # [px] nominal ideal equidistant r = f * theta with 160 deg across the image
+      fy: 735.0                    #   diagonal: f = 1025.6 px / 1.396 rad [I: assumes the 160 deg spec is diagonal].
+      cx: 819.5
+      cy: 615.5
+      distortion: [0.0, 0.0, 0.0, 0.0]   # KB4 [k1, k2, k3, k4]; zero = ideal equidistant until Kalibr.
+      fov_max_deg: 160.0           # rays beyond this full FoV are invalid.
+      provenance: nominal
+      note: "Arducam 160 deg lens spec, ideal equidistant; replace with Kalibr"
+    T_imu_cam:
+      rotation: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+      translation_m: [0.0, 0.0, 0.0]
+      provenance: nominal
+      note: "placeholder until the mount CAD (D6) / Kalibr"
+    time:
+      offset_ns: 0
+      provenance: nominal
+    storage:
+      width: 0                     # native 1640x1232: the offline SLAM and tag input (PIPELINE 6.1).
+      height: 0
+      jpeg_quality: 90
+      encoder_threads: 2
+      queue_frames: 60             # 2 s at 30 Hz.
+    thread:
+      cpus: [2]
+      priority: 10
+      nice: 0
+
+# ------------------------------------------------------------------------------------------------------------------
+# imu: RigImuConfig.
+# ------------------------------------------------------------------------------------------------------------------
+imu:
+  driver:                          # ImuConfig (rig/drivers/imu_backend.hpp).
+    id: imu0                       # stream id; package dir raw/imu0/.
+    backend: lsm6dsox_i2c          # lsm6dsox_i2c | sim | replay.
+    i2c_bus: 7                     # 40-pin pins 3 (SDA) / 5 (SCL) = /dev/i2c-7 on the Orin Nano dev kit.
+    i2c_addr: 0x6A                 # 7-bit address (Modulino Movement default).
+    expected_who_am_i: 0x6C        # LSM6DSOX WHO_AM_I (DS13345).
+    odr_hz: 833.0                  # accel + gyro ODR [Hz]: 12.5|26|52|104|208|416|833|1666|3332|6667.
+    accel_fs_g: 8                  # 2 | 4 | 8 | 16 [g].
+    gyro_fs_dps: 2000              # 125 | 250 | 500 | 1000 | 2000 [dps].
+    fifo_watermark_words: 256      # [7-byte FIFO words]; FIFO = 512 words (about 50 %).
+    poll_period_ms: 10             # FIFO poll period [ms] (absolute-time loop).
+    bracket_period_ms: 100         # bracketed TIMESTAMP reads for the clock fit [ms].
+    i2c_retries: 3                 # retries per failed transaction.
+    i2c_error_budget: 20           # failed transactions allowed per 10 s before the backend turns fatal.
+    gap_factor: 2.0                # sample interval > factor / odr counts as a gap.
+    queue_capacity: 8192           # host queue between poll thread and read() [samples] (~10 s).
+    clock:                         # ChipClockConfig (rig/time/clock.hpp).
+      nominal_tick_ns: 25000.0     # [ns/LSB] (DS13345); the driver applies INTERNAL_FREQ_FINE (AN5272).
+      max_slope_deviation: 0.03    # slope clamp: nominal * (1 +/- 0.03).
+      window_brackets: 300         # sliding fit window [brackets] (30 s at 100 ms).
+      max_bracket_width_ns: 2000000   # reject brackets wider than this [ns].
+      method: lower_envelope       # lower_envelope | robust_linear.
+    sim:                           # ImuSimConfig (backend sim only).
+      chip_clock_drift_ppm: 0.0    # [ppm].
+      chip_clock_offset_ticks: 0   # initial chip counter.
+      accel_noise_std_mps2: 0.0    # [m/s^2] per sample.
+      gyro_noise_std_rps: 0.0      # [rad/s] per sample.
+      motion: false                # sinusoidal motion on top of gravity.
+      i2c_error_rate: 0.0          # NACK probability per transaction [0..1].
+      seed: 1
+    replay:                        # ImuReplayConfig (backend replay only).
+      path: ""                     # package raw/imu0 or EuRoC imu0 dir.
+      realtime: true
+      retime: true
+  noise:                           # ImuNoiseConfig: continuous-time densities for ORB-SLAM3 / Kalibr.
+    accel_noise_density: 6.865e-4  # [m/s^2/sqrt(Hz)] = 70 ug/sqrt(Hz) (DS13345 high-performance mode) [I: T1 checks].
+    accel_random_walk: 1.0e-4      # [m/s^3/sqrt(Hz)] placeholder until Allan variance.
+    gyro_noise_density: 6.632e-5   # [rad/s/sqrt(Hz)] = 3.8 mdps/sqrt(Hz) (DS13345) [I: T1 checks].
+    gyro_random_walk: 1.0e-6       # [rad/s^2/sqrt(Hz)] placeholder until Allan variance.
+    provenance: nominal
+    note: "datasheet densities; Allan variance (Wave 4) replaces"
+  thread:                          # IMU capture thread.
+    cpus: [1]
+    priority: 20
+    nice: 0
+  queue_samples: 16384             # lossless RawWriter queue [samples] (~20 s at 833 Hz).
+
+# ------------------------------------------------------------------------------------------------------------------
+# virtual_cameras.<physical id>: VirtualCameraConfig (PIPELINE 2: uw -> virtual iPhone ultrawide; main has none).
+# ------------------------------------------------------------------------------------------------------------------
+virtual_cameras:
+  uw:
+    model:
+      kind: pinhole                # must be pinhole.
+      width: 640
+      height: 480
+      fx: 246.64919                # iPhone ultrawideCameraIntrinsics of the firstreal session
+      fy: 246.64919                #   (data/raw/2026-10-01/..._firstreal_demonstration_left.json).
+      cx: 320.16495
+      cy: 239.53679
+      distortion: []
+      fov_max_deg: 0.0
+      provenance: measured
+      note: "iPhone 16 Pro ultrawide as recorded by iPhUMI"
+    R_phys_virt: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]   # virtual camera orientation in the physical one.
+    min_coverage: 1.0              # ImagePrep::create fails below this remap coverage [0..1].
+
+imageprep:
+  out_size: 224                    # policy image side [px] (iPhUMI gen_replay_buffer_zarr.py:430; cv_util.py:5-34).
+
+capture:
+  steady_state:                    # SteadyStateConfig: recording may start only after this.
+    min_frames: 30                 # consecutive in-tolerance frames per camera.
+    rate_tolerance: 0.10           # |dt * fps - 1| <= tolerance.
+    imu_window_s: 1.0              # IMU rate in tolerance over this window [s].
+  read_timeout_ms: 200             # capture-thread read timeout [ms] (bounds shutdown latency).
+
+# ------------------------------------------------------------------------------------------------------------------
+# live_checks: LiveChecksConfig (PIPELINE 6.2). The first block is exact iPhone parity; do not change it.
+# ------------------------------------------------------------------------------------------------------------------
+live_checks:
+  main_camera: main                # camera the fps rule watches.
+  main_fps_min: 31.0               # abort if per-frame 1/dt < 31 (ViewController.swift:1819).
+  main_fps_grace_s: 1.0            # ...after the first 1 s of recording (ViewController.swift:1819).
+  pose_speed_max_mps: 7.0          # abort if live ||dp||/dt > 7 m/s (ViewController.swift:305, 1829-1843).
+  uw_require_frames: true          # abort if no ultrawide frames (DemonstrationData.swift:574).
+  uw_camera: uw                    # (ours below) camera the uw rules watch.
+  uw_fps_min: 27.0                 # abort if uw fps over the window < 27 [Hz].
+  uw_fps_window_s: 1.0             # [s].
+  slam_abort_on_lost: true         # abort when live SLAM reports lost.
+  slam_abort_on_reset: true        # abort when live SLAM resets.
+  slam_abort_on_map_change: true   # abort when the Atlas map id changes.
+  slam_heartbeat_timeout_s: 0.5    # abort if the SLAM heartbeat stalls longer [s].
+  imu_gap_max_ms: 20.0             # abort on an IMU gap > 20 ms.
+  imu_rate_min_ratio: 0.95         # abort if IMU rate over the window < 0.95 x odr_hz.
+  imu_rate_window_s: 1.0           # [s].
+  imu_abort_on_overrun: true       # abort on FIFO or host-queue overrun.
+  writer_abort_on_overflow: true   # abort on a lossless queue overflow.
+  disk_min_free_gb: 5.0            # refuse to arm / abort below 5 GB free on storage.data_root.
+  thermal_warn_c: 85.0             # warn above this SoC zone temperature [deg C] [I: Orin throttle point on H].
+  thermal_abort_on_throttle: true  # abort if clock throttling is detected.
+  thermal_zones: []                # /sys/class/thermal zone types to watch; [] = all.
+  tags_unseen_warn_s: 0.5          # warn if finger tags unseen this long [s] (warn only).
+
+record:                            # RecordConfig (ec-record, PLAN T5).
+  arming_timeout_s: 30.0           # ARMING -> clean exit if not recording by then [s].
+  require_gripper_calibration: true  # refuse to arm without a PASSing gripper_range.json (--no-calibration overrides).
+  stop_flush_timeout_s: 10.0       # max time to drain writer queues on stop [s].
+
+slam_live:                         # SlamLiveConfig (PIPELINE 6.3).
+  enabled: true
+  backend: orbslam3                # orbslam3 | mock (mock until ORB-SLAM3 is built on H).
+  camera: uw                       # input camera id.
+  vocabulary_path: /data/rig/third_party/ORB_SLAM3/Vocabulary/ORBvoc.txt   # on the NVMe (BRINGUP step 6) [I].
+  input_width: 800                 # downscaled grey input [px] (about 800x600).
+  input_height: 600
+  n_features: 1000                 # ORB features per frame.
+  frame_decimation: 1              # 1 = 30 Hz; 2 = 15 Hz fallback (PIPELINE 6.3).
+  viewer: true                     # Pangolin viewer (when viz.mode is slam or both).
+  viewer_refresh_hz: 10.0
+  thread:
+    cpus: [3, 4]
+    priority: 5
+    nice: 0
+  mock:                            # MockSlamConfig (backend mock only).
+    trajectory_tum: ""             # TUM file; "" = built-in slow circle.
+    init_delay_s: 2.0              # initializing for this long [s].
+
+viz:                               # VizConfig.
+  mode: both                       # none | cameras | slam | both (PIPELINE 4.2).
+  refresh_hz: 10.0                 # mosaic refresh [Hz].
+  mosaic_width: 1280               # window width [px].
+  tag_overlay: true                # low-rate finger-tag overlay.
+  tag_detect_hz: 2.0               # [Hz].
+
+shm:                               # ShmConfig (PIPELINE 5).
+  prefix: /rig                     # segment names "<prefix>.<stream>", e.g. /rig.cam_uw.
+  frame_ring_slots: 8              # slots per camera frame ring.
+  viz_frame_width: 640             # width of frames published for ec-viz [px]; 0 = native.
+  imu_ring_slots: 8192             # IMU ring slots (one sample each).
+
+storage:                           # StorageConfig.
+  data_root: /data/rig             # sessions in <data_root>/<session>/ (NVMe; PIPELINE 6.1).
+  fsync_on_stop: true
+
+calibration:                       # CalibrationConfig.
+  provenance: nominal              # worst provenance of the calibration in this file.
+  source: "lens spec sheets + placeholder extrinsics"
+  date: ""                         # ISO date of the last calibration; "" = never.
+  T_uw_tcp:                        # TCP (gripper tip centre) pose in the uw camera frame (D6: CAD first).
+    rotation: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    translation_m: [0.0, 0.0, 0.15]
+    provenance: nominal
+    note: "placeholder: CAD from the sim-eval finger kit replaces it"

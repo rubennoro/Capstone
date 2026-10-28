@@ -1,0 +1,55 @@
+T0 WORKLOG: build skeleton + frozen interfaces
+=============================================
+State: DONE (awaiting orchestrator review). Nothing in progress.
+
+Done
+- Vendored CLI11 v2.4.2: third_party/CLI11/CLI11.hpp (sha256 3935283e4c9d...), LICENSE (sha256 3ee4a90b05dd...).
+- Frozen headers common/include/rig/: status.hpp (Status/Result + RIG_RETURN_IF_ERROR / RIG_ASSIGN_OR_RETURN),
+  span.hpp, types.hpp, time/clock.hpp, drivers/{i2c_bus,camera_backend,imu_backend}.hpp,
+  camera_model/{model_params,camera_model}.hpp, imageprep/imageprep.hpp, config/rig_config.hpp,
+  capture/{stream_hub,capture_service}.hpp, shm/{ring,messages,status_channel}.hpp, package/package.hpp,
+  slam/slam_backend.hpp.
+- Implemented now: common/time/clock.cpp (now_*_ns, sample_clock_anchor); inline: Status/Result, Span, to_string
+  of enums, mid_exposure_time, letterbox_geometry, to_shm/from_shm, StatusChannelWriter/Reader templates.
+- Stubs returning kUnimplemented (owners replace the file): common/drivers/camera/camera_factory.cpp (T2),
+  common/drivers/imu/imu_factory.cpp (T1), common/drivers/i2c/linux_i2c_bus.cpp (T1), common/slam/slam_factory.cpp (T6).
+- CMake: CMakeLists.txt, cmake/RigHelpers.cmake (glob conventions), cmake/version.hpp.in, common/, episode_collection/
+  (rigec + apps/<name>/), deployment/ (placeholder + README), tests/ (areas + generated header self-check).
+- tests/contract/test_contract.cpp (13 tests), tests/contract/test_cli11.cpp (1).
+- episode_collection/configs/rig_jetson_imx519_imx219w160_lsm6dsox.yaml: every key commented; checked 1:1 against
+  the structs with $SCRATCH/tools/yaml_vs_structs.py (OK).
+- scripts/check.sh, .clang-format, README.md.
+
+Next (for the orchestrator / later tasks)
+- [ ] Orchestrator review + freeze; decide the items below.
+- [ ] T3: implement loader so that this yaml loads (hex ints 0x6A/0x0C/0x6C must parse).
+
+Decisions & contract notes
+- Factories take the config (make_camera(cfg), make_imu(cfg, bus=nullptr)); start() has no argument (plan text had
+  start(const CameraConfig&)). make_imu accepts an injected I2cBus for the simulator.
+- ImuBackend::read(vector&, timeout) appends; read_brackets() drains ClockBrackets for chip.csv.
+- StreamHub<T>: pimpl class template, explicit instantiations for ImageFrame, ImuSample, ClockBracket (T3 provides
+  them). Lossless = reject NEW item + latch lossless_overflow(); DropOk = drop OLDEST.
+- CaptureService, ImagePrep, EventLog: abstract classes with static create(); ChipClockMapper, ShmRingWriter/
+  Reader, StreamHub: concrete with pimpl `Impl` (owned by the implementer).
+- shm ring layout (ShmRingHeader/ShmSlotHeader) and payload PODs (ShmFrameHeader, ShmImuSample, RecorderStatus,
+  CaptureStatus, SlamStatus) are frozen as ABI; seqlock protocol documented in ring.hpp. Status channels = 4-slot
+  kStatus rings checked by type tag.
+- SlamStatus pose = W_T_C of the uw camera; q = (w,x,y,z).
+- Package kind for rig calibration is "rigcalibration" (brief said rig_calibration): iPhUMI group.py:36-37 splits
+  names on '_' and needs exactly 5 parts. Same reason: session names must match [A-Za-z0-9-]+ -> PIPELINE 4.1/4.2
+  example "block_raise_2026-10-30" is INVALID (orchestrator: fix the docs, e.g. block-raise-2026-10-30).
+- Camera ids "main" and "uw"; yaml nests cameras.<id>.{role,driver,model,T_imu_cam,time,storage,thread}.
+  CameraConfig::id and RigConfig::source_path are the only struct fields that are not yaml keys.
+- RIG_IGNORE_PATH_PREFIXES (default ON): anaconda3/bin on PATH made CMake pick conda's GTest/yaml-cpp/json/fmt.
+- check.sh runs ctest under `setarch -R` for TSan (gcc TSan "unexpected memory mapping" with kernel 6.8 ASLR).
+- Additive rule documented in README: defaulted fields / new own-module headers = WORKLOG note; changing frozen
+  declarations = orchestrator note. Private members belong to the implementer.
+- Nominal values marked [I] in the yaml: IMX519 fx 1478 (66 deg HFOV), IMX219 160 deg as diagonal -> f 735 px,
+  VCM position 512 / CAM0 bus 9, LSM6DSOX noise densities 70 ug/rtHz, 3.8 mdps/rtHz (T1 to verify vs DS13345).
+
+Last build+test (SCRATCH = /tmp/claude-1000/-home-ruben-Capstone/024e666a-499e-4cbd-801d-deb863b2bcb1/scratchpad)
+- physicalSetup/scripts/check.sh $SCRATCH/build/t0                                  -> PASS 14/14
+- physicalSetup/scripts/check.sh $SCRATCH/build/t0-asan --sanitize address,undefined -> PASS 14/14
+- also checked once, then deleted: --sanitize thread -> PASS; -DCMAKE_CXX_COMPILER=g++-11 -> PASS.
+  clang++-14 could not link a test program on this laptop (toolchain issue, not ours).

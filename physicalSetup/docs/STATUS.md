@@ -3,13 +3,13 @@
 The single source of truth for implementation progress. Plan: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Pause
 and resume protocol: plan section 8. Design: [PIPELINE.md](PIPELINE.md).
 
-Last gate commit: `374d3dc` (docs only). Sensors arrive 2026-10-29.
+Last gate commit: see `git log` (Wave 0 = T0). Sensors arrive 2026-10-29.
 
 ## Tasks
 
 | Wave | Task | State | Worklog | Notes |
 |---|---|---|---|---|
-| 0 | T0 build skeleton + frozen interfaces | running | [worklogs/T0.WORKLOG](worklogs/T0.WORKLOG) | started 2026-10-27 |
+| 0 | T0 build skeleton + frozen interfaces | done | [worklogs/T0.WORKLOG](worklogs/T0.WORKLOG) | gate passed 2026-10-27: 14/14 tests default, ASan+UBSan, TSan |
 | 1 | T1 LSM6DSOX driver + simulator | todo | | |
 | 1 | T2 camera backends + IMX519 focus | todo | | |
 | 1 | T3 time/config/capture/shm/package | todo | | |
@@ -27,7 +27,15 @@ Last gate commit: `374d3dc` (docs only). Sensors arrive 2026-10-29.
 
 (none)
 
+## Contract notes from T0 (binding for T1–T4)
+
+- Factories take the config: `make_camera(cfg)`, `make_imu(cfg, bus=nullptr)`; `start()` takes no argument.
+- Sources, tests (`tests/<area>/test_*.cpp`) and apps (`apps/<name>/`) are globbed, so no CMakeLists edits are needed. `argus/`, `gst/`, `orbslam3/` and `ceres/` dirs build only with their option on.
+- Session names are `[A-Za-z0-9-]+` (iPhUMI group.py:36-37 splits on `_`); the package kind is `rigcalibration`.
+- Adding a field with a default, or a new header in your own module: worklog note. Changing a frozen declaration: tell the orchestrator.
+
 ## Next actions
 
-1. T0 running → orchestrator review → gate → commit.
-2. Then launch Wave 1 (T1–T4 in parallel).
+1. ~~T0~~ done.
+2. After the T0 gate: **launch Wave 1 (T1–T4) automatically** (user, 2026-10-27), then R1 → gate → commit.
+3. **Stop after the Wave 1 gate.** Wave 2 (T5–T8) starts only after the user confirms.
