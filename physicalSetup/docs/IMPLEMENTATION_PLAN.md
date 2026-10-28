@@ -459,7 +459,43 @@ umi_utils.py:37-76) → `rigpy` → policy → `controlSW/franka_deploy`. **Revi
 3. The reviewer's findings are all closed or explicitly deferred, with a TODO entry.
 4. Commit: `physicalSetup: wave N (<tasks>)` with the attribution trailer. Delete the build trees.
 
-## 8. Risk register
+## 8. Pause and resume ("wrap up")
+
+The state lives in files, never only in a conversation:
+
+- **[STATUS.md](STATUS.md):** the single source of truth. Wave and task table (`todo / running / review / fixing /
+  done / paused`), the commit of the last gate, the open reviewer findings, and "Next actions". The orchestrator
+  updates it whenever a task changes state.
+- **`physicalSetup/docs/worklogs/<task>.WORKLOG`:** each executor (and the reviewer) keeps one. It holds:
+  - what is done (files and tests), what is in progress (the exact file/function), and what is next, as a checklist;
+  - decisions or contract questions raised;
+  - the exact build/test commands and their last result.
+  The agent updates it at least after every meaningful step. A fresh agent can continue from the worklog alone.
+
+**When the user says "wrap up":**
+1. The orchestrator sends every running agent `WRAP UP` (SendMessage).
+2. Each agent:
+   - finishes or reverts the edit it is in the middle of, so the files are in a consistent state;
+   - updates its WORKLOG, setting "Next" to the exact resume point;
+   - replies with its state.
+   No new work starts.
+3. The orchestrator then:
+   - runs a quick build of what exists (best effort) and records the result;
+   - sets each task in STATUS.md to `paused` with a pointer to its WORKLOG;
+   - commits **everything** as `physicalSetup: WIP pause (<tasks>)`. This is a WIP commit, not a gate. The next gate
+     commit on top of it is the reviewed one.
+   - updates AGENTS.md ("Current state" / "Next time": "resume physicalSetup from docs/STATUS.md");
+   - deletes the scratch build trees.
+
+**Resume in a new session:**
+1. Read AGENTS.md → STATUS.md.
+2. For each `paused` task, launch a fresh executor with the original task brief (section 2–4 of this plan) plus "resume
+   from `worklogs/<task>.WORKLOG`; verify the build and tests first".
+3. Continue the wave as normal.
+
+Agent IDs are not needed to resume, because everything an agent knew is in its worklog.
+
+## 9. Risk register
 
 | Risk | Mitigation |
 |---|---|
