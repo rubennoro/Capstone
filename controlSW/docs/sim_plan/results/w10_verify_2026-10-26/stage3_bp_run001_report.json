@@ -1,0 +1,154 @@
+{
+ "schema": "sim_report/v1",
+ "stage": "3",
+ "policy_id": "bp_run001",
+ "policy_kind": "bp_server",
+ "profile": "sim-iphone",
+ "sensor": "iphone16pro_wifi",
+ "robot": "panda",
+ "station_fingerprint": "5a8d8af0c6e4f6cb",
+ "criteria_version": "run.criteria/v1:block_raise",
+ "image_source": "render",
+ "seed": 0,
+ "started": "2026-10-27T18:15:20",
+ "duration_s": 104.74,
+ "metrics": {
+  "n_episodes": 1,
+  "n_poses": 1,
+  "labels": "n",
+  "success_rate": 0.0,
+  "success_k": 0,
+  "success_n": 1,
+  "success_ci95_lo": 0.0,
+  "success_ci95_hi": 0.7934506856227626,
+  "sim_source": "mujoco",
+  "image_source": "render",
+  "collisions": 0,
+  "reflex": 0,
+  "tracking_err_mm_p95": 8.09450007911713,
+  "gripper_width_lag_steps_p95": 208.39999999999992,
+  "n_gripper_lag_events": 4,
+  "gripper_lag_reference": [
+   "width_servo_target"
+  ],
+  "inference_latency_s_p95": 0.4091013644461782,
+  "obs_motion_mm_p95": 5.362959858314092,
+  "stale_image_errors": 0,
+  "holds": 1,
+  "slip_exceeds_tol_episodes": 0,
+  "max_slip_m": 0.0,
+  "knocked_over_episodes": 0,
+  "pad_table_contacts": 0,
+  "pad_table_episodes": 0,
+  "pad_table_force_max_n": 0.0,
+  "success_source": "sim_gt",
+  "judge_gt_compared": 1,
+  "judge_gt_agree": 1,
+  "judge_gt_success_agree": 1,
+  "judge_gt_t_success_dt_s_max": null,
+  "judge_t0_from_events": 1,
+  "receiver_age_s_p95": 0.1120317987511953,
+  "scenario": null,
+  "sender_died": false,
+  "timing": [
+   "gripper_width_lag_steps_p95",
+   "holds",
+   "inference_latency_s_p95",
+   "obs_motion_mm_p95",
+   "receiver_age_s_p95",
+   "sim_reset_s_max",
+   "sim_reset_s_p50",
+   "stale_image_errors",
+   "tracking_err_mm_p95"
+  ],
+  "sim_reset_s_max": 0.0004,
+  "sim_reset_s_p50": 0.0004,
+  "protocol": "v1"
+ },
+ "gates": {
+  "stage3.collisions_max": {
+   "value": 0,
+   "threshold": 0,
+   "op": "<=",
+   "pass": true,
+   "metric": "collisions"
+  },
+  "stage3.reflex_max": {
+   "value": 0,
+   "threshold": 0,
+   "op": "<=",
+   "pass": true,
+   "metric": "reflex"
+  },
+  "stage3.tracking_err_mm_p95_max": {
+   "value": 8.09450007911713,
+   "threshold": 5,
+   "op": "<=",
+   "pass": false,
+   "metric": "tracking_err_mm_p95"
+  },
+  "stage3.gripper_width_lag_steps_p95_max": {
+   "value": 208.39999999999992,
+   "threshold": 1,
+   "op": "<=",
+   "pass": false,
+   "metric": "gripper_width_lag_steps_p95"
+  },
+  "stage3.inference_latency_s_p95_max": {
+   "value": 0.4091013644461782,
+   "threshold": 0.45,
+   "op": "<=",
+   "pass": true,
+   "metric": "inference_latency_s_p95"
+  },
+  "stage3.receiver_age_s_p95_max": {
+   "value": 0.1120317987511953,
+   "threshold": 0.15,
+   "op": "<=",
+   "pass": true,
+   "metric": "receiver_age_s_p95"
+  },
+  "stage3.stale_image_errors_max": {
+   "value": 0,
+   "threshold": 0,
+   "op": "<=",
+   "pass": true,
+   "metric": "stale_image_errors"
+  },
+  "stage3.obs_motion_mm_p95_max": {
+   "value": 5.362959858314092,
+   "threshold": 3,
+   "op": "<=",
+   "pass": false,
+   "metric": "obs_motion_mm_p95"
+  }
+ },
+ "verdict": "FAIL",
+ "notes": [
+  "pose centre: robot.home_tcp xy [0.45, 0.0]",
+  "render images: success is informational (Stage 3 measures plumbing, safety and timing)",
+  "sim_reset round trip p50 0.000 s / max 0.000 s over 1 resets (driver timeout sim.stage3.reset_timeout_s 3.0 s; launcher bridge.sim_reset_timeout_s 2.0 s)",
+  "success from A6 sim_gt (authoritative) on 1/1 episodes; judge vs sim_gt agree on 1 (same success, t_success within 0.1 s; max dt None s)",
+  "reflexes count as policy failures (label n, reflex gate); pad_table = finger<->table contact onsets, reported separately and not gated: 0 in 0 episodes (max 0.0 N)",
+  "run dir /home/ruben/.claude/jobs/d86b97a0/tmp/v/s3_bp/3_bp_run001_5a8d8af0_b4cb710d: launcher.log, work/session_*/task/episodes/*/*/*/episode_*/sim_truth.json",
+  "criteria values that are open user decisions (placeholders): criteria.limits.v_max_m_s, criteria.limits.w_max_rad_s, criteria.stage3.obs_motion_mm_p95_max, criteria.success.hold_s, criteria.success.lift_min_m, criteria.success.slip_tol_m, criteria.success.timeout_s"
+ ],
+ "rows": [
+  {
+   "pose": 0,
+   "ep": 0,
+   "label": "n",
+   "reason": "timeout",
+   "max_lift_mm": 0.0,
+   "slip_mm": 0.0,
+   "collisions": 0,
+   "reflexes": 0,
+   "pad_table": 0,
+   "gt": "n",
+   "gt_dt_s": null,
+   "calls": 70,
+   "track_p95_mm": 8.09,
+   "wall_s": 63.5
+  }
+ ]
+}

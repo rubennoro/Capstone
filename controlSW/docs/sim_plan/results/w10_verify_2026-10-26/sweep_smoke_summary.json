@@ -1,0 +1,295 @@
+{
+ "schema": "sim_summary/v1",
+ "n_runs": 4,
+ "rows": [
+  {
+   "run": "3_demo_replay_3c217fa0_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "3",
+   "verdict": "FAIL",
+   "key_gates": "reflex_max=1 (FAIL); tracking_err_mm_p95_max=23.59 (FAIL); obs_motion_mm_p95_max=10.5 (FAIL)"
+  },
+  {
+   "run": "3_demo_replay_83712d79_b4cb710d",
+   "policy": "demo_replay",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "3",
+   "verdict": "FAIL",
+   "key_gates": "reflex_max=1 (FAIL); tracking_err_mm_p95_max=23.28 (FAIL); obs_motion_mm_p95_max=12.23 (FAIL)"
+  },
+  {
+   "run": "3_fake_6895a3fc_b4cb710d",
+   "policy": "fake",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "3",
+   "verdict": "FAIL",
+   "key_gates": "gripper_width_lag_steps_p95_max=2 (FAIL)"
+  },
+  {
+   "run": "3_fake_c8cc4d4a_b4cb710d",
+   "policy": "fake",
+   "profile": "sim-iphone",
+   "sensor": "iphone16pro_wifi",
+   "robot": "panda",
+   "stage": "3",
+   "verdict": "FAIL",
+   "key_gates": "gripper_width_lag_steps_p95_max=2 (FAIL)"
+  }
+ ],
+ "comparison": {
+  "axes": [
+   "link",
+   "policy"
+  ],
+  "columns": [
+   {
+    "point": 0,
+    "stage": "3",
+    "axes": {
+     "link": "ideal",
+     "policy": "fake"
+    },
+    "run": "3_fake_6895a3fc_b4cb710d"
+   },
+   {
+    "point": 1,
+    "stage": "3",
+    "axes": {
+     "link": "ideal",
+     "policy": "demo_replay"
+    },
+    "run": "3_demo_replay_83712d79_b4cb710d"
+   },
+   {
+    "point": 2,
+    "stage": "3",
+    "axes": {
+     "link": "wifi_good",
+     "policy": "fake"
+    },
+    "run": "3_fake_c8cc4d4a_b4cb710d"
+   },
+   {
+    "point": 3,
+    "stage": "3",
+    "axes": {
+     "link": "wifi_good",
+     "policy": "demo_replay"
+    },
+    "run": "3_demo_replay_3c217fa0_b4cb710d"
+   }
+  ],
+  "rows": [
+   {
+    "name": "verdict",
+    "cells": [
+     {
+      "text": "FAIL"
+     },
+     {
+      "text": "FAIL"
+     },
+     {
+      "text": "FAIL"
+     },
+     {
+      "text": "FAIL"
+     }
+    ]
+   },
+   {
+    "name": "success_rate (95% CI)",
+    "cells": [
+     {
+      "text": "0 [0, 0.7935] (0/1)"
+     },
+     {
+      "text": "0 [0, 0.7935] (0/1)"
+     },
+     {
+      "text": "0 [0, 0.7935] (0/1)"
+     },
+     {
+      "text": "0 [0, 0.7935] (0/1)"
+     }
+    ]
+   },
+   {
+    "name": "stage3.collisions_max",
+    "cells": [
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "0",
+      "pass": true
+     }
+    ]
+   },
+   {
+    "name": "stage3.reflex_max",
+    "cells": [
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "1",
+      "pass": false
+     },
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "1",
+      "pass": false
+     }
+    ]
+   },
+   {
+    "name": "stage3.tracking_err_mm_p95_max",
+    "cells": [
+     {
+      "text": "5.967e-06",
+      "pass": true
+     },
+     {
+      "text": "23.28",
+      "pass": false
+     },
+     {
+      "text": "5.883e-06",
+      "pass": true
+     },
+     {
+      "text": "23.59",
+      "pass": false
+     }
+    ]
+   },
+   {
+    "name": "stage3.gripper_width_lag_steps_p95_max",
+    "cells": [
+     {
+      "text": "2",
+      "pass": false
+     },
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "2",
+      "pass": false
+     },
+     {
+      "text": "0",
+      "pass": true
+     }
+    ]
+   },
+   {
+    "name": "stage3.inference_latency_s_p95_max",
+    "cells": [
+     {
+      "text": "0.02978",
+      "pass": true
+     },
+     {
+      "text": "0.05035",
+      "pass": true
+     },
+     {
+      "text": "0.03553",
+      "pass": true
+     },
+     {
+      "text": "0.04113",
+      "pass": true
+     }
+    ]
+   },
+   {
+    "name": "stage3.receiver_age_s_p95_max",
+    "cells": [
+     {
+      "text": "0.1104",
+      "pass": true
+     },
+     {
+      "text": "0.1204",
+      "pass": true
+     },
+     {
+      "text": "0.1169",
+      "pass": true
+     },
+     {
+      "text": "0.1206",
+      "pass": true
+     }
+    ]
+   },
+   {
+    "name": "stage3.stale_image_errors_max",
+    "cells": [
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "0",
+      "pass": true
+     },
+     {
+      "text": "0",
+      "pass": true
+     }
+    ]
+   },
+   {
+    "name": "stage3.obs_motion_mm_p95_max",
+    "cells": [
+     {
+      "text": "1.266e-06",
+      "pass": true
+     },
+     {
+      "text": "12.23",
+      "pass": false
+     },
+     {
+      "text": "1.268e-06",
+      "pass": true
+     },
+     {
+      "text": "10.5",
+      "pass": false
+     }
+    ]
+   }
+  ],
+  "multi_stage": false
+ }
+}

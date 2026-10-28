@@ -10,17 +10,25 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-18)
+## Current state (2026-10-27)
 
-- **Franka simulation evaluator (branch `sim-eval`, 9 local commits, not pushed): PAUSED mid-build.**
-  Resume from [controlSW/docs/sim_plan/STATUS.md](controlSW/docs/sim_plan/STATUS.md).
-  - Built: station config system (`controlSW/configs/`), MuJoCo Panda/FR3 + Franka Hand model with printed fingers and
-    iPhone/rig mount, kinematics, policy plug-in + contract checker, wireless sensor path (iPhone app protocol +
-    rig sender, Wi-Fi emulator, receiver + clock sync), launcher profiles; `sim-iphone-fake` / `sim-rig-fake` run end to end.
-  - Stage 1 result: printed fingers ~10 cm longer than stock + phone on the -y side -> 42-43/45 demos feasible on Panda
-    and FR3; stock-length fingers put the phone into links 5/6. Needs the user's confirmation.
-  - Remaining: A3/B7 reviews, FR3 link-group fix in kinematics.py, arm dynamics (A4), hand (A5), scene (A6),
-    rendering (A7), Stage 1b (A8), eval runner + Stages 2-3 (B8, B9), hardware-day tools/docs (B10).
+- **Franka simulation evaluator: all 19 phases built and committed; W10 end-to-end verification run (all but the
+  viewer).** Resume from [controlSW/docs/sim_plan/STATUS.md](controlSW/docs/sim_plan/STATUS.md).
+  - Branch `sim-eval` (local; `origin/sim-eval` is at `3bfadbf`) now holds everything.
+    - `sim-eval-w10b` was brought in commit by commit on 2026-10-27, and its worktree can be removed.
+  - **A9 finger kit (2026-10-27):** finger modes `stock | box | kit`, set by `tooling.finger_adapter.mode`.
+    - Docs: `controlSW/franka_sim/docs/finger_model.md`.
+    - Review FIX open: kit masses, camera-check tag ids.
+    - The real UMI finger kit from the user's Onshape STLs is built but still in the scratchpad.
+  - Covers: station configs, MuJoCo Panda + Franka Hand + printed fingers + phone/rig mount, SimCore/MuJoCo arm
+    and hand, scene + ground truth, renderer, wireless sensor path, eval runner with Stages 1/1b/2a/2b/3, judge,
+    sweeps, hardware-day tools. `python -m franka_sim eval --profile sim-iphone --stage all --out DIR`.
+  - The arm is the **Panda** (decided 2026-10-27). Stage 1 at +10 cm fingers / phone -y: 43/45 demos feasible.
+  - Verified 2026-10-26/27: suites + regression guard green; Stages 1-2b on iPhone and rig; bp_run001 passes the
+    policy contract and runs closed loop on the laptop GPU (fails tracking/obs-motion gates, 0/1 success); smoke sweep
+    works. FAILs are findings (2 infeasible demos, the 60 deg bridge cone/box clamps refuse every sim-rig 1b start).
+  - Waiting on the user: confirm fingers +10 cm / phone -y (tooling YAMLs still stock); cone/workspace box; how
+    1b/2a gates treat infeasible demos; merge. Not yet run: the viewer (needs a display).
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -69,10 +77,10 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-- **First:** resume the sim evaluator from `controlSW/docs/sim_plan/STATUS.md` ("Next actions"); confirm finger
-  extension + phone side.
+- **First:** A9 fixes, the real kit into `assets/finger_kits/`, and the real-kit checks. Also confirm the cone/workspace box.
+  Then continue from `controlSW/docs/sim_plan/STATUS.md` ("Next actions").
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
-   - Decide: Panda vs FR3; gripper actuator; buy cameras (B0180 + 2.1 mm main lens; B0179 175° ultrawide, IR-cut version: decided 2026-10-19); where the 1 kHz
+   - Decide: gripper actuator; buy cameras (B0180 + 2.1 mm main lens; B0179 175° ultrawide, IR-cut version: decided 2026-10-19); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.
    - Hardware day:
      - data collection: `sensor_rig/docs/first_plugin.md`;

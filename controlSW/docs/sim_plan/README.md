@@ -99,6 +99,9 @@ the same files.
 | W9c | — | B9 Part 2: Stage 3 on MuJoCo via BridgeSim (94f3575) | committed |
 | W10a | — | B10 hardware-day tools (b2ff667) | committed |
 | W10A | derived TCP, measured F_T_C_main honoured, loop stall stats (d960efe) | — | committed |
-| W10B | sim TCP derivation in eval/deploy, judge offline fixes | docs review (`phases/W10B_docs.REVIEW.md`) | under review, uncommitted |
+| W10B | sim TCP derivation in eval/deploy, judge offline fixes (9682000) | docs review fixes (45c190c) | on `sim-eval` via 3bfadbf + ba15402 (test fixes) |
+| W10 verify | PLAN §11 steps 1-6 (iPhone + rig, demo_replay, bp_run001 Stage 3, smoke sweep, bp contract); step 7 (viewer) open | — | see STATUS.md "W10 verification" |
+| W10 fixes | 1b on a Stage 1 subset + campaign port shift kept (cca6efb) | 2b/3 station ids + replay_run overrides (cd2dac6); `fitted` status (f112457) | cherry-picked onto `sim-eval` |
+| W11 (A9) | finger kit: loader, model modes stock/box/kit, variants, Stage 1 length sweep, camera-check guard (f230a96, dad0ca3, 73c57cb) | finger_adapter keys + mode/variant validator (538b074, 54be744) | committed; final review FIX open (A9.REVIEW.md) |
 
 Test baselines and the resume point: see [STATUS.md](STATUS.md). Full history: `git log --oneline 4be9982..HEAD`.

@@ -1,0 +1,97 @@
+{
+ "endpoint": "tcp://localhost:23765",
+ "K": 16,
+ "reset_max_s": 0.5,
+ "use_prompting": true,
+ "passed": true,
+ "failed": [],
+ "checks": [
+  {
+   "name": "config_keys",
+   "status": "pass",
+   "detail": "workspace {'proprio_length': 1, 'img_obs_horizon': 2, 'obs_down_sample_steps': 3, 'ultrawide_down_sample_steps': 1}, use_prompting True"
+  },
+  {
+   "name": "expect_uses_prompt",
+   "status": "pass",
+   "detail": "yaml uses_prompt True, server use_prompting True"
+  },
+  {
+   "name": "reset_latency",
+   "status": "pass",
+   "detail": "max 0.001 s over 5 resets, want < 0.5 s",
+   "max_s": 0.0009
+  },
+  {
+   "name": "inference_before_prompt",
+   "status": "pass",
+   "detail": "ERROR as required: ERROR: Traceback (most recent call last):   File \"/home/ruben/Capstone/behavior_prompti..."
+  },
+  {
+   "name": "prompt_ok",
+   "status": "pass",
+   "detail": "ok: OK"
+  },
+  {
+   "name": "second_prompt_rejected",
+   "status": "pass",
+   "detail": "error: ERROR: Traceback (most recent call last):   File \"/home/ruben/Capstone/behavior_prompti..."
+  },
+  {
+   "name": "inference_ok",
+   "status": "pass",
+   "detail": "0.292 s",
+   "seconds": 0.2923
+  },
+  {
+   "name": "reply_keys",
+   "status": "pass",
+   "detail": "all of ['action0_eef_pos', 'action0_eef_rot_axis_angle', 'action0_gripper_width']"
+  },
+  {
+   "name": "reply_shape",
+   "status": "pass",
+   "detail": "K=16: action0_eef_pos (16, 3), action0_eef_rot_axis_angle (16, 6), action0_gripper_width (16, 1)",
+   "expected_K": 16,
+   "got_K": [
+    16
+   ]
+  },
+  {
+   "name": "reply_finite",
+   "status": "pass",
+   "detail": ""
+  },
+  {
+   "name": "rot6d_norm",
+   "status": "pass",
+   "detail": "row norms in [0.993, 1.000], want (0.9, 1.1)"
+  },
+  {
+   "name": "rot6d_orthogonal",
+   "status": "pass",
+   "detail": "max |cos(row1, row2)| 0.006, want < 0.1"
+  },
+  {
+   "name": "width_range",
+   "status": "pass",
+   "detail": "width in [0.0696, 0.0704] m, want (0.0, 0.12)"
+  },
+  {
+   "name": "action0_identity",
+   "status": "pass",
+   "detail": "action 0: 0.17 cm, 0.23 deg from identity (limit 2 cm / 5 deg)"
+  },
+  {
+   "name": "expect_K",
+   "status": "pass",
+   "detail": "yaml K 16, reply K 16"
+  },
+  {
+   "name": "export_topic",
+   "status": "pass",
+   "detail": "answers"
+  }
+ ],
+ "table": "PASS  config_keys                workspace {'proprio_length': 1, 'img_obs_horizon': 2, 'obs_down_sample_steps': 3, 'ultrawide_down_sample_steps': 1}, use_prompting True\nPASS  expect_uses_prompt         yaml uses_prompt True, server use_prompting True\nPASS  reset_latency              max 0.001 s over 5 resets, want < 0.5 s\nPASS  inference_before_prompt    ERROR as required: ERROR: Traceback (most recent call last):   File \"/home/ruben/Capstone/behavior_prompti...\nPASS  prompt_ok                  ok: OK\nPASS  second_prompt_rejected     error: ERROR: Traceback (most recent call last):   File \"/home/ruben/Capstone/behavior_prompti...\nPASS  inference_ok               0.292 s\nPASS  reply_keys                 all of ['action0_eef_pos', 'action0_eef_rot_axis_angle', 'action0_gripper_width']\nPASS  reply_shape                K=16: action0_eef_pos (16, 3), action0_eef_rot_axis_angle (16, 6), action0_gripper_width (16, 1)\nPASS  reply_finite               \nPASS  rot6d_norm                 row norms in [0.993, 1.000], want (0.9, 1.1)\nPASS  rot6d_orthogonal           max |cos(row1, row2)| 0.006, want < 0.1\nPASS  width_range                width in [0.0696, 0.0704] m, want (0.0, 0.12)\nPASS  action0_identity           action 0: 0.17 cm, 0.23 deg from identity (limit 2 cm / 5 deg)\nPASS  expect_K                   yaml K 16, reply K 16\nPASS  export_topic               answers"
+}
