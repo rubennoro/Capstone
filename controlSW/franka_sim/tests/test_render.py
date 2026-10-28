@@ -124,17 +124,18 @@ def test_render_deterministic(iphone):
         assert np.array_equal(a[s], b[s])
 
 
-def test_rig_b0179_mode(iphone):
-    st, sm, r_plain = iphone
+def test_rig_b0179_mode():
+    # plain reference = the same rig station without rig= (the iPhone tooling has its own UW extrinsic since W10B)
     st_rig = _station("sim-rig")
     sm_rig = M.build_model(st_rig)
-    r = Renderer(sm_rig, st_rig, rig=str(RIG_B0179))
+    r, r_plain = Renderer(sm_rig, st_rig, rig=str(RIG_B0179)), Renderer(sm_rig, st_rig)
     try:
         q = M.forward_at(sm_rig).qpos.copy()
-        a, b = r.render(q), r_plain.render(M.forward_at(sm).qpos.copy())
+        a, b = r.render(q), r_plain.render(q)
         cov = r.coverage
     finally:
         r.close()
+        r_plain.close()
     mae = {s: float(np.abs(a[s].astype(np.int16) - b[s].astype(np.int16)).mean()) for s in a}
     print(f"\nB0179 coverage {cov}; rig= mode MAE vs plain render (blur only): {mae}")
     assert cov["main"] == pytest.approx(1.0) and cov["ultrawide"] == pytest.approx(1.0)

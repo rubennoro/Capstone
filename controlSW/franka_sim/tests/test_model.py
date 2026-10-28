@@ -51,7 +51,10 @@ def test_cam_uw_is_main_times_extrinsic(built):
     st, sm = built
     d = M.forward_at(sm)
     main_T_uw = M.inv_T(M.cam_T_cv(sm.model, d, "cam_main")) @ M.cam_T_cv(sm.model, d, "cam_uw")
-    assert np.abs(main_T_uw - M.UW_PLACEHOLDER).max() < 1e-9
+    raw = st.get("tooling.C_main_T_C_uw", None)                     # iPhone: camera-check fit (W10B); null -> placeholder
+    want = M.UW_PLACEHOLDER if raw is None else M.pose_to_T(raw)
+    assert np.abs(main_T_uw - want).max() < 1e-9
+    assert sm.info["C_main_T_C_uw_source"] == ("placeholder (12 mm along +y, parallel)" if raw is None else "station")
     assert sm.model.cam_resolution[M._id(sm.model, "cam", "cam_uw")].tolist() == [960, 720]
 
 
