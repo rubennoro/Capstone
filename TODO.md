@@ -3,6 +3,19 @@
 Ordered roughly by dependency. Big picture: [ROADMAP.md](ROADMAP.md) ("Status"). What to buy: [PURCHASING.md](PURCHASING.md).
 All software below is built and tested with mocks; nothing has run on real hardware yet.
 
+## physicalSetup/ (C++ rig pipeline, 2026-10-27; this supersedes the IMX219 / ICM-42688-P items below)
+
+Design: [physicalSetup/docs/PIPELINE.md](physicalSetup/docs/PIPELINE.md) · Plan: [physicalSetup/docs/IMPLEMENTATION_PLAN.md](physicalSetup/docs/IMPLEMENTATION_PLAN.md)
+
+- [ ] **Kalibr / rig calibration: discuss on its own first.** It covers camera intrinsics, camera↔IMU extrinsics and
+  time offset, IMU Allan variance, and the printed AprilGrid. Decide where it runs: cluster, laptop after freeing
+  space, or the Jetson. Until done, live work uses nominal intrinsics + CAD extrinsics, and training-grade offline
+  poses wait (PIPELINE D7).
+- [ ] Wave 0–2 implementation before hardware day (2026-10-29): T0 contracts → T1–T4 → T5–T8.
+- [ ] Hardware day: BRINGUP.md (from T8), acceptance tests H1–H7 (IMPLEMENTATION_PLAN §5).
+- [ ] Free laptop disk (~20 GB) so ORB-SLAM3 / Pangolin / Ceres / TUM-VI can be built and tested locally (D10).
+- [ ] Waves 3–5: offline `ec-process` stages, calibration + arm ground-truth test, deployment scaffold.
+
 ## Decisions (blocking)
 
 - [ ] **D1. Panda or FR3?** Pins libfranka/panda-py (`controlSW/franka_deploy/scripts/build_libfranka_pandapy.sh --robot`); `check-config --profile jetson` fails until set. Record the robot system version from Desk.

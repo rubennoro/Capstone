@@ -10,7 +10,25 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17)
+## Current state (2026-10-27, branch `rnoro/jetson-sensors`)
+
+- **New C++ rig pipeline, `physicalSetup/` (this branch, worktree `/home/ruben/Capstone-jetson-sensors`): designed
+  and planned, no code yet.**
+  - Design: [physicalSetup/docs/PIPELINE.md](physicalSetup/docs/PIPELINE.md). All decisions D1–D11 are resolved in
+    its section 9.
+  - Plan: [physicalSetup/docs/IMPLEMENTATION_PLAN.md](physicalSetup/docs/IMPLEMENTATION_PLAN.md).
+  - Hardware is now an IMX519 main + IMX219 160° ultrawide + LSM6DSOX (Modulino) on Jetson I2C. This supersedes the
+    IMX219/ICM-42688-P entries below and in ROADMAP/TODO.
+  - Sensors arrive 2026-10-29.
+  - Programs:
+    - `ec-calibrate` (gripper range);
+    - `ec-record`, one episode per run, with iPhone live bounds and live 30 Hz ORB-SLAM3 for checks + display;
+    - `ec-process`, offline stages → 60 Hz training pose → zarr.
+  - Execution: one executor per task + one reviewer per wave. Laptop builds are core-only in the scratch dir (disk is
+    full). The user does the git pushing; commit locally after changes.
+  - Kalibr is deferred to its own discussion (TODO.md).
+
+Older state (2026-10-17, from `main`):
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -58,6 +76,9 @@ Running status between working sessions. Update it at the end of each conversati
 - Plots: the user is happy with them as they are. Don't change `scripts/wandb_offline_to_csv.py` unless asked.
 
 ## Next time
+
+- **First:** with the user's go-ahead, run Wave 0 (T0 contracts) of `physicalSetup/docs/IMPLEMENTATION_PLAN.md`,
+  then Waves 1–2 before hardware day (2026-10-29). Then follow BRINGUP.md on hardware day.
 
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
