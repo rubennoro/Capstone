@@ -24,12 +24,13 @@ Usage:
     numbers keys: mode, kit_id, kit_sha256, kit_variant, kit_path, adapter_length_m (kit L), extension_m (box only),
     dy_l_m, dy_r_m, yaw_deg, side_l, side_r, flange_to_tcp_m, flange_to_tip_m, pad_length_m, pad_offset_m,
     tag_separation_closed_m, tags_skipped, tcp_at, tcp_residual_x_mm, tcp_residual_y_mm, multiccd, mass_<geom>_kg,
-    tooling_mass_kg, friction, solref, solimp, F_T_TCP_xyz_mm, F_T_TCP_rpy_deg, F_T_TCP_source, C_T_TCP_xyz_mm,
+    mount_mass_kg (= tooling_mass_kg, deprecated alias for one release; the phone mount: housing + cradle, not the
+    kit), friction, flange_to_mesh_tip_m (stock only), solref, solimp, F_T_TCP_xyz_mm, F_T_TCP_rpy_deg, F_T_TCP_source, C_T_TCP_xyz_mm,
     C_T_TCP_rpy_deg, F_T_cam_main_xyz_mm, F_T_cam_main_rpy_deg, F_T_cam_uw_xyz_mm, F_T_cam_uw_rpy_deg.
     (keys that do not apply to the mode are absent). status is the station provenance status of the config key the
     value comes from (placeholder / decision / measured / ...), or "derived (model)" when the model computes it,
     "derived (kit)" for numbers read from the kit; source is the provenance source text.
-    flange_to_tip_m: distal pad edge (kit: model value; box: tcp + pad_length/2; stock: tcp + pad_length/2).
+    flange_to_tip_m: distal pad edge (kit: model value; box: tcp + pad_length/2; stock: pad top = tcp + pad_length/2; the stock mesh tip is flange_to_mesh_tip_m).
 """
 
 from __future__ import annotations
@@ -308,7 +309,9 @@ def build_report(st, sm, M) -> dict:
         sp = info["stock_pads"]["tcp_residual_mm"]
         add("tcp_residual_x_mm", sp[0], "mm", DERIVED, "stock pad midpoint off the hand centre line")
         add("tcp_residual_y_mm", sp[1], "mm", DERIVED, "stock pad midpoint off the hand centre line")
-        add("friction", None, "", "datasheet", "menagerie stock pad friction (unchanged)")
+        m_ = sm.model
+        add("friction", np.round(m_.geom_friction[M._id(m_, "geom", "pad_l")], 9).tolist(), "", "datasheet",
+            "compiled model geom_friction of pad_l (menagerie stock pad, unchanged)")
     else:
         cfg("extension_m", float(fa["extension_m"]), "m", FAP + "extension_m")
         add("pad_length_m", info["pad_length_m"], "m", *_prov(st, FAP + "pad_size_m"))
@@ -324,14 +327,27 @@ def build_report(st, sm, M) -> dict:
     add("solref", gc["solref"], "", "decision", "run/sim grip_solref (model.grip_contact)")
     add("solimp", gc["solimp"], "", "decision", "run/sim grip_solimp (model.grip_contact)")
     pay = info["payload"]
-    add("tooling_mass_kg", pay["tooling_mass_kg"], "kg", DERIVED, "sum of the tooling geom masses")
+    add("mount_mass_kg", pay["tooling_mass_kg"], "kg", DERIVED,
+        "phone mount only (housing + cradle), sum of the tooling geom masses; the finger kit is not in it")
+    add("tooling_mass_kg", pay["tooling_mass_kg"], "kg", DERIVED, "deprecated alias of mount_mass_kg (kept for one release)")
 
     fr = M.export_frames(sm)
     T_tcp, T_m, T_uw = (np.array(fr[k]) for k in ("F_T_TCP", "F_T_cam_main", "F_T_cam_uw"))
     pl = float(info["pad_length_m"])
     tip = fk["flange_to_tip_m"] if fk else float(T_tcp[2, 3]) + pl / 2
     add("flange_to_tcp_m", float(T_tcp[2, 3]), "m", DERIVED, "F_T_TCP z (flange frame, along the approach axis)")
-    add("flange_to_tip_m", tip, "m", DERIVED, "distal pad edge on the centre line" if not fk else "kit tip midpoint")
+    add("flange_to_tip_m", tip, "m", DERIVED,
+        "kit tip midpoint" if fk else "pad top (distal pad edge on the centre line; stock: finger_1 pad top)" if mode == "stock"
+        else "distal pad edge on the centre line")
+    if mode == "stock":
+        d_ = M.forward_at(sm, None, 0.0)
+        m_ = sm.model
+        fb = M._id(m_, "body", sm.names["bodies"]["finger_l"])
+        fl = d_.site_xpos[M._id(m_, "site", "flange")]
+        fz = d_.site_xmat[M._id(m_, "site", "flange")].reshape(3, 3)[:, 2]
+        tipw = d_.xpos[fb] + d_.xmat[fb].reshape(3, 3)[:, 2] * M._finger_tip_z(m_, sm.names["bodies"]["finger_l"])
+        add("flange_to_mesh_tip_m", float((tipw - fl) @ fz), "m", DERIVED,
+            "stock finger mesh tip (_finger_tip_z) along the flange z axis; the pad top is flange_to_tip_m")
     if mode != "stock":
         if not fk:
             d = M.forward_at(sm, None, 0.0)

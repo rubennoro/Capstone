@@ -311,12 +311,7 @@ class SimSide:
         from franka_sim.render import Renderer
 
         self.st = station
-        try:
-            self.sm = build_model(station)
-        except ValueError as e:                  # kit side without tags: model.py refuses to build (A9c)
-            if "has no tags" in str(e):
-                raise NoTags(f"{no_tags_message(station)} ({e})") from e
-            raise
+        self.sm = build_model(station)
         tag_guard(station, self.sm)
         self.r = Renderer(self.sm, station, rig=rig, colors=colors)
         self.kin = Kin(self.sm, "tcp")
@@ -506,6 +501,20 @@ def tag_guard(station, sm=None) -> None:
             raise NoTags(no_tags_message(station))
 
 
+def tag_order(sm, proj: dict) -> tuple:
+    """(order, pairing): the model side ("l"/"r") that carries ArUco id TAG_IDS[0], TAG_IDS[1].
+
+    "by_id": ``sm.info["finger_kit"]["tag_ids"]`` ({"tag_l": id, "tag_r": id}) says which id sits on which tag, so a
+    swapped holder / camera_face shows up as large errors (the sim tag is compared with the detection of ITS id).
+    "by_image_order": no such info (box mode, older model): id 0 = the tag with the smaller image u."""
+    ids = ((getattr(sm, "info", None) or {}).get("finger_kit") or {}).get("tag_ids")
+    if ids:
+        by = {int(ids[f"tag_{s}"]): s for s in ("l", "r")}
+        if sorted(by) == sorted(TAG_IDS):
+            return tuple(by[t] for t in TAG_IDS), "by_id"
+    return tuple(sorted(("l", "r"), key=lambda s: proj[s][0])), "by_image_order"
+
+
 def run(args) -> int:
     sims: dict = {}
     try:
@@ -565,6 +574,7 @@ def _run(args, sims: dict) -> int:
     store: dict = {}
     rows: list = []
     tag_rows: list = []
+    tag_pairing = None                    # "by_id" | "by_image_order" (tag_order)
     fit_obs: list = []
     rel_poses: list = []
     queries: list = []
@@ -715,7 +725,7 @@ def _run(args, sims: dict) -> int:
             for s in ("l", "r"):
                 P = sim[s]
                 proj[s] = np.array([K_uw[0, 0] * P[0] / P[2] + K_uw[0, 2], K_uw[1, 1] * P[1] / P[2] + K_uw[1, 2]])
-            order = sorted(("l", "r"), key=lambda s: proj[s][0])        # id 0 = the left (smaller u) tag
+            order, tag_pairing = tag_order(base.sm, proj)
             tr = {"demo": d, "frame": fi, "uw_raw": j, "gap_m": gap, "width_m": float(width[fg]), "detected": sorted(det)}
             for tid, s in zip(TAG_IDS, order):
                 if tid not in det:
@@ -824,7 +834,8 @@ def _run(args, sims: dict) -> int:
         "robot_pixels_matched": {s: {"hand_tooling_frac": stats([r["hand_frac"] for r in rows if r["stream"] == s]),
                                      "arm_frac": stats([r["arm_frac"] for r in rows if r["stream"] == s])} for s in STREAMS},
         "hand_mask_home": hand,
-        "tags": {"err_px": {str(t): stats([r[f"err_px_{t}"] for r in tag_rows if f"err_px_{t}" in r]) for t in TAG_IDS},
+        "tags": {"tag_pairing": tag_pairing,
+                 "err_px": {str(t): stats([r[f"err_px_{t}"] for r in tag_rows if f"err_px_{t}" in r]) for t in TAG_IDS},
                  "detect_rate": {str(t): float(np.mean([t in r["detected"] for r in tag_rows])) if tag_rows else None for t in TAG_IDS},
                  "offset_uw_mm_mean": {str(t): np.round(np.mean([r[f"d3_mm_{t}"] for r in tag_rows if f"d3_mm_{t}" in r], axis=0), 2).tolist()
                                        if any(f"d3_mm_{t}" in r for r in tag_rows) else None for t in TAG_IDS},
@@ -870,6 +881,7 @@ def summary_text(res: dict) -> str:
             lines.append(f"  {'':9s} {src:16s} {f(v['full']['mae'], 'mean'):>8s} {f(v['roi']['mae'], 'mean'):>6s} {f(v['scene']['mae'], 'mean'):>6s} | "
                          f"{f(v['full']['ssim'], 'mean', '{:.3f}'):>9s} {f(v['roi']['ssim'], 'mean', '{:.3f}'):>6s} {f(v['scene']['ssim'], 'mean', '{:.3f}'):>6s}")
     tg = res["tags"]["err_px"]
+    lines.append(f"  tag pairing: {res['tags'].get('tag_pairing')}")
     lines.append(f"  tags px id0 p50/p95/max {f(tg['0'])}/{f(tg['0'], 'p95')}/{f(tg['0'], 'max')}  id1 {f(tg['1'])}/{f(tg['1'], 'p95')}/{f(tg['1'], 'max')}")
     return "\n".join(lines)
 

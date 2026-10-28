@@ -1,0 +1,7 @@
+A9 F3: real finger kit into the repo (2026-10-27)
+- Copied the finger-centred build ($S/a9e/alt/iphumi_umi_soft_v1_fc) to franka_sim/franka_sim/assets/finger_kits/iphumi_umi_soft_v1/ (4 STLs + kit.yaml), id set to iphumi_umi_soft_v1.
+- kit.yaml: comment header noting min adapter length ~0.008 m (holder back end otherwise inside the Hand body hull); no schema change.
+- finger-kit pin, then the Origin section from a9e/tools/source_origin.md re-appended to SOURCE.md (check-assets parser ignores it: OK).
+- kit_sha256 1e7778bcec2b1287387275c9d18839e6d7e5cab999b57432ca6442fc8e0f34d4
+- check-assets OK (128 files, 1 kit); finger-kit check OK; tests/test_assets.py 6 passed; finger-kit report smoke with kit sets OK.
+- Tooling YAMLs unchanged (mode box stays default).

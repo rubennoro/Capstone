@@ -1,0 +1,8 @@
+A9h2 (F2): camera-check by tag id + report labels + doc fixes (A9.REVIEW findings 2-7, 10)
+- camera_check.py: tag_order(sm, proj) pairs sim tags with ArUco ids by sm.info["finger_kit"]["tag_ids"] ("by_id") else by image u-order
+  ("by_image_order"); reported as res["tags"]["tag_pairing"] and in summary_text. Dead "has no tags" mapping removed (tag_guard covers it).
+- finger_kit_cli.py: mount_mass_kg (tooling_mass_kg kept as alias for one release); stock friction from compiled geom_friction[pad_l];
+  stock flange_to_tip_m labelled "pad top", new flange_to_mesh_tip_m (0.1123).
+- stage1_replay.py: stock summary column label "no length axis".
+- docs: finger_model.md (paths, timestep 0.001, tip 53.90, test names, masses/F1, Stage 1 box vs kit, fitted status, open items resolved); README CLI list + finger-kit.
+- tests: test_tag_order_by_id_and_fallback, stock report assertions, tag_pairing in the quick test.

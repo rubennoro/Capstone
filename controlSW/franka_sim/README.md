@@ -1,7 +1,7 @@
 # franka_sim
 
 MuJoCo simulation of the Franka arm (Panda + Franka Hand, FR3) used to evaluate policies before hardware day.
-Package: official [mujoco_menagerie](https://github.com/google-deepmind/mujoco_menagerie) models, MuJoCo Panda/FR3 + Franka Hand model, kinematics, SimCore/MuJoCoBackend, scene, renderer, Stage 1/1b campaign, and the eval CLI (`python -m franka_sim --help`: check-assets, model, stage1, campaign, camera-check, camera-gap, characterize, eval).
+Package: official [mujoco_menagerie](https://github.com/google-deepmind/mujoco_menagerie) models, MuJoCo Panda/FR3 + Franka Hand model, kinematics, SimCore/MuJoCoBackend, scene, renderer, Stage 1/1b campaign, and the eval CLI (`python -m franka_sim --help`: check-assets, model, stage1, campaign, camera-check, camera-gap, finger-kit, characterize, eval).
 
 - Assets: `franka_sim/assets/` (pinned commit + sha256 per file in `assets/SOURCE.md`, Apache-2.0 licences kept).
   Re-vendor with `python -I franka_sim/tools/vendor_menagerie.py --commit <sha|HEAD> --scratch <empty dir>`.

@@ -1,0 +1,76 @@
+# Provenance note: the minimum adapter length for this kit is about 0.008 m (tooling.adapter_length_m). With a shorter
+# adapter the holder back end lies inside the Franka Hand body hull. The kit itself carries no adapter length (no schema
+# field); the station tooling sets it. Origin of the meshes: see SOURCE.md.
+schema: finger_kit/v1
+id: iphumi_umi_soft_v1
+units: m
+parts:
+  finger_left: {mesh: finger_left.stl, role: contact, material: tpu, collision: hull}
+  finger_right: {mesh: finger_right.stl, role: contact, material: tpu, collision: hull}
+  finger_holder_left: {mesh: finger_holder_left.stl, role: structure, material: pla, collision: hull}
+  finger_holder_right: {mesh: finger_holder_right.stl, role: structure, material: pla, collision: hull}
+materials:
+  pla: {density_kg_m3: 1240}
+  tpu: {density_kg_m3: 1210}
+sides:
+  left:
+    parts: [finger_left, finger_holder_left]
+    kit_T_M:
+    - [0.0, -1.0, 0.0, -0.0625447]
+    - [0.0, 0.0, 1.0, 0.044]
+    - [-1.0, 0.0, 0.0, -0.0022]
+    - [0.0, 0.0, 0.0, 1.0]
+    camera_face: -x
+    tip: [-0.039996, 0.2013503, -0.0022]
+    tags:
+    - id: 0
+      'on': finger_holder_left
+      centre: [-0.06, 0.0875, 0.0166]
+      normal: [0.0, 0.0, 1.0]
+      up: [0.0, 1.0, 0.0]
+      size: 0.016
+  right:
+    parts: [finger_right, finger_holder_right]
+    kit_T_M:
+    - [0.0, 1.0, 0.0, 0.0625447]
+    - [0.0, 0.0, 1.0, 0.044]
+    - [1.0, 0.0, 0.0, -0.0022]
+    - [0.0, 0.0, 0.0, 1.0]
+    camera_face: +x
+    tip: [0.0394269, 0.2013456, -0.0022]
+    tags:
+    - id: 1
+      'on': finger_holder_right
+      centre: [0.06, 0.0875, 0.0166]
+      normal: [0.0, 0.0, 1.0]
+      up: [0.0, 1.0, 0.0]
+      size: 0.016
+variants:
+  finger_only:
+    left: [finger_left]
+    right: [finger_right]
+contact:
+  friction: [1.0, 0.005, 0.0001]
+  solref: null
+  solimp: null
+provenance:
+  geometry: {status: derived, source: 'UMI gripper CAD (vis_assembly.stl, Onshape a8a98201374f5cc9c6538790): soft fingers + finger holders split by connectivity; frames derived from the meshes (see the
+      keys below and SOURCE.md)'}
+  meshes: {status: derived, source: 'split from vis_assembly.stl (Onshape UMI Gripper a8a98201374f5cc9c6538790, user export 2026-10-27/28) by vertex connectivity (1e-4 mm weld), kept in assembly coordinates
+      (m); the soft finger copies match soft_gripper_finger.stl (Onshape Soft Finger c8d06048fc2e425772f2749c) to < 1e-4 mm'}
+  sides_naming: {status: derived, source: 'left = assembly -x (image-left for an upright camera at assembly +z looking +y), right = assembly +x'}
+  mirror_check: {status: derived, source: 'finger_right = finger_left rotated 180 deg about assembly y (proper rotation, max vertex error 1e-4 mm; the finger also has its own mirror plane); holders are
+      mirror images (det -1 fit, shape identical; best proper rotation misfits by 22.8 mm) -> two holder STLs; two finger STLs so each side''s parts share one kit_T_M'}
+  kit_T_M: {status: derived, source: 'derived from vis_assembly.stl geometry: M origin = centre of the holder''s back end (rack slab toward the linkage: assembly y = holder y_min 44.0 mm; x, z = bbox centre
+      of the slab y in [44.0, 50.8] mm), EXCEPT the M x origin (assembly z) is moved to the soft finger mid-plane z = -2.2 mm so the fingertip midpoint lies on the hand centre line; z = assembly +y (toward
+      the fingertip), y = outward (left: -x, right: +x), x = y cross z'}
+  tip: {status: derived, source: 'derived from vis_assembly.stl geometry: on the gripping face plane (inner-most x of the soft finger), at the distal end (max y of the finger, 201.35 mm), in the mid-plane
+      of the finger thickness (assembly z = (-15.1 + 10.7)/2 = -2.2 mm)'}
+  camera_face: {status: derived, source: 'derived from vis_assembly.stl geometry: the camera (GoPro-sized 72 x 50.8 x 33.6 mm body at assembly z 49-100 mm) is on assembly +z (handle on -z); +z = M +x for
+      side right, M -x for side left'}
+  tags_pose: {status: derived, source: 'derived from vis_assembly.stl geometry: centre of the engraved 20 x 20 mm sticker outline (0.3 mm deep groove) on each holder''s top face (assembly z = 16.6 mm, normal
+      +z = camera side) at assembly (+-60.0, 87.5) mm; up = toward the fingertip (cosmetic: the sim ink is a plain square)'}
+  tag_size: {status: derived, source: 'iPhUMI aruco_config.yaml marker_size_map ids 0, 1: 0.016 m (16 mm marker inside the 20 mm sticker outline)'}
+  tag_ids: {status: derived, source: 'iPhUMI calibrate.py / gripper_util.py: left_id = 0, right_id = 1, width = right_x - left_x (id 0 = smaller image x); left side = assembly -x; to confirm with camera-check'}
+  materials: {status: datasheet, source: 'datasheet-typical PLA 1240 kg/m3 (holders), TPU 1210 kg/m3 (fingers), solid volume; placeholder until the printed parts are weighed (infill makes real parts lighter)'}
+  contact: {status: placeholder, source: TPU friction placeholder 1.0 (torsional/rolling = model defaults); measure (P6)}

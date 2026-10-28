@@ -386,6 +386,60 @@ def _add_mesh(arm, name: str, vertices, faces=None) -> str:
     return name
 
 
+def mesh_inertia(vertices, faces, mass: float) -> tuple[np.ndarray, np.ndarray]:
+    """(COM (3,), 3x3 inertia tensor about the COM) of a closed triangle mesh of uniform density and total ``mass``,
+    in the vertices' frame. Signed tetrahedra (origin, a, b, c): volume det/6, first moment det/24 (a + b + c),
+    second moment det/120 (A A^T + (sum)(sum)^T) with A = [a b c]; the mesh's winding sign is divided out."""
+    t = np.asarray(vertices, float)[np.asarray(faces, int)]          # (m, 3 vertices, 3)
+    det = np.einsum("ij,ij->i", t[:, 0], np.cross(t[:, 1], t[:, 2]))
+    vol = det.sum() / 6.0
+    if abs(vol) < 1e-15:
+        raise ValueError("mesh_inertia: mesh has zero volume (not closed?)")
+    s = t.sum(axis=1)
+    com = (det[:, None] * s).sum(axis=0) / 24.0 / vol
+    C = (np.einsum("i,ijk,ijl->kl", det, t, t) + np.einsum("i,ik,il->kl", det, s, s)) / 120.0   # int x x^T dV
+    rho = mass / vol                                                   # the sign cancels the winding
+    C_com = rho * C - mass * np.outer(com, com)
+    return com, np.trace(C_com) * np.eye(3) - C_com
+
+
+def box_inertia(mass: float, size_full) -> np.ndarray:
+    a, b, c = (float(x) for x in size_full)
+    return mass / 12.0 * np.diag([b * b + c * c, a * a + c * c, a * a + b * b])
+
+
+def combine_inertia(items) -> tuple[float, np.ndarray, np.ndarray]:
+    """items: (mass, com (3,), 3x3 inertia about com), all in one frame -> (mass, com, inertia about com)."""
+    mt = float(sum(m for m, _, _ in items))
+    com = sum(m * np.asarray(c, float) for m, c, _ in items) / mt
+    I = np.zeros((3, 3))
+    for m, c, Ic in items:
+        d = np.asarray(c, float) - com
+        I += np.asarray(Ic, float) + m * (d @ d * np.eye(3) - np.outer(d, d))
+    return mt, com, (I + I.T) / 2
+
+
+def _set_body_inertia(body, mass: float, com, I) -> None:
+    """Explicit MjSpec inertial: principal moments + iquat (eigenvectors as a proper rotation)."""
+    w, V = np.linalg.eigh(I)
+    if np.linalg.det(V) < 0:
+        V[:, 2] = -V[:, 2]
+    body.mass = float(mass)
+    body.ipos = np.asarray(com, float)
+    body.inertia = w
+    body.iquat = mat_to_quat(V)
+
+
+def _stock_inertial(m0, body: str) -> tuple[float, np.ndarray, np.ndarray]:
+    import mujoco
+
+    b = mujoco.mj_name2id(m0, mujoco.mjtObj.mjOBJ_BODY, body)
+    R = np.zeros(9)
+    mujoco.mju_quat2Mat(R, m0.body_iquat[b])
+    R = R.reshape(3, 3)
+    return float(m0.body_mass[b]), m0.body_ipos[b].astype(float).copy(), R @ np.diag(m0.body_inertia[b]) @ R.T
+
+
 def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_y: float, info: dict) -> np.ndarray:
     """A9c: mount a finger kit on both Franka fingers (frame chain in A9.md / finger_kit.py); returns hand_T_TCP.
 
@@ -398,7 +452,10 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
     adapter (J = its base face): all its collisions are off and its visual meshes go to group 3 (not rendered).
     TCP origin = (0, 0, z_mid) in the hand frame, z_mid = mean hand z of the two placed tips at gap 0.
     ``kit_variant`` (default full) selects the parts per side (finger_kit variants); a tag whose carrier part is not in
-    the variant is not placed and is listed in info finger_kit.tags_skipped (no tag_{l|r} -> TCP_T_tag_* None)."""
+    the variant is not placed and is listed in info finger_kit.tags_skipped (no tag_{l|r} -> TCP_T_tag_* None).
+    Dynamics: each finger body's explicit inertial = stock finger (hand.xml) + placed parts (uniform-density mesh
+    inertia) + adapter block, combined about the joint COM (info finger_kit.finger_body_*). info finger_kit.tag_ids =
+    {placed tag geom name: ArUco id}."""
     import mujoco
 
     from franka_sim import finger_kit as FK
@@ -434,7 +491,8 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
     rep: dict = {"id": kit.id, "sha": kit.sha256, "path": str(kit.path), "variant": variant, "tags_skipped": [],
                  "side_for_finger": {}, "L": L, "dy": {},
                  "dy_source": "auto" if dy_cfg == "auto" else "tooling.finger_adapter.lateral_offset_m",
-                 "yaw": yaw, "J_m": {}, "masses_kg": {}}
+                 "yaw": yaw, "J_m": {}, "masses_kg": {}, "tag_ids": {}, "finger_body_mass_kg": {},
+                 "finger_body_com_m": {}, "finger_body_inertia_kgm2": {}, "finger_body_contributions": {}}
     tips_h, inner_y, pad_len, tag_h = [], {}, [], {}
     for s, fb in (("l", names["bodies"]["finger_l"]), ("r", names["bodies"]["finger_r"])):
         body = arm.body(fb)
@@ -457,10 +515,17 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
         rep["tags_skipped"] += [dict(t, finger=s, side=ks) for t in pl_["tags_skipped"]]
         rep["side_for_finger"][s], rep["dy"][s], rep["J_m"][s] = ks, dy, [0.0, y_c, z_base]
         masses = {}
+        # F1 (A9 review finding 1): the finger body has an explicit <inertial> (hand.xml), so geom masses are ignored
+        # by the compiler; the kit parts + adapter are folded into that inertial below (stock finger + parts).
+        m_st, c_st, I_st = _stock_inertial(m0, fb)
+        inert = [("stock_finger", m_st, c_st, I_st)]
         if L > 0:
-            _box(body, f"finger_adapter_{s}", [sx, sy, L], J @ make_T(None, [0, 0, L / 2]), [0.45, 0.45, 0.5, 1],
-                 collide=True, mass=ADAPTER_DENSITY_KG_M3 * sx * sy * L)
-            masses[f"finger_adapter_{s}"] = ADAPTER_DENSITY_KG_M3 * sx * sy * L
+            T_ad = J @ make_T(None, [0, 0, L / 2])
+            m_ad = ADAPTER_DENSITY_KG_M3 * sx * sy * L
+            _box(body, f"finger_adapter_{s}", [sx, sy, L], T_ad, [0.45, 0.45, 0.5, 1], collide=True, mass=m_ad)
+            masses[f"finger_adapter_{s}"] = m_ad
+            inert.append((f"finger_adapter_{s}", m_ad, T_ad[:3, 3].copy(),
+                          T_ad[:3, :3] @ box_inertia(m_ad, [sx, sy, L]) @ T_ad[:3, :3].T))
         k_struct = 0
         for pn in pl_["parts"]:                                # the variant's parts, side order
             part = kit.parts[pn]
@@ -485,6 +550,15 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
                         _mesh_geom(arm, body, f"{gname}_c{i}", mesh_for(pn, i), T, [0.85, 0.85, 0.8, 0],
                                    collide=True, mass=0.0)
             masses[gname] = part.mass_kg
+            c_p, I_p = mesh_inertia(part.vertices @ T[:3, :3].T + T[:3, 3], part.faces, part.mass_kg)
+            inert.append((gname, part.mass_kg, c_p, I_p))
+        m_b, c_b, I_b = combine_inertia([(m_, c_, I_) for _, m_, c_, I_ in inert])
+        _set_body_inertia(body, m_b, c_b, I_b)
+        rep["finger_body_mass_kg"][s] = m_b
+        rep["finger_body_com_m"][s] = c_b.tolist()
+        rep["finger_body_inertia_kgm2"][s] = I_b.tolist()
+        rep["finger_body_contributions"][s] = {n_: {"mass_kg": float(m_), "com_m": np.asarray(c_, float).tolist()}
+                                               for n_, m_, c_, _ in inert}
         for i, t in enumerate(pl_["tags"]):
             tn = f"tag_{s}" + ("" if i == 0 else f"{i}")
             Rt = t["body_T_tag"][:3, :3]
@@ -492,6 +566,7 @@ def _mount_kit(arm, m0, d0, names: dict, tool: dict, grip_sol: dict, mesh_inner_
             _box(body, tn, [0.001, t["size_m"], t["size_m"]], make_T(Rt, c), [1, 1, 1, 1], collide=False)
             _box(body, f"{tn}_ink", [0.001, 0.6 * t["size_m"], 0.6 * t["size_m"]],
                  make_T(Rt, c + 0.0006 * t["normal"]), [0, 0, 0, 1], collide=False)
+            rep["tag_ids"][tn] = int(t["id"])      # F1 (finding 2): which ArUco id sits on each placed tag geom
             if i == 0:
                 tag_h[s] = hT[:3, :3] @ c + hT[:3, 3]
         tips_h.append(hT[:3, :3] @ pl_["tip"] + hT[:3, 3])
@@ -848,15 +923,25 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
 
     model = arm.compile()
 
-    # payload: housing + cradle (+ box adapters, massless here; kit parts are in the finger bodies) vs payload.mass_kg - hand
+    # payload: housing + cradle (the phone mount) vs payload.mass_kg - hand. Box pads/adapters add no mass (the finger
+    # bodies' explicit inertials ignore geom masses); kit parts + placeholder adapters ARE simulated, folded into the
+    # finger-body inertials by _mount_kit. hand_mass_kg stays the Franka hand + stock fingers (kit additions excluded,
+    # reported as finger_kit_mass_kg), so expected_tooling/difference mean the same in every mode.
     hb = model.body(names["bodies"]["hand"]).id
+    kit_add = 0.0
+    if mode == "kit":
+        fk = info["finger_kit"]
+        kit_add = float(sum(fk["finger_body_mass_kg"][s] - fk["finger_body_contributions"][s]["stock_finger"]["mass_kg"]
+                            for s in ("l", "r")))
     hand_mass = float(sum(model.body_mass[i] for i in range(model.nbody)
-                          if i == hb or model.body_parentid[i] == hb))
+                          if i == hb or model.body_parentid[i] == hb)) - kit_add
     tooling_mass = float(sum(masses.values()))
     pay = float(tool["payload"]["mass_kg"])
     info["payload"] = {"payload_mass_kg": pay, "hand_mass_kg": hand_mass, "tooling_mass_kg": tooling_mass,
                        "tooling_masses_kg": masses, "expected_tooling_kg": pay - hand_mass,
                        "difference_kg": tooling_mass - (pay - hand_mass)}
+    if mode == "kit":
+        info["payload"]["finger_kit_mass_kg"] = kit_add
 
     limits = {
         "q_min_rad": np.array(robot["joints"]["q_min_rad"], float),

@@ -931,8 +931,8 @@ def summary_text(rows, rec) -> str:
                      f"{r['cone_violation_fraction_mean']:9.3f} {r['cone_max_angle_deg']:11.1f} {r['n_demos_outside_box']:4d} "
                      f"{r['n_feasible_dq_ok']:5d} ({p['gx']:.2f}, {p['gy']:.2f}, {p['yaw_deg']:.0f})")
     g = rows[0]["gates"] if rows else {}
-    lines.append(f"columns: {lab} = tooling.finger_adapter.{key0} (finger mode {rows[0].get('finger_mode', 'box') if rows else '?'}"
-                 f"{'; stock fingers have no length axis' if key0 is None else ''}), f2tip = flange to fingertip along "
+    lines.append(f"columns: {lab} = {'no length axis' if key0 is None else 'tooling.finger_adapter.' + key0} (finger mode {rows[0].get('finger_mode', 'box') if rows else '?'}"
+                 f"), f2tip = flange to fingertip along "
                  "flange z (from the built model); tool_clr = worst tooling clearance over all demos, clr_feas / marg_feas = over feasible demos, "
                  "marg_all = worst joint margin over all demos (incl. infeasible); clamp = SafetyFilter clamp fraction and "
                  "t>vmax = time above v_max, both on the flange path; tcp_t>v = time above v_max on the TCP path "

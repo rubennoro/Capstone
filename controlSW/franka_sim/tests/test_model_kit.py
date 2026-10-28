@@ -536,3 +536,132 @@ def test_stock_mode_scripted_pick_and_lift(stock):
     rows = [pick_and_lift(st, sm, seed) for seed in range(2)]
     print("\nstock pick:", [(r["success"], r["reason"], r["in_hand_slip_m"]) for r in rows])
     assert all(r["reflex_core"] is None for r in rows), rows
+
+
+# ------------------------------------------- F1 (A9 review findings 1, 2): kit masses in the dynamics, tag ids
+
+# Stock mode recorded at b5d3061 (before F1 edited model.py), mujoco 3.3.0, sim-iphone; same _digest as HEAD_DIGESTS.
+STOCK_DIGESTS = {
+    ("panda", "+y"): ("949633d33eff4c6186f9a292df26f5896cc229c24923db8515b71b9fae28d2d5",
+                      "7e9923d9aeb7e1464dcd414359e952f51da82fc901e80eff50fe7d47231ddf48"),
+    ("panda", "-y"): ("ef98c3e14c4f4220ab2b505636d21ea11e8ef36db9a3c05e80853328604b004e",
+                      "9b4270a7d1262b8b6e448ed9cb5c9ca24f584fb8f7d75b64ec80e0af67e33b4d"),
+    ("fr3", "+y"): ("e77af5723d7b3f787ebd4321fa812d5671a9b217d30ef5d2995a1876b1eff94b",
+                    "94235a5ee09a46d7e8d700a9253aaad7360d3a675d1af415bdfb8b19ae1ae39b"),
+    ("fr3", "-y"): ("d6c2c5aef37b05c4beaff7c77a4d8a16c7137a59bdaf832889af6f20809de52a",
+                    "0480bb44f62210cd90d6f37fabe212ea4377dbd39b4cc5115e5da120009dd789"),
+}
+STOCK_FINGER = (0.015, np.zeros(3), np.diag([2.375e-6, 2.375e-6, 7.5e-7]))     # hand.xml finger <inertial>
+
+
+@pytest.mark.parametrize("robot,cam", sorted(STOCK_DIGESTS))
+def test_stock_mode_byte_identical_to_b5d3061(robot, cam):
+    if mujoco.__version__ != "3.3.0":
+        pytest.skip(f"digests recorded with mujoco 3.3.0, have {mujoco.__version__}")
+    st = load_station(_spec("sim-iphone", robot), sets=["tooling.finger_adapter.mode=stock",
+                                                        f"tooling.tcp_x_along_hand={cam}"])
+    sm = M.build_model(st)
+    assert _digest(sm) == STOCK_DIGESTS[(robot, cam)]
+    assert "finger_kit_mass_kg" not in sm.info["payload"]
+
+
+def _body_inertial(sm, s):
+    m = sm.model
+    b = m.body(sm.names["bodies"][f"finger_{s}"]).id
+    R = np.zeros(9)
+    mujoco.mju_quat2Mat(R, m.body_iquat[b])
+    R = R.reshape(3, 3)
+    return float(m.body_mass[b]), m.body_ipos[b].copy(), R @ np.diag(m.body_inertia[b]) @ R.T
+
+
+def _check_mass(sm, kit, L, section=(0.021, 0.024)):
+    fk = sm.info["finger_kit"]
+    for s in ("l", "r"):
+        side = fk["side_for_finger"][s]
+        parts = FK.variant_parts(kit, fk["variant"], side)
+        want = 0.015 + sum(kit.parts[p].mass_kg for p in parts) + (M.ADAPTER_DENSITY_KG_M3 * section[0] * section[1] * L
+                                                                     if L > 0 else 0.0)
+        mb, _, Ib = _body_inertial(sm, s)
+        assert abs(mb - want) < 1e-9, (s, mb, want)
+        assert abs(fk["finger_body_mass_kg"][s] - want) < 1e-9
+        assert np.linalg.eigvalsh(Ib).min() > 0
+        assert set(fk["finger_body_contributions"][s]) == {"stock_finger", *(
+            [f"finger_adapter_{s}"] if L > 0 else []), *(g for g in fk["masses_kg"] if g.endswith(f"_{s}")
+                                                       and not g.startswith("finger_adapter"))}
+    add = sum(fk["finger_body_mass_kg"].values()) - 0.03
+    assert sm.info["payload"]["finger_kit_mass_kg"] == pytest.approx(add, abs=1e-12)
+    assert sm.info["payload"]["hand_mass_kg"] == pytest.approx(0.76, abs=1e-9)    # Franka hand + stock fingers only
+
+
+def test_kit_finger_body_mass_box_equivalent(equiv):
+    _check_mass(equiv["sm_k"], equiv["kit"], equiv["pk"]["L"])
+    for s in ("l", "r"):                    # box mode: the finger body is the stock 0.015 kg (geom masses ignored)
+        assert _body_inertial(equiv["sm_b"], s)[0] == 0.015
+
+
+@pytest.mark.parametrize("cam", ["+y", "-y"])
+@pytest.mark.parametrize("variant", ["plain", "full", "finger_only"])
+def test_kit_finger_body_mass_variants(variants, cam, variant):
+    sm = variants[cam, variant]
+    kit = FK.load_kit(sm.info["finger_kit"]["path"])
+    _check_mass(sm, kit, 0.02)
+    names = set().union(*(sm.info["finger_kit"]["finger_body_contributions"][s] for s in "lr"))
+    assert any(n.startswith("finger_holder") for n in names) == (variant == "full")
+
+
+def _grid_box(mass, T, lo, hi, n=40):
+    """Independent midpoint-grid estimate of (com, inertia about com) for a uniform box [lo, hi] mapped by T."""
+    ax = [np.linspace(a, b, n, endpoint=False) + (b - a) / (2 * n) for a, b in zip(lo, hi)]
+    P = np.stack(np.meshgrid(*ax, indexing="ij"), -1).reshape(-1, 3) @ T[:3, :3].T + T[:3, 3]
+    c = P.mean(axis=0)
+    D = P - c
+    w = mass / len(P)
+    I = w * ((D * D).sum(1).sum() * np.eye(3) - D.T @ D)
+    return mass, c, I
+
+
+def test_kit_finger_body_com_inertia_vs_grid(equiv):
+    """Body COM / inertia vs a grid integration of the stock finger + adapter block + pad box (pad from the kit's M
+    frame box, not from its mesh), parallel-axis combined."""
+    sm, kit, pk, fa = equiv["sm_k"], equiv["kit"], equiv["pk"], equiv["fa"]
+    px, pt, pl = (float(x) for x in fa["pad_size_m"])
+    b = 0.008
+    sx, sy = 0.021, 0.024
+    L = pk["L"]
+    for s in ("l", "r"):
+        side = sm.info["finger_kit"]["side_for_finger"][s]
+        pl_ = FK.place(kit, side, equiv["J"], L, pk["dy"])
+        items = [STOCK_FINGER,
+                 _grid_box(M.ADAPTER_DENSITY_KG_M3 * sx * sy * L, equiv["J"], [-sx / 2, -sy / 2, 0], [sx / 2, sy / 2, L]),
+                 _grid_box(kit.parts[pl_["contact_part"]].mass_kg, pl_["body_T_M"], [-px / 2, b / 2, 0],
+                           [px / 2, b / 2 + pt, pl])]
+        mt, c, I = M.combine_inertia(items)
+        mb, cb, Ib = _body_inertial(sm, s)
+        assert abs(mb - mt) < 1e-9
+        np.testing.assert_allclose(cb, c, atol=1e-7)
+        np.testing.assert_allclose(Ib, I, atol=2e-3 * np.abs(I).max())
+        assert np.linalg.eigvalsh(Ib).min() > 0
+
+
+def test_mesh_inertia_matches_box_formula():
+    from scipy.spatial.transform import Rotation
+
+    lo, hi = np.array([-0.01, 0.004, 0.0]), np.array([0.01, 0.012, 0.03])
+    v, f = FK._box_mesh(lo, hi)
+    R = Rotation.from_euler("xyz", [30, -50, 110], degrees=True).as_matrix()
+    t = np.array([0.1, -0.2, 0.05])
+    for faces in (f, f[:, ::-1]):                         # winding sign divided out
+        c, I = M.mesh_inertia(v @ R.T + t, faces, 0.0048)
+        np.testing.assert_allclose(c, R @ ((lo + hi) / 2) + t, atol=1e-12)
+        np.testing.assert_allclose(I, R @ M.box_inertia(0.0048, hi - lo) @ R.T, atol=1e-15)
+
+
+@pytest.mark.parametrize("cam", ["+y", "-y"])
+def test_kit_tag_ids_follow_side_selection(variants, cam):
+    for v in ("plain", "full"):
+        fk = variants[cam, v].info["finger_kit"]
+        sides = fk["side_for_finger"]
+        kit = FK.load_kit(fk["path"])
+        assert fk["tag_ids"] == {f"tag_{s}": kit.sides[sides[s]].tags[0].id for s in ("l", "r")}
+        assert fk["tag_ids"] == ({"tag_l": 0, "tag_r": 1} if cam == "+y" else {"tag_l": 1, "tag_r": 0})
+    assert variants[cam, "finger_only"].info["finger_kit"]["tag_ids"] == {}

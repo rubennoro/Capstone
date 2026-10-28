@@ -32,7 +32,7 @@ Source tags: `A9.md` = `controlSW/docs/sim_plan/phases/A9.md`; `A9c.WORKLOG` ste
 Kit variants (`kit_variant`): `full` (soft finger + holder, tags) and `finger_only` (soft fingers only, defined in
 the kit's `kit.yaml` under `variants`). Both now work (A9c.WORKLOG step 11 had `finger_only` raising; D1 implemented it afterwards). A tag whose carrier
 part is absent is skipped and listed in `tags_skipped`: with `finger_only` both tags are skipped, so the kit tag separation is empty
-and the images show no tags (like stock, not vision-equivalent); masses lose the holders (section 8).
+and the images show no tags (like stock, not vision-equivalent); masses lose the holders (section 8). The kit masses (pad, holder, adapter block) are added to the finger bodies' inertials by the model, so the 2-finger dynamics see them; the added mass is `info["finger_kit"]["finger_body_mass_kg"]` (A9h; before A9h the kit masses were only reported, never simulated: A9.REVIEW finding 1).
 
 ### How to switch
 
@@ -85,7 +85,7 @@ Full chain: `body_T_kit = J . J_T_M . inv(kit_T_M)` (`finger_kit.py:1-24`). Only
 
 - **J from the menagerie mesh:** `jaw_mount()` (`model.py`) takes `finger_0` vertices within 1 mm of its lowest z as the
   footprint. Result: footprint x in [-10.5, 10.5] mm, y in [2.5, 26.3] mm, so y_c = 14.4 mm; base z about 0.13 mm
-  (float32 recentring); tip z 53.86 mm; identical in both finger frames (A9.md line 24; A9c.WORKLOG step 0).
+  (float32 recentring); tip z 53.90 mm (`_finger_tip_z`, max over all finger meshes; 53.86 mm is finger_0's own max); identical in both finger frames (A9.md line 24; A9c.WORKLOG step 0).
 - **Side selection:** each part declares `camera_face: +x | -x` in its M frame. The builder computes the camera direction
   in M (`J . Rz(yaw)` applied to the camera direction in the finger frame) and mounts the kit side whose sign matches;
   error if |x component| < 0.5 (yaw near 90 deg) (`model.py` `_mount_kit`, A9c.WORKLOG step 7). Kit sides are named by part
@@ -98,7 +98,7 @@ Full chain: `body_T_kit = J . J_T_M . inv(kit_T_M)` (`finger_kit.py:1-24`). Only
   | Mode | TCP z in the hand frame | Flange to TCP |
   |---|---|---|
   | stock | stock pad_1 centre z = 58.4 + 44.5 mm | **0.1029 m** (hand.xml:66, :21; A9c.WORKLOG step 10; Franka documents 0.1034) |
-  | box | 58.4 + (tip_z + extension - pl/2), pl = 30 mm, tip_z = 53.9 mm | 0.0973 m + extension (0.1973 m at +10 cm; matches the Stage 1b override in `results/stage1b/campaign.txt`) |
+  | box | 58.4 + (tip_z + extension - pl/2), pl = 30 mm, tip_z = 53.90 mm | 0.0973 m + extension (0.1973 m at +10 cm; matches the Stage 1b override in `controlSW/docs/sim_plan/results/stage1b/campaign.txt`) |
   | kit | mean z of the two placed `tip` points at gap 0 | box value + pl/2 only when L and dy are the box-equivalent ones (`box_equivalent_placement`). With L = 0 and `auto` (section 8 run) it is **0.0885 m**: M sits at J, so tip = 58.4 + 0.13 + 30 mm. Reported as `flange_to_tip_m`; residual x/y in `tcp_residual_mm` |
 
   iPhUMI's own definition is "the pose at the end of the gripper in the middle vertically and horizontally of the
@@ -119,12 +119,13 @@ MuJoCo; **CC** camera-check (sim tags vs detected real tags).
 | Name | Value | Unit | Status | Source | Stages |
 |---|---|---|---|---|---|
 | Stock finger_0 jaw footprint (J) | x [-10.5, 10.5], y [2.5, 26.3], y_c 14.4 (14.41) | mm | derived (menagerie mesh, not Franka drawing) | `model.py` `jaw_mount`; A9c.WORKLOG step 0 | 1, 1b, 3, CC |
-| Stock finger tip z (finger frame) | 53.9 (53.86) | mm | derived | `model.py` `_finger_tip_z`; A9.md line 24 | all |
+| Stock finger tip z (finger frame) | 53.90 (finger_0 alone 53.86) | mm | derived | `model.py` `_finger_tip_z`; A9.md line 24 | all |
 | Finger body offset in hand | 58.4 | mm | datasheet-level (menagerie) | `hand.xml:66` | all |
 | Finger travel | 0 to 40 each, gap 0 to 80 | mm | datasheet | `hand.xml:11`, YAML `hand.stroke_m` 0.080 | all |
 | Stock pad (`fingertip_pad_collision_1`) | 17 x 8 x 17 (x, y, z); centre y 5.5, z 44.5 | mm | datasheet-level (menagerie) | `hand.xml:21` | stock mode |
 | Stock pad offset at gap 0 | 3.0 (1.5 per side) | mm | derived | `model.py` `_stock_fingers`; A9c.WORKLOG step 10 | stock mode |
-| Stock TCP, flange to TCP | 0.1029 (Franka doc 0.1034) | m | derived; 0.5 mm gap to the doc is **unexplained** | A9c.WORKLOG step 10; test `test_model_kit.py:444` | stock mode, 1, 1b |
+| Stock `flange_to_tip_m` / mesh tip | 0.1114 (pad_1 top: TCP + pad_length/2) / 0.1123 (`flange_to_mesh_tip_m`: finger z 53.90 + 58.4 mm, flange z) | m | derived; 0.9 mm gap is a label convention, not a bug | `finger-kit report` (stock); A9.REVIEW finding 5 | stock mode |
+| Stock TCP, flange to TCP | 0.1029 (Franka doc 0.1034) | m | derived; 0.5 mm gap to the doc is **unexplained** | A9c.WORKLOG step 10; test `test_stock_mode_pads_named_no_tags_tcp` | stock mode, 1, 1b |
 | Box pad size | 20 x 8 x 30 (x, thickness, length) | mm | placeholder | YAML `pad_size_m`; provenance "iphumi_finger_v1 print; not measured on the Franka Hand" | box mode |
 | Box pad offset (inner faces at gap 0) | 8 | mm | placeholder | `model.py` `PAD_OFFSET_M` | box mode, 1b, 3 |
 | Box `extension_m` | 0.0 in YAML; Stage 1 recommends 0.10 | m | placeholder / decision pending | YAML; `STATUS.md` Stage 1 table | 1, 1b, 2, 3 |
@@ -143,7 +144,7 @@ MuJoCo; **CC** camera-check (sim tags vs detected real tags).
 | Pad friction (box) | 1.0 (sliding; torsional/rolling MuJoCo defaults 0.005/0.0001) | - | placeholder | YAML `friction`; `model.py` `_box` | 1b, 3 |
 | Pad friction (kit) | kit `contact.friction`, template [1.0, 0.005, 0.0001] | - | placeholder | A9.md line 55 | 1b, 3 |
 | Eraser | 60 x 20 x 12 mm, 15 g, friction 0.9 | - | placeholder | `configs/station/scene/block_raise_table.yaml:5` | 1b, 3 |
-| Solver | elliptic cone, impratio 10, timestep 0.002 s, implicitfast | - | decision | `model.py` build_model step 7 (defaults when the run config omits them) | 1b, 3 |
+| Solver | elliptic cone, impratio 10, timestep 0.001 s (the sim-iphone/sim-rig built models; `configs/run/sim/physics.yaml`), implicitfast | - | decision | `model.py` build_model step 7 (defaults when the run config omits them) | 1b, 3 |
 | Multi-point CCD (`mjENBL_MULTICCD`) | on in kit mode only | - | decision (A9c fix) | `model.py` build_model step 7; A9c.WORKLOG step 17 | 1b, 3 |
 | Grasp height rule | pad/finger bottom 5 mm above the table | mm | decision | `scene.py:32,61-76`; A9c.WORKLOG step 13 | 1b, 3 |
 | Hand force / max force | 30 / 70 | N | decision / datasheet | YAML `hand.force_n`, `force_max_n` | 1b, 3 |
@@ -167,10 +168,10 @@ the earlier mistake of tying them together.
 
 - Before editing `model.py`, the SHA-256 of `spec.to_xml()` and of 27 compiled-model arrays plus geom names was recorded at
   HEAD `f230a96` for sim-iphone / sim-rig x panda / fr3 (mujoco 3.3.0, run twice, stable). The hashes are hard-coded in
-  `tests/test_model_kit.py:28-70` (a `git show HEAD` comparison would compare the file to itself once committed).
+  `test_box_mode_byte_identical_to_head` and `test_box_mode_grasp_height_unchanged` in `tests/test_model_kit.py` (a `git show HEAD` comparison would compare the file to itself once committed).
 - After the edit all four digests were identical, and a direct `to_xml()` diff against a HEAD copy (with and without
   scene) was identical (152,486 bytes). Re-checked after the stock/kit addendum (step 3 and 12).
-- Caveat: the digests are valid for mujoco 3.3.0 only; the test skips otherwise (`test_model_kit.py:64`).
+- Caveat: the digests are valid for mujoco 3.3.0 only; the test skips otherwise (`test_box_mode_byte_identical_to_head`).
 
 ### 5.2 Box-equivalent kit matches box mode (A9c.WORKLOG step 5; `test_model_kit.py`, tolerance `TOL = 1e-9`)
 
@@ -194,12 +195,12 @@ Also: an A9a reviewer probe on independent code reproduced the pad corners to 3.
 - Reviewer probe: contact part min y after placement = 7e-18 / 0 m for yaw 0 and 25 deg, both sides, and 7e-18 for J rotated
   180 deg about z (A9a.REVIEW check 2).
 - Model level: auto dy for the box-equivalent kit equals `-y_c - b/2` to 1e-12; the two pad inner faces touch (offset 0
-  to 1e-12) and `mj_geomDistance` at gap 0 matches the commanded gap to 1e-8 (`test_model_kit.py:309-316`).
+  to 1e-12) and `mj_geomDistance` at gap 0 matches the commanded gap to 1e-8 (`test_lateral_offset_auto_pads_touch_at_gap_zero`).
 
 ### 5.4 Stock mode pick
 
 Scripted pick with the stock pads (contact parameters from `grip_contact()`): 2 of 2 seeds lift and hold; TCP 0.1029 m
-(`test_model_kit.py:444`); grasp registers in `Scene.grasped` (A9c.WORKLOG steps 10, 13). Two seeds is a smoke test.
+(`test_stock_mode_pads_named_no_tags_tcp`); grasp registers in `Scene.grasped` (A9c.WORKLOG steps 10, 13). Two seeds is a smoke test.
 
 ### 5.5 The 20 N reflex in kit mode, diagnosis and fix (A9c.WORKLOG steps 14-17)
 
@@ -233,9 +234,11 @@ Scripted pick with the stock pads (contact parameters from `grip_contact()`): 2 
 | **J from the menagerie mesh, not Franka's finger-interface drawing.** | all kit results | A footprint error of a few tenths of a mm shifts the pad position by the same amount. Confirm on hardware day. Magnitude **unverified**. |
 | **Friction placeholder.** | 1b, 3 | Eraser holds in sim with friction 1.0 and 30 N; the real margin is unknown. |
 | **Stock mode has no tags.** | 2a, 2b, 3 (anything that reads images) | The policy cannot run in stock mode with a faithful image. Use stock only for reach and grasp-physics comparisons. |
+| **UW extrinsic `C_main_T_C_uw` is `fitted`.** | CC | Provenance status `fitted` (A9 W10B finding 5) marks a value fitted to camera-check data rather than measured; the iPhone `C_main_T_C_uw` uses it. camera-check pairs sim and detected tags by ArUco id (`tags.tag_pairing = "by_id"` when the model records `info["finger_kit"]["tag_ids"]`; box mode falls back to image u-order, `"by_image_order"`), so a swapped id mapping gives large pixel errors instead of passing. |
 | **Box tags are fitted, not geometric.** | CC, 2, 3 | Offsets (31.2 mm, -108 mm) were fitted to 5 demos and are confounded with the camera model: the UW camera extrinsic was fitted at the same time, with y 19 mm larger than the SIFT/lens prior (`YAML` provenance of `C_main_T_C_uw`). Pixel error with the fit: holdout p50 6.6 / 9.0 px and 9.2 / 4.3 px (main / UW) on two holdout sets of 5 demos. |
 | **TCP differs between modes** (pad centre vs tip vs stock pad). | 1, 1b | A mode change moves the TCP (kit = box + 15 mm for the equivalent kit; stock 0.1029 vs box 0.0973 m at extension 0). Results across modes are comparable only with the TCP and the grasp-height rule (pad bottom at 5 mm) in mind. |
-| **Stage 1b today** (box, +10 cm, `-y`): 3/43 demos within the tracking criterion at 0.5 speed, 36/45 reached the lift (ground-truth success) | 1b | The campaign is an arm-dynamics and speed-clamp result more than a finger result (most failures are `safety_clamp`); do not read finger accuracy from it. `results/stage1b/campaign.txt`. The 36/45 figure also appears in the plan file. |
+| **Stage 1 reach, box vs box-equivalent kit** (Panda, 45 demos, `-y`, A9.REVIEW section D). | 1 | box `extension_m` +0.10: 43/45 feasible, worst tooling clearance +23.8 mm; the box-equivalent kit (L = 0.123767, auto dy), same tip 0.2123 m: 43/45, +31.9 mm. Same feasible count and placement; the 8.1 mm clearance difference is the TCP convention: the kit TCP sits at the tip, 15 mm beyond the box pad-centre TCP, and `C_T_TCP` is fixed to the TCP, so the phone sits 15 mm further out along the flange z axis, away from links 5/6. The "+10 cm" answer stands as the box result. |
+| **Stage 1b today** (box, +10 cm, `-y`): 3/43 demos within the tracking criterion at 0.5 speed, 36/45 reached the lift (ground-truth success) | 1b | The campaign is an arm-dynamics and speed-clamp result more than a finger result (most failures are `safety_clamp`); do not read finger accuracy from it. `controlSW/docs/sim_plan/results/stage1b/campaign.txt`. The 36/45 figure also appears in the plan file. |
 | **Training-camera link `C_T_TCP` copied** for the 16 Pro and the Jetson rig. | CC, 2, 3 | The camera position relative to the TCP is assumed equal to the iPhone 15 Pro mount (`gripper_calibration.yaml:12`); the rig value is a copy to be measured. |
 
 ## 7. Pending evidence (needs the real STLs)
@@ -262,7 +265,7 @@ The tables below are produced by the tooling, not typed. Regenerate with
 `python -m franka_sim finger-kit report --profile sim-iphone [--set ...] --out DIR` and paste `finger_report.md` between the markers.
 
 <!-- BEGIN finger-kit report: python -m franka_sim finger-kit report --profile sim-iphone --out DIR -->
-Run on 2026-10-27, profile sim-iphone, panda, with the working tree of that day. The kit is the throwaway box-equivalent kit from `make_box_kit` in `$S/d4/kit` (id `box_equivalent`, pinned with `finger-kit pin`), not a real finger. Long paths in the overrides are shortened.
+Run on 2026-10-27, profile sim-iphone, panda, with the working tree of that day. The kit is the throwaway box-equivalent kit from `make_box_kit` in `$S/d4/kit` (id `box_equivalent`, pinned with `finger-kit pin`), not a real finger. Long paths in the overrides are shortened. Rows `mount_mass_kg`, stock `friction` and `flange_to_mesh_tip_m` and the stock `flange_to_tip_m` label were updated by hand after A9h2 changed the report (regenerate to confirm).
 
 #### (a) box mode (default)
 
@@ -280,7 +283,8 @@ Finger report: robot `panda`, tooling `franka_hand_iphumi_iphone16pro`, mode `bo
 | tcp_at | pad_centre |  | derived (model) | model |
 | solref | [0.002, 1] |  | decision | run/sim grip_solref (model.grip_contact) |
 | solimp | [0.95, 0.99, 0.001, 0.5, 2] |  | decision | run/sim grip_solimp (model.grip_contact) |
-| tooling_mass_kg | 0.299 | kg | derived (model) | sum of the tooling geom masses |
+| mount_mass_kg | 0.299 | kg | derived (model) | phone mount only (housing + cradle), sum of the tooling geom masses; the finger kit is not in it |
+| tooling_mass_kg | 0.299 | kg | derived (model) | deprecated alias of mount_mass_kg (kept for one release) |
 | flange_to_tcp_m | 0.0973 | m | derived (model) | F_T_TCP z (flange frame, along the approach axis) |
 | flange_to_tip_m | 0.1123 | m | derived (model) | distal pad edge on the centre line |
 | tag_separation_closed_m | 0.0864 | m | derived (model) | tag box centres at gap 0 |
@@ -305,13 +309,15 @@ Finger report: robot `panda`, tooling `franka_hand_iphumi_iphone16pro`, mode `st
 | pad_offset_m | 0.003 | m | datasheet | stock fingertip_pad_collision_1 inner faces at gap 0 |
 | tcp_residual_x_mm | 0 | mm | derived (model) | stock pad midpoint off the hand centre line |
 | tcp_residual_y_mm | 0 | mm | derived (model) | stock pad midpoint off the hand centre line |
-| friction |  |  | datasheet | menagerie stock pad friction (unchanged) |
+| friction | [1, 0.005, 0.0001] |  | datasheet | compiled model geom_friction of pad_l (menagerie stock pad, unchanged) |
 | tcp_at | stock_pads |  | derived (model) | model |
 | solref | [0.002, 1] |  | decision | run/sim grip_solref (model.grip_contact) |
 | solimp | [0.95, 0.99, 0.001, 0.5, 2] |  | decision | run/sim grip_solimp (model.grip_contact) |
-| tooling_mass_kg | 0.299 | kg | derived (model) | sum of the tooling geom masses |
+| mount_mass_kg | 0.299 | kg | derived (model) | phone mount only (housing + cradle), sum of the tooling geom masses; the finger kit is not in it |
+| tooling_mass_kg | 0.299 | kg | derived (model) | deprecated alias of mount_mass_kg (kept for one release) |
 | flange_to_tcp_m | 0.1029 | m | derived (model) | F_T_TCP z (flange frame, along the approach axis) |
-| flange_to_tip_m | 0.1114 | m | derived (model) | distal pad edge on the centre line |
+| flange_to_tip_m | 0.1114 | m | derived (model) | pad top (distal pad edge on the centre line; stock: finger_1 pad top) |
+| flange_to_mesh_tip_m | 0.1123 | m | derived (model) | stock finger mesh tip (_finger_tip_z) along the flange z axis; the pad top is flange_to_tip_m |
 | F_T_TCP_xyz_mm | [0, 0, 102.9] | mm | derived (model) | TCP from the finger geometry |
 | F_T_TCP_rpy_deg | [0, 0, 45] | deg | derived (model) | TCP from the finger geometry |
 | F_T_TCP_source | derived |  | derived (model) | model |
@@ -354,7 +360,8 @@ Finger report: robot `panda`, tooling `franka_hand_iphumi_iphone16pro`, mode `ki
 | multiccd | on (kit mode: multi-point contacts for the mesh pads) |  | derived (model) | model: kit mode only |
 | solref | [0.002, 1] |  | decision | run/sim grip_solref (model.grip_contact) |
 | solimp | [0.95, 0.99, 0.001, 0.5, 2] |  | decision | run/sim grip_solimp (model.grip_contact) |
-| tooling_mass_kg | 0.299 | kg | derived (model) | sum of the tooling geom masses |
+| mount_mass_kg | 0.299 | kg | derived (model) | phone mount only (housing + cradle), sum of the tooling geom masses; the finger kit is not in it |
+| tooling_mass_kg | 0.299 | kg | derived (model) | deprecated alias of mount_mass_kg (kept for one release) |
 | flange_to_tcp_m | 0.088533 | m | derived (model) | F_T_TCP z (flange frame, along the approach axis) |
 | flange_to_tip_m | 0.088533 | m | derived (model) | kit tip midpoint |
 | F_T_TCP_xyz_mm | [0, 0, 88.533] | mm | derived (model) | TCP from the finger geometry |
@@ -397,7 +404,8 @@ Finger report: robot `panda`, tooling `franka_hand_iphumi_iphone16pro`, mode `ki
 | multiccd | on (kit mode: multi-point contacts for the mesh pads) |  | derived (model) | model: kit mode only |
 | solref | [0.002, 1] |  | decision | run/sim grip_solref (model.grip_contact) |
 | solimp | [0.95, 0.99, 0.001, 0.5, 2] |  | decision | run/sim grip_solimp (model.grip_contact) |
-| tooling_mass_kg | 0.299 | kg | derived (model) | sum of the tooling geom masses |
+| mount_mass_kg | 0.299 | kg | derived (model) | phone mount only (housing + cradle), sum of the tooling geom masses; the finger kit is not in it |
+| tooling_mass_kg | 0.299 | kg | derived (model) | deprecated alias of mount_mass_kg (kept for one release) |
 | flange_to_tcp_m | 0.088533 | m | derived (model) | F_T_TCP z (flange frame, along the approach axis) |
 | flange_to_tip_m | 0.088533 | m | derived (model) | kit tip midpoint |
 | F_T_TCP_xyz_mm | [0, 0, 88.533] | mm | derived (model) | TCP from the finger geometry |
@@ -423,7 +431,8 @@ Finger report: robot `panda`, tooling `franka_hand_iphumi_iphone16pro`, mode `ki
 | Kit TCP, box-equivalent kit, L = 0 | box + 15 mm (typed) | 0.0885 m | doc fixed: true only with box-equivalent L; at L = 0 the kit is shorter |
 | Kit tag separation | not stated | 78.4 mm | 8 mm below box: auto dy closes the pad offset |
 
-Open item: `tooling_mass_kg` is 0.299 kg in every mode, including `finger_only` (no holders) and stock; the doc does not
-explain it (the report source says "sum of the tooling geom masses"). **Unverified**: check with D2 what it sums.
-Also unverified: stock `friction` is blank in the report (menagerie default, unchanged).
+Resolved open items (A9.REVIEW findings 3 and 4): `tooling_mass_kg` (0.299 kg in every mode) is the phone mount only,
+housing 0.199 + cradle back plate 0.10 kg; the report now calls it `mount_mass_kg` (the old key stays as an alias for one
+release). It does not include the finger kit, whose masses are in the `mass_<geom>_kg` rows. The stock `friction` is the compiled
+`geom_friction` of `pad_l`, [1, 0.005, 0.0001].
 <!-- END -->

@@ -96,6 +96,11 @@ def test_report_stock(tmp_path):
     n = rep["numbers"]
     assert rep["mode"] == "stock" and n["tcp_at"]["value"] == "stock_pads"
     assert n["pad_length_m"]["value"] > 0 and "tag_separation_closed_m" not in n
+    assert n["friction"]["value"] == pytest.approx([1.0, 0.005, 0.0001])          # compiled geom_friction of pad_l
+    assert "pad top" in n["flange_to_tip_m"]["source"]
+    assert n["flange_to_tip_m"]["value"] == pytest.approx(n["flange_to_tcp_m"]["value"] + n["pad_length_m"]["value"] / 2)
+    assert n["flange_to_mesh_tip_m"]["value"] == pytest.approx(0.1123, abs=1e-4)
+    assert n["mount_mass_kg"]["value"] == n["tooling_mass_kg"]["value"] > 0       # alias kept for one release
 
 
 def test_report_kit(tmp_path, kit):

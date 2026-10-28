@@ -51,6 +51,7 @@ def test_camera_check_quick(tmp_path):
     assert r["schema"] == "camera_check/v1" and r["demos"] == [11] and r["n_frames"] == 3
     for k in ("episodes", "image_similarity", "hand_mask_home", "tags", "coverage", "uw_extrinsic_from_features"):
         assert k in r, k
+    assert r["tags"]["tag_pairing"] in ("by_id", "by_image_order")
     for t in ("0", "1"):
         e = r["tags"]["err_px"][t]
         assert e["n"] >= 1 and all(math.isfinite(e[q]) for q in ("p50", "p95", "max"))
@@ -113,3 +114,20 @@ def test_tag_guard_passes_box_mode():
     st = CC.load_station({k: dict(v) for k, v in PROFILES["sim-iphone"].items()})
     CC.tag_guard(st)
     CC.tag_guard(st, build_model(st, with_scene=False))
+
+
+def test_tag_order_by_id_and_fallback():
+    """tag_order pairs sim tags with ArUco ids by sm.info["finger_kit"]["tag_ids"]; without it, by image u-order."""
+    from types import SimpleNamespace as NS
+
+    proj = {"l": np.array([100.0, 0]), "r": np.array([300.0, 0])}
+    assert CC.tag_order(NS(info={}), proj) == (("l", "r"), "by_image_order")
+    assert CC.tag_order(NS(info={}), {"l": np.array([300.0, 0]), "r": np.array([100.0, 0])}) == (("r", "l"), "by_image_order")
+    ok = NS(info={"finger_kit": {"tag_ids": {"tag_l": 0, "tag_r": 1}}})
+    assert CC.tag_order(ok, proj) == (("l", "r"), "by_id")
+    # swapped mapping: id 0 is on tag_r although tag_l is leftmost in the image -> the pairing follows the id, so the
+    # sim tag compared with detection 0 is tag_r (u = 300): a real swap gives large errors instead of passing.
+    sw = NS(info={"finger_kit": {"tag_ids": {"tag_l": 1, "tag_r": 0}}})
+    assert CC.tag_order(sw, proj) == (("r", "l"), "by_id")
+    bad = NS(info={"finger_kit": {"tag_ids": {"tag_l": 5, "tag_r": 6}}})          # unknown ids: fall back, reported as such
+    assert CC.tag_order(bad, proj)[1] == "by_image_order"
