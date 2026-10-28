@@ -12,7 +12,7 @@ Plan and task ownership: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.
   Wave 2) and the offline `ec-process` (Wave 3).
 - **Apps today:** `ec-imu-probe`, `ec-cam-probe`.
 - **Hardware:** the Argus backend is compile-checked against L4T r36.4.3 headers, but nothing has run on the Jetson
-  yet.
+  yet. **When the hardware arrives:** [docs/HARDWARE_ARRIVAL.md](docs/HARDWARE_ARRIVAL.md).
 
 Hardware: Jetson Orin Nano (JetPack 6.2 / L4T 36.4.3), Arducam IMX519 main camera, Arducam IMX219 160° ultrawide,
 ST LSM6DSOX IMU (Modulino Movement) on I2C bus 7. Example config:

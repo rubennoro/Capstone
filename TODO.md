@@ -12,7 +12,7 @@ Design: [physicalSetup/docs/PIPELINE.md](physicalSetup/docs/PIPELINE.md) · Plan
 - [ ] **Go-ahead for Wave 2** (T5 `ec-record`, T6 `ec-viz` + `ec-slam-live`, T7 `ec-calibrate`, T8 bring-up kit + `ec-doctor`) → R2 → gate → commit. The carried-over notes are in IMPLEMENTATION_PLAN §4 "Inputs from Wave 1".
 - [ ] **Fetch ST AN5272** (LSM6DSOX application note) in a browser and drop it in the session scratchpad `t1dl/`. It settles T1's unverified FIFO details: burst-read wrap 0x7E→0x78, timestamp-word order / TAG_CNT pairing, temperature word layout, the trim formula's exact form. Otherwise `ec-imu-probe --raw` checks them on hardware day.
 - [ ] **Kalibr / rig calibration: discuss on its own first.** It covers camera intrinsics, camera↔IMU extrinsics and time offset, IMU Allan variance, and the printed AprilGrid. Decide where it runs: cluster, laptop after freeing space, or the Jetson. Until done, live work uses nominal intrinsics + CAD extrinsics, and training-grade offline poses wait (PIPELINE D7).
-- [ ] Hardware day (2026-10-29+): BRINGUP.md (from T8), acceptance tests H1–H7 (IMPLEMENTATION_PLAN §5). Items to verify on the Jetson:
+- [ ] Hardware day (2026-10-29+): follow [physicalSetup/docs/HARDWARE_ARRIVAL.md](physicalSetup/docs/HARDWARE_ARRIVAL.md) (today: sensor bring-up with `ec-imu-probe` / `ec-cam-probe`; after Wave 2: BRINGUP.md + acceptance tests H1–H7, IMPLEMENTATION_PLAN §5). Items to verify on the Jetson:
   - [ ] i2c-7 bus clock ≥ 400 kHz; IMU INT1 left **unconnected**; Tegra accepts 224-byte I2C reads.
   - [ ] `ec-imu-probe --duration 600`: 833·(1+0.0015·FREQ_FINE) Hz ± 0.5 %, 0 overruns, |g| 9.81 ± 0.2.
   - [ ] IMU poll thread pinned to its own core (CPU 5 in the example yaml); run as root or set rtprio for SCHED_FIFO.

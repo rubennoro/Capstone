@@ -13,7 +13,7 @@ Running status between working sessions. Update it at the end of each conversati
 ## Current state (2026-10-27, branch `rnoro/jetson-sensors`)
 
 - **New C++ rig pipeline, `physicalSetup/` (this branch, worktree `/home/ruben/Capstone-jetson-sensors`): Waves 0–1
-  built and committed (`0237513`, 2026-10-28); Wave 2 waits for the user's go-ahead.** Progress: [physicalSetup/docs/STATUS.md](physicalSetup/docs/STATUS.md).
+  built and committed (`0237513`, 2026-10-28); Wave 2 waits for the user's go-ahead.** Progress: [physicalSetup/docs/STATUS.md](physicalSetup/docs/STATUS.md). When the hardware arrives: [physicalSetup/docs/HARDWARE_ARRIVAL.md](physicalSetup/docs/HARDWARE_ARRIVAL.md).
   - Wave 1: IMU driver + simulator, camera backends (Argus compile-checked only), capture/shm/package/config, image prep
     (bit-exact with iPhUMI). 397–398 tests green in the default, ASan+UBSan, TSan and Python builds.
   - Design: [physicalSetup/docs/PIPELINE.md](physicalSetup/docs/PIPELINE.md). All decisions D1–D11 are resolved in

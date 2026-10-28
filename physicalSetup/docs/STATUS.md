@@ -95,6 +95,7 @@ R1 results: all configs 375/375; 300 s integration run clean. Verdict: not ready
 2. ~~Wave 1~~ done and committed (2026-10-28).
 3. **Waiting for the user to confirm Wave 2** (T5–T8 in parallel → R2 → gate → commit). The Wave 2 briefs must carry the T5/T6/T8 notes from "Items for R1 / later tasks" (JPEG from full-range NV12 planes; lossless subscribers before start(); mock `buffer_count`; INT1 unconnected; root/rtprio for SCHED_FIFO; i2c-7 ≥ 400 kHz).
 4. The user may fetch AN5272 (LSM6DSOX app note) by hand to settle T1's unverified FIFO details.
-5. The open todos (Wave 2 go-ahead, AN5272, Kalibr discussion, hardware-day checks, laptop disk) are tracked in the repo-root [TODO.md](../../TODO.md), section "physicalSetup/".
+5. **Hardware arrival directions:** [HARDWARE_ARRIVAL.md](HARDWARE_ARRIVAL.md) (what works today vs after Wave 2).
+6. The open todos (Wave 2 go-ahead, AN5272, Kalibr discussion, hardware-day checks, laptop disk) are tracked in the repo-root [TODO.md](../../TODO.md), section "physicalSetup/".
 
 No agents are running (T4 was stopped 2026-10-28). Nothing is left in the scratch build dir.
