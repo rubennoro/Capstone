@@ -1,0 +1,59 @@
+# L1 WORKLOG: ec-live (live viewer: both cameras + IMU) for hardware day
+
+Owner: L1 executor. Started 2026-10-28. Side task outside the waves (user request).
+Owns: episode_collection/apps/ec-live/**, tests/live/**, this worklog, section 9 "ec-live" of HARDWARE_ARRIVAL.md.
+
+## Status
+- DONE. Code + tests + docs; all three gates green (see "Gate runs"). Waiting for orchestrator review/commit.
+- Resume point (if interrupted): re-run the gates listed below; nothing is half-edited.
+
+## Files
+- `episode_collection/apps/ec-live/live_view.{hpp,cpp}`: pure part (RateMeter, ImuHistory, layout, overlay/status
+  texts, plot range, mosaic renderer, frame_to_display, failure hints, --mock overrides, display order).
+- `episode_collection/apps/ec-live/main.cpp`: CLI, display probe, per-sensor CaptureServices, render loop, keys,
+  signals, snapshots.
+- `tests/live/live_view_sources.cpp`: compiles the app's live_view.cpp into the test-area helper library (the app is
+  not a library; this keeps the tests on exactly the shipped code). Same TSan/LSan third-party suppressions as
+  tests/imageprep/golden_util.cpp.
+- `tests/live/test_live_view.cpp` (15 tests): pure functions + a rendered mosaic.
+- `tests/live/test_ec_live_app.cpp` (6 tests): runs the built binary (RIG_TEST_TMP_ROOT/../episode_collection/ec-live):
+  headless snapshot size + non-black tiles + IMU panel; IMU-only and one-camera subsets; no-DISPLAY fallback;
+  partial start failure (IMU on bus 99) continues, `--strict` exits 1, nothing started exits 2; stalled mock camera
+  -> "NO FRAMES"; SIGINT -> clean stop, exit 0. Every test checks no new /dev/shm/rig* segment remains.
+
+## Decisions
+- One CaptureService per sensor (via the injection create(options, backends, imu), options taken from the RigConfig
+  sections: capture, cameras.<id>.thread, imu.thread), because CaptureService::start() is all-or-nothing and the
+  brief wants "continue with whatever started". Argus shares one CameraProvider per process
+  (argus_camera.cpp shared_provider), so separate services per camera are fine. IMU starts first (lowest risk).
+- Only kDropOk subscriptions ("ec_live"): cameras capacity 2 (render keeps the newest), IMU capacity 8192 (drained
+  every tick). No bracket subscription. ec-live creates no shm (CaptureService doesn't either).
+- Render/drain on the main thread at --display-hz (default 15); capture stays on CaptureService's threads.
+  Frames are converted only when a window or headless snapshot needs them; the frame buffer is released right after.
+- frame_to_display: frame_to_bgr (honours color_range) after halving both NV12 planes with INTER_AREA when the tile is
+  <= half the frame width (quarters the conversion cost; tested against convert-then-resize, mean diff < 2 LSB).
+  Laptop: ~12 ms per tick for both cameras (main 1080p + uw 1640x1232). Jetson: expect ~3x; `ui Nms` in the status
+  line shows it.
+- cv::setNumThreads(0): OpenCV sequential, so ec-live doesn't spread over the capture cores (also TSan-clean).
+- Measured fps / IMU rate = the hub's published() counter over 1 s (RateMeter). Drops = CameraStats::drops_total().
+- No-display: $DISPLAY/$WAYLAND_DISPLAY unset -> terminal-only with a message. If set, a forked child tries
+  cv::namedWindow first (some GTK builds exit() on a bad display); a failure -> terminal-only. The probe runs before
+  any sensor thread exists. cv::Exception from namedWindow/imshow -> terminal-only.
+- --mock: cameras -> mock, IMU -> sim with motion on (+ small noise) so the plots move; sizes/fps/exposure kept.
+- Exit codes: 0 ok; 1 --strict with a start failure (or a runtime fatal); 2 CLI/config error, nothing started, or
+  the headless PNG could not be written. Second SIGINT -> _exit(130).
+- Not interactive ("offer to continue"): it prints the failures + hints and continues by default; --strict exits.
+
+## Not verifiable on the laptop (hardware day)
+- Argus frames through frame_to_display (real NV12_ER pitch / plane offsets), exposure/gain/focus readback overlays.
+- Render cost on the Orin Nano (status line `ui`), window on the Jetson's desktop (GTK/X or Wayland).
+- The display probe on JetPack's OpenCV build.
+
+## Gate runs (2026-10-28, --jobs 4)
+- default (build/l1): 418/418 PASS (397 existing + 21 live).
+- ASan+UBSan (build/l1-asan): 418/418 PASS. The first run failed once: the leftover-shm check saw a concurrent
+  shm-area test's `rigtest.*` segment; the check now only looks at `rig.*` (the config's shm.prefix), re-run green.
+- TSan (build/l1-tsan): 419/419 PASS (whole tree incl. the 21 live tests, binary runs under TSan too).
+- Window checked by hand on the laptop display (`--mock --seconds 4`), plus the real yaml without --mock (laptop:
+  Argus not compiled in, /dev/i2c-7 permission denied -> both reported with hints, exit 2).
+- Build trees deleted after the runs.

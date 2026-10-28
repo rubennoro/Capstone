@@ -10,7 +10,7 @@ Plan and task ownership: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.
   prep + `rigpy`.
 - **Not built yet:** the recording programs (`ec-record`, `ec-calibrate`, `ec-viz`, `ec-slam-live`, `ec-doctor`:
   Wave 2) and the offline `ec-process` (Wave 3).
-- **Apps today:** `ec-imu-probe`, `ec-cam-probe`.
+- **Apps today:** `ec-imu-probe`, `ec-cam-probe`, `ec-live` (live window: both cameras + IMU readout and plots).
 - **Hardware:** the Argus backend is compile-checked against L4T r36.4.3 headers, but nothing has run on the Jetson
   yet. **When the hardware arrives:** [docs/HARDWARE_ARRIVAL.md](docs/HARDWARE_ARRIVAL.md).
 

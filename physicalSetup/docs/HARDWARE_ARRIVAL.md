@@ -18,6 +18,7 @@ Detailed command tables live in [bringup_snippets/T1_imu.md](bringup_snippets/T1
 | | Today (Waves 0–1) | After Wave 2 |
 |---|---|---|
 | Build the code on the Jetson | yes; first real build of the Argus camera code | yes |
+| **Live view of both cameras + IMU readings on the monitor (`ec-live`, §9)** | **yes** | yes (and `ec-viz` with live SLAM) |
 | Test the IMU (`ec-imu-probe`): register check, 833 Hz stream, 10-min acceptance test H1 | **yes** | yes |
 | Test each camera (`ec-cam-probe`): modes, fps, timestamps, exposure/gain lock, focus, sample frames, acceptance test H2 | **yes**, once the camera driver + dual-camera device tree are set up by hand | yes |
 | Written step-by-step setup (`BRINGUP.md`), `jetson_setup.sh`, `ec-doctor` all-system check | no (use this page + the snippets) | yes (T8) |
@@ -204,3 +205,52 @@ Session names use letters, digits and `-` only (no `_`; iPhUMI's tools split nam
 - **Deployment** on the Jetson is Wave 5.
 
 Recorded episodes are kept as packages, so they can be processed later once Wave 3 and the calibration exist.
+
+---
+
+## 9. `ec-live`: see the sensors live (side task L1)
+
+One program that shows both cameras side by side plus a live IMU strip on the Jetson's monitor. It is built with
+everything else (`/data/rigbuild/episode_collection/ec-live`). Use it alongside the probes in sections 4–5: the
+probes give PASS/FAIL numbers; `ec-live` lets you see that the picture, the focus and the IMU respond.
+
+**Run it in a terminal on the Jetson's desktop** (monitor + keyboard), so `$DISPLAY` is set. Over SSH there is no
+display: it says so and prints only the once-per-second status line (or `export DISPLAY=:0` if the desktop is
+logged in as you). Don't run it at the same time as `ec-cam-probe` / `ec-imu-probe` (same devices).
+
+```bash
+cd /data/rigbuild
+RIG=~/Capstone/physicalSetup/episode_collection/configs/rig_jetson_imx519_imx219w160_lsm6dsox.yaml
+./episode_collection/ec-live --config $RIG --no-cameras            # 1. after ec-imu-probe passes: IMU only
+./episode_collection/ec-live --config $RIG --camera uw   --no-imu  # 2. after the IMX219 streams alone
+./episode_collection/ec-live --config $RIG --camera main --no-imu  # 3. after the IMX519 streams alone
+./episode_collection/ec-live --config $RIG                         # 4. everything (both cameras + IMU)
+```
+
+**What it should look like:**
+- Top: main (left) and uw (right), each scaled to fit with its aspect ratio kept. Each tile's overlay shows:
+  - id, mode and backend, e.g. `main (main) 1920x1080@60 [argus]`;
+  - measured fps over 1 s (expect 60 / 30), frame count and drops (expect 0; turns yellow otherwise);
+  - exposure ms and gain read back from the frame (expect the yaml's 8.00 ms / 2.00 and 4.00 ms / 4.00);
+  - `focus vcm_i2c @512` (or `v4l2`) on main;
+  - `range full` (`unknown` is shown in yellow);
+  - frame age in ms (now − mid-exposure time). Expect tens of ms and stable; negative or growing is a finding.
+- Bottom strip (IMU):
+  - accel x/y/z and |a| (at rest about 9.81 m/s²) and gyro x/y/z in deg/s (about 0 at rest);
+  - temperature, rate (expect about 833 Hz), FIFO max level / watermark, overruns (expect 0, red otherwise), I2C
+    errors, and the clock-fit residual;
+  - a rolling 5 s plot of accel and gyro (x red, y green, z blue): tilt or shake the rig and the lines move.
+- A camera that stops delivering shows a red **NO FRAMES for N s** on its tile. A sensor that fails to start shows
+  **FAILED TO START** plus the reason. At start the terminal prints `[FAIL] ...` with the error and a hint, then
+  continues with the sensors that did start (`--strict` exits with code 1 instead).
+- The terminal prints one status line per second (rates, drops, frame age, |a|, overruns, `ui` = render ms per tick).
+  A `thread placement not applied ... SCHED_FIFO` warning without root is harmless for viewing.
+
+**Keys:** `q` or `Esc` quits; `s` saves a PNG of the whole window to the current directory (or `--out DIR`). Ctrl-C
+also stops cleanly (a second Ctrl-C exits at once).
+
+**Other flags:** `--width 1200` (smaller window), `--display-hz 10`, `--no-window` (terminal only), `--seconds N`
+(stop after N s), `--stall-s 2` (NO FRAMES threshold), `--mock` (laptop: mock cameras + simulated IMU, sizes from
+the yaml), `--headless-snapshot out.png --seconds 3` (no window; writes the final picture; used by the tests).
+
+**Report back:** a snapshot (`s`) of step 4 with the rig still and one while moving it, plus the status lines.

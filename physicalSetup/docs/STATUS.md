@@ -22,6 +22,7 @@ Wave 1 gate (2026-10-28, sequential, `--jobs 4`): default 397/397, ASan+UBSan 39
 | 2 | T7 ec-calibrate + tag detector | todo | | |
 | 2 | T8 bring-up kit + ec-doctor | todo | | |
 | 2 | R2 reviewer | todo | | |
+| side | L1 `ec-live` live viewer (both cameras + IMU readout) for hardware day | done | [worklogs/L1.WORKLOG](worklogs/L1.WORKLOG) | gate 2026-10-28: default 418/418, ASan+UBSan 418/418, TSan 419/419; mock snapshot checked by the orchestrator |
 | H | hardware day H1–H7 | todo | | |
 | 3–5 | T9–T12, calibration, deployment | todo | | |
 
