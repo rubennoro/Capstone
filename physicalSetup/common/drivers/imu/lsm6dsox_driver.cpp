@@ -199,16 +199,19 @@ Status lsm6dsox_reset_and_configure(I2cBus& bus, const ImuConfig& c, ImuClock& c
   RIG_RETURN_IF_ERROR(wait_bit_clear(bus, a, kRegCtrl3C, kCtrl3Boot, clock, "BOOT"));
 
   // 5. The reset really happened: defaults (DS Table 21).
+  // Hardware (2026-10-31): I3C_disable (CTRL9_XL b1) survives SW_RESET + BOOT, so a previous run's 1 reads back as
+  // 0xE2; it is masked out of the check.
   struct Def {
     uint8_t reg;
     uint8_t value;
+    uint8_t ignore = 0;
   };
   for (const Def& d : {Def{kRegCtrl3C, kCtrl3CDefault}, Def{kRegCtrl1Xl, 0x00}, Def{kRegCtrl2G, 0x00},
-                       Def{kRegCtrl9Xl, kCtrl9XlDefault}, Def{kRegCtrl10C, 0x00}, Def{kRegFifoCtrl4, 0x00},
-                       Def{kRegWhoAmI, static_cast<uint8_t>(c.expected_who_am_i)}}) {
+                       Def{kRegCtrl9Xl, kCtrl9XlDefault, kCtrl9I3cDisable}, Def{kRegCtrl10C, 0x00},
+                       Def{kRegFifoCtrl4, 0x00}, Def{kRegWhoAmI, static_cast<uint8_t>(c.expected_who_am_i)}}) {
     uint8_t v = 0;
     RIG_RETURN_IF_ERROR(read_reg_retry(bus, a, d.reg, v, rt).with_context(at + ": reset readback"));
-    if (v != d.value)
+    if ((v & ~d.ignore) != d.value)
       return device_error(at + ": after reset " + reg_name(d.reg) + " (" + hex2(d.reg) + ") = " + hex2(v) +
                           ", expected default " + hex2(d.value));
   }
