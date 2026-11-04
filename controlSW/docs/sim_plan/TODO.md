@@ -57,8 +57,9 @@ default in both tooling YAMLs until items 1.1 and 1.2 pass.
 
 - [ ] After the cone/box decision: sim-rig `--stage 1b`, the iPhone 1b, and a longer bp_run001 Stage 3
   (`--poses 3 --episodes-per-pose 3`).
-- [ ] PLAN §11 step 7, a viewer run: needs a display. Copy deploy.yaml with
-  `profiles.sim-iphone.bridge.override.backend.mujoco.viewer: true`.
+- [x] PLAN §11 step 7, a viewer run (2026-11-03): `~/sim_runs/run_viewer.sh` (deploy.yaml copy with
+  `profiles.sim-iphone.bridge.override.backend.mujoco.viewer: true`, +10 cm / -y). Window opens; bp_run001 1x1: FAIL
+  (tracking 5.5 mm, gripper lag, inference p95 0.50 s, obs motion 6.1 mm), 0 collisions/reflexes, success 0/1.
 - [ ] Find what causes the Stage 1 worst-margin demo (1.1-1.5°).
 - [ ] Is the Stage 3 tracking 8 mm / observation motion 5.4 mm the policy or the sim? Compare with a real-robot run.
 
@@ -66,8 +67,7 @@ default in both tooling YAMLs until items 1.1 and 1.2 pass.
 
 - [ ] Remove the w10b worktree: remove its `data` symlink first, then `git worktree remove .claude/worktrees/w10b`.
   Everything from it is on `sim-eval`.
-- [ ] Scratch env paths (`/tmp/claude-1000/.../299e5dab.../scratchpad/env_*`) are hardcoded in README.md,
-  `station/host/pc_laptop.yaml` and the sim profiles in `deploy.yaml`. If the scratchpad is purged, recreate the envs and
-  update those paths.
+- [x] Scratch envs replaced (2026-11-03): `~/envs/env_realenv`, `~/envs/env_bp` (recipes in franka_sim/README.md), prompt zarr
+  at `~/franka_data/prompt_zarr/` (sha256 3c5fa1a6...); `station/host/pc_laptop.yaml` points there.
 - [ ] Copy anything wanted from `$S/a9r2/` (full real-kit run outputs, probes, renders) before the scratchpad goes. The small
   summaries are already in `results/a9_real_kit/`.
