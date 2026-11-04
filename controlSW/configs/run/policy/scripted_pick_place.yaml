@@ -1,0 +1,28 @@
+schema: run.policy/v1
+id: scripted_pick_place
+kind: command                                # franka_sim.policies.scripted.server: scripted pick-and-place from the sim state
+cmd: "{python} -u -m franka_sim.policies.scripted.server --endpoint {endpoint} --ready-file {ready_file} --work-dir {work_dir}"
+python: ${host.python.realenv}
+ready_timeout_s: 30
+contract: {K: 16, exec_h: 8, uses_prompt: false, reset_max_s: 0.5}
+task: {agent_hz: 20, exec_h: "${policy.contract.exec_h}", inference_timeout_s: 2.0, lookahead_s: 0.1, policy_latency_s: 0.1}
+params:                                      # planner.Params (the server reads them from station_resolved.yaml)
+  approach_height_m: 0.10                    # ABOVE: TCP this far above the grasp z
+  lift_height_m: 0.10                        # LIFT / CARRY height above the grasp z
+  retreat_height_m: 0.10                     # RETREAT: TCP this far above the place z
+  pos_tol_m: 0.003                           # a move phase is done within this position error ...
+  rot_tol_deg: 2.0                           # ... and this rotation error of its goal
+  open_gap_m: 0.075                          # OPEN width = width_map a * open_gap_m + b (gap_max_m 0.080)
+  speed_frac_ratio: 0.9                      # min-jerk peak speed = this x criteria limits v_max / w_max
+  min_segment_s: 0.2                         # shortest min-jerk segment
+provenance:
+  kind: {status: decision, source: "main-sim plan Step 5: scripted stand-in policy (adding_a_policy.md kind command)"}
+  cmd: {status: decision, source: "main-sim plan Step 5; franka_sim is on the launcher's child PYTHONPATH"}
+  python: {status: derived, source: "host group (no torch needed)"}
+  ready_timeout_s: {status: decision, source: "fast start, no checkpoint"}
+  contract: {status: decision, source: "matches the real policy contract"}
+  task: {status: decision, source: "deploy.yaml:21-29; run_task.py:57-61 literals (as fake.yaml)"}
+  task.exec_h: {status: derived, source: "from contract.exec_h"}
+  params: {status: decision, source: "main-sim plan Step 5 (scripted planner phases and tolerances)"}
+  params.open_gap_m: {status: decision, source: "main-sim plan Step 5: 0.075 < gap_max_m 0.080 and >= criteria task.open_gap_min_m 0.07 (the hand path clips gaps at gap_max_m, not at train_max_m)"}
+critical: []

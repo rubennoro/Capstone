@@ -1,43 +1,56 @@
 # franka_sim
 
-MuJoCo simulation of the Franka arm (Panda + Franka Hand, FR3) used to evaluate policies before hardware day.
-Package: official [mujoco_menagerie](https://github.com/google-deepmind/mujoco_menagerie) models, MuJoCo Panda/FR3 + Franka Hand model, kinematics, SimCore/MuJoCoBackend, scene, renderer, Stage 1/1b campaign, and the eval CLI (`python -m franka_sim --help`: check-assets, model, stage1, campaign, camera-check, camera-gap, finger-kit, characterize, eval).
+Phone-free closed-loop simulation of the station: MuJoCo Panda + Franka Hand + printed fingers (the real Onshape finger
+kit by default, box fingers as a fallback) + the custom sensor rig, driven by the real deployment stack
+(`../franka_deploy`: launcher, bridge, controller, task) and any policy that speaks the policy contract. Each episode
+gets two separate results:
 
-- Assets: `franka_sim/assets/` (pinned commit + sha256 per file in `assets/SOURCE.md`, Apache-2.0 licences kept).
-  Re-vendor with `python -I franka_sim/tools/vendor_menagerie.py --commit <sha|HEAD> --scratch <empty dir>`.
-- Environment: `env_realenv` has mujoco 3.3.0. `import franka_sim` never imports mujoco, so `--help` works elsewhere.
-  On the laptop it lives at `~/envs/env_realenv` (lean: no open3d/rerun/ur-rtde/arx5). Rebuild with `PYTHONNOUSERSITE=1`
-  set, or pip counts `~/.local` packages as installed:
-  ```
-  export PYTHONNOUSERSITE=1
-  conda create -y -p ~/envs/env_realenv -c conda-forge --override-channels python=3.10 pip
-  ~/envs/env_realenv/bin/pip install numpy==2.2.6 scipy==1.15.2 pyyaml==6.0.2 msgpack==1.1.1 zarr==2.18.3 \
-    opencv-python==4.12.0.88 omegaconf==2.3.0 hydra-core==1.3.2 robologger==0.1.7 robotmq==0.1.14 robot-utils==0.1.4 \
-    transforms3d==0.4.2 flask==3.1.1 flask-socketio==5.5.1 python-socketio==5.13.0 python-engineio==4.12.2 \
-    simple-websocket websocket-client mujoco==3.3.0 loguru pyzmq imageio==2.37.0 tqdm pytest pygments av
-  ~/envs/env_realenv/bin/pip install --no-deps -e ../../behavior_prompting/deps/real-env -e ../../sensor_rig
-  ```
-  `~/envs/env_bp` (inference) reuses torch 2.9.1 from `~/.local/lib/python3.10/site-packages`. Do NOT set
-  PYTHONNOUSERSITE for this install (pip would download a 3 GB CUDA torch). The launcher starts it with user site off, so a
-  `.pth` adds `~/.local` at the end of sys.path, and a `sitecustomize.py` moves the user site behind site-packages when it
-  is on (the env's numpy 1.26.4 must win over ~/.local's 2.2.6):
-  ```
-  conda create -y -p ~/envs/env_bp -c conda-forge --override-channels python=3.10 pip
-  SP=~/envs/env_bp/lib/python3.10/site-packages
-  echo ~/.local/lib/python3.10/site-packages > $SP/zz_user_torch.pth
-  printf 'import site, sys\n_u = site.getusersitepackages()\nif _u in sys.path:\n    sys.path.remove(_u)\n    sys.path.append(_u)\n' > $SP/sitecustomize.py
-  ~/envs/env_bp/bin/pip install --no-cache-dir -r ../franka_deploy/requirements-inference.txt \
-    joblib threadpoolctl seaborn open3d transforms3d pytest
-  ~/envs/env_bp/bin/pip install --no-cache-dir --no-deps -e ../../behavior_prompting
-  ```
-  GUI run (MuJoCo viewer, iPhone, real policy): `~/sim_runs/run_viewer.sh [POSES] [EPISODES_PER_POSE]`.
-- Headless rendering: `MUJOCO_GL=egl`; call `renderer.close()` explicitly.
+- **Safety** (the verdict): PASS, or FAIL on the first violation (non-finger contact, reflex, workspace box, approach
+  cone, joint margin, EE speed / angular speed), measured at the EE site the bridge enforces. Rules:
+  `../configs/run/criteria/pick_place.yaml` `safety` + `limits`, the scene `workspace`, the robot joint limits.
+- **Task outcome** (reported, never a FAIL): none < grasped < lifted < placed (eraser on the green marker at
+  `scene.place`, released, hand open, TCP retreated, held 1 s). Rules: the same criteria file, `task`.
+
+## Environment
+
+`./setup_env.sh` builds `~/envs/env_sim` (Python 3.10, mujoco 3.3.0, robotmq, real-env, sensor_rig; no torch). Always
+run with `env -u PYTHONPATH -u MUJOCO_GL` from this directory (`franka_sim` imports from the cwd).
+
+## Run it
 
 ```
-cd controlSW/franka_sim
-python -m franka_sim --help
-python -m franka_sim check-assets
-env -u PYTHONPATH python -m pytest -q tests     # mujoco tests skip when mujoco is missing
+./run_viewer.sh [POSES=3] [--box] [--set key=value ...]
 ```
 
-Finger model (modes stock/box/kit, frames, numbers with sources, validation, known limits): [docs/finger_model.md](docs/finger_model.md).
+Runs `python -m franka_sim eval --profile sim-rig --policy scripted_pick_place --viewer --poses POSES
+--episodes-per-pose 1` with the MuJoCo viewer (`DISPLAY` defaults to `:1`), results in
+`~/sim_runs/scripted_<time>/`. `--box` swaps the finger kit for box fingers (+10 cm); any further arguments go to
+`eval` (e.g. `--set criteria.safety.joint_margin_deg=60`). Headless: call `python -m franka_sim eval ...` without
+`--viewer`. Other subcommands: `python -m franka_sim --help` (`check-assets`, `model`, `eval`).
+
+The scripted policy (`franka_sim/policies/scripted/`, config `../configs/run/policy/scripted_pick_place.yaml`) is a
+stand-in for a trained policy: it reads the simulator's state stream (not the images) and walks ABOVE -> DESCEND ->
+CLOSE -> LIFT -> CARRY -> LOWER -> OPEN -> RETREAT -> DONE with min-jerk chunks inside the speed limits. Its phase
+changes are in each session's `logs/inference.log`.
+
+## Swap in another policy
+
+Write `../configs/run/policy/<id>.yaml` and a server per [../docs/adding_a_policy.md](../docs/adding_a_policy.md)
+(five robotmq topics, K = 16 relative chunks; check it with `python -m franka_deploy policy-contract`), then run
+`./run_viewer.sh` with `--policy <id>` after it (the last `--policy` wins), or call `eval --policy <id>` directly.
+
+## Outputs
+
+- `~/sim_runs/scripted_<time>/summary.html`: the run's summary; per stage `3_<policy>_.../report.html`,
+  `report.json` (`rows`: per episode Safety, task outcome, judge vs offline ground truth, tracking p95, wall time) and
+  `metrics.json`.
+- `3_.../work/session_*/`: the launcher session (resolved configs in `config/`, process logs in `logs/`, recorded
+  episodes with `controller_trace.npz`, `bridge.jsonl` and `sim_truth.json` in `task/episodes/`).
+
+## Placeholders still open
+
+- Rig cameras: `sensor/rig1_wifi.yaml` K is the virtual-iPhone K and the extrinsics are iPhone values; replace with the
+  IMX519 / IMX219-160 calibration (the scripted policy ignores images, a trained one will not).
+- `tooling/franka_hand_iphumi_rig1.yaml` `C_T_TCP` is a copy of the iPhone17,1 entry; measure the rig.
+- Finger kit tag positions (the kit's tags sit ~23 mm too far inward per side vs. the camera check; measure the real
+  gripper) and the adapter CAD (D9: 8 mm adapter, camera on -y, currently a parametric block).

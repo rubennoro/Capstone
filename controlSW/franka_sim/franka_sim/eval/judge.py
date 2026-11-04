@@ -40,6 +40,7 @@ import numpy as np
 from franka_sim.ground_truth import OUTCOMES, rules_from
 
 KNOCK_OVER_DEG = 30.0
+PLACED_END_GRACE_S = 0.1   # end the episode this long after the placed hold, so ground_truth (25 Hz lines) also sees >= hold_s
 
 
 def _rot_angle(Ra, Rb) -> float:
@@ -184,10 +185,11 @@ class EpisodeTracker:
                           and float(s["hand_gap_m"]) >= R["open_gap_min_m"] and tcp_z >= z + R["retreat_min_m"])
         if placed_now:
             self._placed_since = t if self._placed_since is None else self._placed_since
-            if t - self._placed_since >= R["hold_s"]:
+            if t - self._placed_since >= R["hold_s"] and self.level < 3:
                 self.level, self.r["t_placed_s"] = 3, round(t - self.t_start, 4)
+            if t - self._placed_since >= R["hold_s"] + PLACED_END_GRACE_S:   # let the 25 Hz offline twin see the hold too
                 return self._decide("y", "placed", t)
-        else:
+        elif self.level < 3:
             self._placed_since = None
         return self.check_timeout(t)
 
