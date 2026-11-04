@@ -353,6 +353,10 @@ class Driver:
             prof["user_site_children"] = sorted(set(prof.get("user_site_children") or []) | {"inference"})
         prof["work_root"] = str(self.d / "work")
         prof["run"] = {**prof.get("run", {}), **R.run_ids}
+        if getattr(R.args, "viewer", False):   # --viewer: the bridge's MuJoCoBackend opens mujoco.viewer.launch_passive
+            mj = prof.setdefault("bridge", {}).setdefault("override", {}).setdefault("backend", {})
+            mj.setdefault("type", "mujoco")
+            mj.setdefault("mujoco", {})["viewer"] = True
         if scenario == "reflex":
             prof.setdefault("bridge", {})["allow_inject"] = True
         apply_port_offset(R, prof, self.o)

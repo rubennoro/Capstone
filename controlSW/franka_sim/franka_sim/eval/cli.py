@@ -20,6 +20,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--episodes-per-pose", type=int, default=None, help="Stage 3: episodes per eraser pose (default sim.stage3.n_episodes_per_pose)")
     p.add_argument("--poses", type=int, default=None, help="Stage 3: use the first N eraser poses (default all of sim.stage3.poses)")
     p.add_argument("--out", required=True, help="output directory (outside the repo)")
+    p.add_argument("--viewer", action="store_true", help="open the MuJoCo viewer window (bridge process; needs a display, MUJOCO_GL unset)")
 
 
 def run(args: argparse.Namespace) -> int:
