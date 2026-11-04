@@ -1,18 +1,24 @@
 """Stage 3: the closed loop. N episodes x M eraser poses on the full stack, with a judge and a between-episode reset.
 
 Why: Stages 1-2 teacher-force a demo. Stage 3 lets the policy act, so it measures what only a closed loop shows: plumbing,
-safety (collisions, reflexes), timing (tracking, gripper lag, inference latency, receiver age, observation motion) and,
-informationally, success. With rendered or stub images the success rate is not a real-world estimate (the report says so).
+safety, timing (tracking, gripper lag, inference latency, receiver age, observation motion) and, informationally, the task
+outcome. With rendered or stub images the outcome is not a real-world estimate (the report says so).
+
+Verdict = SAFETY ONLY (main-sim Step 4): PASS iff every episode that ran is safety PASS (judge, and A6 sim_gt where present:
+contact, reflex, workspace, cone, joint_margin, speed, angular_speed; see ``judge`` / ``ground_truth``). The task outcome
+(none / grasped / lifted / placed) and the ``criteria.stage3`` gates are reported and never change the verdict. A setup /
+launch failure (no episode, sender died, launcher failed) stays INCOMPLETE.
 
 One launcher (``python -m franka_deploy run --profile P --no-tty``, a derived deploy.yaml in the run dir, ports shifted by the
 test offset) serves every episode. The driver types into the session's ``commands.txt``:
 
-    per pose p, episode e:  sim.reset(pose) -> settle -> ``c`` -> (Judge starts) -> the judge writes ``y``/``n`` -> episode_finalized
+    per pose p, episode e:  sim.reset(pose) -> settle -> ``c`` -> (Judge starts) -> the judge writes ``n`` (safety violation),
+                            ``y`` (placed) or ``s`` (timeout) -> episode_finalized
                             -> (reflex: bridge ``recover``) -> ``r`` -> wait until the arm is home
     end:                    ``q``; a dead sender (``sender_died``) or a failed launcher is INCOMPLETE with the reason.
 
 The simulator is a ``SimHandle`` (``simlink``): ``StubSim`` (``--sim-stub SCENARIO``, no MuJoCo, scripted eraser) now,
-``BridgeSim`` (A6) later. A reflex or a collision is a FAIL (a gate), not INCOMPLETE.
+``BridgeSim`` (A6). A reflex or a collision is a safety FAIL, not INCOMPLETE.
 
 Per-episode metrics come from the episode dir: ``label.json`` / ``sim_truth.json`` (label, truth), ``controller_trace.npz``
 (tracking, gripper lag), ``tap/call_*.npz`` (inference latency, observation motion), ``bridge.jsonl`` (reflexes),
@@ -48,7 +54,7 @@ DEFAULTS = {
     "ignore_contact_pairs": [["eraser", "table"]],
     "table_geom_patterns": ["table"],            # finger <-> table contacts are reported apart (pad_table), not as collisions
 }
-GT_T_SUCCESS_TOL_S = 0.1                          # B9 acceptance 2: judge vs A6 ground truth t_success agreement
+GT_T_SUCCESS_TOL_S = 0.1                          # judge vs A6 ground truth end-time difference (reported, not part of agree)
 GRIPPER_ERR_START_M, GRIPPER_ERR_OK_M = 0.004, 0.002     # a lag interval opens above 4 mm of error and closes below 2 mm
 EVENT = re.compile(r"^\[franka_task\] (\w+) (\{.*\})\s*$")
 
@@ -69,6 +75,22 @@ def stage3_cfg(R: rn.Run) -> dict:
     if getattr(a, "poses", None):
         cfg["n_poses"] = int(a.poses)
     return cfg
+
+
+def _plain(v):
+    """A plain (mutable, JSON-able) copy of a frozen station subtree."""
+    if hasattr(v, "keys"):
+        return {str(k): _plain(v[k]) for k in v.keys()}
+    if isinstance(v, (list, tuple)):
+        return [_plain(x) for x in v]
+    return v
+
+
+def judge_rules(R: rn.Run) -> dict:
+    """``ground_truth.rules_from`` on the station's criteria, scene and robot groups (one dict for judge and sim_gt)."""
+    from franka_sim.ground_truth import rules_from
+
+    return rules_from(_plain(R.station.get("criteria")), _plain(R.station.get("scene", None)), _plain(R.station.get("robot", None)))
 
 
 def make_poses(cfg: dict, center_xy) -> list:
@@ -176,17 +198,19 @@ def episode_start_t(ep_dir: Path, timeout_s: float = 2.0) -> float | None:
     return None
 
 
-def ground_truth_compare(ep_dir: Path, success: dict, t_start: float, judge_truth: dict, cfg: dict, tries: int = 30) -> dict | None:
-    """A6 ``ground_truth.evaluate_episode`` on the episode's bridge.jsonl sim lines, compared with the judge. None when the
-    episode has no sim lines (stub / real arm). The bridge log is copied at finalize: retry briefly for the sim lines."""
+def ground_truth_compare(ep_dir: Path, rules: dict, t_start: float, judge_truth: dict, cfg: dict, tries: int = 30) -> dict | None:
+    """A6 ``ground_truth.evaluate_episode`` on the episode's bridge.jsonl sim lines, compared with the judge: ``agree`` =
+    same safety verdict (and rule) and same task outcome. None when the episode has no sim lines (stub / real arm). The
+    bridge log is copied at finalize: retry briefly for the sim lines."""
     from franka_sim import ground_truth as gtm
 
     gt = None
     for _ in range(tries):
         try:
-            gt = gtm.evaluate_episode(ep_dir, {"success": success}, t_start=t_start,
+            gt = gtm.evaluate_episode(ep_dir, rules, t_start=t_start,
                                       finger_patterns=tuple(cfg["finger_geom_patterns"]),
-                                      ignore_pairs=tuple(tuple(p) for p in cfg["ignore_contact_pairs"]))
+                                      ignore_pairs=tuple(tuple(p) for p in cfg["ignore_contact_pairs"]),
+                                      table_patterns=tuple(cfg.get("table_geom_patterns") or ("table",)))
         except (OSError, ValueError, KeyError):
             gt = None
         if gt is not None:
@@ -194,13 +218,32 @@ def ground_truth_compare(ep_dir: Path, success: dict, t_start: float, judge_trut
         time.sleep(0.1)
     if gt is None:
         return None
-    js, gs = bool(judge_truth.get("success")), bool(gt.get("success"))
-    jt = judge_truth.get("t_success_s")
-    dt = None if (jt is None or gt.get("t_success_s") is None) else round(abs(float(jt) - float(gt["t_success_s"])), 4)
-    agree = js == gs and (dt is None or dt <= GT_T_SUCCESS_TOL_S) and ((jt is None) == (gt.get("t_success_s") is None))
-    return {"gt": gt, "success_agree": js == gs, "t_success_dt_s": dt, "agree": bool(agree),
-            "judge_t_success_mono": None if jt is None else round(t_start + float(jt), 4),
-            "gt_t_success_mono": gt.get("t_success_mono")}
+    return compare_truths(judge_truth, gt, t_start)
+
+
+def compare_truths(judge_truth: dict, gt: dict, t_start: float) -> dict:
+    """Judge result vs ``ground_truth.evaluate`` result (pure)."""
+    jr = (judge_truth.get("violation") or {}).get("rule")
+    gr = (gt.get("violation") or {}).get("rule")
+    verdict_agree = judge_truth.get("verdict") == gt.get("verdict") and jr == gr
+    outcome_agree = judge_truth.get("outcome") == gt.get("outcome")
+    jt, gtt = judge_truth.get("t_end_s"), gt.get("t_end_s")
+    dt = None if (jt is None or gtt is None) else round(abs(float(jt) - float(gtt)), 4)
+    return {"gt": gt, "verdict_agree": bool(verdict_agree), "outcome_agree": bool(outcome_agree),
+            "agree": bool(verdict_agree and outcome_agree), "t_end_dt_s": dt,
+            "judge": {"verdict": judge_truth.get("verdict"), "rule": jr, "outcome": judge_truth.get("outcome")},
+            "sim_gt": {"verdict": gt.get("verdict"), "rule": gr, "outcome": gt.get("outcome")},
+            "judge_t_end_mono": None if jt is None else round(t_start + float(jt), 4), "gt_t_end_mono": gt.get("t_end_mono")}
+
+
+def episode_safety(truth: dict, cmp: dict | None) -> dict:
+    """The episode's safety verdict: FAIL when the judge or the A6 sim_gt saw a violation (the first one is reported);
+    the task outcome from sim_gt when present (authoritative offline), else the judge's."""
+    gt = (cmp or {}).get("gt")
+    v = truth.get("violation") or (gt or {}).get("violation")
+    src = "judge" if truth.get("violation") else ("sim_gt" if v else ("judge+sim_gt" if gt else "judge"))
+    return {"verdict": "FAIL" if v else "PASS", "violation": v, "source": src,
+            "outcome": (gt or truth).get("outcome", "none"), "outcome_source": "sim_gt" if gt else "judge"}
 
 
 def episode_metrics(ep_dir: Path, grasped_fn, step_s: float) -> dict:
@@ -249,25 +292,39 @@ def episode_metrics(ep_dir: Path, grasped_fn, step_s: float) -> dict:
     return out
 
 
+def rules_hit_of(m: dict) -> dict:
+    from franka_sim.ground_truth import SAFETY_RULES
+
+    return {r: int(m.get(f"safety_fail_{r}") or 0) for r in SAFETY_RULES}
+
+
 def aggregate(eps: list, R: rn.Run, sim_source: str, n_gripper_events: int | None = None) -> tuple[dict, list]:
     """Metrics (stage3 gate bases) and one row per episode from the driver's episode records."""
     from franka_deploy.eval.metrics import wilson
 
+    from franka_sim.ground_truth import OUTCOMES, SAFETY_RULES
+
     labels = [e["label"] for e in eps]
-    # success: A6's sim_gt where the episode has it (authoritative), else the judge's label
-    auth = [(e.get("auth") or {}).get("success") if (e.get("auth") or {}).get("source") == "sim_gt"
-            else ({"y": True, "n": False}.get(e["label"])) for e in eps]
-    scored = [x for x in auth if x is not None]
-    k = sum(bool(x) for x in scored)
-    p, lo, hi = wilson(k, len(scored))
+    auths = [e.get("auth") or episode_safety(e["truth"], e.get("cmp")) for e in eps]
+    n_fail = sum(a["verdict"] == "FAIL" for a in auths)
+    rules_hit = {r: sum(((a.get("violation") or {}).get("rule") == r) for a in auths) for r in SAFETY_RULES}
+    outcomes = {o: sum(a["outcome"] == o for a in auths) for o in OUTCOMES}
+    # task success (informational) = outcome placed
+    k = outcomes["placed"]
+    p, lo, hi = wilson(k, len(eps))
+    scored = auths
     cmps = [e["cmp"] for e in eps if e.get("cmp")]
-    dts = [c["t_success_dt_s"] for c in cmps if c["t_success_dt_s"] is not None]
+    dts = [c["t_end_dt_s"] for c in cmps if c["t_end_dt_s"] is not None]
     trk = np.concatenate([e["m"]["tracking_mm"] for e in eps] or [np.array([])])
     lag = [x for e in eps for x in e["m"]["gripper_lag"]]
     inf = [x for e in eps for x in e["m"]["infer_s"]]
     om = [x for e in eps for x in e["m"]["obs_motion_mm"]]
     m = {
         "n_episodes": len(eps), "n_poses": len({tuple(e["pose"]) for e in eps}), "labels": "".join(str(x)[:1] for x in labels),
+        # the verdict (criteria.evaluate stage 3): safety only
+        "safety_n": len(eps), "safety_pass_n": len(eps) - n_fail, "safety_fail_n": n_fail,
+        **{f"safety_fail_{r}": c for r, c in rules_hit.items()},
+        **{f"outcome_{o}": c for o, c in outcomes.items()}, "outcome_counts": outcomes,
         "success_rate": p if scored else None, "success_k": k, "success_n": len(scored),
         "success_ci95_lo": lo if scored else None, "success_ci95_hi": hi if scored else None,
         "sim_source": sim_source, "image_source": R.image_source,
@@ -279,25 +336,37 @@ def aggregate(eps: list, R: rn.Run, sim_source: str, n_gripper_events: int | Non
         "gripper_lag_reference": sorted({e["m"].get("gripper_lag_ref") for e in eps} - {None}),
         "inference_latency_s_p95": pct(inf, 95), "obs_motion_mm_p95": pct(om, 95),
         "stale_image_errors": int(sum(e["m"]["stale_image"] for e in eps)), "holds": int(sum(e["m"]["holds"] for e in eps)),
-        "slip_exceeds_tol_episodes": int(sum(bool(e["truth"].get("slip_exceeds_tol")) for e in eps)),
         "max_slip_m": max([e["truth"].get("slip_m", 0.0) for e in eps] or [0.0]),
         "knocked_over_episodes": int(sum(bool(e["truth"].get("knocked_over")) for e in eps)),
-        # a reflex is a policy failure (label n, the reflex gate); finger<->table strikes are reported apart (A6 review finding 5)
+        # a reflex is a safety FAIL; finger<->table strikes are reported apart (A6 review finding 5)
         "pad_table_contacts": int(sum(len(e.get("pad_table") or []) for e in eps)),
         "pad_table_episodes": int(sum(bool(e.get("pad_table")) for e in eps)),
         "pad_table_force_max_n": max([float(e.get("pad_table_force_max_n") or 0.0) for e in eps] or [0.0]),
-        "success_source": ("sim_gt" if cmps and len(cmps) == len(eps) else "judge" if not cmps else "mixed"),
+        "outcome_source": ("sim_gt" if cmps and len(cmps) == len(eps) else "judge" if not cmps else "mixed"),
         "judge_gt_compared": len(cmps), "judge_gt_agree": int(sum(c["agree"] for c in cmps)),
-        "judge_gt_success_agree": int(sum(c["success_agree"] for c in cmps)),
-        "judge_gt_t_success_dt_s_max": max(dts) if dts else None,
+        "judge_gt_verdict_agree": int(sum(c["verdict_agree"] for c in cmps)),
+        "judge_gt_outcome_agree": int(sum(c["outcome_agree"] for c in cmps)),
+        "judge_gt_t_end_dt_s_max": max(dts) if dts else None,
+        "ee_speed_max_m_s": max([e["truth"].get("ee_speed_max_m_s") or 0.0 for e in eps] or [0.0]) if eps else None,
+        "ee_ang_speed_max_rad_s": max([e["truth"].get("ee_ang_speed_max_rad_s") or 0.0 for e in eps] or [0.0]) if eps else None,
+        "joint_margin_min_deg": min([e["truth"]["joint_margin_min_deg"] for e in eps
+                                     if e["truth"].get("joint_margin_min_deg") is not None] or [None], key=lambda x: (x is None, x)),
+        "safety_checks_skipped": sorted({c for e in eps for c in (e["truth"].get("checks_skipped") or [])}),
         "judge_t0_from_events": int(sum(e.get("t0_source") == "events" for e in eps)),
     }
-    rows = [{"pose": e["pose_i"], "ep": e["ep_i"], "label": e["label"], "reason": e["truth"].get("reason"),
+    def _saf(a):
+        v = a.get("violation")
+        return "PASS" if not v else f"FAIL {v['rule']} @{v['t_s']}s"
+
+    rows = [{"pose": e["pose_i"], "ep": e["ep_i"], "safety": _saf(a), "task_outcome": a["outcome"], "label": e["label"],
+             "reason": e["truth"].get("reason"),
              "max_lift_mm": round(1000 * e["truth"].get("max_lift_m", 0.0), 1), "slip_mm": round(1000 * e["truth"].get("slip_m", 0.0), 2),
              "collisions": len(e["collisions"]), "reflexes": e["m"]["reflexes"], "pad_table": len(e.get("pad_table") or []),
-             "gt": {True: "y", False: "n"}.get(((e.get("cmp") or {}).get("gt") or {}).get("success"), "-"),
-             "gt_dt_s": (e.get("cmp") or {}).get("t_success_dt_s"), "calls": e["m"]["n_calls"],
-             "track_p95_mm": round(pct(e["m"]["tracking_mm"], 95) or 0.0, 2), "wall_s": e["wall_s"]} for e in eps]
+             "gt": ("-" if not e.get("cmp") else "agree" if e["cmp"]["agree"] else
+                    f"DIFFERS ({e['cmp']['sim_gt']['verdict']} {e['cmp']['sim_gt']['rule'] or ''} / {e['cmp']['sim_gt']['outcome']})"),
+             "gt_dt_s": (e.get("cmp") or {}).get("t_end_dt_s"), "calls": e["m"]["n_calls"],
+             "track_p95_mm": round(pct(e["m"]["tracking_mm"], 95) or 0.0, 2), "wall_s": e["wall_s"]}
+            for e, a in zip(eps, auths)]
     return m, rows
 
 
@@ -495,7 +564,7 @@ class Driver:
                 pass
 
 
-def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, scenario: str | None, step_s: float) -> dict:
+def run_episode(dr: Driver, sim, judge_cfg: dict, rules: dict, pose: tuple, scenario: str | None, step_s: float) -> dict:
     """One episode, per the module docstring. Raises ``StageIncomplete`` when the loop cannot continue."""
     cfg = dr.cfg
     t_wall = time.monotonic()
@@ -527,7 +596,7 @@ def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, sc
     t0 = t_task if t_task is not None else t_seen       # the task's episode_start t (as the A6 ground truth)
     if hasattr(sim, "on_episode_start"):
         sim.on_episode_start(t0)
-    judge = jg.Judge(sim.state_endpoint, dr.session / "commands.txt", success, judge_cfg["finger_geom_patterns"],
+    judge = jg.Judge(sim.state_endpoint, dr.session / "commands.txt", rules, judge_cfg["finger_geom_patterns"],
                      judge_cfg["ignore_contact_pairs"], t_start=t0, table_patterns=judge_cfg.get("table_geom_patterns", ["table"]))
     judge.start()
     timers = []
@@ -550,13 +619,13 @@ def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, sc
             tm.start()
             timers.append(tm)
     try:
-        t_limit = float(success["timeout_s"]) + 40.0 - (t_seen - t0)
+        t_limit = float(rules["timeout_s"]) + 40.0 - (t_seen - t0)
         fin, forced = None, False
         while fin is None and time.monotonic() - t0 < t_limit:
             fin = dr.wait_event(("episode_finalized",), 0.5)
             if judge.error:
                 raise rn.StageIncomplete(f"judge failed: {judge.error}")
-            if fin is None and not forced and time.monotonic() - t0 > float(success["timeout_s"]) + 10.0:
+            if fin is None and not forced and time.monotonic() - t0 > float(rules["timeout_s"]) + 10.0:
                 dr.key("s")         # the judge should have decided by now: end the episode unlabeled rather than hang
                 forced = True
         if fin is None:
@@ -569,14 +638,14 @@ def run_episode(dr: Driver, sim, judge_cfg: dict, success: dict, pose: tuple, sc
             sim.on_episode_end()
     truth = {**judge.tracker.result(), "label_written": judge.label, "forced_stop": forced}
     m = episode_metrics(ep_dir, judge.grasped_at, step_s)
-    cmp = ground_truth_compare(ep_dir, success, t0, truth, judge_cfg) if scenario is None else None
-    # A6's sim_gt is authoritative when present (B9 acceptance 2); the judge decides live (the label), the GT confirms offline
-    auth = {"success": bool(cmp["gt"]["success"]), "source": "sim_gt"} if cmp else {"success": truth.get("success"), "source": "judge"}
+    cmp = ground_truth_compare(ep_dir, rules, t0, truth, judge_cfg) if scenario is None else None
+    # the judge decides live (the label); A6's sim_gt re-derives it offline: a violation seen by either is a FAIL
+    auth = episode_safety(truth, cmp)
     (ep_dir / "sim_truth.json").write_text(json.dumps({
         "pose_xy_yaw": list(pose), "scenario": scenario, "truth": truth, "collisions": judge.collisions,
         "pad_table": judge.pad_table, "pad_table_force_max_n": judge.pad_table_force_max_n, "n_states": judge.n_states,
         "t0": t0, "t0_source": "events.jsonl episode_start" if t_task is not None else "driver monotonic (events.jsonl unreadable)",
-        "t_driver_saw_start": t_seen, "success_authoritative": auth,
+        "t_driver_saw_start": t_seen, "safety": auth,
         "judge_vs_gt": None if cmp is None else {k: v for k, v in cmp.items() if k != "gt"},
         "sim_gt": None if cmp is None else cmp["gt"]}, indent=1, default=str))
     rec = {"ep_dir": str(ep_dir), "pose": pose, "label": m["label"], "truth": truth, "collisions": judge.collisions, "m": m,
@@ -597,13 +666,13 @@ def run(R: rn.Run, d: Path, results: dict) -> dict:
     center, centre_note = pose_center(R, cfg)
     poses = make_poses(cfg, center)
     n_per = int(cfg["n_episodes_per_pose"])
-    success = R.station.get("criteria.success")
+    rules = judge_rules(R)
     step_s = 1.0 / float(R.cfg.get("task", {}).get("agent_hz", 20))
     backend = ((R.cfg.get("bridge") or {}).get("override") or {}).get("backend", {}).get("type")
     if scenario is None and backend != "mujoco":
         raise rn.StageIncomplete("Stage 3 needs --sim-stub SCENARIO or a MuJoCo profile (backend.type mujoco: A5/A6/A7)")
     notes = [centre_note]
-    budget = len(poses) * n_per * (float(success["timeout_s"]) + float(cfg["home_timeout_s"]) + 40.0) + 300.0
+    budget = len(poses) * n_per * (float(rules["timeout_s"]) + float(cfg["home_timeout_s"]) + 40.0) + 300.0
     dr = Driver(R, d, cfg, po, budget)
     sim = None
     eps: list = []
@@ -623,7 +692,7 @@ def run(R: rn.Run, d: Path, results: dict) -> dict:
         for pi, pose in enumerate(poses):
             for ei in range(n_per):
                 try:
-                    rec = run_episode(dr, sim, cfg, success, pose, scenario, step_s)
+                    rec = run_episode(dr, sim, cfg, rules, pose, scenario, step_s)
                 except rn.StageIncomplete as e:
                     reason = f"pose {pi} episode {ei}: {e}"
                     break
@@ -664,9 +733,15 @@ def run(R: rn.Run, d: Path, results: dict) -> dict:
                                                "receiver_age_s_p95", "obs_motion_mm_p95", "holds", "stale_image_errors",
                                                "sim_reset_s_max", "sim_reset_s_p50"))
     if sim_source != "mujoco":
-        notes.append(f"sim_source {sim_source}: scripted stub eraser (scenario {scenario}), NOT a physics simulation; success and "
+        notes.append(f"sim_source {sim_source}: scripted stub eraser (scenario {scenario}), NOT a physics simulation; outcome and "
                      "collisions only exercise the judge and the driver")
-    notes.append(f"{R.image_source} images: success is informational (Stage 3 measures plumbing, safety and timing)")
+    notes.append(f"verdict = safety only: {m['safety_pass_n']}/{m['safety_n']} episodes safety PASS "
+                 f"(fails by rule: {', '.join(f'{r} {c}' for r, c in rules_hit_of(m).items() if c) or 'none'}); "
+                 "criteria.stage3 gates are reported metrics and do not change the verdict")
+    notes.append(f"task outcome (informational, never a FAIL): {', '.join(f'{o} {c}' for o, c in m['outcome_counts'].items())}; "
+                 f"{R.image_source} images, so the outcome is not a real-world estimate")
+    if m.get("safety_checks_skipped"):
+        notes.append(f"safety checks skipped for lack of state keys / config: {', '.join(m['safety_checks_skipped'])}")
     rs = list(getattr(sim, "reset_s", []) or [])
     m["sim_reset_s_max"] = round(max(rs), 4) if rs else None
     m["sim_reset_s_p50"] = round(pct(rs, 50), 4) if rs else None
@@ -676,9 +751,10 @@ def run(R: rn.Run, d: Path, results: dict) -> dict:
                      f"(driver timeout sim.stage3.reset_timeout_s {cfg['reset_timeout_s']} s; launcher bridge.sim_reset_timeout_s "
                      f"{(R.cfg.get('bridge') or {}).get('sim_reset_timeout_s', 2.0)} s)")
     if m["judge_gt_compared"]:
-        notes.append(f"success from A6 sim_gt (authoritative) on {m['judge_gt_compared']}/{len(eps)} episodes; judge vs sim_gt agree on "
-                     f"{m['judge_gt_agree']} (same success, t_success within {GT_T_SUCCESS_TOL_S} s; max dt {m['judge_gt_t_success_dt_s_max']} s)")
-    notes.append("reflexes count as policy failures (label n, reflex gate); pad_table = finger<->table contact onsets, reported "
+        notes.append(f"judge vs A6 sim_gt on {m['judge_gt_compared']}/{len(eps)} episodes: agree on {m['judge_gt_agree']} (same safety "
+                     f"verdict + rule {m['judge_gt_verdict_agree']}, same outcome {m['judge_gt_outcome_agree']}; max end-time dt "
+                     f"{m['judge_gt_t_end_dt_s_max']} s); a violation seen by either is a FAIL, the outcome is sim_gt's")
+    notes.append("a reflex is a safety FAIL (label n); pad_table = finger<->table contact onsets, reported "
                  f"separately and not gated: {m['pad_table_contacts']} in {m['pad_table_episodes']} episodes "
                  f"(max {m['pad_table_force_max_n']:.1f} N)")
     if m["n_gripper_lag_events"] == 0 and eps:

@@ -906,6 +906,11 @@ def build_model(station: Station, sim: dict | None = None, with_scene: bool = Tr
         names["bodies"].update(table="table", object="eraser")
         names["joints"]["object"] = "eraser_free"
         names["geoms"].update(table="table", object="eraser")
+        pl = sc.get("place")
+        if pl is not None:   # visual-only place target (pick_place scenes): no contacts, no mass, on the table top
+            pxy = np.asarray(pl["xy_m"], float)
+            _box(arm.worldbody, "place_marker", [0.040, 0.040, 0.001], make_T(None, [pxy[0], pxy[1], top + 0.0005]),
+                 [0.1, 0.8, 0.2, 0.6], collide=False)
         light = arm.worldbody.add_light()
         light.pos, light.dir, light.directional = [0.4, 0, 1.5], [0, 0, -1], True
 

@@ -572,8 +572,8 @@ def station_from_deploy_cfg(cfg: dict):
 
 # ------------------------------------------------------------------------------------------------------------ CLI
 
-_SIM_RUN = {"policy": "fake", "link": "ideal", "criteria": "block_raise", "sim": "render"}
-_RIG = {"robot": "panda", "tooling": "franka_hand_iphumi_rig1", "sensor": "rig1_wifi", "scene": "block_raise_table"}
+_SIM_RUN = {"policy": "fake", "link": "ideal", "criteria": "pick_place", "sim": "render"}
+_RIG = {"robot": "panda", "tooling": "franka_hand_iphumi_rig1", "sensor": "rig1_wifi", "scene": "pick_place_table"}
 PROFILES = {  # the station combinations of the design profiles (deploy.yaml gets the same ids in B2/B6)
     "sim-rig": {"station": {**_RIG, "host": "pc_laptop"}, "run": _SIM_RUN},
 }

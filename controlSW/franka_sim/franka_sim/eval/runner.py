@@ -205,7 +205,7 @@ def run_one_stage(R: Run, stage: str, results: dict) -> dict:
     ev = crit.evaluate(R.criteria, metrics, stage)
     sec = crit.STAGE_SECTION.get(stage, "")
     ph = sorted(p for p, _ in R.station.placeholders()
-                if p.startswith(("criteria.limits.", "criteria.success.", f"criteria.{sec}.")))
+                if p.startswith(("criteria.limits.", "criteria.success.", "criteria.task.", "criteria.safety.", f"criteria.{sec}.")))
     if ph:
         notes.append("criteria values that are open user decisions (placeholders): " + ", ".join(ph))
     if metrics.get("incomplete_reason"):       # a stage that stopped early: whatever it measured is listed, the verdict is INCOMPLETE

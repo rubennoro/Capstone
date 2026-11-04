@@ -4,6 +4,9 @@ report.json: {schema, stage, policy_id, policy_kind, profile, sensor, robot, sta
 image_source, seed, started, duration_s, metrics, gates, verdict, notes, rows}. ``rows`` (optional) are a few per-demo
 rows ([{demo, ...numbers}]) for the HTML. The HTML has inline CSS only (no external assets, no scripts) and a banner
 when ``image_source == "render"`` (rendered images: the success rate is not a real-world estimate).
+Stage 3 (safety verdict, main-sim Step 4): the metrics carry ``safety_n / safety_pass_n / safety_fail_n``, ``safety_fail_<rule>``
+and ``outcome_counts``; the HTML shows a Safety line (pass count, fails by rule) and the task outcome counts, the per-episode
+rows show the **Safety** and **Task outcome** columns first, and gates marked ``informational`` are shown as reported metrics.
 """
 
 from __future__ import annotations
@@ -89,6 +92,26 @@ th{background:#f3f4f6}.badge{display:inline-block;padding:2px 12px;border-radius
 .meta{color:#57606a;font-size:12px}code{background:#f3f4f6;padding:1px 4px}"""
 
 
+ROW_HEADERS = {"safety": "Safety", "task_outcome": "Task outcome"}
+OUTCOME_ORDER = ("none", "grasped", "lifted", "placed")
+
+
+def safety_text(m: dict) -> str | None:
+    """'3/3 PASS' (+ fails by rule) from a report's metrics, None when it has no safety metrics."""
+    if m.get("safety_n") is None:
+        return None
+    fails = [f"{k[len('safety_fail_'):]} {v}" for k, v in m.items()
+             if k.startswith("safety_fail_") and k != "safety_fail_n" and v]
+    return f"{m.get('safety_pass_n')}/{m.get('safety_n')} PASS" + (f" (FAIL: {', '.join(fails)})" if fails else "")
+
+
+def outcome_text(m: dict) -> str | None:
+    oc = m.get("outcome_counts")
+    if not oc:
+        return None
+    return ", ".join(f"{o} {oc.get(o, 0)}" for o in OUTCOME_ORDER)
+
+
 def render_html(rep: dict) -> str:
     e = html.escape
     head = (f"<h1>{e(str(rep['policy_id']))} on {e(str(rep['sensor']))} / {e(str(rep['robot']))}, stage {e(str(rep['stage']))} "
@@ -98,26 +121,45 @@ def render_html(rep: dict) -> str:
             f"image source {e(str(rep['image_source']))} &middot; seed {e(str(rep['seed']))} &middot; started "
             f"{e(str(rep['started']))} &middot; {rep['duration_s']} s</div>")
     banner = f"<div class='banner'>{RENDER_BANNER}</div>" if rep.get("image_source") == "render" else ""
+    m = rep.get("metrics") or {}
+    saf, outc = safety_text(m), outcome_text(m)
+    safety = ""
+    if saf is not None:
+        safety = (f"<h2>Safety (the verdict)</h2><p><b>{e(saf)}</b></p>"
+                  + (f"<h2>Task outcome (reported, never a FAIL)</h2><p>{e(outc)}</p>" if outc else ""))
     rows = []
+    info = bool(rep["gates"]) and all(g.get("informational") for g in rep["gates"].values())
     for name, g in rep["gates"].items():
         p = g["pass"]
-        cls, txt = ("ok", "pass") if p is True else (("bad", "FAIL") if p is False else ("na", "incomplete"))
+        if g.get("informational"):
+            cls, txt = ("ok", "within") if p is True else (("na", "over") if p is False else ("na", "n/a"))
+        else:
+            cls, txt = ("ok", "pass") if p is True else (("bad", "FAIL") if p is False else ("na", "incomplete"))
         rows.append(f"<tr><td>{e(name)}</td><td>{e(_fmt(g['value']))}</td><td>{e(g['op'])} {e(_fmt(g['threshold']))}</td>"
                     f"<td class='{cls}'>{txt}</td></tr>")
-    gates = ("<h2>Gates</h2><table><tr><th>gate</th><th>value</th><th>threshold</th><th>result</th></tr>" + "".join(rows)
-             + "</table>") if rows else "<h2>Gates</h2><p>none</p>"
+    title = "Reported metrics vs criteria (no effect on the verdict)" if info else "Gates"
+    gates = (f"<h2>{title}</h2><table><tr><th>gate</th><th>value</th><th>threshold</th><th>result</th></tr>" + "".join(rows)
+             + "</table>") if rows else f"<h2>{title}</h2><p>none</p>"
     demo_rows = ""
     if rep.get("rows"):
         cols = list(rep["rows"][0].keys())
-        demo_rows = ("<h2>Per demo</h2><table><tr>" + "".join(f"<th>{e(c)}</th>" for c in cols) + "</tr>"
-                     + "".join("<tr>" + "".join(f"<td>{e(_fmt(r.get(c)))}</td>" for c in cols) + "</tr>"
-                               for r in rep["rows"][:12]) + "</table>")
+        per_ep = "safety" in cols
+        lim = 200 if per_ep else 12
+
+        def cell(r, c):
+            v = r.get(c)
+            if c == "safety":
+                return f"<td class='{'ok' if str(v).startswith('PASS') else 'bad'}'>{e(_fmt(v))}</td>"
+            return f"<td>{e(_fmt(v))}</td>"
+        demo_rows = (f"<h2>{'Per episode' if per_ep else 'Per demo'}</h2><table><tr>"
+                     + "".join(f"<th>{e(ROW_HEADERS.get(c, c))}</th>" for c in cols) + "</tr>"
+                     + "".join("<tr>" + "".join(cell(r, c) for c in cols) + "</tr>" for r in rep["rows"][:lim]) + "</table>")
     scal = [(k, v) for k, v in rep["metrics"].items() if not isinstance(v, (dict, list))]
     met = ("<h2>Metrics</h2><table><tr><th>metric</th><th>value</th></tr>"
            + "".join(f"<tr><td>{e(k)}</td><td>{e(_fmt(v))}</td></tr>" for k, v in scal) + "</table>")
     notes = ("<h2>Notes</h2><ul>" + "".join(f"<li>{e(str(n))}</li>" for n in rep["notes"]) + "</ul>") if rep["notes"] else ""
     return (f"<!doctype html><html><head><meta charset='utf-8'><title>{e(str(rep['policy_id']))} stage {e(str(rep['stage']))}</title>"
-            f"<style>{CSS}</style></head><body>{head}{meta}{banner}{gates}{demo_rows}{met}{notes}</body></html>\n")
+            f"<style>{CSS}</style></head><body>{head}{meta}{banner}{safety}{gates}{demo_rows}{met}{notes}</body></html>\n")
 
 
 def write_report(run_dir, rep: dict) -> None:
@@ -129,6 +171,9 @@ def write_report(run_dir, rep: dict) -> None:
 # ------------------------------------------------------------------------------------------------ summary
 def _key_gates(rep: dict, n: int = 3) -> str:
     items = [(k, g) for k, g in rep["gates"].items() if g["pass"] is not True] or list(rep["gates"].items())
+    if items and all(g.get("informational") for _, g in items):
+        return "; ".join(f"{k.split('.', 1)[-1]}={_fmt(g['value'])} ({'within' if g['pass'] else 'over' if g['pass'] is False else 'n/a'})"
+                         for k, g in items[:n])
     return "; ".join(f"{k.split('.', 1)[-1]}={_fmt(g['value'])} ({'ok' if g['pass'] else 'FAIL' if g['pass'] is False else 'n/a'})"
                      for k, g in items[:n])
 
@@ -145,7 +190,13 @@ def summarize(out_dir) -> dict:
         if rep.get("schema") != SCHEMA:
             continue
         rows.append({"run": p.parent.name, "policy": rep["policy_id"], "profile": rep["profile"], "sensor": rep["sensor"],
-                     "robot": rep["robot"], "stage": rep["stage"], "verdict": rep["verdict"], "key_gates": _key_gates(rep)})
+                     "robot": rep["robot"], "stage": rep["stage"], "verdict": rep["verdict"],
+                     "safety": safety_text(rep.get("metrics") or {}) or "-",
+                     "safety_pass_n": (rep.get("metrics") or {}).get("safety_pass_n"),
+                     "safety_n": (rep.get("metrics") or {}).get("safety_n"),
+                     "task_outcomes": outcome_text(rep.get("metrics") or {}) or "-",
+                     "outcome_counts": (rep.get("metrics") or {}).get("outcome_counts"),
+                     "key_gates": _key_gates(rep)})
     return {"schema": "sim_summary/v1", "n_runs": len(rows), "rows": rows}
 
 
@@ -183,7 +234,9 @@ def comparison(out_dir) -> dict | None:
             if g not in gate_names:
                 gate_names.append(g)
     rows = [{"name": "verdict", "cells": [{"text": (c["report"] or {}).get("verdict", "not run")} for c in cols]},
-            {"name": "success_rate (95% CI)", "cells": [{"text": _rate((c["report"] or {}).get("metrics", {})) or "n/a"} for c in cols]}]
+            {"name": "safety", "cells": [{"text": safety_text((c["report"] or {}).get("metrics", {})) or "n/a"} for c in cols]},
+            {"name": "task outcomes", "cells": [{"text": outcome_text((c["report"] or {}).get("metrics", {})) or "n/a"} for c in cols]},
+            {"name": "task success = placed (95% CI)", "cells": [{"text": _rate((c["report"] or {}).get("metrics", {})) or "n/a"} for c in cols]}]
     for g in gate_names:
         cells = []
         for c in cols:
@@ -225,13 +278,21 @@ def write_summary(out_dir) -> dict:
         s["comparison"] = cmp
     write_json(out_dir / "summary.json", s)
     e = html.escape
-    cols = ["run", "policy", "profile", "sensor", "robot", "stage", "verdict", "key_gates"]
+    sn = sum(int(r["safety_n"] or 0) for r in s["rows"])
+    sp = sum(int(r["safety_pass_n"] or 0) for r in s["rows"])
+    oc = {o: sum(int((r.get("outcome_counts") or {}).get(o, 0)) for r in s["rows"]) for o in OUTCOME_ORDER}
+    if sn:
+        s["safety_pass_n"], s["safety_n"], s["outcome_counts"] = sp, sn, oc
+        write_json(out_dir / "summary.json", s)
+    tot = (f" &middot; safety {sp}/{sn} episodes PASS &middot; task outcomes "
+           + e(", ".join(f"{o} {c}" for o, c in oc.items()))) if sn else ""
+    cols = ["run", "policy", "profile", "sensor", "robot", "stage", "verdict", "safety", "task_outcomes", "key_gates"]
     body = "".join("<tr>" + "".join(
         (f"<td><a href='{e(r['run'])}/report.html'>{e(r['run'])}</a></td>" if c == "run" else
          f"<td><span class='badge {e(r[c])}'>{e(r[c])}</span></td>" if c == "verdict" else f"<td>{e(str(r[c]))}</td>")
         for c in cols) + "</tr>" for r in s["rows"])
     (out_dir / "summary.html").write_text(
         f"<!doctype html><html><head><meta charset='utf-8'><title>sim eval summary</title><style>{CSS}</style></head><body>"
-        f"<h1>Sim evaluation summary</h1><div class='meta'>{s['n_runs']} run(s)</div><table><tr>"
+        f"<h1>Sim evaluation summary</h1><div class='meta'>{s['n_runs']} run(s){tot}</div><table><tr>"
         + "".join(f"<th>{c}</th>" for c in cols) + f"</tr>{body}</table>{comparison_html(cmp) if cmp else ''}</body></html>\n")
     return s

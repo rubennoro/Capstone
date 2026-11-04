@@ -1,0 +1,34 @@
+schema: run.criteria/v1
+id: pick_place
+limits: {v_max_m_s: 0.25, w_max_rad_s: 1.0}   # PLACEHOLDER: user decision (v_max). Per-update step clamp (bridge safety) and chunk time-scaling (task --v-max/--w-max)
+# Stage 3 verdict = safety only: any violation FAILs the episode (the judge writes n). Measured at the EE site, the point the
+# bridge's safety filter enforces; workspace box / cone come from scene.workspace, joint limits from robot.joints.
+# speed_factor_ratio = the plan's speed_factor (station.py rejects a unitless key without a _ratio/_scale suffix)
+safety: {joint_margin_deg: 5, speed_factor_ratio: 1.1, speed_window_s: 0.05}
+# Task outcome (none < grasped < lifted < placed): reported, never a FAIL. placed = eraser at scene.place (xy within tol_m,
+# z within place_z_tol_m of its start z), released (not grasped, gap >= open_gap_min_m), TCP >= retreat_min_m above it, for hold_s.
+task: {lift_min_m: 0.05, timeout_s: 60, place_z_tol_m: 0.005, open_gap_min_m: 0.07, retreat_min_m: 0.05, hold_s: 1.0}
+stage3:                       # reported metrics only (no effect on the Stage 3 verdict)
+  collisions_max: 0
+  reflex_max: 0
+  tracking_err_mm_p95_max: 5
+  gripper_width_lag_steps_p95_max: 1
+  inference_latency_s_p95_max: 0.45
+  receiver_age_s_p95_max: 0.15
+  stale_image_errors_max: 0
+  # obs_motion = arm travel between the newest image time and the proprio sample time = arm speed x lag (see block_raise.yaml).
+  obs_motion_mm_p95_max: 3
+provenance:
+  limits: {status: placeholder, source: "open user decision (AGENTS.md: success rule, v_max); was deploy.yaml task.v_max/w_max, bridge.yaml (0.5 m/s only after B3-hw)"}
+  safety.joint_margin_deg: {status: decision, source: "main-sim plan Step 4: every joint > 5 deg inside its panda.yaml limit (judge only; the bridge never reads it)"}
+  safety.speed_factor_ratio: {status: decision, source: "main-sim plan Step 4: EE speed <= 1.1 x limits.v_max_m_s / w_max_rad_s (10% over the bridge clamp)"}
+  safety.speed_window_s: {status: decision, source: "main-sim plan Step 4: finite differences over 50 ms of the 100 Hz sim state"}
+  task.lift_min_m: {status: placeholder, source: "block_raise success.lift_min_m (PLAN.md 0.05); open user decision (success rule)"}
+  task.timeout_s: {status: placeholder, source: "block_raise success.timeout_s (PLAN.md 60); open user decision (success rule)"}
+  task.place_z_tol_m: {status: decision, source: "main-sim plan Step 4: eraser back on the table within 5 mm of its start z"}
+  task.open_gap_min_m: {status: decision, source: "main-sim plan Step 4: hand opened to >= 0.07 m (released)"}
+  task.retreat_min_m: {status: decision, source: "main-sim plan Step 4: TCP >= 0.05 m above the eraser (retreated)"}
+  task.hold_s: {status: decision, source: "main-sim plan Step 4: placed conditions held for 1.0 s"}
+  stage3: {status: decision, source: "design_track_b.md run/criteria (reported metrics only since main-sim Step 4)"}
+  stage3.obs_motion_mm_p95_max: {status: placeholder, source: "B9.REVIEW finding 1: speed x image age; open user decision (and whether to turn on --match-camera-latency)"}
+critical: []

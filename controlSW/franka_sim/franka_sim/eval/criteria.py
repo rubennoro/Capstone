@@ -15,6 +15,9 @@ Rules (keys of ``criteria[<section>]``):
     ``pred_vs_demo_pos_err_mm_p95_k4``).
   * Missing (None / absent / NaN) metric: the gate is ``pass: None`` (INCOMPLETE), never a pass.
 Verdict: FAIL if any gate fails, else INCOMPLETE if any gate is incomplete (or there are no gates), else PASS.
+Stage 3 (main-sim Step 4) is the exception: its verdict is SAFETY ONLY (``safety_verdict``): FAIL if
+``metrics["safety_fail_n"] > 0``, PASS if ``safety_n > 0`` episodes ran and none failed, else INCOMPLETE. Its ``stage3`` gates
+are still evaluated and reported, each marked ``informational: True``; they never change the verdict.
 Metrics that are not asked for by the criteria are ignored; criteria keys the stage does not measure at all
 (e.g. stage3 keys while evaluating stage 2) are never looked at, because only the ``stage`` section is read.
 """
@@ -34,6 +37,14 @@ STAGE_KEYS = {
            "frame_selection_errors_max", "cam_stamp_err_ms_p95_max"},
 }
 K_KEYS = re.compile(r"^k\d+$")
+SAFETY_VERDICT_STAGES = {"3"}        # stages whose verdict is the episodes' safety verdict, not the gates
+
+
+def safety_verdict(metrics: dict) -> str:
+    n, f = metrics.get("safety_n"), metrics.get("safety_fail_n")
+    if _missing(n) or _missing(f) or int(n) <= 0:
+        return "INCOMPLETE"
+    return "FAIL" if int(f) > 0 else "PASS"
 
 
 def _missing(v) -> bool:
@@ -97,7 +108,11 @@ def evaluate(criteria: dict, metrics: dict, stage: str) -> dict:
         else:
             gates[f"{sec}.{key}"] = _gate(key, base, op, thr, metrics)
     passes = [g["pass"] for g in gates.values()]
-    if any(p is False for p in passes):
+    if stage in SAFETY_VERDICT_STAGES:
+        for g in gates.values():
+            g["informational"] = True
+        verdict = safety_verdict(metrics)
+    elif any(p is False for p in passes):
         verdict = "FAIL"
     elif not passes or any(p is None for p in passes):
         verdict = "INCOMPLETE"

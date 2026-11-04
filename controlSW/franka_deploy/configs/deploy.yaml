@@ -64,8 +64,8 @@ profiles:
   # disk_budget_gb): not set here; load_config fills them from the station host group (pc_laptop), B10. Override with
   # `--set host.work_root=DIR` on run / check-config.
   sim-rig: &sim_base                          # MuJoCo arm + bridge-served Franka Hand + rendered rig images; the policy slot is run.policy
-    station: {robot: panda, tooling: franka_hand_iphumi_rig1, sensor: rig1_wifi, scene: block_raise_table, host: pc_laptop}
-    run: {policy: fake, link: ideal, criteria: block_raise, sim: render}   # closed loop; pass --policy to swap in another policy
+    station: {robot: panda, tooling: franka_hand_iphumi_rig1, sensor: rig1_wifi, scene: pick_place_table, host: pc_laptop}
+    run: {policy: fake, link: ideal, criteria: pick_place, sim: render}   # closed loop; pass --policy to swap in another policy
     run_mode: sim
     sim_state_endpoint: tcp://127.0.0.1:5570  # A6's state PUB (the judge and the render sender subscribe)
     station_set: ["sensor.transport.bind_host=127.0.0.1", "tooling.hand.endpoint=tcp://127.0.0.1:5565"]   # hand = bridge

@@ -89,6 +89,8 @@ class Scene:
         self.g_eraser = oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["object"])
         self.g_table = oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["table"])
         self.tcp_site = oid(mujoco.mjtObj.mjOBJ_SITE, nm["sites"]["tcp"])
+        self.ee_site = oid(mujoco.mjtObj.mjOBJ_SITE, nm["sites"]["ee"])
+        self.arm_qadr = [int(m.jnt_qposadr[oid(mujoco.mjtObj.mjOBJ_JOINT, nm["joints"][f"j{i}"])]) for i in range(1, 8)]
         self.pads = (oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["pad_l"]), oid(mujoco.mjtObj.mjOBJ_GEOM, nm["geoms"]["pad_r"]))
         self.fingers = [int(m.jnt_qposadr[oid(mujoco.mjtObj.mjOBJ_JOINT, f)]) for f in nm["fingers"].values()]
         self.finger_dofs = [int(m.jnt_dofadr[oid(mujoco.mjtObj.mjOBJ_JOINT, f)]) for f in nm["fingers"].values()]
@@ -172,7 +174,8 @@ class Scene:
     # ------------------------------------------------------------------------------------------ I-SIMSTATE
     def sim_state(self, core, contacts, t_mono: float, hand=None) -> dict:
         """The I-SIMSTATE dict (keys simlink/judge read, plus hand_mode, hand_grasped, sim_t, and tcp_z: the TCP site z
-        in the base frame, so in-hand slip = the drop of eraser z - tcp_z while grasped, A7)."""
+        in the base frame, so in-hand slip = the drop of eraser z - tcp_z while grasped, A7), tcp_T_base / ee_T_base
+        (4x4 site poses in the base frame) and q_arm (the 7 arm joint positions, j1..j7)."""
         d = core.d
         hs = hand._state if hand is not None else None
         gap = float(hs["gap_m"]) if hs is not None else 2.0 * float(d.ten_length[core._tendon])
@@ -181,7 +184,16 @@ class Scene:
                 "reflex": core.error, "tau_ext": np.asarray(core.tau_ext, float).copy(),
                 "hand_mode": hs["mode"] if hs is not None else None,
                 "hand_grasped": bool(hs["grasped"]) if hs is not None else None, "sim_t": float(d.time),
-                "tcp_z": float(d.site_xpos[self.tcp_site][2])}
+                "tcp_z": float(d.site_xpos[self.tcp_site][2]),
+                "tcp_T_base": self._site_T(d, self.tcp_site), "ee_T_base": self._site_T(d, self.ee_site),
+                "q_arm": [float(d.qpos[a]) for a in self.arm_qadr]}
+
+    @staticmethod
+    def _site_T(d, sid: int) -> np.ndarray:
+        T = np.eye(4)
+        T[:3, :3] = d.site_xmat[sid].reshape(3, 3)
+        T[:3, 3] = d.site_xpos[sid]
+        return T
 
 
 class ContactProbe:
@@ -214,4 +226,12 @@ def sim_line(state: dict, F_ext_max: float = 0.0) -> dict:
             "gap": round(float(state["hand_gap_m"]), 6), "grasped": bool(state["grasped"]),
             "hand_mode": str(state.get("hand_mode")), "contacts": [dict(c) for c in state["contacts"]],
             "F_ext_max": round(float(F_ext_max), 4), "reflex": None if state["reflex"] is None else str(state["reflex"]),
-            **({"tcp_z": round(float(state["tcp_z"]), 6)} if state.get("tcp_z") is not None else {})}
+            **({"tcp_z": round(float(state["tcp_z"]), 6)} if state.get("tcp_z") is not None else {}),
+            **{k: _pose7(state[s]) for k, s in (("tcp", "tcp_T_base"), ("ee", "ee_T_base")) if state.get(s) is not None},
+            **({"q": [round(float(v), 6) for v in state["q_arm"]]} if state.get("q_arm") is not None else {})}
+
+
+def _pose7(T) -> list:
+    """[x, y, z, qw, qx, qy, qz] of a 4x4 pose, 6 decimals (the sim line's obj format)."""
+    T = np.asarray(T, float)
+    return [round(float(v), 6) for v in (*T[:3, 3], *R_to_quat(T[:3, :3]))]
