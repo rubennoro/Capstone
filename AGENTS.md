@@ -10,63 +10,58 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17)
+## Current state (2026-11-03)
 
-- **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
-  yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
-  - Data collection: `sensor_rig/`, 400 tests, committed in `987dcd6` with newer changes uncommitted. On the Jetson:
-    `jetson_setup.sh`, `sensor-rig doctor`, `sensor-rig collect`, `stamp-offset`. On the laptop: `sensor-rig
-    process-session`. Procedure in `sensor_rig/docs/first_plugin.md`.
-  - Deployment: `controlSW/franka_deploy/` (uncommitted, ~190 tests): `python -m franka_deploy run --config
-    deploy.yaml [--mock]`, plus annotate/eval/offline-eval/reinfer. Procedure in `controlSW/franka_deploy/docs/hardware_day.md`.
-  - Built by executor + reviewer agent pairs. Every step was independently re-verified.
-  - **iPhone path guard:** `scripts/regression/` (uncommitted).
-    - It proves the iPhone pipeline and deployment are unchanged since `0ddedef`: protected paths, the real
-      processing on 5 firstreal episodes against an exact golden, and the iPhone peripheral configs.
-    - Run it before any commit touching shared code. The rule is additive-only; upstream fixes are not applied
-      (subclassed in franka_deploy instead).
-  - Only shared-file touches: an appended `"JetsonRig1,1"` entry in `gripper_calibration.yaml` (a copy of iPhone17,1;
-    needs a measured TCP), +1 line in real-env `pyproject.toml`, and new `rig_*` files in real-env.
-  - Local scratch envs (not in the repo, in the session scratchpad):
-    - env_iphumi (processing + sensor_rig);
-    - env_bp (inference; torch shared from `~/.local`);
-    - env_realenv (real-env stack).
-  - Planning docs and research are in `sensor_rig/docs/planning/`. A Raspberry Pi 5 backend also exists
-    (`rig_pi5.yaml`) but the chosen platform is the Jetson.
-
-- **Task `block_raise`** (raise an eraser with one gripper). Dataset **`firstreal-single`**: session `firstreal`, 45 demos,
-  37,971 frames, 845 MB.
-  - At the standard location: `~/CapstoneProject/datasets/block_raise/firstreal-single/firstreal-single.zarr.zip`.
-- **Runs** (in `results/block_raise/`):
-  - `run_000_2026-10-05_smoke/`: 3 epochs, val action MSE 0.0192.
-  - `run_001_2026-10-05/`: first full run (job `10851655`, 140 epochs, 4h55m on 1 H200). Best val action MSE **0.000148
-    at epoch 50**. Val MSE plateaus from ~epoch 30 and val loss creeps up after ~50 (mild overfitting), so ~60 epochs is
-    enough next time.
-    - Copied by hand from the old sbatch output (since deleted from the cluster; all of it is in this folder) and
-      pushed (`8ac2faf`). Only final-epoch videos exist.
-    - Slim best checkpoint (2.5 GB) is in `run_001_2026-10-05/checkpoints/` (gitignored) on both the laptop and the cluster
-      clone. The full-size one (with optimizer, for resuming) plus its `.hydra/` config is the only thing left in
-      `/scratch/noroian.r/bp_runs/2026.10.05/23.22.47_block_raise_bp_v1/`; scratch gets purged eventually.
-- **Pipeline** (`scripts/run_pipeline.sh`, `scripts/cluster/{submit.sh,process_dataset.sbatch,train.sbatch}`,
-  `scripts/package_run.py`): the cluster clone is now pulled to `b87c819` with its git identity set. DIRECTIONS.md §0 is fully done.
-  - **Pipeline tested end to end:** job `10878177` → `results/block_raise/run_002_2026-10-06_smoke/` (11 min). Trained, packaged
-    in-job, and pushed to GitHub from the compute node by itself, with per-epoch videos. The checkpoint stayed on the cluster.
-    Val action MSE 0.0191988, identical to run_000 (training is deterministic).
-  - `scripts/check_job.sh <jobid> [--wait]`: read-only status check (Slurm, log tail, packaged/pushed, what's on GitHub).
-  - Still never run: `process_dataset.sbatch`.
-  - `package_run.py` gets killed on the login node (too heavy). Run it inside a job, or locally.
+- **The phone is dropped.** Focus: the custom sensor rig + custom printed fingers on the Franka **Panda**.
+  - Real rig hardware, from the C++ `physicalSetup/` on branch `rnoro/jetson-sensors` (first hardware session 2026-10-31):
+    IMX519 AF main, IMX219 160° ultrawide, LSM6DSOX IMU on I2C, Jetson Orin Nano.
+  - The Python `sensor_rig/`, ROADMAP and PURCHASING still describe the old B0180/B0179/ICM-42688-P plan, so they are stale.
+- **Branch `rnoro/main-sim`** (local, not pushed; = `main` + 7 commits): a phone-free MuJoCo closed loop.
+  - Covers the Panda + Franka Hand + your Onshape finger kit (default; box fingers with `--box`) + the rig mount.
+    The policy slot holds a scripted pick-and-place stand-in.
+  - **The command:** `controlSW/franka_sim/run_viewer.sh [POSES] [--box] [--set ...]`. It opens the MuJoCo viewer;
+    the report is in `~/sim_runs/scripted_<time>/summary.html`. Details: `controlSW/franka_sim/README.md`.
+  - **Verdict = safety only:**
+    - rules: contact, reflex, workspace box, 60° cone, joint margin 5°, EE speed ≤ 1.1 × v_max and angular speed ≤ 1.1 × w_max;
+    - the task outcome (none / grasped / lifted / placed) is reported separately and never counts as failure;
+    - criteria are in `controlSW/configs/run/criteria/pick_place.yaml`; scene `station/scene/pick_place_table.yaml`
+      (place target 0.45, 0.15).
+  - **Verified 2026-11-03:**
+    - box runs and the kit run: Safety 3/3, placed 3/3, live judge and offline ground truth agree;
+    - EE speed max 0.15–0.21 m/s (limit 0.275; the lag snap-back still shows as a spike); joint margin min about 23°;
+    - forced `--set criteria.safety.joint_margin_deg=60` → FAIL `joint_margin` at once;
+    - `policy-contract` PASS; `tests/test_scripted_policy.py` 4 passed.
+  - **Stand-in notes:** peak command speed is 0.6 × limits (0.9 let the impedance lag, ~21 mm, snap back to 0.29 m/s).
+    Chunks are relative to the task's commanded anchor.
+  - **Known:** the offline ground truth reads 25 Hz lines, so it can miss short speed spikes the 100 Hz judge sees.
+  - **Placeholders still open:**
+    - rig camera K and extrinsics: still the virtual-iPhone K, and `C_T_TCP` is a copy of iPhone17,1;
+    - finger tag positions (kit camera-check is 23 mm off per side);
+    - adapter CAD (D9), payload mass.
+  - `sim-eval` is kept as is (committed `187c247`, 1 ahead of origin) but no longer developed. Its Stages
+    1/1b/2a/2b, sweeps, camera-check and iPhone paths were not brought over.
+- **Environment:** one env, `~/envs/env_sim`, built by `controlSW/franka_sim/setup_env.sh` (py3.10, mujoco 3.3.0, no torch).
+  - `env_bp`, `env_realenv`, the `~/.local` py3.10 torch and the pip/conda caches were deleted (disk now about 32 GB free).
+  - A learned-policy (torch) env must be rebuilt when needed.
+- **Training data/runs** (unchanged; all iPhone-era, so not deployable on the rig):
+  - dataset `firstreal-single` (45 demos) at `~/CapstoneProject/datasets/block_raise/firstreal-single/`;
+  - `results/block_raise/run_001_2026-10-05/` (best val action MSE 0.000148 at epoch 50; slim checkpoint gitignored);
+  - pipeline `scripts/run_pipeline.sh` + `scripts/cluster/*` tested end to end (job `10878177`); `process_dataset.sbatch`
+    is still never run.
 - Plots: the user is happy with them as they are. Don't change `scripts/wandb_offline_to_csv.py` unless asked.
 
 ## Next time
 
-0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
-   - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
-     loop runs; v_max and the success rule for evaluation; whether to commit the new work.
-   - Hardware day:
-     - data collection: `sensor_rig/docs/first_plugin.md`;
-     - arm: `controlSW/franka_deploy/docs/hardware_day.md`.
-   - Build the ORB-SLAM3 image on a machine with ≥ 20 GB free (the laptop disk is ~90% full).
-1. Watch the v1 videos (`results/block_raise/run_001_2026-10-05/videos/final/`): does the attention follow the prompt?
-2. Decide the next real training run (e.g. ~60 epochs, since v1 overfit after ~50), or record more data and use
-   `scripts/run_pipeline.sh all ...` to test `process_dataset.sbatch`.
-3. Optional: set a real git email on the laptop (`git config --global user.email ...`) so commits link to the GitHub account.
+1. Watch `run_viewer.sh 3` (kit) yourself.
+   - Decide whether to push `rnoro/main-sim`, and whether to merge it to main.
+2. Replace the sim placeholders with the real rig:
+   - IMX519/IMX219-160 intrinsics and mount (camera K, `C_T_TCP`, `C_main_T_C_uw`);
+   - measured finger tags and adapter;
+   - weighed payload.
+3. Policy: a plain diffusion policy first (Behavior Prompting is a stretch goal).
+   - Needs rig-recorded pick-and-place demos and an inference env with torch.
+   - Swap it in with `--policy` (`controlSW/docs/adding_a_policy.md`).
+4. Rig software: C++ `physicalSetup/` Wave 2 (`ec-record`, `ec-calibrate`) on `rnoro/jetson-sensors`.
+   - Reflash the Jetson to JetPack 6.2 for the IMX519 (back up the NVMe first).
+   - Clean up the stale hardware entries in ROADMAP/PURCHASING/TODO.
+5. Add a robot-feasibility filter for demos (speed ≤ limits, reach, tilt cone, width) to the data pipeline.
