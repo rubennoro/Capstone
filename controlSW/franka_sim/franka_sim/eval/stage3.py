@@ -39,7 +39,6 @@ import yaml
 from franka_sim.eval import judge as jg
 from franka_sim.eval import runner as rn
 from franka_sim.eval import simlink
-from franka_sim.eval import stage2b as s2b
 
 DEFAULTS = {
     "n_episodes_per_pose": 3,
@@ -83,19 +82,27 @@ def make_poses(cfg: dict, center_xy) -> list:
 
 
 def pose_center(R: rn.Run, cfg: dict) -> tuple:
-    """(xy, note): ``stage1`` = recommendation.grasp_xyz_base of --stage1 DIR; ``home`` = robot.home_tcp.xyz_m."""
+    """(xy, note): ``home`` = robot.home_tcp.xyz_m (the only centre mode)."""
     home = R.station.get("robot.home_tcp.xyz_m")
-    mode = str(cfg["poses"].get("center", "home"))
-    if mode == "stage1":
-        from franka_sim.eval import stage1 as s1w
-
-        d = getattr(R.args, "stage1", None)
-        p = s1w.stage1_json_in(Path(d)) if d else None
-        if p is None:
-            raise rn.StageIncomplete("sim.stage3.poses.center is 'stage1' but --stage1 DIR has no stage1.json")
-        g = json.loads(p.read_text())["recommendation"]["grasp_xyz_base"]
-        return (float(g[0]), float(g[1])), f"pose centre: Stage 1 grasp point {g[:2]}"
     return (float(home[0]), float(home[1])), f"pose centre: robot.home_tcp xy {list(home[:2])}"
+
+
+def apply_port_offset(R: rn.Run, prof: dict, o: int) -> None:
+    """Shift every launcher port of a derived profile by ``o`` (shared by Stage 2b and Stage 3): wireless receiver ports,
+    camera / logger, bridge, controller, inference, spacemouse, the sim state PUB (``sim_state_endpoint``, 5570+o) and the
+    bridge-served hand endpoint (5565+o) when the profile sets one. ``o == 0`` leaves the profile as it is."""
+    if not o:
+        return
+    prof["station_set"] = list(prof.get("station_set") or []) + [f"sensor.transport.ports.main={5555 + o}"] + (
+        [f"sensor.transport.ports.ultrawide={5556 + o}"] if R.protocol == "v1" else [])
+    prof["station_set"] = [x.replace("tcp://127.0.0.1:5565", f"tcp://127.0.0.1:{5565 + o}") if x.startswith("tooling.hand.endpoint=") else x
+                           for x in prof["station_set"]]
+    prof.setdefault("camera", {}).update(endpoint=f"tcp://localhost:{16702 + o}", logger_endpoint=f"tcp://localhost:{25556 + o}")
+    prof.setdefault("bridge", {})["endpoint"] = f"tcp://127.0.0.1:{5565 + o}"
+    prof.setdefault("controller", {})["endpoint"] = f"tcp://localhost:{26010 + o}"
+    prof.setdefault("inference", {})["endpoint"] = f"tcp://0.0.0.0:{18765 + o}"
+    prof.setdefault("spacemouse", {})["endpoint"] = f"tcp://localhost:{15557 + o}"
+    prof["sim_state_endpoint"] = f"tcp://127.0.0.1:{5570 + o}"
 
 
 # ------------------------------------------------------------------------------------------------ pure metrics
@@ -348,7 +355,7 @@ class Driver:
         prof["run"] = {**prof.get("run", {}), **R.run_ids}
         if scenario == "reflex":
             prof.setdefault("bridge", {})["allow_inject"] = True
-        s2b.apply_port_offset(R, prof, self.o)
+        apply_port_offset(R, prof, self.o)
         prof.setdefault("sim_state_endpoint", f"tcp://127.0.0.1:{5570 + self.o}")
         raw["profiles"][R.profile] = prof
         p = self.d / "deploy_stage3.yaml"

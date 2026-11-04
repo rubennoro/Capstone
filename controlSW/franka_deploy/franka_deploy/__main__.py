@@ -13,7 +13,6 @@
     python -m franka_deploy gonogo run|evaluate ...                       (Jetson RT go/no-go load test)
     python -m franka_deploy policy-contract --endpoint E [--expect run/policy/<id>.yaml] [--out contract.json]
     python -m franka_deploy replay-server --zarr Z --episode NAME ...     (single-arm action replay)
-    python -m franka_deploy wireless-latency measure|analyze|show|synth ...   (QR-clock latency of the wireless camera)
 """
 
 from __future__ import annotations
@@ -52,8 +51,7 @@ def main(argv=None) -> int:
                    "reinfer": "franka_deploy.tools.reinfer", "offline-eval": "franka_deploy.tools.offline_eval",
                    "fdcal": "franka_deploy.fdcal.__main__", "gonogo": "franka_deploy.tools.gonogo",
                    "replay-server": "franka_deploy.tools.replay_server",
-                   "policy-contract": "franka_deploy.tools.policy_contract",
-                   "wireless-latency": "franka_deploy.tools.wireless_latency"}
+                   "policy-contract": "franka_deploy.tools.policy_contract"}
     for name in passthrough:
         sub.add_parser(name, add_help=False)
     argv = sys.argv[1:] if argv is None else argv

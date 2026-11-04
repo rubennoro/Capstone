@@ -10,8 +10,8 @@ bridge.yaml (``backend``; the launcher's sim profiles set ``type: mujoco``):
   panda_py: {...}            # the real arm's impedance/damping/nullspace/filter/collision: used by the sim too
   mujoco:                    # all optional
     station: null            # a franka_deploy.station PROFILES name, {station: {...}, run: {...}}, {robot: .., ...}
-                             # ids, or a path to a launcher station_resolved.yaml; null -> profile sim-iphone
-    robot: null              # panda | fr3: overrides the station's robot id (not for station_resolved.yaml)
+                             # ids, or a path to a launcher station_resolved.yaml; null -> profile sim-rig
+    robot: null              # panda (the only arm): overrides the station's robot id (not for station_resolved.yaml)
     rate_hz: 1000
     q_init: null             # 7 joint angles; null -> IK of home_O_T_EE near the station home_q
     max_catchup_steps: 10
@@ -58,7 +58,7 @@ def load_station_spec(spec=None, robot: str | None = None):
     from franka_deploy.station import PROFILES, Station, load_station
 
     if spec is None:
-        spec = "sim-iphone"
+        spec = "sim-rig"
     if isinstance(spec, str) and spec in PROFILES:
         spec = {k: dict(v) for k, v in PROFILES[spec].items()}
     elif isinstance(spec, (str, Path)):

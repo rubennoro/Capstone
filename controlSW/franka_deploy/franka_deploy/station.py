@@ -572,18 +572,10 @@ def station_from_deploy_cfg(cfg: dict):
 
 # ------------------------------------------------------------------------------------------------------------ CLI
 
-_SIM_RUN = {"policy": "bp_run001", "link": "wifi_good", "criteria": "block_raise", "sim": "render"}
-_REAL_RUN = {"policy": "bp_run001", "criteria": "block_raise"}
-_IPHONE = {"robot": "panda", "tooling": "franka_hand_iphumi_iphone16pro", "sensor": "iphone16pro_wifi",
-           "scene": "block_raise_table"}
+_SIM_RUN = {"policy": "fake", "link": "ideal", "criteria": "block_raise", "sim": "render"}
 _RIG = {"robot": "panda", "tooling": "franka_hand_iphumi_rig1", "sensor": "rig1_wifi", "scene": "block_raise_table"}
 PROFILES = {  # the station combinations of the design profiles (deploy.yaml gets the same ids in B2/B6)
-    "sim-iphone": {"station": {**_IPHONE, "host": "pc_laptop"}, "run": _SIM_RUN},
     "sim-rig": {"station": {**_RIG, "host": "pc_laptop"}, "run": _SIM_RUN},
-    "sim-iphone-fake": {"station": {**_IPHONE, "host": "pc_laptop"}, "run": {**_SIM_RUN, "policy": "fake"}},
-    "sim-rig-fake": {"station": {**_RIG, "host": "pc_laptop"}, "run": {**_SIM_RUN, "policy": "fake"}},
-    "real-iphone": {"station": {**_IPHONE, "host": "jetson_orin_nano"}, "run": _REAL_RUN},
-    "real-rig": {"station": {**_RIG, "host": "jetson_orin_nano"}, "run": _REAL_RUN},
 }
 
 

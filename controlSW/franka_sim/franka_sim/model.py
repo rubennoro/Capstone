@@ -11,7 +11,7 @@ cameras look along -z with y up, so ``R_mj = R_cv . diag(1, -1, -1)``. Both arms
 plus ``hand.xml``'s ``hand`` body attached at ``attachment_site`` (with a correction frame where the site lacks the
 stock -45 deg hand rotation, i.e. on FR3).
 
-Usage: python -m franka_sim model --profile sim-iphone [--robot fr3] [--out /tmp/frames.json] [--clearance]
+Usage: python -m franka_sim model --profile sim-rig [--robot panda] [--out /tmp/frames.json] [--clearance]
        python -m franka_sim model --ids robot=panda,tooling=franka_hand_iphumi_rig1,sensor=rig1_wifi,scene=...
        sm = build_model(load_station(spec)); frames = export_frames(sm); rep = clearance_report(sm)
 """
@@ -1141,7 +1141,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--deploy-config", help="deploy.yaml with a station key")
     p.add_argument("--profile", choices=sorted(PROFILES), help="design profile (franka_deploy.station.PROFILES)")
     p.add_argument("--ids", help="robot=panda,tooling=...,sensor=...,scene=...")
-    p.add_argument("--robot", choices=["panda", "fr3"], help="override the robot id")
+    p.add_argument("--robot", choices=["panda"], help="override the robot id")
     p.add_argument("--root", default=str(STATION_ROOT), help="station config root")
     p.add_argument("--set", action="append", default=[], metavar="group.path=value")
     p.add_argument("--no-scene", action="store_true")

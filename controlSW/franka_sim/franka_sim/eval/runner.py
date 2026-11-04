@@ -33,8 +33,8 @@ from franka_deploy.station import StationError, load_station  # noqa: E402
 from franka_deploy.launch import launcher as L  # noqa: E402
 from franka_deploy.paths import REPO_ROOT  # noqa: E402
 
-STAGES = ("1", "1b", "2a", "2b")                                # what "--stage all" runs (1b = A8's full-stack campaign)
-ALL_STAGES = STAGES + ("3",)                                    # Stage 3 (closed loop) is always asked for explicitly
+STAGES = ("3",)                                                 # the only stage on this branch: the closed loop
+ALL_STAGES = ("3",)
 EXIT_PASS, EXIT_INCOMPLETE, EXIT_USAGE, EXIT_FAIL = 0, 1, 2, 3   # 2 = usage / config error (as argparse), never a verdict
 STATION_ID_GROUPS = ("robot", "tooling", "sensor", "scene", "host")
 STATION_GROUPS = ("robot", "tooling", "sensor", "scene", "host", "criteria", "sim")   # groups Stage 1 / the sim model load
@@ -172,7 +172,7 @@ def write_policy_yaml(R: Run, path: Path) -> Path:
     return path
 
 
-STAGE_FN = {"1": "stage1", "1b": "stage1b", "2a": "stage2a", "2b": "stage2b", "3": "stage3"}
+STAGE_FN = {"3": "stage3"}
 
 
 def run_one_stage(R: Run, stage: str, results: dict) -> dict:
@@ -235,10 +235,6 @@ def exit_code(verdicts) -> int:
 
 
 def run(args) -> int:
-    if getattr(args, "sweep", None):
-        from franka_sim.eval import sweeps
-
-        return sweeps.run_sweep(args)
     R = resolve(args)
     stages = list(STAGES) if args.stage == "all" else [args.stage]
     results: dict = {}

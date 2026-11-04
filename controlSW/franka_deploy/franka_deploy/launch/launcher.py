@@ -4,7 +4,7 @@ Start order (each with a readiness check + timeout; any failure aborts and tears
   bridge -> [hand] -> controller -> camera [-> sender] -> inference (READY after warm-up) -> spacemouse -> task.
   camera.kind rig_local (default): RigCamera; wireless: the B5 receiver (peripherals/wireless_camera.py, camera.yaml =
   station.camera_config()). Sim profiles add a `sender` child that imitates the sensor over the run's emulated link
-  (run.sim.image_source: video_replay -> stream.iphone_replay_sender; rig_raw_replay -> stream.rig_replay_sender; render -> A7/B8); its death
+  (run.sim.image_source: render -> franka_sim.senders.render_sender, A7/B8); its death
   is not fatal (like a phone dropping off Wi-Fi: the receiver goes stale and the task's image-age guard holds).
   `hand` (franka_deploy.gripper.hand_server, A5) runs when the gripper is franka_hand on an endpoint other than the
   bridge's (real hardware, 5566).
@@ -51,14 +51,11 @@ CAMERA_KINDS = ("rig_local", "wireless")
 # run.sim.image_source -> (sender module, its source file, the phase that provides it). The launcher starts the sender
 # in sim profiles only; a missing file is reported by check_config / preflight ("not available yet").
 SENDERS = {
-    "video_replay": ("franka_deploy.stream.iphone_replay_sender", PKG / "franka_deploy" / "stream" / "iphone_replay_sender.py", "B4"),
-    "rig_raw_replay": ("franka_deploy.stream.rig_replay_sender", PKG / "franka_deploy" / "stream" / "rig_replay_sender.py", "B7"),
     "render": ("franka_sim.senders.render_sender", SIM_ROOT / "franka_sim" / "senders" / "render_sender.py", "A7/B8"),
 }
 HAND_SERVER = PKG / "franka_deploy" / "gripper" / "hand_server.py"            # A5 (real Franka Hand, port 5566)
 MUJOCO_BACKEND = SIM_ROOT / "franka_sim" / "backend.py"                        # A4 (MuJoCoBackend)
 SIM_STATE_ENDPOINT = "tcp://127.0.0.1:5570"                                    # A6 sim-state PUB (INTERFACES.md section 2)
-DEFAULT_RAW_ROOT = "data/raw/2026-10-01"
 
 
 class Abort(RuntimeError):
@@ -535,24 +532,6 @@ def apply_station_home(cfg: dict, station) -> dict | None:
     return home
 
 
-def resolve_replay_episode(sim: dict) -> Path:
-    """The raw iPhone episode of run.sim video_replay: `episode_dir` (a dir name under raw_root, or an absolute path)
-    wins; otherwise `episode_index` into the sorted firstreal demonstration episodes of raw_root (default
-    data/raw/2026-10-01, relative to the repo root) that have their _rgb.mp4."""
-    root = Path(str(sim.get("raw_root") or DEFAULT_RAW_ROOT))
-    root = root if root.is_absolute() else REPO_ROOT / root
-    d = sim.get("episode_dir")
-    if d:
-        p = Path(str(d))
-        return p if p.is_absolute() else root / p
-    eps = sorted(p for p in root.iterdir() if "firstreal_demonstration" in p.name
-                 and (p / (p.name + "_rgb.mp4")).is_file()) if root.is_dir() else []
-    i = int(sim.get("episode_index", 0))
-    if not 0 <= i < len(eps):
-        raise FileNotFoundError(f"run.sim episode_index {i}: {len(eps)} firstreal demonstration episode(s) in {root}")
-    return eps[i]
-
-
 class Child:
     def __init__(self, name, cmd, log_path, env, cwd):
         self.name, self.cmd = name, cmd
@@ -825,25 +804,10 @@ class Launcher:
             common += ["--link", str(cfgd / "link.yaml")]
         common += ["--truth", str(logs / "sender_truth.jsonl"), "--ready-file", str(self.session / "sender_ready.json"),
                    "--loop"]   # always: the sender is the device and must outlive every operator episode
-        if src == "video_replay":
-            ep = resolve_replay_episode(st.get("sim"))
-            q = main.get("jpeg_quality", 0.9)
-            cmd = [py, "-u", "-m", mod, "--episode", str(ep), *common, "--size", f"{main['width_px']}x{main['height_px']}",
-                   "--jpeg-quality", str(int(round(100 * q)) if q <= 1 else int(q))]
-            clock = st.get("sensor.clock")
-            if proto == "v1" and clock.get("mode") == "arrival_minus_latency":
-                # the receiver subtracts the app's capture latency from the arrival time: the sender models that pipeline
-                cmd += ["--capture-latency-s", str(float(clock["latency_s"]["main"])),
-                        "--capture-latency-uw-s", str(float(clock["latency_s"].get("ultrawide", clock["latency_s"]["main"])))]
-            return cmd
         extra = []
         if src == "render":   # A7: the renderer follows the sim state PUB and the session's resolved station
             extra += ["--state-endpoint", str(c.get("sim_state_endpoint", SIM_STATE_ENDPOINT)),
                       "--station", str(cfgd / "station_resolved.yaml")]
-        if src == "rig_raw_replay":   # a raw rig episode: sim.raw_episode_dir, else generated once from an iPhone episode (cached)
-            if st.get("sim.raw_episode_dir", None):
-                extra += ["--episode", str(st.get("sim.raw_episode_dir"))]
-            extra += ["--cache-dir", str(self.work_root / "cache" / "rig_episodes")]
         return [py, "-u", "-m", mod, "--config", str(cfgd / "sender.yaml"), *extra, *common]
 
     # ------------------------------------------------------------------ phases
@@ -1078,16 +1042,16 @@ class Launcher:
     def task_replay_args(self) -> list[str]:
         """Extra task flags from deploy.yaml `task:` (B8 Stage 2b): `history_source: replay_gt` + `replay_npz: PATH` make
         the task teacher-force the demo's pose/width history; the replay clock start is read from the sender ready file
-        (video_replay: start_now_ns = slot 0; rig_raw_replay: first_tick_ns = the first main frame = slot 0).
+        (start_now_ns = slot 0).
         `extra_args: [..]` is appended verbatim."""
         t, out = self.cfg["task"], []
         if t.get("history_source", "commanded") == "replay_gt":
             if not t.get("replay_npz"):
                 raise Abort("task.history_source replay_gt needs task.replay_npz")
             if self.image_source() is None:
-                raise Abort("task.history_source replay_gt needs a sim sender (run.sim video_replay / rig_raw_replay)")
+                raise Abort("task.history_source replay_gt needs a sim sender (run.sim.image_source)")
             rd = json.loads((self.session / "sender_ready.json").read_text())
-            key = "first_tick_ns" if self.image_source() == "rig_raw_replay" else "start_now_ns"
+            key = "start_now_ns"
             import numpy as np
 
             z = dict(np.load(t["replay_npz"]))
@@ -1442,11 +1406,6 @@ def check_config(cfg: dict) -> int:
                 ok = bool(path and path.is_file())
                 detail = f"{src}: {mod} " + ("present" if ok else f"not available yet ({phase})") if mod else \
                     f"run.sim.image_source {src!r}: no sender slot (known: {', '.join(SENDERS)})"
-                if ok and src == "video_replay":
-                    try:
-                        detail += f", episode {resolve_replay_episode(station.get('sim')).name}"
-                    except (OSError, ValueError) as e:
-                        ok, detail = False, f"{src}: {e}"
                 r.append(("sender", (ok, detail)))
             else:
                 notes.append("real mode: no sender; the device (iPhone app / rig) streams to the receiver ports")

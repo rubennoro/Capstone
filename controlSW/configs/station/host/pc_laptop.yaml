@@ -2,8 +2,8 @@ schema: station.host/v1
 id: pc_laptop
 work_root: /home/ruben/franka_runs
 python:
-  bp: /home/ruben/envs/env_bp/bin/python
-  realenv: /home/ruben/envs/env_realenv/bin/python
+  bp: /home/ruben/envs/env_sim/bin/python
+  realenv: /home/ruben/envs/env_sim/bin/python
 extra_path: []
 inference_device: cuda
 checkpoint: /home/ruben/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
@@ -12,7 +12,7 @@ prompt_zarr_sha256: null
 disk_budget_gb: 1.5
 provenance:
   work_root: {status: decision, source: "sim_plan/README.md environments (outside the repo)"}
-  python: {status: decision, source: "~/envs/env_{bp,realenv} on the laptop (franka_sim/README.md rebuild recipe)"}
+  python: {status: decision, source: "env_sim (controlSW/franka_sim/setup_env.sh)"}
   extra_path: {status: decision, source: "none needed on the laptop"}
   inference_device: {status: decision, source: "RTX 3050 Ti laptop GPU (nvidia-smi); cpu if the GPU is busy"}
   checkpoint: {status: decision, source: "results/block_raise/run_001_2026-10-05/checkpoints (gitignored slim best, epoch 50)"}
