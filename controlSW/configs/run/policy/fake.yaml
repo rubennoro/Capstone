@@ -1,0 +1,17 @@
+schema: run.policy/v1
+id: fake
+kind: fake                                   # fake_policy_server: constant hold chunks, for plumbing tests
+delay_s: 0.0
+python: ${host.python.realenv}
+ready_timeout_s: 60
+contract: {K: 16, exec_h: 8, uses_prompt: false, reset_max_s: 0.5}
+task: {agent_hz: 20, exec_h: "${policy.contract.exec_h}", inference_timeout_s: 2.0, lookahead_s: 0.1, policy_latency_s: 0.1}
+provenance:
+  kind: {status: decision, source: "design_track_b.md run/policy"}
+  delay_s: {status: decision, source: "design_track_b.md run/policy"}
+  python: {status: derived, source: "host group (no torch needed)"}
+  ready_timeout_s: {status: decision, source: "fast start, no checkpoint"}
+  contract: {status: decision, source: "matches the real policy contract"}
+  task: {status: decision, source: "deploy.yaml:21-29; run_task.py:57-61 literals"}
+  task.exec_h: {status: derived, source: "from contract.exec_h"}
+critical: []

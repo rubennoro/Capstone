@@ -1,0 +1,12 @@
+schema: run.link/v1
+id: ideal
+latency_s: 0.0
+jitter_s: 0.0
+jitter_dist: gamma
+stall: {rate_hz: 0.0, duration_s: [0.0, 0.0]}
+bandwidth_mbit_s: 0.0                         # 0 = unlimited
+clock: {offset_s: 0.0, drift_ppm: 0.0}
+seed: 0
+provenance:
+  "": {status: decision, source: "design_track_b.md run/link (ideal)"}
+critical: []

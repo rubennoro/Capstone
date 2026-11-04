@@ -33,12 +33,27 @@ def _env(extra_pythonpath: str = ""):
     return env
 
 
-def cleanup_shm(pid: int) -> list[str]:
-    """robotmq shared-memory segments (/dev/shm/rmq_<user>_<pid>_*) survive a killed camera server; remove them."""
+def _rmq_user() -> str:
+    """The user field of robotmq segment names (as robotmq.utils.clear_shared_memory / the native get_user_name())."""
+    try:
+        return os.getlogin()
+    except OSError:
+        import pwd
+
+        try:
+            return pwd.getpwuid(os.getuid()).pw_name
+        except KeyError:
+            return str(os.getuid())
+
+
+def cleanup_shm(pid: int, user: str | None = None) -> list[str]:
+    """robotmq shared-memory segments (/dev/shm/rmq_<user>_<pid>_*) survive a killed camera server; remove them.
+    Prefix-anchored: a segment of another process whose name carries `_<pid>_` later on is left alone (W10B)."""
     import glob
 
     removed = []
-    for f in glob.glob(f"/dev/shm/rmq_*_{pid}_*"):
+    prefix = f"rmq_{user if user is not None else _rmq_user()}_{int(pid)}_"
+    for f in glob.glob(f"/dev/shm/{glob.escape(prefix)}*"):
         try:
             os.remove(f)
             removed.append(os.path.basename(f))
@@ -200,7 +215,7 @@ def main(argv=None):
                 from franka_deploy.bridge.link import BridgeClient
 
                 ev["t_mono"] = time.monotonic()
-                ev["reply"] = str(BridgeClient("tcp://127.0.0.1:5555", timeout_s=0.5).request("inject_reflex"))
+                ev["reply"] = str(BridgeClient("tcp://127.0.0.1:5565", timeout_s=0.5).request("inject_reflex"))
             else:
                 with open(cmd_file, "a") as f:
                     f.write(act + "\n")

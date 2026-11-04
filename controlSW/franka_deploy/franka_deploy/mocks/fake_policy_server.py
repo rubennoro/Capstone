@@ -3,7 +3,13 @@ the GIL, so a client and a server in one Python process deadlock): counts every 
 server's prompt rules (inference before a prompt -> ERROR; a second prompt without a reset -> ERROR), and replies
 with an identity relative chunk (the arm holds still). Optional per-request delay and forced errors.
 
-    python -m franka_deploy.mocks.fake_policy_server [--endpoint tcp://0.0.0.0:18765] [--delay 0.0]
+    python -m franka_deploy.mocks.fake_policy_server [--endpoint tcp://0.0.0.0:18765] [--delay 0.0] [--ready-file F]
+        [--k 16] [--reset-delay 0.0] [--no-prompt-rules] [--accept-second-prompt]
+
+`--ready-file` writes {endpoint, pid, ready_monotonic, kind: "fake"} atomically once serving (what the launcher waits
+for). `--k`, `--reset-delay` and `--accept-second-prompt` build deliberately broken servers for the policy-contract
+tests; `--no-prompt-rules` mimics a plain (non-prompting) diffusion policy: use_prompting false, a prompt is ignored,
+inference works without one.
 """
 
 from __future__ import annotations
@@ -21,8 +27,14 @@ CONFIG = {"workspace": {"proprio_length": 1, "img_obs_horizon": 2, "obs_down_sam
 
 
 class FakePolicyServer:
-    def __init__(self, endpoint: str = "tcp://0.0.0.0:18765", delay_s: float = 0.0, error_after: int | None = None):
+    def __init__(self, endpoint: str = "tcp://0.0.0.0:18765", delay_s: float = 0.0, error_after: int | None = None,
+                 k: int = 16, reset_delay_s: float = 0.0, prompt_rules: bool = True, accept_second_prompt: bool = False,
+                 ready_file: str | None = None):
         self.endpoint = endpoint
+        self.k, self.reset_delay_s = int(k), float(reset_delay_s)
+        self.prompt_rules, self.accept_second_prompt = prompt_rules, accept_second_prompt
+        self.ready_file = ready_file
+        self.config = {**CONFIG, "use_prompting": bool(prompt_rules)}
         self.server = None  # created in the serving thread (zmq sockets are not thread-safe)
         self.ready = threading.Event()
         self.delay_s = delay_s
@@ -35,13 +47,14 @@ class FakePolicyServer:
 
     def reply(self, topic, data):
         if topic == "policy_config":
-            return CONFIG
+            return self.config
         if topic == "policy_reset":
+            time.sleep(self.reset_delay_s)
             self.prompted = False
             return "OK"
         if topic == "policy_prompt":
             req = robotmq.deserialize(data)
-            if self.prompted:
+            if self.prompted and self.prompt_rules and not self.accept_second_prompt:
                 return "ERROR: prompt should not be provided ... Call `reset`"
             self.prompted = True
             self.prompts.append({"t": time.monotonic(), **req})
@@ -49,12 +62,12 @@ class FakePolicyServer:
         if topic == "policy_inference":
             if self.force_error or (self.error_after is not None and self.counts["policy_inference"] > self.error_after):
                 return "ERROR: forced"
-            if not self.prompted:
+            if self.prompt_rules and not self.prompted:
                 return "ERROR: AssertionError is_prompted"
             time.sleep(self.delay_s)
-            rot = np.tile(np.array([1, 0, 0, 0, 1, 0], np.float32), (16, 1))
-            return {"action0_eef_pos": np.zeros((16, 3), np.float32), "action0_eef_rot_axis_angle": rot,
-                    "action0_gripper_width": np.full((16, 1), 0.07, np.float32)}
+            rot = np.tile(np.array([1, 0, 0, 0, 1, 0], np.float32), (self.k, 1))
+            return {"action0_eef_pos": np.zeros((self.k, 3), np.float32), "action0_eef_rot_axis_angle": rot,
+                    "action0_gripper_width": np.full((self.k, 1), 0.07, np.float32)}
         return ""
 
     def run(self):
@@ -62,6 +75,15 @@ class FakePolicyServer:
         for t in ("policy_config", "policy_reset", "policy_prompt", "policy_inference", "export_recorded_data"):
             self.server.add_topic(t, message_remaining_time_s=60)
         self.ready.set()
+        if self.ready_file:
+            import json
+            import os
+
+            tmp = self.ready_file + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"endpoint": self.endpoint, "pid": os.getpid(), "ready_monotonic": time.monotonic(),
+                           "kind": "fake"}, f)
+            os.replace(tmp, self.ready_file)
         while not self._stop.is_set():
             data, topic = self.server.wait_for_request(timeout_s=0.05)
             if not topic:
@@ -92,9 +114,16 @@ def main(argv=None):
     ap.add_argument("--endpoint", default="tcp://0.0.0.0:18765")
     ap.add_argument("--delay", type=float, default=0.0)
     ap.add_argument("--error-after", type=int, default=None, help="reply ERROR to every inference after N")
+    ap.add_argument("--ready-file", default=None, help="JSON written atomically once serving")
+    ap.add_argument("--k", type=int, default=16, help="steps per reply chunk (the contract wants 16)")
+    ap.add_argument("--reset-delay", type=float, default=0.0, help="seconds policy_reset takes (contract: < 0.5)")
+    ap.add_argument("--no-prompt-rules", action="store_true",
+                    help="plain diffusion policy: use_prompting false, prompts ignored, inference needs no prompt")
+    ap.add_argument("--accept-second-prompt", action="store_true", help="broken server: a 2nd prompt without reset is OK")
     ap.add_argument("--stats", default=None, help="JSON file rewritten after every request (counts, prompts)")
     a = ap.parse_args(argv)
-    s = FakePolicyServer(a.endpoint, a.delay, a.error_after)
+    s = FakePolicyServer(a.endpoint, a.delay, a.error_after, a.k, a.reset_delay, not a.no_prompt_rules,
+                         a.accept_second_prompt, a.ready_file)
     signal.signal(signal.SIGTERM, lambda *_: s.stop())
     if a.stats:
         orig = s.reply

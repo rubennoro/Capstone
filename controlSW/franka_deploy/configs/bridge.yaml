@@ -1,5 +1,5 @@
 # franka_bridge (franka_deploy/bridge/franka_bridge.py). Values marked HW must be set on the real arm.
-endpoint: tcp://127.0.0.1:5555          # co-located on the Jetson; tcp://<rt-pc>:5555 for the RT-PC fallback
+endpoint: tcp://127.0.0.1:5565          # co-located on the Jetson; tcp://<rt-pc>:5565 for the RT-PC fallback
 home_O_T_EE_xyz_wxyz: [0.45, 0.0, 0.45, 0.0, 1.0, 0.0, 0.0]   # FakeBackend start pose (EE z down)
 watchdog_hold_s: 0.18                    # detection margin: hold within 0.2 s of the last target
 watchdog_stop_s: 1.95                    # stop within 2 s

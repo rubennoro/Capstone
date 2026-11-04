@@ -65,6 +65,7 @@ class AnchorDeviationError(RuntimeError):
 
 
 class FrankaPromptTask(iPhumiARX5Task):
+    max_image_age_s: float | None = None   # image-age guard (B6); class default for instances built without __init__
     def __init__(self, task_name: str, prompt_index: int = 0, anchor: str = "target",
                  anchor_max_dev_m: float = 0.02, anchor_hold_m: float = 0.05, state_max_age_s: float = 0.05,
                  controller_timeout_s: float = 0.05, command_file: str | None = None, stop_file: str | None = None,
@@ -74,7 +75,7 @@ class FrankaPromptTask(iPhumiARX5Task):
                  spacemouse_endpoint: str | None = None, v_max: float = 0.25, w_max: float = 1.0,
                  scale_margin: float = 0.9, settle: bool = True, settle_timeout_s: float = 1.0,
                  session_dir: str | None = None, bridge_log: str | None = None, camera_log: str | None = None,
-                 home_xyz=None, home_max_dist_m: float = 0.05, **kwargs):
+                 home_xyz=None, home_max_dist_m: float = 0.05, max_image_age_s: float | None = None, **kwargs):
         base_task_mod.continue_running = False  # upstream's termios stdin thread exits at once (headless-safe)
         assert anchor in ("measured", "target"), anchor
         assert width_proprio in ("commanded", "measured"), width_proprio
@@ -88,9 +89,11 @@ class FrankaPromptTask(iPhumiARX5Task):
         self._ev_file = None
         self.home_xyz = None if home_xyz is None else np.asarray(home_xyz, float)
         self.home_max_dist_m = float(home_max_dist_m)
+        self.max_image_age_s = None if max_image_age_s is None else float(max_image_age_s)
         self.width_proprio = width_proprio
         self.history_source = history_source
         self._replay = None
+        self._replay_start = None
         if history_source == "replay_gt":  # TEST ONLY: feed the demo's pose+width history (replay harness)
             assert replay_npz and replay_start_now_ns is not None, "replay_gt needs replay_npz + replay_start_now_ns"
             z = np.load(replay_npz)
@@ -130,7 +133,7 @@ class FrankaPromptTask(iPhumiARX5Task):
         self.prompt_count = 0
         self.episode_active = False
         self.counters = {k: 0 for k in ("policy_calls", "policy_errors", "idle_errors", "holds", "stale_state",
-                                        "anchor_fallbacks", "episodes", "obs_retries")}
+                                        "anchor_fallbacks", "episodes", "obs_retries", "stale_image")}
         self.obs_retries = 3
         self.ping_timeout_s = 0.2
         pa.policy_rmq_client.timeouts["policy_reset"] = min(pa.policy_rmq_client.timeouts.get("policy_reset", 5.0), 0.5)
@@ -339,6 +342,7 @@ class FrankaPromptTask(iPhumiARX5Task):
         self._prompted = False
         self.policy_history_actions = {}
         self.policy_start_eef_xyz_wxyz = None
+        self._replay_start = None
         now = time.monotonic()
         if now < getattr(self, "_next_reset_try", 0.0):
             return
@@ -368,6 +372,11 @@ class FrankaPromptTask(iPhumiARX5Task):
             self.wrist_camera_client, self.policy_agent.image_history_len, self.policy_agent.agent_update_freq_hz,
             cam_obs_freq_hz=self.policy_agent.cam_obs_freq_hz)
         main_ts = cam_ts["main"]
+        if self.max_image_age_s is not None:   # robotmq keeps packets ~1 s: a stalled camera still "has" frames
+            img_age = time.monotonic() - float(main_ts[-1])
+            if img_age > self.max_image_age_s:
+                self.counters["stale_image"] = self.counters.get("stale_image", 0) + 1
+                raise FrameSelectionError(f"image {1000 * img_age:.0f} ms old (max {1000 * self.max_image_age_s:.0f} ms)")
         f = self.policy_agent.agent_update_freq_hz
         last_ts = main_ts[-1] if self.match_camera_latency else time.monotonic()
         state_ts = [last_ts - i / f for i in range(self.policy_agent.proprio_history_len - 1, -1, -1)]
@@ -498,6 +507,13 @@ class FrankaPromptTask(iPhumiARX5Task):
             return EpisodeStatus.RUNNING
         if self.history_source == "replay_gt":
             hist = self._replay_history(self._obs_info["main_ts"])
+            # B8: teacher forcing also covers the model's *_wrt_start input. The robot does not follow the demo, so
+            # its own wrt_start would be meaningless: use the demo pose history relative to the demo pose at the
+            # oldest observation of the first call (what get_observations uses as the start pose, poses[0]).
+            if self._replay_start is None:
+                self._replay_start = np.asarray(hist["action0_eef_xyz_wxyz"][0], float).copy()
+            obs["robot0_eef_xyz_wxyz_wrt_start"] = get_relative_poses(
+                np.asarray(hist["action0_eef_xyz_wxyz"], float), self._replay_start)
         elif self.width_proprio == "measured":
             hist = dict(hist)
             hist["action0_gripper_width"] = np.asarray(obs["robot0_gripper_width"], float).copy()
