@@ -1,13 +1,13 @@
 schema: station.host/v1
 id: pc_laptop
-work_root: /home/ruben/franka_runs
+work_root: ~/franka_runs
 python:
-  bp: /home/ruben/envs/env_sim/bin/python
-  realenv: /home/ruben/envs/env_sim/bin/python
+  bp: ~/envs/env_sim/bin/python
+  realenv: ~/envs/env_sim/bin/python
 extra_path: []
 inference_device: cuda
-checkpoint: /home/ruben/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
-prompt_zarr: /home/ruben/franka_data/prompt_zarr/firstreal-single.zarr.zip
+checkpoint: ~/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt
+prompt_zarr: ~/franka_data/prompt_zarr/firstreal-single.zarr.zip
 prompt_zarr_sha256: null
 disk_budget_gb: 1.5
 provenance:

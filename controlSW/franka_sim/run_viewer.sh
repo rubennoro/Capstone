@@ -2,8 +2,13 @@
 # Closed-loop sim (sim-rig: Panda + Franka Hand + finger kit + rig) with the scripted pick-and-place policy and the
 # MuJoCo viewer. Usage: controlSW/franka_sim/run_viewer.sh [POSES=3] [--box] [further eval args, e.g. --set k=v ...]
 #   --box: box fingers (+10 cm) instead of the real finger kit. Results: ~/sim_runs/scripted_<time>/ (summary.html).
+# First use: builds ~/envs/env_sim with ./setup_env.sh when it is missing.
 set -euo pipefail
 cd "$(dirname "$0")"
+if [[ ! -x ~/envs/env_sim/bin/python ]]; then
+  echo "[run_viewer] ~/envs/env_sim not found: building it with ./setup_env.sh (one time, a few minutes)"
+  ./setup_env.sh
+fi
 POSES=3
 if [[ $# -gt 0 && $1 =~ ^[0-9]+$ ]]; then POSES=$1; shift; fi
 EXTRA=()

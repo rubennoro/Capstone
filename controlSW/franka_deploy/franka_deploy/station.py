@@ -17,6 +17,7 @@ import fnmatch
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 from collections.abc import Mapping
@@ -480,6 +481,10 @@ def _read(root: Path, kind: str, group: str, gid: str):
 
 def _resolve(groups: dict) -> list[str]:
     """Replace ${group.path} in place (after all groups loaded). Cycles and unknown targets are errors."""
+    if "host" in groups:   # host paths may use ~ or $VARS (so one host file works for every user); expanded before
+        for path, v in list(_leaves(groups["host"])):   # ${host...} references copy them into other groups
+            if path and isinstance(v, str) and "${" not in v and (v.startswith("~") or "$" in v):
+                _set_in(groups["host"], ".".join(path), os.path.expandvars(os.path.expanduser(v)))
     raw = copy.deepcopy(groups)
     errs: list[str] = []
 

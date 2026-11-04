@@ -17,7 +17,7 @@ From a fresh clone on branch `rnoro/main-sim`, on a machine with a display:
 
 ```
 cd controlSW/franka_sim
-./setup_env.sh                                              # once: builds ~/envs/env_sim (about 0.8 GB)
+./setup_env.sh                                              # optional: run_viewer.sh does it on first use
 
 ./run_viewer.sh 3                                           # 1. kit fingers (default), 3 eraser poses
 ./run_viewer.sh 3 --box                                     # 2. box fingers (+10 cm), 3 poses
@@ -52,7 +52,10 @@ How to read `report.html`:
 
 ## Environment
 
-`./setup_env.sh` builds `~/envs/env_sim` (Python 3.10, mujoco 3.3.0, robotmq, real-env, sensor_rig; no torch). Always
+`./setup_env.sh` builds `~/envs/env_sim` (Python 3.10, mujoco 3.3.0, robotmq, real-env, sensor_rig; no torch; about 0.8 GB).
+`run_viewer.sh` runs it automatically the first time if the env is missing. It needs conda (Anaconda, Miniconda or
+Miniforge; found via `$CONDA_EXE`, `PATH`, or `~/miniforge3`, `~/miniconda3`, `~/anaconda3`). The host config
+(`../configs/station/host/pc_laptop.yaml`) uses `~` paths, so it works for any user. Always
 run with `env -u PYTHONPATH -u MUJOCO_GL` from this directory (`franka_sim` imports from the cwd).
 
 ## Run it
