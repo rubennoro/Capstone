@@ -11,6 +11,45 @@ gets two separate results:
 - **Task outcome** (reported, never a FAIL): none < grasped < lifted < placed (eraser on the green marker at
   `scene.place`, released, hand open, TCP retreated, held 1 s). Rules: the same criteria file, `task`.
 
+## Quickstart: three runs, then read the reports
+
+From a fresh clone on branch `rnoro/main-sim`, on a machine with a display:
+
+```
+cd controlSW/franka_sim
+./setup_env.sh                                              # once: builds ~/envs/env_sim (about 0.8 GB)
+
+./run_viewer.sh 3                                           # 1. kit fingers (default), 3 eraser poses
+./run_viewer.sh 3 --box                                     # 2. box fingers (+10 cm), 3 poses
+./run_viewer.sh 1 --set criteria.safety.joint_margin_deg=60 # 3. forced safety FAIL (proves the judge stops unsafe runs)
+```
+
+Each run opens the MuJoCo viewer and takes about 1.5–2 minutes for 3 poses. The window closes by itself at the end.
+Each prints `report: ~/sim_runs/scripted_<time>/summary.html`. Open the reports with:
+
+```
+xdg-open "$(ls -td ~/sim_runs/scripted_* | head -1)"/3_*/report.html   # newest run's full report
+xdg-open "$(ls -td ~/sim_runs/scripted_* | head -1)"/summary.html      # newest run's one-line summary
+```
+
+Expected:
+
+| Run | Safety | Task outcome |
+|---|---|---|
+| 1 (kit) | PASS 3/3 | placed 3/3 |
+| 2 (box) | PASS 3/3 | placed 3/3 |
+| 3 (forced FAIL) | **FAIL 0/1**, rule `joint_margin`, within ~0.03 s | none |
+
+How to read `report.html`:
+- **Safety (the verdict)** at the top is the only pass/fail.
+- **Task outcome** gives the counts of none / grasped / lifted / placed.
+- **Reported metrics vs criteria** lists timing gates. "over" there is informational: tracking lag and gripper lag
+  are expected with the scripted stand-in.
+- The **per-episode table**:
+  - `gt = agree` means the live judge and the offline re-check gave the same result;
+  - `slip_mm` is the eraser's displacement, so roughly 100 mm here is the carry to the target, not slip;
+  - the **Metrics** list has `ee_speed_max_m_s` and `joint_margin_min_deg`, the safety margins.
+
 ## Environment
 
 `./setup_env.sh` builds `~/envs/env_sim` (Python 3.10, mujoco 3.3.0, robotmq, real-env, sensor_rig; no torch). Always
