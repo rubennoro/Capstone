@@ -17,11 +17,11 @@ finger_adapter:
   extension_m: 0.0
   pad_size_m: [0.02, 0.008, 0.03]
   friction: 1.0
-  mode: box                                  # stock | box | kit (A9 addendum)
+  mode: kit                                  # stock | box | kit (A9 addendum); box = fallback (run_viewer.sh --box)
   kit_variant: full                          # full = soft finger + UMI holder (tags); finger_only = soft fingers only
-  kit: null                                  # finger kit dir relative to controlSW (like robot.model.mjcf); null = box fingers
-  kit_sha256: null                           # required when kit is set: must equal kit_digest(kit dir)
-  adapter_length_m: 0.0                      # L, kit mode only
+  kit: franka_sim/franka_sim/assets/finger_kits/iphumi_umi_soft_v1   # relative to controlSW; null = box fingers
+  kit_sha256: 1e7778bcec2b1287387275c9d18839e6d7e5cab999b57432ca6442fc8e0f34d4   # must equal kit_digest(kit dir)
+  adapter_length_m: 0.008                    # L, kit mode only
   lateral_offset_m: auto                     # dy: "auto" or a number (m)
   adapter_yaw_deg: 0.0
   adapter_section_m: [0.021, 0.024]          # placeholder adapter block cross-section (x, y)
@@ -40,7 +40,7 @@ F_T_TCP: null                                # sim: the launcher derives it from
 C_T_TCP: [[1.0, 0.0, 0.0, 0.0], [0.0, 0.966, -0.259, 0.0644], [0.0, 0.259, 0.966, 0.2114], [0.0, 0.0, 0.0, 1.0]]
 F_T_C_main: null                             # rig CAD then fdcal handeye; null -> derived F_T_TCP @ inv(C_T_TCP)
 C_main_T_C_uw: null                          # rig main -> UW extrinsic; HW/CAD (placeholder: 12 mm offset, parallel axes)
-tcp_x_along_hand: "+y"                       # TCP x = sgn * hand y (finger closing axis); the camera sits on TCP -y, i.e. on
+tcp_x_along_hand: "-y"                       # TCP x = sgn * hand y (finger closing axis); the camera sits on TCP -y, i.e. on
                                              # hand sgn * x: "+y" = hand +x side, "-y" = hand -x side (the flag flips the
                                              # TCP frame). Stage 1 recommends "-y" (with extension_m 0.10): D9, unconfirmed
 housing:                                     # rig camera housing; frame = OpenCV camera axes (x right, y down, z optical)
@@ -69,11 +69,11 @@ provenance:
   hand.port: {status: decision, source: "INTERFACES.md section 2 (5566 hand_server)"}
   hand.endpoint: {status: derived, source: "from hand.port"}
   finger_adapter: {status: placeholder, source: "iphumi_finger_v1 print; not measured on the Franka Hand"}
-  finger_adapter.mode: {status: decision, source: "A9 addendum: stock | box | kit; box until the iPhUMI kit passes camera-check"}
+  finger_adapter.mode: {status: decision, source: "main-sim: the real Onshape kit by default (A9 review 2: kit at L=0.008, -y, 43/45 feasible); box = fallback"}
   finger_adapter.kit_variant: {status: decision, source: "A9 addendum: kit variant, full = soft finger + UMI holder (tags); finger_only = soft fingers only"}
-  finger_adapter.kit: {status: decision, source: "A9: box fingers until the iPhUMI kit passes camera-check"}
-  finger_adapter.kit_sha256: {status: decision, source: "A9: box fingers until the iPhUMI kit passes camera-check"}
-  finger_adapter.adapter_length_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
+  finger_adapter.kit: {status: decision, source: "A9 review 2: kit at L=0.008, -y, 43/45 feasible"}
+  finger_adapter.kit_sha256: {status: decision, source: "kit_digest(iphumi_umi_soft_v1) (check-assets verifies it)"}
+  finger_adapter.adapter_length_m: {status: placeholder, source: "A9 review 2: kit at L=0.008, -y, 43/45 feasible; adapter CAD pending (D9)"}
   finger_adapter.lateral_offset_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
   finger_adapter.adapter_yaw_deg: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
   finger_adapter.adapter_section_m: {status: placeholder, source: "A9: parametric adapter block, CAD pending; Stage 1 picks the length"}
@@ -90,7 +90,7 @@ provenance:
   F_T_C_main: {status: hw, source: "CAD then fdcal handeye"}
   C_main_T_C_uw: {status: hw, source: "rig CAD / rig_calibrated.yaml"}
   payload: {status: placeholder, source: "estimate: Franka Hand 0.73 kg + cradle 0.10 + rig housing 0.25 + adapters; weigh it"}
-  tcp_x_along_hand: {status: placeholder, source: "CAD pending (which side of the hand the camera mount sits on)"}
+  tcp_x_along_hand: {status: decision, source: "A9 review 2: kit at L=0.008, -y, 43/45 feasible; CAD pending (D9)"}
   housing: {status: placeholder, source: "CAD pending"}
   cradle_boxes: {status: placeholder, source: "CAD pending"}
   collision_boxes: {status: placeholder, source: "design_track_b.md tooling example; replace with CAD"}
