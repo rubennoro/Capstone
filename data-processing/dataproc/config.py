@@ -9,8 +9,9 @@ Conventions (normative for the package):
   ``virtual_ultrawide.rotation`` (``R_phys_virt``: ``d_phys = R_phys_virt @ d_virt``, default identity); ArUco tag
   ``tvec`` and ``aruco.nominal_z_m`` are in the virtual frame.
 * The training world is gravity-aligned **z-up** (sensor_rig ``gravity_align``). ``world_offset`` (yaw about +z,
-  then translation) is applied on the left: ``T_W'_tcp = T_world_offset @ T_W_tcp``. Its yaw must be non-zero so
-  that poses near the SLAM origin never have rotation vector 0 (iPhUMI's ``pose_6d_to_4x4`` is NaN there).
+  then translation) is applied on the left: ``T_W'_tcp = T_world_offset @ T_W_tcp``. Its yaw must be >= 1 deg away
+  from a multiple of 360 so that poses near the SLAM origin practically never have rotation vector 0 (iPhUMI's
+  ``pose_6d_to_4x4`` is NaN there); the pose stage flags any such row as invalid.
 * Time. Raw ``t_ns`` is the libcamera SensorTimestamp verbatim (docs/CONTRACT.md); the Jetson owns its meaning
   through ``cameras.<role>.timestamp_ref``:
 
@@ -337,9 +338,9 @@ def _world_offset(m: _Map) -> np.ndarray:
     t = wm.vec("translation_m", 3)
     yaw = wm.float("yaw_deg")
     wm.finish()
-    if math.isclose(math.remainder(yaw, 360.0), 0.0, abs_tol=1e-9):
-        raise wm.err("yaw_deg", f"must not be a multiple of 360 (an identity rotation offset leaves the SLAM origin "
-                     f"at rotation vector 0), got {yaw}")
+    if abs(math.remainder(yaw, 360.0)) < 1.0:
+        raise wm.err("yaw_deg", f"must be at least 1 deg away from a multiple of 360 (a near-identity offset leaves "
+                     f"poses near the SLAM origin at rotation vector ~0), got {yaw}")
     T = np.eye(4)
     T[:3, :3] = _rot_z(yaw)
     T[:3, 3] = t

@@ -1,4 +1,5 @@
 import copy
+import math
 import datetime
 from pathlib import Path
 
@@ -130,9 +131,12 @@ _DEL = object()
     ("virtual_ultrawide.rotation", {"matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 2]]}, "not a rotation"),
     ("imu.vio_inflation", {"noise_density": 0, "random_walk": 1}, "imu.vio_inflation.noise_density"),
     ("imu.vio_inflation", {"noise_density": 2}, "imu.vio_inflation.random_walk: missing"),
-    ("world_offset", {"translation_m": [0, 0, 0], "yaw_deg": 0}, "world_offset.yaw_deg: must not be a multiple"),
+    ("world_offset", {"translation_m": [0, 0, 0], "yaw_deg": 0}, "world_offset.yaw_deg: must be at least 1 deg"),
     ("world_offset", {"translation_m": [1, 2, 3], "yaw_deg": 360.0}, "multiple of 360"),
     ("world_offset", {"translation_m": [1, 2, 3], "yaw_deg": -720}, "multiple of 360"),
+    ("world_offset", {"translation_m": [1, 2, 3], "yaw_deg": 0.5}, "multiple of 360"),
+    ("world_offset", {"translation_m": [1, 2, 3], "yaw_deg": -0.999}, "multiple of 360"),
+    ("world_offset", {"translation_m": [1, 2, 3], "yaw_deg": 359.5}, "multiple of 360"),
     ("world_offset", {"translation_m": [1, 2], "yaw_deg": 30}, "world_offset.translation_m"),
     ("world_offset", {"translation_m": [1, 2, 3], "yaw_deg": 30, "roll": 1}, "world_offset.roll: unknown"),
     ("virtual_ultrawide.intrinsics", [-1, 1, 1, 1], "virtual_ultrawide.intrinsics"),
@@ -204,6 +208,13 @@ def test_world_offset_default_and_custom(rig_dict):
     rig_dict["world_offset"] = {"translation_m": [0, 0, 0], "yaw_deg": -45}
     T = parse_rig(rig_dict).T_world_offset
     assert np.allclose(T[:3, 3], 0) and T[1, 0] == pytest.approx(-np.sin(np.radians(45)))
+
+
+@pytest.mark.parametrize("yaw", [1.0, -1.0, 361.0, 359.0, 180.0])
+def test_world_offset_yaw_boundary_accepted(rig_dict, yaw):
+    rig_dict["world_offset"] = {"translation_m": [0, 0, 0], "yaw_deg": yaw}
+    T = parse_rig(rig_dict).T_world_offset
+    assert np.degrees(np.arctan2(T[1, 0], T[0, 0])) == pytest.approx(math.remainder(yaw, 360.0))
 
 
 def test_virtual_rotation(rig_dict):

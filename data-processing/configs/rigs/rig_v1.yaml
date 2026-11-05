@@ -74,5 +74,5 @@ aruco:                                                # finger tags (iPhUMI aruc
   nominal_z_m: 0.098                                  # tag depth along the virtual ultrawide z (outlier filter only)
 
 world_offset:                                         # optional; applied on the left in the z-up world (pose stage
-  translation_m: [0.1, 0.2, 0.3]                      # input). Yaw about +z must be non-zero so no pose has
+  translation_m: [0.1, 0.2, 0.3]                      # input). Yaw about +z must be >= 1 deg from a multiple of 360 so no pose has
   yaw_deg: 30.0                                       # rotation vector 0.

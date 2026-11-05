@@ -50,6 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", required=True, help="output folder, usually $DATAPROC_ROOT/incoming")
     p.add_argument("--episodes", type=_non_negative_int, default=1, metavar="N", help="number of episodes")
     p.add_argument("--calibration", action="store_true", help="write gripper-calibration episodes")
+    p.add_argument("--seed", type=_non_negative_int, default=0, metavar="S",
+                   help="base seed (episode n uses seed S*1000003 + n; default 0)")
+    p.add_argument("--duration", type=float, default=None, metavar="SEC",
+                   help="recording length incl. 2.5 s pre-roll and 0.5 s post-roll (default 15, --fast: 5)")
+    p.add_argument("--rig", default=None, metavar="PATH", help="rig yaml (default configs/rigs/rig_v1.yaml)")
+    p.add_argument("--fast", action="store_true",
+                   help="low-resolution rig (<rig_id>_fast: main x0.25, ultrawide x0.5) and short episodes")
+    p.add_argument("--session", default=None, metavar="ID",
+                   help="session id (default sim-<UTC time, microseconds>); episode dirs are <session>_episode_NNNNNN")
+    p.add_argument("--rigs-dir", default=None, metavar="DIR",
+                   help="where the rig yaml used is copied if missing (default $DATAPROC_ROOT/rigs)")
+    p.add_argument("--unverified", action="store_true", help="do not write .verified")
     for parser in sub.choices.values():
         parser.set_defaults(_parser=parser)        # usage errors print the subcommand's usage line
     return ap
@@ -75,7 +87,9 @@ def _not_yet(what: str, wave: str):
 
 
 def cmd_intake(args, root: DataRoot, task: TaskRef) -> int:
-    _not_yet("intake", "wave 1 (E1)")
+    from dataproc.intake import cli_intake
+
+    return cli_intake(root, task.folder, new=args.new, calibration=args.calibration)
 
 
 def cmd_process(args, root: DataRoot, task: TaskRef) -> int:
@@ -87,7 +101,18 @@ def cmd_status(args, root: DataRoot, task: TaskRef) -> int:
 
 
 def cmd_sim(args, root: DataRoot) -> int:
-    _not_yet("sim", "wave 1 (E2)")
+    from dataproc.sim.episode import run_sim
+
+    if args.duration is not None and not args.duration > 0:
+        args._parser.error(f"--duration must be > 0, got {args.duration}")
+    try:
+        run_sim(out=args.out, episodes=args.episodes, calibration=args.calibration, seed=args.seed,
+                duration_s=args.duration, rig_path=args.rig, fast=args.fast, session_id=args.session,
+                rigs_dir=args.rigs_dir if args.rigs_dir is not None else root.rigs, verified=not args.unverified)
+    except (ValueError, OSError) as e:
+        print(f"dataproc sim: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

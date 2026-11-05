@@ -44,10 +44,8 @@ def test_usage_errors(argv, capsys):
 
 
 @pytest.mark.parametrize("argv, wave", [
-    (["intake", "--task", "block_raise", "--new", "--calibration"], "wave 1"),
     (["process", "--task", "block_raise", "--episode", "2", "--force"], "wave 2"),
     (["status", "--task", "block_raise"], "wave 2"),
-    (["sim", "--out", "x", "--episodes", "2", "--calibration"], "wave 1"),
 ])
 def test_stubs(argv, wave, capsys):
     assert cli.main(argv) == 1

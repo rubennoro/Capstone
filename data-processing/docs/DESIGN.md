@@ -97,7 +97,7 @@ Per task: **gripper_range** (from `calibration/`: min/max width and the left↔r
 
 **Frames.** The training world frame is gravity-aligned **z-up** (sensor_rig `gravity_align` convention).
 `world_offset` (rig yaml, optional, default translation [0.1, 0.2, 0.3] m and yaw 30°) is a yaw about +z then a
-translation, applied on the left; its yaw must be non-zero so poses near the SLAM origin never have rotation
+translation, applied on the left; its yaw must be at least 1° away from a multiple of 360 so poses near the SLAM origin never have rotation
 vector 0 (iPhUMI's `pose_6d_to_4x4` is NaN there). `T_cam_tcp` is in the **physical** ultrawide optical frame; the
 virtual ultrawide is rotated from it by `virtual_ultrawide.rotation` (`R_phys_virt`, `d_phys = R_phys_virt @ d_virt`,
 default identity). ArUco tag `tvec` and `aruco.nominal_z_m` are in the virtual frame.
