@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataproc"
+version = "0.1.0"
+description = "Jetson-side intake and offline processing of rig episodes into a training .zarr.zip"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "opencv-python-headless",
+    "av",
+    "scipy",
+    "pyyaml",
+    "zarr==2.18.3",
+    "imagecodecs==2025.3.30",
+    "numcodecs",
+    "transforms3d",
+    "numba",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+dataproc = "dataproc.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dataproc*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# ROS Humble on the laptop puts its pytest plugins on PYTHONPATH; they fail to import (missing lark).
+addopts = "-p no:launch_testing -p no:launch_ros -p no:ament_copyright -p no:ament_flake8 -p no:ament_lint -p no:ament_xmllint -p no:ament_pep257"
