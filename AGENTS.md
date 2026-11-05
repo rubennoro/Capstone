@@ -22,6 +22,8 @@ Running status between working sessions. Update it at the end of each conversati
     Check → Slam → Grid → Pose → Width → Validate → Images → Export → `output/<folder>.zarr.zip` + `report.json`
     (iPhUMI zarr schema, for both `umi_policy_dunetp` and `umi_policy_dunet`). `dataproc status --task NAME`.
   - `dataproc sim`: synthetic episodes with ground truth, for testing without hardware.
+  - **Jetson how-to: `data-processing/README.md`** (one-time setup, practice run, per-session steps, troubleshooting).
+    Its practice-run commands were run verbatim on 2026-11-05 and work.
   - 505 tests, all with the **oracle** SLAM backend. Commits `96ff703`, `3fb0ead`, `ce9ba42`, `0f4ab7c` (local, not
     pushed). One reviewer signed off each wave. Docs: `data-processing/docs/{DESIGN,INTAKE,PROCESS,EXPORT,GEOMETRY,SIM}.md`.
   - Env: a py3.10 venv with `pip install -e data-processing[test]` (pins in DESIGN.md "Development environment");
