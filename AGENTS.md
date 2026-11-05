@@ -10,7 +10,24 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17)
+## Current state (2026-11-05)
+
+- **`dataproc` (branch `rnoro/data-work`, folder `data-processing/`): Jetson-side intake + offline processing for the
+  Pi 5 sensor rig.** The Pi (black box, not written) records each episode (2 MP4s + frame CSVs + IMU CSV + meta.json +
+  MANIFEST.sha256 + COMPLETE) and rsyncs it to the Jetson's `/data/rig/incoming/` (record-then-transfer, per the
+  transmission-plan PDF). Format for the Pi team: `data-processing/docs/CONTRACT.md`.
+  - `dataproc intake --task NAME [--new] [--calibration]`: verified episodes → `tasks/<folder>/episode_N/raw/`
+    (`--new` makes `<name>_1`, `_2`…), ledger, quarantine with reasons, crash-safe.
+  - `dataproc process --task NAME [--episode N] [--force] [--slam orbslam3|oracle]`: calibration → per episode
+    Check → Slam → Grid → Pose → Width → Validate → Images → Export → `output/<folder>.zarr.zip` + `report.json`
+    (iPhUMI zarr schema, for both `umi_policy_dunetp` and `umi_policy_dunet`). `dataproc status --task NAME`.
+  - `dataproc sim`: synthetic episodes with ground truth, for testing without hardware.
+  - 505 tests, all with the **oracle** SLAM backend. Commits `96ff703`, `3fb0ead`, `ce9ba42`, `0f4ab7c` (local, not
+    pushed). One reviewer signed off each wave. Docs: `data-processing/docs/{DESIGN,INTAKE,PROCESS,EXPORT,GEOMETRY,SIM}.md`.
+  - Env: a py3.10 venv with `pip install -e data-processing[test]` (pins in DESIGN.md "Development environment");
+    run pytest with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` (a ROS plugin crashes otherwise).
+  - ORB-SLAM3 image `dataproc/orbslam3:v1.0` is built locally (3.25 GB; build with `--builder default`) but has
+    **never been run on data**.
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -59,6 +76,15 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
+0. `dataproc` (deferred on purpose; see data-processing/docs):
+   - Real ORB-SLAM3 run on full-res `dataproc sim` episodes: tracking, scale check, pose error; pre-roll length needed.
+   - Training check: load an output zip with `UmiTaskDataset` (umi / umi_prompt) and run one forward+backward of both
+     policies (needs a torch env).
+   - `dataproc ship` (copy the zip to laptop/cluster with checksum), `rig-verify` (the Jetson script the Pi calls),
+     `docs/STATUS.md`.
+   - Deployment design: Pi stream mode over Ethernet ("one capture pipeline, two outputs"), deployment must import
+     `dataproc.imageprep`, same TCP definition as the rig's `T_cam_tcp`, policy inference speed on the Orin Nano.
+   - On hardware: Kalibr calibration, Pi timestamp semantics (`timestamp_ref`), Jetson arm64 docker build.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.
