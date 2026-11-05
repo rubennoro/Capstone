@@ -42,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", required=True, help=_TASK_HELP)
     p.add_argument("--episode", type=_non_negative_int, metavar="N", help="only process episode_N")
     p.add_argument("--force", action="store_true", help="rerun stages even if their inputs are unchanged")
+    p.add_argument("--slam", choices=("orbslam3", "oracle"), default="orbslam3",
+                   help="SLAM backend (default orbslam3; oracle = synthetic ground truth, needs raw/truth.npz)")
 
     p = sub.add_parser("status", help="show per-episode processing status of a task")
     p.add_argument("--task", required=True, help=_TASK_HELP)
@@ -82,10 +84,6 @@ def _task(args, root: DataRoot) -> TaskRef:
     return ref
 
 
-def _not_yet(what: str, wave: str):
-    raise NotImplementedError(f"dataproc {what} is implemented in {wave}")
-
-
 def cmd_intake(args, root: DataRoot, task: TaskRef) -> int:
     from dataproc.intake import cli_intake
 
@@ -93,11 +91,15 @@ def cmd_intake(args, root: DataRoot, task: TaskRef) -> int:
 
 
 def cmd_process(args, root: DataRoot, task: TaskRef) -> int:
-    _not_yet("process", "wave 2 (E5)")
+    from dataproc.process import cli_process
+
+    return cli_process(root, task.folder, episode=args.episode, force=args.force, slam=args.slam)
 
 
 def cmd_status(args, root: DataRoot, task: TaskRef) -> int:
-    _not_yet("status", "wave 2 (E5)")
+    from dataproc.status import cli_status
+
+    return cli_status(root, task.folder)
 
 
 def cmd_sim(args, root: DataRoot) -> int:
@@ -119,11 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
     root = data_root()
-    try:
-        if args.command == "sim":
-            return cmd_sim(args, root)
-        task = _task(args, root)
-        return {"intake": cmd_intake, "process": cmd_process, "status": cmd_status}[args.command](args, root, task)
-    except NotImplementedError as e:
-        print(f"dataproc: {e}", file=sys.stderr)
-        return 1
+    if args.command == "sim":
+        return cmd_sim(args, root)
+    task = _task(args, root)
+    return {"intake": cmd_intake, "process": cmd_process, "status": cmd_status}[args.command](args, root, task)

@@ -533,8 +533,8 @@ def test_crash_then_rerun_consistent(root, monkeypatch, point, which):
     for i, n in enumerate(["a", "b", "c"]):
         ep(root, n, offset_s=i, episode_number=i)
     calls = {"n": 0}
-    real_wa, real_mkdir, real_rename, real_ledger, real_osr = (I._write_atomic, os.mkdir, I._rename,
-                                                               I._append_ledger, os.rename)
+    real_wa, real_mkdir, real_rename, real_ledger, real_osr = (I.fsutil.write_atomic, os.mkdir, I._move,
+                                                               I.Ledger.append, os.rename)
 
     def maybe(kind):
         if kind == point:
@@ -557,19 +557,19 @@ def test_crash_then_rerun_consistent(root, monkeypatch, point, which):
             maybe("rename")
         return real_rename(src, dst)
 
-    def al(path, row):
+    def al(ledger, row):
         maybe("ledger")
-        return real_ledger(path, row)
+        return real_ledger(ledger, row)
 
     def osr(src, dst):
         if Path(dst).name == "task.yaml":
             maybe("task_yaml")
         return real_osr(src, dst)
 
-    monkeypatch.setattr(I, "_write_atomic", wa)
+    monkeypatch.setattr(I.fsutil, "write_atomic", wa)
     monkeypatch.setattr(I.os, "mkdir", mk)
-    monkeypatch.setattr(I, "_rename", rn)
-    monkeypatch.setattr(I, "_append_ledger", al)
+    monkeypatch.setattr(I, "_move", rn)
+    monkeypatch.setattr(I.Ledger, "append", al)
     monkeypatch.setattr(I.os, "rename", osr)
     with pytest.raises(_Boom):
         intake(root)
@@ -584,14 +584,14 @@ def test_crash_then_rerun_consistent(root, monkeypatch, point, which):
 
 def test_failed_quarantine_rename_leaves_no_orphan(root, monkeypatch):
     corrupt_hash(ep(root, "bad"))
-    real = I._rename
+    real = I._move
 
     def rn(src, dst):
         if "quarantine" in str(dst):
             raise OSError(13, "Permission denied")
         return real(src, dst)
 
-    monkeypatch.setattr(I, "_rename", rn)
+    monkeypatch.setattr(I, "_move", rn)
     for _ in range(2):
         with pytest.raises(OSError):
             intake(root)
@@ -604,12 +604,12 @@ def test_failed_quarantine_rename_leaves_no_orphan(root, monkeypatch):
 
 def test_failed_ingest_rename_does_not_burn_a_number(root, monkeypatch):
     ep(root, "a")
-    real = I._rename
+    real = I._move
 
     def rn(src, dst):
         raise OSError(13, "Permission denied")
 
-    monkeypatch.setattr(I, "_rename", rn)
+    monkeypatch.setattr(I, "_move", rn)
     with pytest.raises(OSError):
         intake(root)
     monkeypatch.undo()
@@ -694,14 +694,14 @@ def test_error_mid_run_prints_partial_summary(root, monkeypatch, capsys):
     ep(root, "a", episode_number=1, offset_s=0)
     ep(root, "b", episode_number=2, offset_s=1)
     ep(root, "c", episode_number=3, offset_s=2)
-    real = I._rename
+    real = I._move
 
     def rn(src, dst):
         if Path(src).name == "b":
             raise IntakeError("cannot move b (EXDEV)")
         return real(src, dst)
 
-    monkeypatch.setattr(I, "_rename", rn)
+    monkeypatch.setattr(I, "_move", rn)
     assert cli.main(["intake", "--task", "block_raise"]) == 1
     out, err = capsys.readouterr()
     assert "a  ->  episode_0" in out and "before the error: 1 ingested" in out
@@ -711,7 +711,7 @@ def test_error_mid_run_prints_partial_summary(root, monkeypatch, capsys):
 
 def test_unexpected_error_mid_run(root, monkeypatch, capsys):
     ep(root, "a")
-    monkeypatch.setattr(I, "_append_ledger", lambda *a: (_ for _ in ()).throw(RuntimeError("disk on fire")))
+    monkeypatch.setattr(I.Ledger, "append", lambda *a: (_ for _ in ()).throw(RuntimeError("disk on fire")))
     assert cli.main(["intake", "--task", "block_raise"]) == 1
     err = capsys.readouterr().err
     assert "unexpected error: disk on fire" in err and "stopped at a" in err
@@ -835,14 +835,14 @@ def test_reconcile_permission_error_is_clean(root, capsys):
 
 def test_quarantine_reason_write_fails_then_reconcile(root, monkeypatch):
     corrupt_hash(ep(root, "bad"))
-    real = I._write_atomic
+    real = I.fsutil.write_atomic
 
     def wa(path, text):
         if path.name == I.REASON_NAME:
             raise OSError(28, "No space left")
         return real(path, text)
 
-    monkeypatch.setattr(I, "_write_atomic", wa)
+    monkeypatch.setattr(I.fsutil, "write_atomic", wa)
     with pytest.raises(OSError):
         intake(root)
     assert os.listdir(root.quarantine / "bad") == ["raw"]
@@ -853,13 +853,13 @@ def test_quarantine_reason_write_fails_then_reconcile(root, monkeypatch):
 
 def test_interrupt_after_successful_rename_keeps_data(root, monkeypatch):
     ep(root, "a")
-    real = I._rename
+    real = I._move
 
     def rn(src, dst):
         real(src, dst)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(I, "_rename", rn)
+    monkeypatch.setattr(I, "_move", rn)
     with pytest.raises(KeyboardInterrupt):
         intake(root)
     monkeypatch.undo()
@@ -896,7 +896,7 @@ def test_failed_first_ingest_rolls_back_task_folder(root, monkeypatch, capsys, n
     before = _tree(root)
     ep(root, "a")
     (root.incoming / "u").mkdir()                                    # unverified: gives the summary a skip line
-    monkeypatch.setattr(I, "_rename", lambda s, d: (_ for _ in ()).throw(OSError(5, "EIO")))
+    monkeypatch.setattr(I, "_move", lambda s, d: (_ for _ in ()).throw(OSError(5, "EIO")))
     argv = ["intake", "--task", "block_raise"] + (["--new"] if new else []) + (["--calibration"] if calibration
                                                                                else [])
     assert cli.main(argv) == 1
@@ -912,7 +912,7 @@ def test_failed_ingest_into_existing_folder_keeps_it(root, monkeypatch):
     ep(root, "a", episode_number=1)
     intake(root)
     ep(root, "b", episode_number=2)
-    monkeypatch.setattr(I, "_rename", lambda s, d: (_ for _ in ()).throw(OSError(5, "EIO")))
+    monkeypatch.setattr(I, "_move", lambda s, d: (_ for _ in ()).throw(OSError(5, "EIO")))
     with pytest.raises(OSError):
         intake(root)
     t = root.tasks / "block_raise"
@@ -922,7 +922,7 @@ def test_failed_ingest_into_existing_folder_keeps_it(root, monkeypatch):
 def test_partial_summary_when_only_skipped_before_error(root, monkeypatch, capsys):
     (root.incoming / "u").mkdir(parents=True)
     ep(root, "a")
-    monkeypatch.setattr(I, "_append_ledger", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(I.Ledger, "append", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
     assert cli.main(["intake", "--task", "block_raise"]) == 1
     out, err = capsys.readouterr()
     assert "stopped at a" in err and "nothing waiting" not in out

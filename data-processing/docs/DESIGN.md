@@ -63,37 +63,17 @@ quarantine/<pi_episode>[__k]/          rejected episodes + reason.json
   `slot` = `episode_N` or `calibration/<name>`; `kind` = `demonstration` | `calibration`; `manifest_sha256` = the
   sha256 of the `MANIFEST.sha256` file.
 
-## `dataproc process --task NAME [--episode N] [--force]`
+## `dataproc process` and `dataproc status`
 
-- `--task` is required. The folder must exist ("run intake first"); `process` never creates task folders.
-- Never writes into `raw/`.
-- Skips stages whose `inputs_hash` (in `processed/status.json`) is unchanged, unless `--force`.
-- A failed or rejected episode is recorded, and the run continues.
-- Always rebuilds `output/<folder>.zarr.zip` + `output/report.json` from every valid episode.
+`dataproc process --task NAME [--episode N] [--force] [--slam orbslam3|oracle]` and `dataproc status --task NAME`:
+the steps, the stages (check, slam, grid, pose, width, validate, images, export, plus the task-level calibration),
+the skip rules (`inputs_hash`), the validate thresholds, `report.json` and the exit codes are in
+[PROCESS.md](PROCESS.md).
 
-`dataproc status --task NAME` prints the per-episode status. `dataproc sim --out DIR --episodes N [--calibration]`
-writes synthetic episodes in the raw format plus `truth.npz` (pose, width), for tests.
+`dataproc sim --out DIR --episodes N [--calibration]` writes synthetic episodes in the raw format plus `truth.npz`
+(pose, width), for tests ([SIM.md](SIM.md)).
 
-## Stages
-
-Per episode, in order (each writes into `processed/` and records its `inputs_hash`; the orchestrator, wave 2,
-fixes the exact stage names and files):
-
-1. **check**: `RawEpisode.validate` (the contract; errors reject the episode). Also rejects when a `meta.json`
-   camera `resolution` or `fps` differs from `rigs/<rig>.yaml`, or `meta.json` `rig_id` differs from `task.yaml`
-   `rig`.
-2. **images**: decode; remap the fisheye ultrawide to the virtual pinhole (`rigs/<rig>.yaml` `virtual_ultrawide`,
-   640×480, fx 246.6); letterbox both cameras to 224×224; pick the ~10 Hz ultrawide sub-stream.
-3. **pose**: SLAM backend → gravity-aligned z-up `T_W_cam(t)` → `T_W_tcp = T_world_offset @ T_W_cam @ T_cam_tcp`,
-   sampled on a fixed 60 Hz grid over `[button_start, button_stop]` (trimmed to where pose is valid). Inputs
-   include the rig's `T_cam_tcp`, `world_offset` and time model (below).
-4. **width**: ArUco `DICT_4X4_50` 16 mm finger tags on the virtual ultrawide, zero-distortion PnP,
-   `right.x − left.x`, mapped with the task's gripper range.
-5. **validate**: thresholds: speed > 3 m/s and > 7 m/s, ultrawide gap / IMU gap > 20 ms, tag coverage, minimum
-   length; trimming.
-
-Per task: **gripper_range** (from `calibration/`: min/max width and the left↔right linear maps, iPhUMI math) and
-**zarr** (merge every valid episode into `output/<folder>.zarr.zip`, write `report.json`).
+## Conventions
 
 **Frames.** The training world frame is gravity-aligned **z-up** (sensor_rig `gravity_align` convention).
 `world_offset` (rig yaml, optional, default translation [0.1, 0.2, 0.3] m and yaw 30°) is a yaw about +z then a

@@ -23,7 +23,8 @@ from scipy.spatial.transform import Rotation, Slerp
 __all__ = [
     "GRAVITY", "FRAME_ALIASES", "rig_frame", "Trajectory", "detect_time_unit", "load_tum", "load_orbslam3_euroc",
     "save_tum", "gravity_check", "gravity_align", "time_offset_check", "MOTION_LIMITS", "motion_consistency_check",
-    "SCALE_TOLERANCE", "SCALE_MIN_EXCITATION", "SCALE_MAX_STD_ERR", "scale_check",
+    "SCALE_TOLERANCE", "SCALE_MIN_EXCITATION", "SCALE_MAX_STD_ERR", "SCALE_MIN_ATTENUATION", "position_jitter",
+    "scale_check",
 ]
 
 GRAVITY = 9.80665
@@ -362,6 +363,36 @@ SCALE_TOLERANCE = 0.1
 SCALE_MIN_EXCITATION = 0.05
 #: ``scale_unobservable`` when the (correlation-corrected) relative standard error ``std_err / s`` exceeds this.
 SCALE_MAX_STD_ERR = 0.05
+#: ``scale_unobservable`` when position jitter would shrink the uncorrected estimate below this factor (the
+#: errors-in-variables correction is then larger than the signal it corrects; see :func:`scale_check`).
+SCALE_MIN_ATTENUATION = 0.5
+
+
+def position_jitter(traj: Trajectory, rel_tol: float = 0.1) -> dict:
+    """Per-axis std (m) of the white, frame-to-frame position noise of ``traj`` ("VIO jitter").
+
+    Estimated from 4th differences of the positions at the pose times: for white noise of std ``sigma``,
+    ``var(d4) = 70 sigma^2``, while a smooth hand motion contributes (4th derivative) * dt^4, ~1e-4 mm at 30 Hz.
+    Only windows of 5 consecutive poses spaced within ``rel_tol`` of the median interval count (gaps and dropped
+    frames break the uniform-grid assumption). Robust and efficient: per axis, the RMS of the 4th differences within
+    4 sigma of the MAD estimate (``1.4826 * MAD / sqrt(70)``), so isolated jumps do not inflate it; ~5 % std on
+    450 poses (the MAD alone: ~7 %). Returns ``{sigma_m: [sx, sy, sz] | None, dt_s, n}``.
+    """
+    t = np.asarray(traj.t_ns, dtype=np.int64)
+    if len(t) < 6:
+        return {"sigma_m": None, "dt_s": None, "n": 0}
+    dt = np.diff(t).astype(np.float64)
+    med = float(np.median(dt))
+    ok_dt = np.abs(dt - med) <= rel_tol * med
+    win = np.convolve(ok_dt.astype(np.int64), np.ones(4, dtype=np.int64), mode="valid") == 4  # (N-4,)
+    d4 = np.diff(traj.p, n=4, axis=0)[win]
+    if len(d4) < 10:
+        return {"sigma_m": None, "dt_s": med * 1e-9, "n": int(len(d4))}
+    mad = np.median(np.abs(d4 - np.median(d4, axis=0)), axis=0)
+    cut = 4.0 * 1.4826 * mad
+    sigma = np.array([np.sqrt(np.mean(np.square(d[np.abs(d) <= c]))) if c > 0 else 0.0
+                      for d, c in zip(d4.T, cut)]) / np.sqrt(70.0)
+    return {"sigma_m": sigma.tolist(), "dt_s": med * 1e-9, "n": int(len(d4))}
 
 
 def _segments(valid: np.ndarray) -> list[tuple[int, int]]:
@@ -373,7 +404,8 @@ def _segments(valid: np.ndarray) -> list[tuple[int, int]]:
 
 def scale_check(traj: Trajectory, imu_t, imu_acc, rig, rate_hz: float = 100.0, smooth_s: float = 0.15,
                 max_gap_ns: int = 200_000_000, tolerance: float = SCALE_TOLERANCE,
-                min_excitation: float = SCALE_MIN_EXCITATION, max_std_err: float = SCALE_MAX_STD_ERR) -> dict:
+                min_excitation: float = SCALE_MIN_EXCITATION, max_std_err: float = SCALE_MAX_STD_ERR,
+                correct_jitter: bool = True, min_attenuation: float = SCALE_MIN_ATTENUATION) -> dict:
     """Metric scale of the trajectory against the accelerometer (dataproc addition, not in sensor_rig).
 
     Fits ``R_W_imu(t) @ f_imu(t) + g_W = s * p''(t) + R_W_imu(t) @ b_imu + c_W`` by least squares: ``b_imu`` is a
@@ -384,6 +416,19 @@ def scale_check(traj: Trajectory, imu_t, imu_acc, rig, rate_hz: float = 100.0, s
     comparison is band-matched and position noise is suppressed. ``imu_t`` on the IMU time base; the trajectory
     world must be z-up (run after gravity alignment).
 
+    **Position jitter (errors in variables).** Noise on the positions is noise on the regressor ``p''``, which
+    biases ordinary least squares towards 0 by the attenuation factor ``var(p''_true) / var(p''_measured)`` (5 mm
+    white jitter at 30 Hz on a 15 s demo: s ~ 0.90). With ``correct_jitter`` (default) the jitter std per axis is
+    estimated by :func:`position_jitter` and its known contribution to ``p''`` is removed from the normal equations
+    (corrected least squares): for white noise of std ``sigma`` at pose interval ``dt``, the Gaussian
+    second-derivative filter of std ``smooth_s`` adds ``sigma^2 dt * 3 / (8 sqrt(pi) smooth_s^5)`` per axis to the
+    variance of ``p''`` (exact to 2 % at 30 Hz after the 100 Hz linear resampling). The correction is invariant to
+    a scale error of the trajectory (jitter and signal scale together), so a wrong scale is still detected.
+    Position error that is not white (drift, noise correlated over the ~0.5-3 Hz band the filter passes) is not
+    corrected: the high-frequency estimate then under-corrects. Also returned: ``scale_uncorrected`` (plain least
+    squares), ``attenuation`` (the estimated shrink factor of that fit) and ``jitter``; below ``min_attenuation``
+    the scale is ``scale_unobservable`` (jitter dominates the in-band motion).
+
     Returns ``{ok, status, scale, std_err, excitation_rms, resid_rms, r2, n, problems}`` with ``status`` one of
     ``ok`` | ``scale_mismatch`` (|s - 1| > tolerance) | ``scale_unobservable`` (too short, too little motion or too
     uncertain), plus ``accel_bias_imu`` (the fitted body-frame bias) once fitted.
@@ -391,7 +436,8 @@ def scale_check(traj: Trajectory, imu_t, imu_acc, rig, rate_hz: float = 100.0, s
     from scipy.ndimage import gaussian_filter1d
 
     out: dict = {"scale": None, "std_err": None, "excitation_rms": None, "resid_rms": None, "r2": None, "n": 0,
-                 "tolerance": tolerance, "rate_hz": rate_hz, "smooth_s": smooth_s}
+                 "tolerance": tolerance, "rate_hz": rate_hz, "smooth_s": smooth_s, "scale_uncorrected": None,
+                 "attenuation": None, "jitter": None}
     imu_t = np.asarray(imu_t, dtype=np.int64)
     acc = np.asarray(imu_acc, dtype=np.float64)
 
@@ -445,16 +491,36 @@ def scale_check(traj: Trajectory, imu_t, imu_acc, rig, rate_hz: float = 100.0, s
     A[:, :, 4:7] = np.eye(3)
     A = A.reshape(-1, 7)
     yv = y.reshape(-1)
-    sol, *_ = np.linalg.lstsq(A, yv, rcond=None)
+    AtA, Aty = A.T @ A, A.T @ yv
+    try:
+        s_ols = float(np.linalg.solve(AtA, Aty)[0])
+    except np.linalg.LinAlgError:
+        return unobservable("degenerate fit")
+    out["scale_uncorrected"] = s_ols
+    if correct_jitter:
+        jit = position_jitter(traj)
+        out["jitter"] = jit
+        if jit["sigma_m"] is not None:
+            # variance that white jitter adds to each axis of p'' (Gaussian 2nd-derivative filter, see docstring)
+            var_ex = np.square(jit["sigma_m"]) * jit["dt_s"] * 3.0 / (8.0 * np.sqrt(np.pi) * smooth_s ** 5)
+            noise00 = float(n * var_ex.sum())
+            attenuation = 1.0 - noise00 / max(float(np.sum(xc ** 2)), 1e-300)
+            out["attenuation"] = attenuation
+            if attenuation < min_attenuation:
+                return unobservable(f"position jitter {1e3 * float(np.linalg.norm(jit['sigma_m'])):.1f} mm dominates "
+                                    f"the in-band motion (attenuation {attenuation:.2f} < {min_attenuation})")
+            AtA = AtA.copy()
+            AtA[0, 0] -= noise00
+    try:
+        sol = np.linalg.solve(AtA, Aty)
+        cov00 = float(np.linalg.inv(AtA)[0, 0])
+    except np.linalg.LinAlgError:
+        return unobservable("degenerate fit")
     s = float(sol[0])
     resid = yv - A @ sol
     resid_rms = float(np.sqrt(np.mean(np.sum(resid.reshape(-1, 3) ** 2, axis=1))))
     corr_len = max(1.0, 2.5 * sig)                # smoothing correlates ~2.5 sigma of neighbouring samples
     sigma2 = float(resid @ resid) / max(1.0, len(yv) - 7)
-    try:
-        cov00 = float(np.linalg.inv(A.T @ A)[0, 0])
-    except np.linalg.LinAlgError:
-        return unobservable("degenerate fit")
     std_err = float(np.sqrt(sigma2 * cov00 * corr_len))
     yc = yv - np.tile(y.mean(axis=0), n)
     r2 = float(1.0 - (resid @ resid) / max(float(yc @ yc), 1e-12))

@@ -2,9 +2,14 @@
 
 Vendored/adapted from `sensor_rig/docker/orbslam3/` at commit 4be9982. The patches live inline in the Dockerfile.
 
-Status: the Dockerfile and the backend (`dataproc/slam/orbslam3.py`) are written. The backend is unit-tested with a fake
-`docker` runner. **The image has not been built yet, and ORB-SLAM3 has not yet run on synthetic or rig data.** Wave 2
-(E6) does both and records the outcome in `docs/STATUS.md`. You need at least 20 GB free on Docker's disk.
+Status (2026-11-04, laptop, x86_64): **built (image `dataproc/orbslam3:v1.0`, 3.25 GB, commit verified); not yet
+run on data (deferred).** The vendored Dockerfile built unchanged on the first try.
+- Build time 5 min 52 s (20 threads; no cache). Image `dataproc/orbslam3:v1.0` is 3.25 GB. Free space on `/` dropped
+  from 31 GB to 25 GB (image plus build cache), so the "~20 GB free" in the Dockerfile header is conservative.
+- Resolved ORB-SLAM3 commit (`/ORB_SLAM3/COMMIT`): `0df83dde1c85c7ab91a0d47de7a29685d046f637` (tag v1.0-release).
+- The build only prints warnings (Eigen deprecations, unused variables); no errors.
+- Future (not written yet): results on synthetic episodes will go in `docs/STATUS.md`, and an e2e test
+  `tests/test_orbslam3_e2e.py` (`-m orbslam3`, skipped when the image is missing) will run the image on one.
 
 ## Build
 

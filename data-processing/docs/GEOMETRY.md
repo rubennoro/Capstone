@@ -55,7 +55,55 @@ Accuracy of the alignment:
     trajectory is half the metric size.
 
   The problem is `scale_mismatch` when `|s − 1| > SCALE_TOLERANCE` (0.1). It is `scale_unobservable` when the
-  excitation RMS is below 0.05 m/s², the tracked stretch is too short, or the relative standard error is above 0.05.
+  excitation RMS is below 0.05 m/s², the tracked stretch is too short, the relative standard error is above 0.05,
+  or position jitter dominates (below).
+
+  **Position jitter (errors in variables).** Noise on the trajectory positions is noise on the *regressor* `p''`,
+  so plain least squares is biased towards 0 by the attenuation factor `var(p''_true) / var(p''_measured)`. On the
+  full-res 15 s sim demo, 5 mm white position noise gave s ≈ 0.91 (0.88–0.92, one false `scale_mismatch`).
+  `scale_check` therefore uses **corrected least squares**:
+  - `position_jitter(traj)` estimates the white, frame-to-frame jitter per axis from 4th differences of the
+    positions at the pose times (`var(Δ⁴p) = 70 σ²` for white noise; hand motion contributes ~1e-4 mm at 30 Hz).
+    It is robust (RMS within 4σ of the MAD estimate, so a VIO jump does not inflate it) and skips windows across
+    gaps or dropped frames. Its std on 450 poses is ~5 %.
+  - White jitter σ at pose interval Δt adds `σ² Δt · 3 / (8 √π σ_f⁵)` per axis to the variance of `p''` (σ_f =
+    `smooth_s`; checked against the exact impulse response: 0.98× at 30 Hz, 1.00× at 60 Hz). That amount is
+    subtracted from the `p''` diagonal of the normal equations.
+  - It scales with the trajectory, so a wrong scale is still detected: on the same demo with 5 mm jitter, ×0.85 and
+    ×1.2 trajectories give s = 1.18 and 0.84 (`scale_mismatch`).
+  - `attenuation` (the estimated shrink factor of the plain fit) is reported with `scale_uncorrected` and
+    `jitter`. Below `SCALE_MIN_ATTENUATION` (0.5) the correction would be larger than the signal, and the result is
+    `scale_unobservable`.
+
+  Why this and not the symmetric (geometric-mean) regression: the reverse regression is biased by everything on the
+  IMU side (accelerometer noise, rotation error, bias drift, model error), so the geometric mean only halves the
+  jitter bias (√λ) and adds an upward bias of its own. The correction targets exactly the term that causes the bias
+  and is ~0 when there is no jitter.
+
+  Measured on the 15 s demo, 20 seeds (oracle):
+
+  | Position error | plain LS s (mean) | corrected s: mean ± sd, max \|s−1\| | status |
+  |---|---|---|---|
+  | 3 mm white | 0.966 | 1.004 ± 0.011, 0.021 | 20 ok |
+  | 5 mm white | 0.908 | 1.005 ± 0.021, 0.038 | 20 ok |
+  | 10 mm white | 0.707 | 1.015 ± 0.062 | 20 `scale_unobservable` (std err) |
+  | random walk 5 mm/√s | 0.959 | 0.960 ± 0.017, 0.075 | 20 ok |
+
+  Combined errors, measured on the 12 s demo, 5 seeds (oracle, wave 2 review):
+
+  | Position / rotation error | corrected s | status |
+  |---|---|---|
+  | 5 mm white + random walk 5 mm/√s + 0.5° white | mean 0.922 | 4 ok, 1 `scale_mismatch` |
+  | random walk only | 0.923–0.976 | ok |
+
+  Both are consistent with "drift is not corrected" (below): drift pulls s down, and stacked on white noise it can
+  cross the 0.1 tolerance.
+
+  **Remaining bias.** Position error that is *not* white is not corrected: drift and noise correlated over the
+  ~0.5–3 Hz band the filter passes look like real motion to the jitter estimate (a 5 mm/√s random walk still gives
+  s ≈ 0.96). Since the high-frequency estimate then under-estimates the in-band noise, the correction can only
+  under-correct, never push s above its true value. Rotation noise biases s slightly up (0.5° white: s ≈ 1.015,
+  through `R_W_imu·f`). The tolerance (0.1) leaves room for both.
 
 - **`oracle`** reads `truth.npz` (`t_ns`, `T_W_imu`, `width_m`, `rig_id`, `seed`, `version`) and samples it at the
   ultrawide times. It then adds errors and changes the world:
@@ -79,7 +127,13 @@ Accuracy of the alignment:
     first keyframe's tilt is arbitrary.
   - **IMU initialization messages.** `diagnostics["imu_init"]` counts these upstream v1.0-release `LocalMapping.cc`
     strings: `end VIBA 1`, `end VIBA 2`, `Not enough motion for initializing. Reseting...` and `scale too small`.
-    They are informational only, because the first IMU initialization prints nothing.
+    They are informational only, because the first IMU initialization prints nothing. The "Not enough motion" count
+    is also `diagnostics["n_not_enough_motion_resets"]`.
+  - **Resets.** `n_resets` counts `SYSTEM-> Reseting active map` (System.cc), printed once per executed reset
+    whoever asked for it. The requesters' own lines (Tracking.cc `IMU is not or recently initialized. Reseting
+    active map...`, `TRACK: Reset map because local mapper set the bad imu flag`) are not counted, so one reset
+    counts once. `n_maps` counts `Creation of new map with id` (new atlas maps; a reset clears and reuses the
+    active map, so it does not add one).
   - **Testing.** The docker runner can be injected (`runner(cmd, log_path, timeout_s) -> rc`), so the tests use a
     fake container.
 

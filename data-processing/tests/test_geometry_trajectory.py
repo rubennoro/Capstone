@@ -4,7 +4,7 @@ from scipy.spatial.transform import Rotation
 
 from dataproc.geometry.trajectory import (
     SCALE_MIN_EXCITATION, SCALE_TOLERANCE, Trajectory, gravity_align, gravity_check, load_orbslam3_euroc, load_tum,
-    motion_consistency_check, rig_frame, save_tum, scale_check, time_offset_check,
+    motion_consistency_check, position_jitter, rig_frame, save_tum, scale_check, time_offset_check,
 )
 from dataproc.geometry.transforms import rot_x, rot_y, rot_z
 from dataproc.sim.imu_synth import synth_imu, synth_static_imu
@@ -168,3 +168,83 @@ def test_scale_check_unobservable():
     tr, ti, a, rig = _moving()
     short = Trajectory(tr.t_ns[:20], tr.p[:20], tr.q_xyzw[:20])
     assert scale_check(short, ti, a, rig)["status"] == "scale_unobservable"
+
+
+# ---------------------------------------------------------------- scale under position jitter (errors in variables)
+
+@pytest.fixture(scope="module")
+def sim_demo():
+    """The full-resolution 15 s sim demonstration (rig_v1, seed 0, as ``dataproc sim`` makes it) without rendering:
+    exact poses at the 30 Hz ultrawide times plus the sim's noisy 416 Hz IMU."""
+    from pathlib import Path
+    from dataproc.config import load_rig
+    from dataproc.sim.episode import FRAME_PHASE_NS
+    from dataproc.sim.imu_synth import add_noise, imu_times
+    from dataproc.sim.trajectory import make_trajectory
+
+    rig = load_rig(Path(__file__).resolve().parents[1] / "configs/rigs/rig_v1.yaml")
+    sim = make_trajectory(rig, "demonstration", 0, 15.0, 2.5)
+    t_cam = T0 + FRAME_PHASE_NS["ultrawide"] + np.round(np.arange(450) * 1e9 / 30).astype(np.int64)
+    T = sim.T_W_imu((t_cam - T0) * 1e-9)
+    ti = imu_times(T0, T0 + 15_000_000_000, 416.0)
+    g, a = sim.imu((ti - T0) * 1e-9)
+    n = rig.imu.noise
+    nd = {k: getattr(n, k) for k in ("gyroscope_noise_density", "gyroscope_random_walk",
+                                     "accelerometer_noise_density", "accelerometer_random_walk")}
+    g, a = add_noise(ti, g, a, nd, seed=0x13579)                     # as generate_episode(seed=0)
+    return t_cam, T, ti, a, rig
+
+
+def _jittered(t, T, sigma, seed, scale=1.0):
+    T = T.copy()
+    T[:, :3, 3] = scale * (T[:, :3, 3] + np.random.default_rng(seed).normal(0, sigma, (len(T), 3)))
+    return Trajectory.from_T(t, T)
+
+
+def test_position_jitter_estimate():
+    rng = np.random.default_rng(0)
+    t = T0 + np.arange(600, dtype=np.int64) * 33_333_333
+    p = np.stack([0.3 * np.sin(np.arange(600) / 30.0 * k) for k in (1.0, 2.0, 3.0)], 1)    # smooth motion
+    tr = Trajectory(t, p + rng.normal(0, [0.002, 0.005, 0.0], (600, 3)), np.tile([0, 0, 0, 1.0], (600, 1)))
+    j = position_jitter(tr)
+    assert j["sigma_m"] == pytest.approx([0.002, 0.005, 0.0], rel=0.15, abs=1e-5) and j["dt_s"] == pytest.approx(1 / 30)
+    p2 = tr.p.copy()
+    p2[300:] += 0.2                                                  # one VIO jump: robust (MAD)
+    assert position_jitter(Trajectory(t, p2, tr.q_xyzw))["sigma_m"][1] == pytest.approx(j["sigma_m"][1], rel=0.05)
+    # irregular spacing: windows spanning a gap are skipped
+    t3 = np.concatenate([t[:300], t[300:] + 500_000_000])
+    assert position_jitter(Trajectory(t3, tr.p, tr.q_xyzw))["n"] == 600 - 4 - 4
+    assert position_jitter(Trajectory(t[:5], p[:5], tr.q_xyzw[:5]))["sigma_m"] is None
+
+
+def test_scale_check_corrects_jitter_attenuation(sim_demo):
+    """Reviewer repro (wave 1): 5 mm white position noise on the full-res 15 s demo gave s 0.88-0.92 (plain least
+    squares, one false scale_mismatch). The corrected estimate stays within 0.05 of 1, and scale errors of
+    x0.85 / x1.2 are still detected."""
+    t, T, ti, a, rig = sim_demo
+    s, s_ols = [], []
+    for seed in range(8):
+        sc = scale_check(_jittered(t, T, 0.005, seed), ti, a, rig)
+        assert sc["status"] == "ok", sc["problems"]
+        s.append(sc["scale"])
+        s_ols.append(sc["scale_uncorrected"])
+        assert sc["jitter"]["sigma_m"] == pytest.approx([0.005] * 3, rel=0.2)
+        assert 0.85 < sc["attenuation"] < 0.95
+    assert np.max(np.abs(np.array(s) - 1)) < 0.05
+    assert np.mean(s_ols) < 0.94                     # the bias the correction removes
+    assert scale_check(_jittered(t, T, 0.005, 0), ti, a, rig, correct_jitter=False)["scale"] == \
+        pytest.approx(s_ols[0])
+    for f in (0.85, 1.2):                            # trajectory too small / too large by f -> s ~ 1 / f
+        for seed in range(3):
+            sc = scale_check(_jittered(t, T, 0.005, seed, scale=f), ti, a, rig)
+            assert sc["status"] == "scale_mismatch" and sc["scale"] == pytest.approx(1 / f, rel=0.05)
+
+
+def test_scale_check_jitter_dominates(sim_demo):
+    t, T, ti, a, rig = sim_demo
+    sc = scale_check(_jittered(t, T, 0.02, 0), ti, a, rig)
+    assert sc["status"] == "scale_unobservable" and sc["attenuation"] < 0.5
+    assert "jitter" in sc["problems"][0]
+    clean = scale_check(Trajectory.from_T(t, T), ti, a, rig)        # no jitter: no correction
+    assert clean["status"] == "ok" and clean["attenuation"] > 0.999
+    assert clean["scale"] == pytest.approx(clean["scale_uncorrected"], abs=1e-3)

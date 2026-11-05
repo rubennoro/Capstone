@@ -5,10 +5,13 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
 
 ## One run, step by step
 
-1. **Root missing:** print "nothing to intake", exit 0. Nothing is created.
-2. **Lock:** `flock(LOCK_EX | LOCK_NB)` on `<root>/.intake.lock`. If another process holds it, exit 1 with
+Each step names the method of `Intake` (in `dataproc/intake.py`) that does it, in the order `Intake.run` calls
+them. See "Code map" below.
+
+1. **Root missing** (`run`): print "nothing to intake", exit 0. Nothing is created.
+2. **Lock** (`lock`): `flock(LOCK_EX | LOCK_NB)` on `<root>/.intake.lock`. If another process holds it, exit 1 with
    "another intake is running". The lock file is the only thing a run creates when there is nothing to do.
-3. **Root pre-flight, then reconcile.** First, `incoming/` (if it exists), `tasks/` and `quarantine/` (or, for
+3. **Root pre-flight, then reconcile** (`preflight_root`, `reconcile`). First, `incoming/` (if it exists), `tasks/` and `quarantine/` (or, for
    the last two, the nearest existing parent they would be created in) must be writable, else exit 1 with
    "permission denied". The check uses `os.access(..., effective_ids=True)` (effective uid, as Linux supports), and
    the message names the uid that was checked. A `PermissionError` during reconcile is also reported cleanly
@@ -23,8 +26,8 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
    - An empty `episode_N/` (a crash between `mkdir` and the rename) is reported. Its number stays taken.
    - All folders are reconciled, so dedupe sees a complete ledger even after a crash in a `--new` run (whose folder
      is never the target again).
-4. **Incoming missing:** print a message, exit 0.
-5. **Scan `incoming/`** (sorted by name). Entries are handled as follows:
+4. **Incoming missing** (`run`): print a message, exit 0.
+5. **Scan `incoming/`** (`scan_incoming`, sorted by name). Entries are handled as follows:
    - name starts with `.`: ignored, never listed;
    - symlink (to anything, even dangling): always a candidate, so it is quarantined (`episode_is_symlink`). The
      link itself is moved, and its target is never touched or written to;
@@ -35,8 +38,8 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
      rewrites its `..`, so it needs write permission on itself): left, shown as "skipped: permission denied (owner
      uid …, mode …)". Nothing is created for it;
    - otherwise: a candidate.
-6. **No candidates:** print "nothing waiting", exit 0. No task folder and no quarantine folder are created.
-7. **Target folder:** `paths.resolve_intake_target(tasks, NAME, --new)`. Exit 1 for:
+6. **No candidates** (`run`): print "nothing waiting", exit 0. No task folder and no quarantine folder are created.
+7. **Target folder** (`open_target`, with `check_same_filesystem` and `preflight_target`): `paths.resolve_intake_target(tasks, NAME, --new)`. Exit 1 for:
    - the target is not a directory;
    - its `task.yaml` is invalid;
    - it has episodes but no `task.yaml`;
@@ -48,9 +51,9 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
 
    An existing folder with no `task.yaml` and no episodes (a crash between `mkdir` and writing `task.yaml`) is
    accepted, and `task.yaml` is written on its first ingest.
-8. **Order:** candidates whose `meta.json` cannot be parsed come first, by name. Then the rest by (`start_unix_ns`,
+8. **Order** (`in_order`): candidates whose `meta.json` cannot be parsed come first, by name. Then the rest by (`start_unix_ns`,
    `session_id`, `episode_number`, name).
-9. **Per candidate, all checks run, and every failing reason is recorded.** Right after validation, the
+9. **Per candidate, all checks run, and every failing reason is recorded** (`handle`: `validate`, `transfer_restarted`, `check_duplicate`, `check_rig`). Right after validation, the
    dot-entry check runs again for every candidate. If a dot-entry other than `.verified` has appeared (a re-send
    started during validation), the episode is left in `incoming/` as "skipped: transfer in progress", whatever the
    validation found. It is neither quarantined nor ingested.
@@ -63,7 +66,7 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
      while there is no reference yet, or when meta is invalid.
 
    Reasons are ordered: validator codes, then `duplicate`, then `rig_mismatch`.
-10. **Quarantine** (any reason):
+10. **Quarantine** (`quarantine`, via `Quarantine.put`; any reason):
     - create `quarantine/<name>/` (`<name>__2`, `__3`, … if any entry with that name exists);
     - `os.rename` the episode into it as **`raw/`**. If the rename fails, the just-created directory is removed
       with `rmdir` (which only succeeds while it is empty), so no reason-only folder is left behind;
@@ -86,7 +89,7 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
      "dataproc_version": "0.1.0", "target_task": "block_raise", "mode": "demonstration", "episode": "raw/"}
     ```
 
-11. **Ingest** (no reasons):
+11. **Ingest** (`ingest`; no reasons):
     - Create the task folder and `task.yaml` lazily, on the first ingest, so a run that only quarantines creates no
       folder. `task.yaml` gets: `label` = `--task NAME` as given (so `--new` folders `block_raise_1` are labelled
       `block_raise`), `rig` = `meta.rig_id`, `created` = ISO UTC, `notes` "". It is written atomically (dot temp
@@ -104,13 +107,13 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
     - Append one row to `episodes.csv`: `O_APPEND`, one `write` of the full line (with the header first if the file
       is new or empty), then `fsync`. Values are written with Python's `csv` module, so a `session_id` containing a
       comma is quoted. `manifest_sha256` is computed before the move.
-12. **`--calibration`:**
+12. **`--calibration`** (`handle` / `ingest`, flag `calibration_taken`):
     - It walks the same order and quarantines failures as usual. The first candidate that passes every check
       (validate, duplicate, rig) moves to `calibration/<name>/raw/` (`__2`, … on a name collision), with ledger row
       `kind=calibration`, `slot=calibration/<name>`.
     - Every later candidate is left in `incoming/` without being validated, shown as "waiting".
     - It creates the task folder and `task.yaml` if they are missing.
-13. **Exit code and summary:**
+13. **Exit code and summary** (`stop_on_error`, `format_summary`, `cli_intake`):
     - Exit 0 when the run completes, even if some episodes were quarantined.
     - The summary prints one line per `incoming/` entry, `<pi name>  ->  episode_N | calibration/<x> |
       quarantined: r1, r2 | skipped: … | waiting: …`, then the totals line `K ingested into tasks/<folder>
@@ -123,6 +126,34 @@ DESIGN.md's "intake" section holds the rules. This file adds the decisions made 
       `, N failed`. A partial run never prints the "nothing waiting" line. Then `stopped at <name>; nothing after it
       was processed` goes to stderr. Everything already moved stays moved and has its ledger row (or gets it from
       the next run's reconcile).
+
+## Code map
+
+`run_intake(...)` is `Intake(root, task, new, calibration, log).run()`:
+
+```python
+with self.lock():                        # step 2
+    self.preflight_root()                # step 3
+    self.reconcile()                     # step 3: reconcile_task_folder per folder + Quarantine.repair_missing_reasons
+    candidates = self.scan_incoming()    # steps 4-6
+    self.open_target()                   # step 7: TaskTarget, check_same_filesystem, preflight_target, DuplicateIndex
+    with self.stop_on_error():           # step 13: error outcome + partial result on the exception
+        for candidate in self.in_order(candidates):   # step 8
+            self.handle(candidate)       # steps 9-12
+```
+
+`handle(candidate)`: `calibration_taken` -> "waiting"; `validate` -> `transfer_restarted` -> `check_duplicate` ->
+`check_rig` -> `quarantine` (any reason) or `ingest`.
+
+| Piece | Role |
+| --- | --- |
+| `Intake` | one run; `run` plus one method per step (above) |
+| `Ledger` | one `episodes.csv`: `rows`, `slots`, `make_row`, `append` (fsync'd `O_APPEND`) |
+| `Quarantine` | `put` (`quarantine/<name>[__k]/raw` + `reason.json`), `repair_missing_reasons` |
+| `TaskTarget` | the target folder: `ensure` (folder + `task.yaml`), `next_slot`, `write_pending`, `note_made`, `rollback_if_unused` |
+| `DuplicateIndex` | Pi dir names and (session, episode) pairs in every ledger plus this run: `add`, `check` |
+| `Candidate` | one `incoming/` entry to validate (name, path, `RawEpisode`, meta) |
+| `dataproc/fsutil.py` | generic plumbing: `write_atomic`, `fsync_dir`, `rename_no_copy` (EXDEV -> `CrossDeviceError`), `rmdir_if_empty`, `sha256_file`, `free_name`, `nearest_existing`, `not_writable`, `FileLock` |
 
 ## What other commands must tolerate in a task folder
 

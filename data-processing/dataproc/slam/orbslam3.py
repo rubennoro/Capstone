@@ -265,12 +265,21 @@ def subprocess_runner(cmd: list, log_path: Path, timeout_s: float) -> int:
 
 
 _NEW_MAP = re.compile(r"Creation of new map with id", re.IGNORECASE)
-_RESET = re.compile(r"Reset(?:t)?ing active map", re.IGNORECASE)
+#: ``System::TrackMonocular`` (System.cc) prints this once per executed active-map reset, whoever requested it
+#: (Tracking: lost before IMU init, "IMU is not or recently initialized", bad-IMU flag, timestamp jump, wrong
+#: initialisation). The requesters' own messages (e.g. Tracking.cc "IMU is not or recently initialized. Reseting
+#: active map...") are *not* counted, so one reset counts once. Not anchored at the line
+#: start: ORB-SLAM3's threads share stdout and can interleave on one line. "Resetting" is accepted too.
+_RESET = re.compile(r"SYSTEM-> Reset(?:t)?ing active map")
 
 
 def count_map_events(log_text: str) -> tuple[int, int]:
     """(n_maps, n_resets) from ORB-SLAM3's stdout: maps = "Creation of new map with id" lines (>= 1), resets =
-    "Reseting active map" lines (ORB-SLAM3's spelling)."""
+    "SYSTEM-> Reseting active map" lines (ORB-SLAM3's spelling; one per executed reset, see ``_RESET``).
+
+    LocalMapping's "Not enough motion for initializing. Reseting..." (a LocalMapping-side map reset during the IMU
+    initialisation; it also raises the bad-IMU flag, so Tracking then requests a System reset that *is* counted
+    here) is reported separately by :func:`imu_init_events` (``not_enough_motion_reset``)."""
     n_maps = max(1, len(_NEW_MAP.findall(log_text)))
     n_resets = len(_RESET.findall(log_text))
     return n_maps, n_resets
@@ -365,6 +374,7 @@ class Orbslam3Backend(SlamBackend):
             raise SlamError(f"orbslam3: no trajectory {out} (tracking never initialised?), see {log}")
         log_text = log.read_text(errors="replace")
         n_maps, n_resets = count_map_events(log_text)
+        imu_init = imu_init_events(log_text)
         traj, imp = import_trajectory(out, prep["t_cam_ns"])
         if len(traj) < 2:
             raise SlamError(f"orbslam3: {out}: {len(traj)} usable poses")
@@ -374,4 +384,5 @@ class Orbslam3Backend(SlamBackend):
                                    motion_limits=self.motion_limits, n_maps=n_maps, n_resets=n_resets,
                                    diagnostics={"backend": self.name, "image": self.image, "command": cmd,
                                                 "prep": prep_d, "import": imp, "log": str(log),
-                                                "imu_init": imu_init_events(log_text)})
+                                                "imu_init": imu_init,
+                                                "n_not_enough_motion_resets": imu_init["not_enough_motion_reset"]})

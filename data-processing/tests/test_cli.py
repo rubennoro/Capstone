@@ -43,13 +43,14 @@ def test_usage_errors(argv, capsys):
     assert "error:" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("argv, wave", [
-    (["process", "--task", "block_raise", "--episode", "2", "--force"], "wave 2"),
-    (["status", "--task", "block_raise"], "wave 2"),
+@pytest.mark.parametrize("argv", [
+    ["process", "--task", "block_raise", "--episode", "2", "--force"],
+    ["process", "--task", "block_raise", "--slam", "oracle"],
+    ["status", "--task", "block_raise"],
 ])
-def test_stubs(argv, wave, capsys):
+def test_missing_task_folder(argv, capsys):
     assert cli.main(argv) == 1
-    assert wave in capsys.readouterr().err
+    assert "run intake first" in capsys.readouterr().err
 
 
 def test_process_episode_from_task_spec(monkeypatch, tmp_path):

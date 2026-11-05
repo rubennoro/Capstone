@@ -248,6 +248,29 @@ def test_import_snapping_and_map_events(tmp_path):
                             "SYSTEM-> Reseting active map in monocular case\n") == (2, 1)
 
 
+def test_reset_counted_once_per_executed_reset():
+    """Tracking.cc prints its own "...Reseting active map..." before System::ResetActiveMap, which prints the
+    "SYSTEM->" line: one reset, counted once. LocalMapping's "Not enough motion" line is a separate diagnostic."""
+    log = ("Creation of new map with id: 0\n"
+           "IMU is not or recently initialized. Reseting active map...\n"
+           "SYSTEM-> Reseting active map in monocular case\n"
+           "Not enough motion for initializing. Reseting...\n"
+           "LM: Reseting current map in Local Mapping...\n"
+           "TRACK: Reset map because local mapper set the bad imu flag \n"
+           "SYSTEM-> Reseting active map in monocular case\n"
+           "Creation of new map with id: 1\n")
+    assert count_map_events(log) == (2, 2)
+    assert imu_init_events(log)["not_enough_motion_reset"] == 1
+    assert count_map_events("IMU is not or recently initialized. Reseting active map...\n") == (1, 0)
+    assert count_map_events("end VIBA 1SYSTEM-> Reseting active map in monocular case\n") == (1, 1)  # interleaved
+
+
+def test_orbslam3_reports_not_enough_motion(tmp_path, rig, episode):
+    log = "Not enough motion for initializing. Reseting...\nSYSTEM-> Reseting active map in monocular case\n"
+    res = Orbslam3Backend(runner=FakeDocker(log_text=log), scale=0.25).run(episode, rig, tmp_path / "w")
+    assert res.n_resets == 1 and res.diagnostics["n_not_enough_motion_resets"] == 1
+
+
 # --------------------------------------------------------------------------------------------- scale check
 
 def test_finalize_flags_wrong_scale(episode, rig):
