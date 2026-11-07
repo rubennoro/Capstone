@@ -1,6 +1,6 @@
 """Where things live on the Jetson: the data root, task folders and ``episode_N`` directories.
 
-Layout under the root (``$DATAPROC_ROOT``, default ``/data/rig``)::
+Layout under the root (``$DATAPROC_ROOT``, default ``~/data``)::
 
     incoming/<pi_episode>/            raw episodes as the Pi delivers them (docs/CONTRACT.md)
     tasks/<folder>/                   task.yaml, episodes.csv, calibration/, episode_N/{raw,processed}, output/
@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 ENV_ROOT = "DATAPROC_ROOT"
-DEFAULT_ROOT = Path("/data/rig")
+DEFAULT_ROOT = Path.home() / "data"             # /home/<user>/data
 
 #: Allowed task, folder and rig names.
 NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
@@ -76,7 +76,7 @@ class TaskRef:
 
 
 def data_root(path: str | os.PathLike | None = None) -> DataRoot:
-    """The data root: ``path`` if given, else ``$DATAPROC_ROOT`` if set and non-empty, else ``/data/rig``."""
+    """The data root: ``path`` if given, else ``$DATAPROC_ROOT`` if set and non-empty, else ``~/data``."""
     if path is None:
         path = os.environ.get(ENV_ROOT) or DEFAULT_ROOT
     return DataRoot(Path(path).expanduser().absolute())

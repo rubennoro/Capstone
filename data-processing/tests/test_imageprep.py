@@ -14,7 +14,8 @@ from dataproc.imageprep import (ImagePrep, MainPrep, UltrawidePrep, letterbox, l
                                 physical_model, virtual_model)
 
 RIG_PATH = Path(__file__).resolve().parents[1] / "configs" / "rigs" / "rig_v1.yaml"
-IPHUMI_CV_UTIL = Path("/home/ruben/Capstone/iPhUMI/python_package/iphumi/common/cv_util.py")
+REPO = Path(__file__).resolve().parents[2]          # the Capstone checkout
+IPHUMI_CV_UTIL = REPO / "iPhUMI/python_package/iphumi/common/cv_util.py"
 
 
 @pytest.fixture(scope="module")

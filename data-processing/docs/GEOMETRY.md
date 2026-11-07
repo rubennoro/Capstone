@@ -112,9 +112,9 @@ Accuracy of the alignment:
   - an arbitrary world: `world_yaw_deg`, `world_tilt_deg`, `world_tilt_azimuth_deg`, `world_translation_m`.
 
   After that it runs the shared gravity alignment and the checks. The default `seed` is the truth's seed.
-- **`orbslam3`** runs ORB-SLAM3 v1.0 `mono_inertial_euroc` in Docker on the fisheye ultrawide plus the IMU (see
-  `docker/orbslam3/README.md`). Its options are `image`, `scale`, `imu_rate_hz`, `runner`, `timeout_s`, `user` and
-  `n_features`. It works in four steps:
+- **`orbslam3`** runs a native ORB-SLAM3 v1.0 `mono_inertial_euroc` build (`$ORB_SLAM3_DIR`, default `~/ORB_SLAM3`;
+  see [ORBSLAM3.md](ORBSLAM3.md)) on the fisheye ultrawide plus the IMU. Its options are `orb_slam3_dir`, `scale`,
+  `imu_rate_hz`, `runner`, `timeout_s` and `n_features`. It works in four steps:
   - **EuRoC prep.** The MP4 is decoded, converted to gray and resized to the settings size. The image names are the
     frame times; frames outside `[t_imu[0], t_imu[-1])` are left out. The IMU goes to `mav0/imu0/data.csv`.
   - **Settings.** `KannalaBrandt8` with the scaled ultrawide intrinsics and k1..k4, `IMU.T_b_c1 = T_imu_cam`
@@ -134,8 +134,8 @@ Accuracy of the alignment:
     active map...`, `TRACK: Reset map because local mapper set the bad imu flag`) are not counted, so one reset
     counts once. `n_maps` counts `Creation of new map with id` (new atlas maps; a reset clears and reuses the
     active map, so it does not add one).
-  - **Testing.** The docker runner can be injected (`runner(cmd, log_path, timeout_s) -> rc`), so the tests use a
-    fake container.
+  - **Testing.** The runner can be injected (`runner(cmd, log_path, timeout_s, cwd) -> rc`), so the tests use a
+    fake `mono_inertial_euroc`.
 
 ## TCP pose (`dataproc.stages.pose`)
 

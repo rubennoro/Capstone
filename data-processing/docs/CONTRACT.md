@@ -6,10 +6,13 @@ What the Pi 5 must deliver to the Jetson for every episode. It is the format of 
 `dataproc/raw_episode.py`; every rule below is checked there, and the problem code it reports is given in
 `[brackets]`.
 
+The Pi recorder does not write this format yet: `dataproc run` converts what it does write
+(`/data/incoming`) into it. See [PI_ADAPTER.md](PI_ADAPTER.md).
+
 ## 1. Directory
 
 ```
-/data/rig/incoming/<episode_dir>/
+~/data/incoming/<episode_dir>/
   cam0.mp4            main camera (IMX519)
   cam1.mp4            ultrawide camera (IMX219 fisheye)
   cam0_frames.csv     one row per frame of cam0.mp4
@@ -21,7 +24,7 @@ What the Pi 5 must deliver to the Jetson for every episode. It is the format of 
   .verified           written by the Jetson, never by the Pi (§6)
 ```
 
-- The destination root is `/data/rig/incoming/` (the PDF's `/data/incoming/` moved under the dataproc root).
+- The destination root is `~/data/incoming/` (the PDF's `/data/incoming/` moved under the dataproc root).
 - `<episode_dir>`: `[A-Za-z0-9][A-Za-z0-9._-]*` (starts with a letter or digit, so never hidden, `.` or `..`)
   [`bad_episode_name`], unique for the lifetime of the rig, e.g. `<session_id>_episode_000123`. Episode numbers
   restart per session, so the session id must be part of the name.
@@ -172,7 +175,7 @@ t_ns,sample_idx,gx,gy,gz,ax,ay,az
   directory. Until the Jetson ships its own verify command, the Pi's sender loop runs:
 
   ```bash
-  ssh jetson "cd /data/rig/incoming/$n && sha256sum -c --quiet MANIFEST.sha256 && touch .verified" \
+  ssh jetson "cd ~/data/incoming/$n && sha256sum -c --quiet MANIFEST.sha256 && touch .verified" \
     && touch "$ep/.synced"
   ```
 

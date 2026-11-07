@@ -1,11 +1,12 @@
 # Vendored/adapted from sensor_rig/sensor_rig/pose/{euroc,orbslam3,vio_hooks,stage}.py at commit 4be9982.
 # Changes: EuRoC images are decoded from the ultrawide MP4 (RawEpisode.read_video_frames) instead of JPEG folders;
 # times are dataproc's IMU time base (RigConfig.camera_time_ns / imu_time_ns); frames outside the IMU span are dropped
-# (mono_inertial_euroc indexes past its IMU array otherwise); the docker runner is injectable; no mask support.
-"""``orbslam3`` backend: ORB-SLAM3 v1.0 mono-inertial (``mono_inertial_euroc``) in Docker on the fisheye ultrawide
-plus the IMU.
+# (mono_inertial_euroc indexes past its IMU array otherwise); the runner is injectable; no mask support.
+# Jetson: runs a native ORB-SLAM3 build (``$ORB_SLAM3_DIR``, default ``~/ORB_SLAM3``) instead of the Docker image.
+"""``orbslam3`` backend: ORB-SLAM3 v1.0 mono-inertial (``mono_inertial_euroc``), built natively on the Jetson
+(docs/ORBSLAM3.md), on the fisheye ultrawide plus the IMU.
 
-Steps (all files in ``work_dir``, which is mounted at ``/data`` in the container):
+Steps (all files in ``work_dir``, which is also the working directory of the run):
 
 1. **EuRoC prep** (:func:`write_euroc`): ``mav0/cam0/data/<t_ns>.png`` (gray, resized to the settings size),
    ``mav0/cam0/data.csv``, ``times.txt`` (one ``t_ns`` per line; ``mono_inertial_euroc`` loads
@@ -16,8 +17,9 @@ Steps (all files in ``work_dir``, which is mounted at ``/data`` in the container
    ultrawide's ``fisheye-equidistant`` intrinsics and k1..k4 (scaled to the image size), ``IMU.T_b_c1 =
    T_imu_cam`` of the ultrawide (camera to body), IMU noise from ``rig.imu.noise.for_vio()``, ``IMU.Frequency`` =
    the measured rate of the written IMU stream.
-3. **Run** (:func:`orbslam3_docker_command`): ``docker run --rm --user UID:GID -v <work_dir>:/data -w /data <image>
-   mono_inertial_euroc ORBvoc.txt /data/orbslam3_settings.yaml /data /data/times.txt <name>``.
+3. **Run** (:func:`orbslam3_command`): ``<orb_dir>/Examples/Monocular-Inertial/mono_inertial_euroc
+   <orb_dir>/Vocabulary/ORBvoc.txt <work>/orbslam3_settings.yaml <work> <work>/times.txt <name>`` with cwd
+   ``<work>`` (where it writes ``f_<name>.txt``).
 4. **Import** ``f_<name>.txt`` (:func:`load_orbslam3_euroc`).
 
 ORB-SLAM3 output frame (``System::SaveTrajectoryEuRoC``, v1.0-release, checked against the source): for IMU sensors
@@ -27,7 +29,7 @@ body = our IMU frame) in a world re-based on the **first keyframe's IMU frame** 
 the time as ``1e9 * t_s`` at 6 decimals, then ``x y z qx qy qz qw``. So each row already is ``T_b0_imu``: the
 import keeps the poses as ``T_W_imu`` with ``W = b0`` (arbitrary tilt and yaw), snaps each time back to the exact
 input frame time (the ns went through a double in seconds), and :func:`dataproc.slam.base.finalize_trajectory`
-gravity-aligns ``W`` from the episode's IMU. ``n_maps`` / ``n_resets`` are counted from the container log.
+gravity-aligns ``W`` from the episode's IMU. ``n_maps`` / ``n_resets`` are counted from the run's log.
 """
 
 from __future__ import annotations
@@ -36,7 +38,6 @@ import math
 import os
 import re
 import shlex
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -50,24 +51,25 @@ from dataproc.slam.base import (
 )
 
 __all__ = [
-    "DEFAULT_IMAGE", "ORB_BIN", "ORB_VOC", "EUROC_IMU_HEADER", "TRAJ_NAME", "scaled_size", "block_average_imu",
-    "camera_model_at", "write_euroc", "write_orbslam3_settings", "orbslam3_docker_command", "subprocess_runner",
+    "ORB_BIN", "ORB_VOC", "EUROC_IMU_HEADER", "TRAJ_NAME", "scaled_size", "block_average_imu",
+    "camera_model_at", "write_euroc", "write_orbslam3_settings", "ORB_SLAM3_DIR_ENV", "default_orb_slam3_dir",
+    "orbslam3_command", "subprocess_runner",
     "count_map_events", "IMU_INIT_STRINGS", "imu_init_events", "import_trajectory", "Orbslam3Backend",
 ]
 
-DEFAULT_IMAGE = "dataproc/orbslam3:v1.0"
-ORB_BIN = "/ORB_SLAM3/Examples/Monocular-Inertial/mono_inertial_euroc"
-ORB_VOC = "/ORB_SLAM3/Vocabulary/ORBvoc.txt"
+ORB_SLAM3_DIR_ENV = "ORB_SLAM3_DIR"                  # where ORB-SLAM3 was built (docs/ORBSLAM3.md)
+ORB_BIN = "Examples/Monocular-Inertial/mono_inertial_euroc"   # relative to the ORB-SLAM3 dir
+ORB_VOC = "Vocabulary/ORBvoc.txt"
 SETTINGS_FILE = "orbslam3_settings.yaml"
 TRAJ_NAME = "episode"           # mono_inertial_euroc writes f_episode.txt / kf_episode.txt
-LOG_FILE = "orbslam3_docker.log"
+LOG_FILE = "orbslam3.log"
 EUROC_IMU_HEADER = (
     "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],"
     "a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]"
 )
 
-#: ``runner(cmd, log_path, timeout_s) -> returncode``; the default runs ``subprocess``. Tests inject a fake.
-Runner = Callable[[list, Path, float], int]
+#: ``runner(cmd, log_path, timeout_s, cwd) -> returncode``; the default runs ``subprocess``. Tests inject a fake.
+Runner = Callable[[list, Path, float, Path], int]
 
 
 # --------------------------------------------------------------------------------------------- EuRoC prep
@@ -235,32 +237,32 @@ def write_orbslam3_settings(rig, path, scale: float = 1.0, imu_rate_hz: float | 
     return path
 
 
-# --------------------------------------------------------------------------------------------- docker
+# --------------------------------------------------------------------------------------------- run
 
-def orbslam3_docker_command(image: str, work_dir, name: str = TRAJ_NAME, docker: str = "docker",
-                            user: str | None = None) -> list[str]:
-    """``docker run`` for one episode: ``work_dir`` is mounted at /data (also the working dir, where
-    mono_inertial_euroc writes ``f_<name>.txt``)."""
-    work_dir = Path(work_dir).resolve()
-    if user is None and hasattr(os, "getuid"):
-        user = f"{os.getuid()}:{os.getgid()}"
-    cmd = [docker, "run", "--rm"]
-    if user:
-        cmd += ["--user", user]
-    cmd += ["-v", f"{work_dir}:/data", "-w", "/data", image, ORB_BIN, ORB_VOC, f"/data/{SETTINGS_FILE}", "/data",
-            "/data/times.txt", name]
-    return cmd
+def default_orb_slam3_dir() -> Path:
+    """``$ORB_SLAM3_DIR`` if set, else ``~/ORB_SLAM3``."""
+    return Path(os.environ.get(ORB_SLAM3_DIR_ENV) or Path.home() / "ORB_SLAM3").expanduser()
 
 
-def subprocess_runner(cmd: list, log_path: Path, timeout_s: float) -> int:
-    """Run ``cmd`` with stdout+stderr to ``log_path``; the return code (SlamError if the binary is missing)."""
-    if shutil.which(cmd[0]) is None:
-        raise SlamError(f"orbslam3: '{cmd[0]}' not found on PATH")
+def orbslam3_command(orb_dir, work_dir, name: str = TRAJ_NAME) -> list[str]:
+    """The native ``mono_inertial_euroc`` call for one episode; run it with cwd ``work_dir`` (where it writes
+    ``f_<name>.txt``)."""
+    orb_dir, work_dir = Path(orb_dir).resolve(), Path(work_dir).resolve()
+    return [str(orb_dir / ORB_BIN), str(orb_dir / ORB_VOC), str(work_dir / SETTINGS_FILE), str(work_dir),
+            str(work_dir / "times.txt"), name]
+
+
+def subprocess_runner(cmd: list, log_path: Path, timeout_s: float, cwd: Path) -> int:
+    """Run ``cmd`` in ``cwd`` with stdout+stderr to ``log_path``; the return code (SlamError if it is missing)."""
+    exe = Path(cmd[0])
+    if not (exe.is_file() and os.access(exe, os.X_OK)):
+        raise SlamError(f"orbslam3: {exe} not found or not executable; build ORB-SLAM3 (docs/ORBSLAM3.md) or set "
+                        f"${ORB_SLAM3_DIR_ENV}")
     with open(log_path, "a") as log:
         try:
-            p = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=timeout_s)
+            p = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=timeout_s, cwd=cwd)
         except subprocess.TimeoutExpired:
-            raise SlamError(f"orbslam3: container timed out after {timeout_s} s, see {log_path}") from None
+            raise SlamError(f"orbslam3: timed out after {timeout_s} s, see {log_path}") from None
     return p.returncode
 
 
@@ -335,18 +337,18 @@ def import_trajectory(path, t_frames_ns, snap_tol_ns: int = 1_000_000) -> tuple[
 # --------------------------------------------------------------------------------------------- backend
 
 class Orbslam3Backend(SlamBackend):
-    """ORB-SLAM3 mono-inertial in Docker. Options: ``image``, ``scale`` (VIO image downscale), ``imu_rate_hz``
-    (block-average the IMU down to about this rate), ``docker``, ``timeout_s``, ``runner`` (inject a fake for tests),
-    ``user`` (``--user`` of docker run; default this UID:GID), ``n_features``, ``motion_limits``."""
+    """ORB-SLAM3 mono-inertial, native build. Options: ``orb_slam3_dir`` (default ``$ORB_SLAM3_DIR`` or
+    ``~/ORB_SLAM3``), ``scale`` (VIO image downscale), ``imu_rate_hz`` (block-average the IMU down to about this
+    rate), ``timeout_s``, ``runner`` (inject a fake for tests), ``n_features``, ``motion_limits``."""
 
     name = "orbslam3"
 
-    def __init__(self, *, image: str = DEFAULT_IMAGE, scale: float = 1.0, imu_rate_hz: float | None = None,
-                 docker: str = "docker", timeout_s: float = 3600.0, runner: Runner | None = None,
-                 user: str | None = None, n_features: int = 1500, motion_limits: dict | None = None,
-                 frames=None):
-        self.image, self.scale, self.imu_rate_hz = image, float(scale), imu_rate_hz
-        self.docker, self.timeout_s, self.runner, self.user = docker, float(timeout_s), runner, user
+    def __init__(self, *, orb_slam3_dir=None, scale: float = 1.0, imu_rate_hz: float | None = None,
+                 timeout_s: float = 3600.0, runner: Runner | None = None, n_features: int = 1500,
+                 motion_limits: dict | None = None, frames=None):
+        self.orb_dir = Path(orb_slam3_dir).expanduser() if orb_slam3_dir else default_orb_slam3_dir()
+        self.scale, self.imu_rate_hz = float(scale), imu_rate_hz
+        self.timeout_s, self.runner = float(timeout_s), runner
         self.n_features, self.motion_limits, self._frames = int(n_features), motion_limits, frames
 
     def prepare(self, episode, rig, work_dir) -> dict:
@@ -363,13 +365,17 @@ class Orbslam3Backend(SlamBackend):
         for stale in (work / f"f_{TRAJ_NAME}.txt", work / f"kf_{TRAJ_NAME}.txt", work / LOG_FILE):
             stale.unlink(missing_ok=True)
         prep = self.prepare(episode, rig, work)
-        cmd = orbslam3_docker_command(self.image, work, TRAJ_NAME, self.docker, self.user)
+        cmd = orbslam3_command(self.orb_dir, work, TRAJ_NAME)
         log = work / LOG_FILE
-        log.write_text("$ " + " ".join(shlex.quote(c) for c in cmd) + "\n")
-        rc = (self.runner or subprocess_runner)(cmd, log, self.timeout_s)
+        log.write_text(f"$ cd {shlex.quote(str(work))} && " + " ".join(shlex.quote(c) for c in cmd) + "\n")
+        rc = (self.runner or subprocess_runner)(cmd, log, self.timeout_s, work)
         out = work / f"f_{TRAJ_NAME}.txt"
         if rc != 0:
-            raise SlamError(f"orbslam3: container failed (rc={rc}), see {log}")
+            if re.search(r"Map \d+ has 0 KFs", log.read_text(errors="replace")):
+                # ORB-SLAM3 crashes while saving an empty map: it never initialised (no keyframe ever made)
+                raise SlamError(f"orbslam3: never initialised (0 keyframes; mono-inertial needs the camera to "
+                                f"move with parallax: a static recording cannot work), see {log}")
+            raise SlamError(f"orbslam3: mono_inertial_euroc failed (rc={rc}), see {log}")
         if not out.is_file() or out.stat().st_size == 0:
             raise SlamError(f"orbslam3: no trajectory {out} (tracking never initialised?), see {log}")
         log_text = log.read_text(errors="replace")
@@ -382,7 +388,8 @@ class Orbslam3Backend(SlamBackend):
         prep_d = {k: v for k, v in prep.items() if k != "t_cam_ns"}
         return finalize_trajectory(traj, episode, rig, t_uw, align=True, align_min_deg=0.0,
                                    motion_limits=self.motion_limits, n_maps=n_maps, n_resets=n_resets,
-                                   diagnostics={"backend": self.name, "image": self.image, "command": cmd,
+                                   diagnostics={"backend": self.name, "orb_slam3_dir": str(self.orb_dir),
+                                                "command": cmd,
                                                 "prep": prep_d, "import": imp, "log": str(log),
                                                 "imu_init": imu_init,
                                                 "n_not_enough_motion_resets": imu_init["not_enough_motion_reset"]})

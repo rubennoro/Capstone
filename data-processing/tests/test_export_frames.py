@@ -12,7 +12,8 @@ from dataproc.export.frames import downsample_local, latest_at_or_before, neares
 
 MS = 1_000_000
 GRID_NS = 16_666_667                      # 60 Hz
-IPHUMI_ALIGN = Path("/home/ruben/Capstone/iPhUMI/python_package/iphumi/demonstration_processing/process_stages/align.py")
+REPO = Path(__file__).resolve().parents[2]          # the Capstone checkout
+IPHUMI_ALIGN = REPO / "iPhUMI/python_package/iphumi/demonstration_processing/process_stages/align.py"
 
 
 def grid(n, t0=0):

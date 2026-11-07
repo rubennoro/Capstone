@@ -11,7 +11,7 @@ dataproc sim --out $DATAPROC_ROOT/incoming --episodes 5                  # five 
 dataproc sim --out $DATAPROC_ROOT/incoming --episodes 2 --fast --seed 3  # small + quick, for tests
 ```
 
-**Do not run `dataproc sim` against the real data root on the Jetson** (`/data/rig`): the synthetic episodes land
+**Do not run `dataproc sim` against the real data root on the Jetson** (`~/data`): the synthetic episodes land
 in the real `incoming/` and the next intake mixes them into real tasks, and `sim` copies the (nominal) rig yaml it
 rendered with into `rigs/` if that `<rig_id>.yaml` is missing there. Always point `DATAPROC_ROOT` (or `--out` and
 `--rigs-dir`) at a scratch directory.

@@ -28,8 +28,12 @@ Running status between working sessions. Update it at the end of each conversati
     pushed). One reviewer signed off each wave. Docs: `data-processing/docs/{DESIGN,INTAKE,PROCESS,EXPORT,GEOMETRY,SIM}.md`.
   - Env: a py3.10 venv with `pip install -e data-processing[test]` (pins in DESIGN.md "Development environment");
     run pytest with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` (a ROS plugin crashes otherwise).
-  - ORB-SLAM3 image `dataproc/orbslam3:v1.0` is built locally (3.25 GB; build with `--builder default`) but has
-    **never been run on data**.
+  - 2026-11-07, on the Jetson: Docker removed. ORB-SLAM3 is **built natively** at `~/ORB_SLAM3` (v1.0-release
+    `0df83dd`; Pangolin v0.6 in `/usr/local`; 8 GB swap at `/swapfile`). Exact recipe and patches:
+    `data-processing/docs/ORBSLAM3.md`. Python deps pinned in `pyproject.toml` (py3.12 env `~/envs/env_dataproc`, 507
+    tests pass). **Not yet run on data.** The Pi's recordings in `/data/incoming` don't match CONTRACT.md yet (meta.json,
+    CSV headers, cam0/cam1 roles swapped, no `.verified`), and the Pi writes to `/data/incoming`, not
+    `/data/rig/incoming` (use `DATAPROC_ROOT=/data`).
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -79,14 +83,14 @@ Running status between working sessions. Update it at the end of each conversati
 ## Next time
 
 0. `dataproc` (deferred on purpose; see data-processing/docs):
-   - Real ORB-SLAM3 run on full-res `dataproc sim` episodes: tracking, scale check, pose error; pre-roll length needed.
+   - Connect native ORB-SLAM3 to the real recordings in `/data/incoming` (format mismatch first; see Current state).
    - Training check: load an output zip with `UmiTaskDataset` (umi / umi_prompt) and run one forward+backward of both
      policies (needs a torch env).
    - `dataproc ship` (copy the zip to laptop/cluster with checksum), `rig-verify` (the Jetson script the Pi calls),
      `docs/STATUS.md`.
    - Deployment design: Pi stream mode over Ethernet ("one capture pipeline, two outputs"), deployment must import
      `dataproc.imageprep`, same TCP definition as the rig's `T_cam_tcp`, policy inference speed on the Orin Nano.
-   - On hardware: Kalibr calibration, Pi timestamp semantics (`timestamp_ref`), Jetson arm64 docker build.
+   - On hardware: Kalibr calibration, Pi timestamp semantics (`timestamp_ref`).
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.

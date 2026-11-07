@@ -88,6 +88,9 @@ class TaskProcessor:
         from dataproc.intake import IntakeError, read_ledger
         from dataproc.slam import BACKENDS, get_backend
 
+        from dataproc.slam import resolve_backend_name
+
+        self.slam = resolve_backend_name(self.slam)
         if self.slam not in BACKENDS:
             raise ProcessError(f"unknown --slam {self.slam!r} (expected one of {sorted(BACKENDS)})")
         if not self.task_dir.is_dir():

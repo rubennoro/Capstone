@@ -15,7 +15,8 @@ from dataproc._vendor.replay_buffer import get_optimal_chunks
 from dataproc.export.frames import ultrawide_substream
 from dataproc.export.zarr_writer import IMAGE_SHAPE, EpisodeArrays, build_task_zarr_zip, write_episode_zarr
 
-GOLDEN = Path("/home/ruben/Capstone/scripts/regression/golden/iphone_firstreal_5ep.json")
+REPO = Path(__file__).resolve().parents[2]          # the Capstone checkout
+GOLDEN = REPO / "scripts/regression/golden/iphone_firstreal_5ep.json"
 IMAGE_KEYS = {"data/camera_right_main_rgb", "data/camera_right_ultrawide_rgb"}
 
 

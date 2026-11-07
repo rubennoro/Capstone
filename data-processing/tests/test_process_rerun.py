@@ -10,6 +10,7 @@ import pytest
 from dataproc.files import load_status
 from dataproc.process import run_process
 from dataproc.report import STAGE_NAMES as STAGES
+from dataproc.stages.geometry import SlamStage
 from dataproc._vendor.replay_buffer import ReplayBuffer
 from test_process_common import (N_DEMOS, TASK, copy_root, fast_rig_dict, processed_root, quiet, task_dir,
                                  template_root, write_rig)
@@ -129,7 +130,7 @@ def test_status_json_records(root):
     for s in STAGES:
         r = st[s]
         assert r["status"] == "done" and len(r["inputs_hash"]) == 64 and r["t_end"] >= r["t_start"]
-        assert r["version"] == 1 and r["reason"] is None and r["reasons"] == [] and isinstance(r["outputs"], dict)
+        assert r["version"] == (SlamStage.version if s == "slam" else 1) and r["reason"] is None and r["reasons"] == [] and isinstance(r["outputs"], dict)
     assert st["export"]["outputs"]["n_steps"] == 150
     assert len({st[s]["inputs_hash"] for s in STAGES}) == len(STAGES)
     shutil.rmtree(task_dir(root) / "episode_0" / "processed")          # lost processed/: everything reruns

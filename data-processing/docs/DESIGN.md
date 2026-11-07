@@ -7,7 +7,7 @@ offline, after recording.
 
 ## Folder layout
 
-Root: `$DATAPROC_ROOT`, default `/data/rig` (`dataproc/paths.py`).
+Root: `$DATAPROC_ROOT`, default `~/data` (`dataproc/paths.py`).
 
 ```
 incoming/<pi_episode>/                 as delivered by the Pi (+ .verified from the Jetson)
@@ -98,7 +98,8 @@ exposure_ns)` and `RigConfig.imu_time_ns(t_ns)`. VIO noise: `imu.noise` × the o
 factors (`ImuNoise.for_vio()`).
 
 **SLAM is pluggable.** A backend takes the raw episode + rig and returns a camera trajectory with validity:
-- `orbslam3`: ORB-SLAM3 mono-inertial in Docker on the fisheye ultrawide + IMU;
+- `orbslam3`: ORB-SLAM3 mono-inertial (native build on the Jetson, [ORBSLAM3.md](ORBSLAM3.md)) on the fisheye
+  ultrawide + IMU;
 - `oracle`: synthetic truth + noise, for tests.
 
 ## Output zarr contract
@@ -144,7 +145,9 @@ comment; `dataproc` imports neither.
 
 ## Development environment
 
-Python 3.10 venv (versions match iPhUMI's `environment.yml`):
+The versions below (they match iPhUMI's `environment.yml`) are pinned in `pyproject.toml`. On the Jetson (Python
+3.12, aarch64) the same pins install; `numcodecs` 0.13.1 has no aarch64/3.12 wheel there and is compiled (needs
+`build-essential`). Laptop recipe (Python 3.10 venv):
 
 ```bash
 ENV=/tmp/claude-1000/-home-ruben-Capstone/5f0864d3-a420-45bc-b87f-4236508c9d74/scratchpad/env_dataproc

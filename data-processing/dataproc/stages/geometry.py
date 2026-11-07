@@ -32,9 +32,9 @@ class SlamStage(Stage):
     manifest, the backend name, ``cameras.ultrawide`` and ``imu`` are unchanged."""
 
     name = "slam"
-    # Only the backend *name* is hashed, not its options: bump this version when the ORB-SLAM3 image tag
-    # (orbslam3.DEFAULT_IMAGE) or the backend's settings defaults change, so every episode's slam re-runs.
-    version = 1
+    # Only the backend *name* is hashed, not its options: bump this version when the ORB-SLAM3 build or the
+    # backend's settings defaults change, so every episode's slam re-runs. v2: native ORB-SLAM3 instead of Docker.
+    version = 2
     deps = ("check",)
 
     def inputs(self, ctx, ep) -> dict:
@@ -46,6 +46,9 @@ class SlamStage(Stage):
         from dataproc.slam import SlamError
         from dataproc.slam.oracle import TRUTH_FILE
 
+        if ctx.backend_name == "none":
+            raise StageFailed("failed", ["slam_unavailable"], "no SLAM backend installed (--slam none); build "
+                              "ORB-SLAM3 (docs/ORBSLAM3.md) and re-run: every stage from slam on runs then")
         if ctx.backend_name == "oracle" and not (ep.raw_dir / TRUTH_FILE).is_file():
             raise StageFailed("failed", ["oracle_no_truth"], f"--slam oracle needs raw/{TRUTH_FILE} (synthetic "
                               "episodes only); use --slam orbslam3 for real episodes")

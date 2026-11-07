@@ -1,265 +1,297 @@
-# dataproc: running it on the Jetson
+# dataproc: Pi recordings → policy training data
 
-`dataproc` runs on the Jetson. It turns the episodes the Pi 5 records into one training file, a `.zarr.zip`.
+`dataproc` runs on the Jetson. It takes the episodes the Pi 5 records into `/data/incoming/` and turns them into one
+training file per task, `<task>.zarr.zip`. That file trains both the **behavior prompting** policy
+(`umi_policy_dunetp`) and the **regular diffusion** policy (`umi_policy_dunet`) unchanged.
 
-The flow:
+- **This README** explains *what* goes in, *what* comes out and *how* each piece of data is converted. It also covers
+  one-time setup.
+- **[DIRECTIONS.md](DIRECTIONS.md)** is the step-by-step "I have episodes in `/data/incoming`, now what?" guide.
 
-1. The Pi records an episode and copies it to the Jetson's `/data/rig/incoming/`.
-2. `dataproc intake` checks the episode and files it under a task.
-3. `dataproc process` turns the task's episodes into `output/<task>.zarr.zip`.
-4. You copy that zip to the cluster and train on it.
-
-The steps below are in order. Part A is done once per Jetson. Part B is an optional practice run on fake data.
-Part C is what you do every time you record.
-
-> **Not working yet: real recordings.** `process` needs ORB-SLAM3 to work out where the camera was, and ORB-SLAM3
-> isn't set up on the Jetson yet (see [Later: ORB-SLAM3](#later-orb-slam3)). Until it is, you can intake real
-> episodes, but `process` only works on fake ones (`--slam oracle`).
+```
+ Pi 5 rig ──rsync──▶ /data/incoming/episode_NNNNNN/          (Pi format; read only, never changed)
+                            │
+                            │  dataproc run --task <task> ...
+                            ▼
+   1. adapt     convert a copy into dataproc's format         ~/data/incoming/<copy>/  (brief staging)
+   2. intake    file it under the task                        ~/data/tasks/<task>/episode_N/raw/
+   3. process   calibration + 8 stages per episode            ~/data/tasks/<task>/episode_N/processed/
+   4. export    every good episode into one zip               ~/data/tasks/<task>/output/<task>.zarr.zip
+                            │
+                            │  copy to the cluster (DIRECTIONS.md, step 7)
+                            ▼
+        ~/CapstoneProject/datasets/<task>/<dataset>/<dataset>.zarr.zip  ──▶  train (dunetp or dunet)
+```
 
 ---
 
-## Part A: one-time setup
+## 1. What one Pi episode contains (the input)
 
-Assumes JetPack 6 (Ubuntu 22.04, which ships Python 3.10). Run everything as your normal user unless it says `sudo`.
+One folder per recording, e.g. `/data/incoming/episode_000004/`. Each recording is a fixed **15 s** clip.
 
-**A1. Install the system packages.**
+| File | What it is | Details |
+|---|---|---|
+| `cam0.mp4` | **Ultrawide camera** (IMX219, ~160° fisheye) | 1280×960 at 30 fps, H.264. Sees the gripper fingers and the scene. |
+| `cam1.mp4` | **Main camera** (IMX519) | 1600×900 at 60 fps, H.264. The forward view. |
+| `cam0_frames.csv`, `cam1_frames.csv` | One row per video frame: `frame_index,t_ns` | `t_ns` = when the frame was captured (libcamera `SensorTimestamp`, ns on the Pi's boot clock). |
+| `imu.csv` | `sample_index,t_ns,gx,gy,gz,ax,ay,az` | LSM6DSOX at 104 Hz, **raw int16 counts** (gyro and accelerometer). Same clock as the cameras. |
+| `meta.json` | The Pi's notes | Episode number, `valid` / `problems`, each camera's model, size, fps and frame count, IMU scale factors (`accel_g_per_lsb`, `gyro_dps_per_lsb`), start/end time. |
+| `MANIFEST.sha256` | Checksums of the files above | Proves nothing was corrupted in transfer. |
+| `COMPLETE` | Empty marker | The Pi finished writing the episode. |
+
+**Not in a Pi episode, but needed for training:**
+
+| Missing | How dataproc fills the gap |
+|---|---|
+| Which task it belongs to | You name it: `dataproc run --task <task>` |
+| Which recording is the gripper calibration | You name it: `--calibration-episode <dir>` |
+| Gripper position and rotation | Computed by SLAM (ORB-SLAM3) from the ultrawide video + IMU |
+| Gripper opening width | Measured from the finger ArUco tags in the ultrawide video, scaled by the calibration |
+| Start/stop of the demonstration | None recorded: the **whole clip** is used |
+| Per-frame exposure time | Assumed 5 ms (the Pi doesn't record it yet) |
+| Camera/IMU geometry (lens model, offsets, gripper-tip position) | The rig file `configs/rigs/rig_pi_v1.yaml` (estimated values until calibrated) |
+
+---
+
+## 2. What training needs (the output)
+
+One `.zarr.zip` per task (iPhUMI's format, the same one the existing `firstreal-single` dataset uses). Per
+**step** (60 per second of recording):
+
+| Array in the zip | Shape (per step) | Meaning | Comes from |
+|---|---|---|---|
+| `data/camera_right_main_rgb` | 224×224×3 image | Main camera view | `cam1.mp4` (IMX519) |
+| `data/camera_right_ultrawide_rgb` | 224×224×3 image, **10 per second** | Ultrawide view, undistorted to the iPhone ultrawide's lens | `cam0.mp4` (IMX219) |
+| `data/gripper_right_eef_pos` | 3 floats (m) | Gripper tip position, gravity-aligned world | SLAM + rig geometry |
+| `data/gripper_right_eef_rot_axis_angle` | 3 floats | Gripper tip rotation (axis-angle) | SLAM + rig geometry |
+| `data/gripper_right_gripper_width` | 1 float (m) | How open the gripper is | Finger tags + calibration |
+| `meta/episode_ends`, `meta/episode_names` | per episode | Where each episode ends; its Pi name | Bookkeeping |
+| `meta/task_names` (+ `task_lengths`, `task_data_ends`, ...) | per episode | The task label (`--task`), one task per episode | `--task` |
+| `meta/*_camera_right_ultrawide_rgb` | index maps | Which 10 Hz ultrawide image goes with each 60 Hz step | Frame timing |
+
+How the policies read it (both use the same file):
+
+- **Observations:** 2 recent main images (taken every 3rd step, i.e. 20 Hz), 2 recent ultrawide images, and the
+  gripper pose (made relative to the current pose; rotation converted to a 6-number form) and width.
+- **Actions:** not stored. The training code builds them from future poses and widths
+  (position 3 + rotation 6 + width 1, predicted in chunks).
+- **Behavior prompting (`dunetp`) only:** pairs each training sample with *another whole demo of the same
+  `task_names` value* as its "prompt". So it needs **at least 2 good demos per task**; more is much better
+  (`firstreal-single` had 45).
+- **Regular diffusion (`dunet`):** ignores the task names and samples per episode. The cluster training script
+  defaults to `dunetp`; switching to `dunet` is a one-line change in `scripts/cluster/train.sbatch`.
+
+---
+
+## 3. Step by step: from Pi episode to training file
+
+Everything below runs from one command, `dataproc run` (see [DIRECTIONS.md](DIRECTIONS.md)). Each step saves its
+result, so a later run continues where the last one stopped instead of starting over.
+
+| # | Step | Reads | Produces | Stops the episode when |
+|---|---|---|---|---|
+| 1 | **adapt** (`dataproc/pi_adapter.py`) | `/data/incoming/<dir>/` | A converted copy: cameras renamed by sensor (IMX519 → `cam0` = main, IMX219 → `cam1` = ultrawide), IMU in rad/s and m/s², `meta.json` in dataproc's format, new checksums | No `COMPLETE`, a checksum mismatch, the Pi marked it invalid, or it was already used (`~/data/pi_sources.csv`) |
+| 2 | **intake** | the converted copy | `tasks/<task>/episode_N/raw/` (or `calibration/<name>/raw/`), a row in `episodes.csv` | Format errors, duplicate, wrong rig: moved to `~/data/quarantine/` with `reason.json` |
+| 3 | **calibration** (once per task) | the calibration episode's ultrawide video | `gripper_range.json`: tag spacing at fully closed and fully open | Both finger tags never seen together. Every episode then stops at step 8. |
+| 4 | **check** | the whole episode, every video frame decoded | `check.json` | A file problem, or resolution/fps doesn't match the rig file |
+| 5 | **slam** | ultrawide video (grayscale) + IMU | `slam/trajectory.tum`: the IMU's path through space, gravity-aligned | No ORB-SLAM3, or it never initialised (the camera didn't move enough) |
+| 6 | **grid** | the recording's time span | `grid.npy`: one step every 1/60 s over the whole clip | Clip shorter than 2 steps |
+| 7 | **pose** | SLAM path + rig geometry | `pose.npz`: gripper-tip position and rotation at each step | (Steps with no SLAM pose within 100 ms are marked invalid) |
+| 8 | **width** | every ultrawide frame + `gripper_range.json` | `width.npz`: gripper width at each step | No calibration (or it failed) |
+| 9 | **validate** | everything above | `validate.json`: the usable span of the episode | Too fast (> 3 m/s), SLAM lost track (< 95% tracked), tags visible in < 80% of frames, an IMU gap > 20 ms, an ultrawide gap > 100 ms, or < 2 s usable |
+| 10 | **images** | both videos | the selected frames (in memory) | A step has no main frame within 25 ms |
+| 11 | **export** | images, poses, widths | `episode.zarr`: this episode's training data | — |
+| 12 | **zip** (task level) | every exported `episode.zarr` | `output/<task>.zarr.zip` + `output/report.json` | No episode exported |
+
+A failed episode never blocks the others. The zip contains every episode that reached export.
+
+---
+
+## 4. Per data source: what happens to each file
+
+```
+Pi file                    used in steps                       ends up as
+───────────────────────    ────────────────────────────────    ─────────────────────────────────────────────
+cam0.mp4 (IMX219 fisheye)  calibration, check, slam, width,    camera_right_ultrawide_rgb
+                           images                              + (via slam) eef_pos / eef_rot_axis_angle
+                                                               + (via tags) gripper_width
+cam1.mp4 (IMX519 main)     check, images                       camera_right_main_rgb
+cam*_frames.csv            every step that aligns in time      the timing that ties images, poses, widths together
+imu.csv                    slam, validate                      (via slam) eef_pos / eef_rot_axis_angle; not stored itself
+meta.json                  adapt, check                        camera roles, sizes, IMU scale factors, episode name
+MANIFEST.sha256, COMPLETE  adapt, intake, check                (integrity only)
+rig_pi_v1.yaml (not Pi)    every geometric step                lens models, camera↔IMU offsets, gripper-tip offset
+calibration episode        calibration                         the scale for gripper_width
+```
+
+**Ultrawide video (`cam0.mp4`, IMX219).** The workhorse.
+1. *SLAM:* frames are written as grayscale images with their timestamps and fed to ORB-SLAM3 together with the IMU.
+   ORB-SLAM3 tracks features to recover how the camera moved.
+2. *Width:* each frame is remapped from the physical fisheye to a virtual 640×480 pinhole view (the iPhone
+   ultrawide's lens, so data matches the iPhone pipeline). The two finger ArUco tags are detected in it. The
+   horizontal distance between them, mapped through the calibration range, gives the width.
+3. *Images:* every 1/10 s, the nearest frame is taken, remapped the same way, letterboxed to a black square and
+   resized to 224×224. Each 60 Hz step points at the latest of these at or before it.
+
+**Main video (`cam1.mp4`, IMX519).** Only used for images: for every 60 Hz step, the frame nearest in time
+(at most 25 ms away) is letterboxed and resized to 224×224. No undistortion.
+
+**Frame timestamps (`cam*_frames.csv`).** Each `t_ns` marks the end of exposure. dataproc shifts it back half an
+exposure to the middle of the exposure. That makes images, IMU and poses line up in time. Gaps between stamps
+reveal dropped frames.
+
+**IMU (`imu.csv`).** Converted from raw counts to rad/s and m/s² using the scale factors in `meta.json`.
+ORB-SLAM3 uses it for real-world scale (metres) and gravity direction. dataproc uses it to point the world's z axis
+up and to check SLAM's scale. Validate rejects an episode with an IMU gap over 20 ms. The IMU readings themselves are
+not stored in the zip.
+
+**Poses.** SLAM gives the IMU's pose over time. Each step's gripper-tip pose is that pose, times the
+IMU→ultrawide-camera offset, times the camera→gripper-tip offset (both from the rig file), in a gravity-aligned
+world.
+
+**Gripper width.** The calibration episode gives the tag spacing at fully closed and fully open, plus a mapping
+between the two tags' positions. In demos, width = tag spacing (or the predicted spacing when one tag is hidden),
+clipped to that range, with fully closed reading 0.
+
+---
+
+## 5. Command-line options and why they exist
+
+`dataproc run` is the one command for Pi recordings. Its options:
+
+| Option | Default | Why it exists |
+|---|---|---|
+| `--task NAME` | required | The Pi doesn't know what task you're recording. The name is the task folder and the label written into the zip (`task_names`), which behavior prompting uses to pair demos. Letters, digits, `_`, `-`. |
+| `--calibration-episode DIR` | — | The gripper width needs one calibration recording per task, and the Pi can't mark which recording that is. Required the first time, unless `--no-calibration`. A newer one replaces the old one. |
+| `--no-calibration` | off | To process recordings before a calibration exists (e.g. to test whether SLAM tracks). Everything up to the width step runs and is kept. No zip until you add a calibration; then only width onward reruns. |
+| `--episodes DIR ...` | every new one | By default every unused episode in `/data/incoming` is taken as a demo of `--task`. This picks just a few, e.g. for a quick test, or when the folder holds recordings of different tasks. |
+| `--dry-run` | off | Prints what would be taken (and what's skipped, with reasons) and changes nothing. Taking an episode marks it as used, so check first. |
+| `--source DIR` | `/data/incoming` | Where the Pi delivers. Only ever read. |
+| `--rig RIG_ID` | `rig_pi_v1` | Which rig file describes the cameras, IMU and gripper (`~/data/rigs/<id>.yaml`, copied in automatically). Change it when the hardware or its calibration changes. |
+| `--slam auto\|orbslam3\|none\|oracle` | `auto` | `auto` uses ORB-SLAM3 when it's built, else `none` (stop at SLAM, exit code 3, and resume later). `oracle` is only for fake `dataproc sim` episodes. |
+
+Exit codes: `0` = zip built, `3` = stopped at SLAM because none is installed, `1` = anything else (including "no
+episode got through": read the table it prints).
+
+Other commands:
+
+| Command | Use it for |
+|---|---|
+| `dataproc status --task NAME` | A table of every episode: last stage reached, and why it stopped. Read only. |
+| `dataproc process --task NAME [--episode N] [--force]` | Re-run processing without taking new episodes. `--force` redoes every stage, e.g. after editing the rig file by hand. |
+| `dataproc intake ...`, `dataproc sim ...` | Lower level: for a Pi that sends dataproc's own format directly ([docs/CONTRACT.md](docs/CONTRACT.md)), and for fake test data. |
+
+Settings from the environment:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `DATAPROC_ROOT` | `~/data` | Where all output goes. **If it's still set from the practice run, output goes to `~/dataproc_practice`.** `dataproc run` prints the folder it uses on its first line. |
+| `ORB_SLAM3_DIR` | `~/ORB_SLAM3` | Where ORB-SLAM3 is built. |
+
+---
+
+## 6. One-time setup
+
+Written for this Jetson: JetPack 7 (Ubuntu 24.04), Python 3.12. Run everything as your normal user unless it says
+`sudo`. **On the current Jetson all of this is already done.**
+
+**A1. System packages.** `build-essential` is needed to compile one Python package (`numcodecs`).
 
 ```bash
 sudo apt update
-sudo apt install -y git python3.10-venv
+sudo apt install -y git python3-venv build-essential
 ```
 
-**A2. Get the code.** The code is on the `rnoro/data-work` branch.
+**A2. Code** (branch `rnoro/data-work`).
 
 ```bash
-cd ~
-git clone git@github.com:rubennoro/Capstone.git
-cd ~/Capstone
-git checkout rnoro/data-work
+cd ~ && git clone git@github.com:rubennoro/Capstone.git
+cd ~/Capstone && git checkout rnoro/data-work
 ```
 
-If you already have a clone, run `cd ~/Capstone && git fetch && git checkout rnoro/data-work && git pull` instead.
-
-**A3. Make a Python environment and install `dataproc`.** This can take several minutes.
+**A3. Python environment.** Takes several minutes. Versions are pinned in `pyproject.toml` (newer OpenCV, SciPy and
+numcodecs releases break it).
 
 ```bash
-python3.10 -m venv ~/envs/env_dataproc
+python3 -m venv ~/envs/env_dataproc
 ~/envs/env_dataproc/bin/pip install --upgrade pip
-cd ~/Capstone
-~/envs/env_dataproc/bin/pip install -e "data-processing[test]"
+cd ~/Capstone && ~/envs/env_dataproc/bin/pip install -e "data-processing[test]"
 ```
 
-**A4. Turn the environment on.** Do this in every new terminal before using `dataproc`:
+**A4. Turn the environment on** in every new terminal (or add the line to the end of `~/.bashrc`):
 
 ```bash
 source ~/envs/env_dataproc/bin/activate
 ```
 
-To have it on automatically, add that line to the end of `~/.bashrc`.
-
-**A5. Check the install.** Both commands should succeed. The tests take a few minutes and should end with
-`505 passed, 1 skipped` (or similar, with no failures).
+**A5. Check the install.** The tests take ~7 minutes and should end with only passes and skips.
 
 ```bash
 dataproc --help
-cd ~/Capstone
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest data-processing/tests -q
+cd ~/Capstone && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest data-processing/tests -q
 ```
 
-**A6. Make the data folder** and give it to your user. The Pi copies episodes into `/data/rig/incoming/`.
+**A6. Data folder.** `mkdir -p ~/data`. Everything dataproc writes goes under it. `dataproc run` creates the rest
+(`incoming/`, `tasks/`, `rigs/`, `quarantine/`) and copies the rig file in.
 
-```bash
-sudo mkdir -p /data/rig/incoming /data/rig/rigs
-sudo chown -R $USER:$USER /data/rig
-```
-
-Keep all of `/data/rig` on one disk. Intake moves episodes instead of copying them, so `incoming/` and `tasks/`
-have to be on the same filesystem.
-
-**A7. Copy in the rig description.** It tells `process` about the cameras, IMU and gripper.
-
-```bash
-cp ~/Capstone/data-processing/configs/rigs/rig_v1.yaml /data/rig/rigs/
-```
-
-For now its numbers are nominal (datasheet and CAD guesses). After the rig is calibrated, put the real values in
-`/data/rig/rigs/rig_v1.yaml`. The `rig_id` in each episode's `meta.json` has to match a file name in
-`/data/rig/rigs/`.
-
-Setup is done.
+**A7. ORB-SLAM3.** Built natively in `~/ORB_SLAM3` (done on 2026-11-07). Recipe and patches:
+[docs/ORBSLAM3.md](docs/ORBSLAM3.md). `dataproc run` finds it automatically.
 
 ---
 
-## Part B (optional): practice run on fake data
+## 7. Practice run on fake data (optional)
 
-This runs the whole flow on fake episodes that `dataproc sim` makes, so you can see what each command prints. It
-uses its own folder, `~/dataproc_practice`, so nothing gets mixed into the real `/data/rig`.
+`dataproc sim` makes fake episodes with a known answer, so you can see every command work without hardware. It
+uses its own folder so nothing mixes with real data.
 
 ```bash
 source ~/envs/env_dataproc/bin/activate
-export DATAPROC_ROOT=~/dataproc_practice        # only for this terminal
+export DATAPROC_ROOT=~/dataproc_practice        # this terminal only
 mkdir -p $DATAPROC_ROOT/incoming
-
-# 1. Fake "the Pi sent a calibration episode", then intake it as calibration
 dataproc sim --out $DATAPROC_ROOT/incoming --calibration --episodes 1 --fast --seed 1
 dataproc intake --task practice --calibration
-
-# 2. Fake "the Pi sent 3 demos", then intake them
 dataproc sim --out $DATAPROC_ROOT/incoming --episodes 3 --fast --seed 2
 dataproc intake --task practice
-
-# 3. Process (oracle = use the fake data's known answer instead of ORB-SLAM3)
-dataproc process --task practice --slam oracle
+dataproc process --task practice --slam oracle   # oracle = the fake data's known answer instead of ORB-SLAM3
 dataproc status --task practice
 ```
 
-What you should see:
+You should see `calibration: done`, `exported` for each episode, and
+`~/dataproc_practice/tasks/practice/output/practice.zarr.zip`. A `note: rig ... still has nominal sections` is
+expected (the rig isn't calibrated).
 
-- The calibration intake prints `... -> calibration/...` and `1 ingested`.
-- The demo intake prints `-> episode_0`, `-> episode_1`, `-> episode_2` and `3 ingested`.
-- `process` prints `calibration: done` and `exported` for each episode, then writes
-  `~/dataproc_practice/tasks/practice/output/practice.zarr.zip`.
-- `process` also prints a `note: rig ... still has nominal sections`. That's expected: it means the rig isn't
-  calibrated yet.
-
-When you're done, close the terminal (or `unset DATAPROC_ROOT`) so later commands use `/data/rig` again. You can
-delete `~/dataproc_practice` whenever you like.
+**When done, run `unset DATAPROC_ROOT` (or close the terminal).** Otherwise your real runs also go to
+`~/dataproc_practice`.
 
 ---
 
-## Part C: every recording session
+## 8. Troubleshooting
 
-Pick a task name first, for example `block_raise`. Letters, numbers, `_` and `-` only. Use the same name for every
-command below.
-
-```bash
-source ~/envs/env_dataproc/bin/activate
-```
-
-**C1. Record the gripper calibration episode first.** On the Pi, record one short episode where you open and close
-the gripper all the way a few times, with both finger tags in view of the ultrawide camera. Wait for it to arrive,
-then:
-
-```bash
-dataproc intake --task block_raise --calibration
-```
-
-It should print `-> calibration/<name>` and `1 ingested`. Only one episode is used as calibration: the oldest one
-waiting. Any others stay in `incoming/` for the next step.
-
-You need a calibration once per task folder. Redo it (same command) if the fingers or tags change. `process`
-always uses the newest one.
-
-**C2. Record the demos** on the Pi, as many as you like.
-
-**C3. Intake the demos.** Run this after recording, or any time in between. It's safe to run as often as you want.
-
-```bash
-dataproc intake --task block_raise
-```
-
-Each episode gets one line:
-
-| Line | Meaning |
-| --- | --- |
-| `-> episode_N` | Good. Filed as `tasks/block_raise/episode_N/`. |
-| `skipped: not verified yet` or `skipped: transfer in progress` | Still arriving from the Pi. Run intake again later. |
-| `quarantined: <reasons>` | Rejected and moved to `/data/rig/quarantine/<name>/`. See [Troubleshooting](#troubleshooting). |
-
-To start a fresh folder for the same task (for example, a new day you want kept separate), add `--new`. That makes
-`block_raise_1`, then `block_raise_2`, and so on. Then use that folder name (`--task block_raise_1`) for the
-rest of that session, including C1.
-
-**C4. Process.**
-
-```bash
-dataproc process --task block_raise
-```
-
-> For now this only works on fake data with `--slam oracle`. Real episodes need ORB-SLAM3 (see the note at the top).
-
-It runs every episode through all its stages and prints `exported` or `rejected`/`failed` (with reasons) for each
-one. Then it writes:
-
-- `/data/rig/tasks/block_raise/output/block_raise.zarr.zip`: the training file, built from every exported episode;
-- `/data/rig/tasks/block_raise/output/report.json`: what happened to each episode.
-
-It's safe to run again: stages whose inputs haven't changed are skipped, so after adding a few demos only the new
-ones are processed. Two useful options:
-
-- `--episode 3`: process only `episode_3` (the zip is still rebuilt from all exported episodes);
-- `--force`: redo every stage, even unchanged ones.
-
-**C5. Check where things stand** at any time:
-
-```bash
-dataproc status --task block_raise
-```
-
-It shows each episode's last stage and status, whether calibration is done, and whether the zip is up to date or
-`stale` (episodes changed since it was built, so run `process` again).
-
-**C6. Copy the zip off the Jetson** to the cluster, into the standard dataset folder. From the Jetson:
-
-```bash
-ssh noroian.r@login.explorer.northeastern.edu "mkdir -p ~/CapstoneProject/datasets/block_raise/<dataset-name>"
-scp /data/rig/tasks/block_raise/output/block_raise.zarr.zip \
-    noroian.r@xfer.discovery.neu.edu:~/CapstoneProject/datasets/block_raise/<dataset-name>/<dataset-name>.zarr.zip
-```
-
-Replace `<dataset-name>` with a name for this dataset, for example `rig-first-single`. Training is covered in
-[DIRECTIONS.md](../DIRECTIONS.md).
+| Message | Meaning | Fix |
+|---|---|---|
+| `data root: ~/dataproc_practice (from $DATAPROC_ROOT ...)` | Output is going to the practice folder | `unset DATAPROC_ROOT`, then run again |
+| `slam: ... never initialised (0 keyframes ...)` | ORB-SLAM3 couldn't start: the camera didn't move enough, or the scene has no texture | Record with motion (start with ~2 s of gentle side-to-side movement) in front of a textured scene |
+| `calibration: calibration_failed ... finger tags 0/1 never both detected` | Tags not visible in the calibration recording | Re-record calibration with both tags in the ultrawide's view, then `dataproc run --task T --calibration-episode <new dir>` |
+| `width: no_calibration` | The task has no calibration (e.g. `--no-calibration`) | Add one with `--calibration-episode` |
+| `validate: tag_coverage` / `slam_tracking` / `speed` | Tags hidden too often / SLAM lost track / moved too fast | Better recordings: tags in view, textured scene, smoother motion |
+| `skip episode_X: no COMPLETE` | Still being copied from the Pi | Wait, run again |
+| `skip episode_X: already taken (...)` | Used in an earlier run | Nothing to do. To reprocess it: `dataproc process --task T --episode N --force`. (A *quarantined* one can be retried by deleting its row from `~/data/pi_sources.csv`.) |
+| `--episodes X cannot be used: ...` | A named episode is missing, used or invalid | Read the reason; pick another |
+| `incoming/ is not empty` | Leftovers from an interrupted run | `dataproc intake --task <task>` to finish them, or move them away |
+| `quarantined: <reasons>` | Failed a file-level check | `~/data/quarantine/<name>/reason.json`; codes are in [docs/CONTRACT.md](docs/CONTRACT.md) |
+| `dataproc: command not found` | Environment not on | `source ~/envs/env_dataproc/bin/activate` |
 
 ---
-
-## Troubleshooting
-
-**An episode was quarantined.** Look at `/data/rig/quarantine/<name>/reason.json`. Its `reasons` list says why,
-for example:
-
-- `hash_mismatch`: a file got corrupted in transfer;
-- `duplicate`: that episode was already taken in;
-- `rig_mismatch`: the episode's `rig_id` doesn't match the task's rig.
-
-The full list of codes is in [docs/CONTRACT.md](docs/CONTRACT.md). Nothing is ever deleted. To retry an episode
-after fixing the problem, move it back:
-
-```bash
-mv /data/rig/quarantine/<name>/raw /data/rig/incoming/<name>
-```
-
-**Nothing happens on intake** (`nothing waiting`). Check that the episode is in `/data/rig/incoming/` and has a
-`.verified` file (`ls -a`). The Pi writes `.verified` after it has checked the checksums on the Jetson. Without it,
-intake waits.
-
-**`another intake is running`.** Only one intake can run at a time. Wait for the other one to finish.
-
-**An episode was `rejected` or `failed` in process.** `dataproc status --task <task>` shows the reasons, and
-`report.json` has the details. Common ones:
-
-- `no_calibration`: do step C1 first, then run `process` again;
-- `oracle_no_truth`: `--slam oracle` was used on a real recording. It only works on `dataproc sim` episodes.
-
-**`run intake first`.** The task folder doesn't exist yet (or the name is misspelled). Intake creates it.
-
-**`dataproc: command not found`.** Turn the environment on (step A4).
-
----
-
-## Later: ORB-SLAM3
-
-Real recordings need the ORB-SLAM3 Docker image (`dataproc/orbslam3:v1.0`) on the Jetson. It has been built on the
-laptop, but never on the Jetson (arm64) and never run on data. Build instructions:
-[docker/orbslam3/README.md](docker/orbslam3/README.md). Once it's built, `dataproc process --task <task>` (no
-`--slam` option) uses it.
 
 ## More detail
 
 | File | What's in it |
-| --- | --- |
-| [docs/CONTRACT.md](docs/CONTRACT.md) | Exactly what the Pi must send (files, fields, checksums). For whoever writes the Pi side. |
-| [docs/DESIGN.md](docs/DESIGN.md) | Folder layout, the output zarr format, conventions. |
-| [docs/INTAKE.md](docs/INTAKE.md) | Every rule intake follows. |
-| [docs/PROCESS.md](docs/PROCESS.md) | Every processing stage, its checks and thresholds. |
-| [docs/SIM.md](docs/SIM.md) | The fake-episode generator. |
-| [docs/GEOMETRY.md](docs/GEOMETRY.md) | Frames, poses and how gripper width is measured. |
+|---|---|
+| [DIRECTIONS.md](DIRECTIONS.md) | Step by step: from episodes in `/data/incoming` to a training run |
+| [docs/PI_ADAPTER.md](docs/PI_ADAPTER.md) | The exact Pi → dataproc field mapping and its assumptions |
+| [docs/CONTRACT.md](docs/CONTRACT.md) | The format dataproc reads directly (what the Pi should eventually send) |
+| [docs/PROCESS.md](docs/PROCESS.md) | Every processing stage, its checks and thresholds |
+| [docs/EXPORT.md](docs/EXPORT.md) | Images and the zarr export in detail |
+| [docs/GEOMETRY.md](docs/GEOMETRY.md) | Frames, poses and how gripper width is measured |
+| [docs/DESIGN.md](docs/DESIGN.md) | Folder layout, the output zarr schema, conventions |
+| [docs/INTAKE.md](docs/INTAKE.md), [docs/SIM.md](docs/SIM.md), [docs/ORBSLAM3.md](docs/ORBSLAM3.md) | Intake rules, the fake-data generator, the ORB-SLAM3 build |

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -12,8 +13,8 @@ from dataproc.geometry.trajectory import Trajectory
 from dataproc.slam.base import finalize_trajectory, ultrawide_times_ns
 from dataproc.slam.oracle import OracleBackend, load_truth
 from dataproc.slam.orbslam3 import (
-    DEFAULT_IMAGE, EUROC_IMU_HEADER, IMU_INIT_STRINGS, ORB_BIN, ORB_VOC, Orbslam3Backend, count_map_events,
-    imu_init_events, import_trajectory, orbslam3_docker_command,
+    EUROC_IMU_HEADER, IMU_INIT_STRINGS, ORB_BIN, ORB_SLAM3_DIR_ENV, ORB_VOC, Orbslam3Backend, count_map_events,
+    default_orb_slam3_dir, imu_init_events, import_trajectory, orbslam3_command, subprocess_runner,
 )
 from test_geometry_common import EXPOSURE_NS, IMU_HZ, analytic_episode, make_rig, truth_poses, yaw_residual
 
@@ -134,17 +135,18 @@ def _opencv_matrix(text: str, name: str) -> np.ndarray:
     return np.array([float(x) for x in m.group(3).split(",")]).reshape(int(m.group(1)), int(m.group(2)))
 
 
-class FakeDocker:
-    """Stands in for `docker run`: checks the mount, writes an ORB-SLAM3-style f_episode.txt and a log."""
+class FakeOrbslam:
+    """Stands in for mono_inertial_euroc: checks the cwd and paths, writes an ORB-SLAM3-style f_episode.txt and a
+    log."""
 
     def __init__(self, skip_first=5, rc=0, write=True, log_text="Creation of new map with id: 0\n"):
         self.skip_first, self.rc, self.write, self.log_text = skip_first, rc, write, log_text
         self.calls = []
 
-    def __call__(self, cmd, log_path, timeout_s):
+    def __call__(self, cmd, log_path, timeout_s, cwd):
         self.calls.append(cmd)
         work = log_path.parent
-        assert cmd[cmd.index("-v") + 1] == f"{work}:/data"
+        assert cwd == work and cmd[3] == str(work) and cmd[2] == str(work / "orbslam3_settings.yaml")
         with open(log_path, "a") as f:
             f.write(self.log_text)
         if self.write:
@@ -160,16 +162,32 @@ class FakeDocker:
         return self.rc
 
 
-def test_docker_command_layout(tmp_path):
-    cmd = orbslam3_docker_command(DEFAULT_IMAGE, tmp_path, user="1000:1000")
-    assert cmd == ["docker", "run", "--rm", "--user", "1000:1000", "-v", f"{tmp_path.resolve()}:/data", "-w", "/data",
-                   "dataproc/orbslam3:v1.0", ORB_BIN, ORB_VOC, "/data/orbslam3_settings.yaml", "/data",
-                   "/data/times.txt", "episode"]
+def test_command_layout(tmp_path):
+    orb, work = tmp_path / "ORB_SLAM3", tmp_path / "work"
+    cmd = orbslam3_command(orb, work)
+    assert cmd == [str(orb / ORB_BIN), str(orb / ORB_VOC), str(work / "orbslam3_settings.yaml"), str(work),
+                   str(work / "times.txt"), "episode"]
 
 
-def test_orbslam3_fake_docker_end_to_end(tmp_path, rig):
+def test_orb_slam3_dir_default(monkeypatch, tmp_path):
+    monkeypatch.delenv(ORB_SLAM3_DIR_ENV, raising=False)
+    assert default_orb_slam3_dir() == Path.home() / "ORB_SLAM3"
+    monkeypatch.setenv(ORB_SLAM3_DIR_ENV, str(tmp_path))
+    assert default_orb_slam3_dir() == tmp_path
+    assert Orbslam3Backend().orb_dir == tmp_path
+    assert Orbslam3Backend(orb_slam3_dir=tmp_path / "x").orb_dir == tmp_path / "x"
+
+
+def test_missing_binary_is_a_slam_error(tmp_path, rig, episode):
+    with pytest.raises(SlamError, match="not found or not executable"):
+        subprocess_runner(orbslam3_command(tmp_path / "nope", tmp_path), tmp_path / "log", 1.0, tmp_path)
+    with pytest.raises(SlamError, match="ORBSLAM3.md"):
+        Orbslam3Backend(orb_slam3_dir=tmp_path / "nope", scale=0.25).run(episode, rig, tmp_path / "w")
+
+
+def test_orbslam3_fake_end_to_end(tmp_path, rig):
     ep = RawEpisode.open(analytic_episode(tmp_path, rig, imu_late_frames=3))
-    fake = FakeDocker(log_text="Creation of new map with id: 0\nSYSTEM-> Reseting active map in monocular case\n"
+    fake = FakeOrbslam(log_text="Creation of new map with id: 0\nSYSTEM-> Reseting active map in monocular case\n"
                                "Creation of new map with id: 1\n")
     work = tmp_path / "work"
     res = get_backend("orbslam3", scale=0.5, runner=fake).run(ep, rig, work)
@@ -230,9 +248,30 @@ def test_orbslam3_fake_docker_end_to_end(tmp_path, rig):
 
 def test_orbslam3_failures(tmp_path, rig, episode):
     with pytest.raises(SlamError, match="rc=1"):
-        Orbslam3Backend(runner=FakeDocker(rc=1), scale=0.25).run(episode, rig, tmp_path / "a")
+        Orbslam3Backend(runner=FakeOrbslam(rc=1), scale=0.25).run(episode, rig, tmp_path / "a")
     with pytest.raises(SlamError, match="no trajectory"):
-        Orbslam3Backend(runner=FakeDocker(write=False), scale=0.25).run(episode, rig, tmp_path / "b")
+        Orbslam3Backend(runner=FakeOrbslam(write=False), scale=0.25).run(episode, rig, tmp_path / "b")
+    # the real crash on a static recording: no keyframe ever made, then a segfault while saving the empty map
+    empty = FakeOrbslam(rc=-11, write=False, log_text="Shutdown\nThere are 1 maps in the atlas\n  Map 0 has 0 KFs\n")
+    with pytest.raises(SlamError, match="never initialised"):
+        Orbslam3Backend(runner=empty, scale=0.25).run(episode, rig, tmp_path / "c")
+
+
+def test_none_and_auto_backends(monkeypatch, tmp_path):
+    from dataproc.slam import NoSlamBackend, orbslam3_available, resolve_backend_name
+
+    assert isinstance(get_backend("none"), NoSlamBackend)
+    monkeypatch.setenv("ORB_SLAM3_DIR", str(tmp_path / "missing"))
+    assert not orbslam3_available() and resolve_backend_name("auto") == "none"
+    exe = tmp_path / "orb" / "Examples" / "Monocular-Inertial" / "mono_inertial_euroc"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    (tmp_path / "orb" / "Vocabulary").mkdir()
+    (tmp_path / "orb" / "Vocabulary" / "ORBvoc.txt").write_text("")
+    monkeypatch.setenv("ORB_SLAM3_DIR", str(tmp_path / "orb"))
+    assert orbslam3_available() and resolve_backend_name("auto") == "orbslam3"
+    assert resolve_backend_name("oracle") == "oracle"
 
 
 def test_import_snapping_and_map_events(tmp_path):
@@ -267,7 +306,7 @@ def test_reset_counted_once_per_executed_reset():
 
 def test_orbslam3_reports_not_enough_motion(tmp_path, rig, episode):
     log = "Not enough motion for initializing. Reseting...\nSYSTEM-> Reseting active map in monocular case\n"
-    res = Orbslam3Backend(runner=FakeDocker(log_text=log), scale=0.25).run(episode, rig, tmp_path / "w")
+    res = Orbslam3Backend(runner=FakeOrbslam(log_text=log), scale=0.25).run(episode, rig, tmp_path / "w")
     assert res.n_resets == 1 and res.diagnostics["n_not_enough_motion_resets"] == 1
 
 

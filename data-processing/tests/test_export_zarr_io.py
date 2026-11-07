@@ -16,9 +16,10 @@ from dataproc.export.frames import ultrawide_substream
 from dataproc.export.zarr_writer import (EPISODE_ZARR_SCHEMA, IMAGE_SHAPE, EpisodeArrays, build_task_zarr_zip,
                                          load_episode_zarr, write_episode_zarr)
 
-BP_REPLAY_BUFFER = Path("/home/ruben/Capstone/behavior_prompting/behavior_prompting/common/replay_buffer.py")
-IPHUMI_REPLAY_BUFFER = Path("/home/ruben/Capstone/iPhUMI/python_package/iphumi/common/replay_buffer.py")
-IPHUMI_CODECS = Path("/home/ruben/Capstone/iPhUMI/python_package/iphumi/common/imagecodecs_numcodecs.py")
+REPO = Path(__file__).resolve().parents[2]          # the Capstone checkout
+BP_REPLAY_BUFFER = REPO / "behavior_prompting/behavior_prompting/common/replay_buffer.py"
+IPHUMI_REPLAY_BUFFER = REPO / "iPhUMI/python_package/iphumi/common/replay_buffer.py"
+IPHUMI_CODECS = REPO / "iPhUMI/python_package/iphumi/common/imagecodecs_numcodecs.py"
 
 
 def smooth_frames(rng, n):

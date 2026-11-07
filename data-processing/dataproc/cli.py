@@ -1,6 +1,7 @@
-"""``dataproc`` command line: ``intake``, ``process``, ``status`` and ``sim`` (behaviour: docs/DESIGN.md).
+"""``dataproc`` command line: ``run``, ``intake``, ``process``, ``status`` and ``sim`` (behaviour: docs/DESIGN.md;
+``run``: docs/PI_ADAPTER.md).
 
-The data root is ``$DATAPROC_ROOT`` (default ``/data/rig``). ``--task`` is required for intake, process and
+The data root is ``$DATAPROC_ROOT`` (default ``~/data``). ``--task`` is required for intake, process and
 status; it is a task folder name, ``name/episode_N``, or a path inside ``<root>/tasks/``.
 """
 
@@ -14,6 +15,7 @@ from dataproc.paths import DataRoot, TaskRef, data_root, resolve_task
 
 __all__ = ["build_parser", "main"]
 
+_SLAM_CHOICES = ("auto", "orbslam3", "oracle", "none")      # = dataproc.slam.BACKEND_CHOICES (not imported here)
 _TASK_HELP = "task folder name (e.g. block_raise), name/episode_N, or a path inside $DATAPROC_ROOT/tasks (required)"
 
 
@@ -30,7 +32,24 @@ def _non_negative_int(s: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dataproc", description=__doc__.splitlines()[0])
     ap.add_argument("--version", action="version", version=f"dataproc {__version__}")
-    sub = ap.add_subparsers(dest="command", required=True, metavar="{intake,process,status,sim}")
+    sub = ap.add_subparsers(dest="command", required=True, metavar="{run,intake,process,status,sim}")
+
+    p = sub.add_parser("run", help="Pi episodes in --source -> adapt -> intake -> process, for one task")
+    p.add_argument("--task", required=True, help="task name: the task folder and the label written to the zarr")
+    p.add_argument("--calibration-episode", metavar="DIR",
+                   help="the gripper-calibration recording: a directory name in --source (required the first time)")
+    p.add_argument("--source", default="/data/incoming", metavar="DIR",
+                   help="where the Pi delivers episodes; read only (default /data/incoming)")
+    p.add_argument("--rig", default="rig_pi_v1", metavar="RIG_ID",
+                   help="rig id written into the episodes; selects rigs/<id>.yaml (default rig_pi_v1)")
+    p.add_argument("--slam", choices=_SLAM_CHOICES, default="auto",
+                   help="SLAM backend (default auto = orbslam3 if built, else none: stop at slam until it is)")
+    p.add_argument("--dry-run", action="store_true", help="only list what would be taken in, change nothing")
+    p.add_argument("--episodes", nargs="+", metavar="DIR",
+                   help="take only these directories in --source as demonstrations (default: every new one)")
+    p.add_argument("--no-calibration", action="store_true",
+                   help="process without a calibration episode (every episode is a demonstration; no zip until "
+                   "a calibration is added)")
 
     p = sub.add_parser("intake", help="move verified episodes from incoming/ into tasks/<folder>/episode_N/raw/")
     p.add_argument("--task", required=True, help=_TASK_HELP)
@@ -42,8 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", required=True, help=_TASK_HELP)
     p.add_argument("--episode", type=_non_negative_int, metavar="N", help="only process episode_N")
     p.add_argument("--force", action="store_true", help="rerun stages even if their inputs are unchanged")
-    p.add_argument("--slam", choices=("orbslam3", "oracle"), default="orbslam3",
-                   help="SLAM backend (default orbslam3; oracle = synthetic ground truth, needs raw/truth.npz)")
+    p.add_argument("--slam", choices=_SLAM_CHOICES, default="orbslam3",
+                   help="SLAM backend (default orbslam3; oracle = synthetic ground truth, needs raw/truth.npz; "
+                   "none = not installed yet, stop at slam; auto = orbslam3 if built, else none)")
 
     p = sub.add_parser("status", help="show per-episode processing status of a task")
     p.add_argument("--task", required=True, help=_TASK_HELP)
@@ -82,6 +102,14 @@ def _task(args, root: DataRoot) -> TaskRef:
             ap.error(f"--task names episode_{ref.episode} but --episode is {args.episode}")
         args.episode = ref.episode
     return ref
+
+
+def cmd_run(args, root: DataRoot) -> int:
+    from dataproc.run import cli_run
+
+    return cli_run(root, args.task, calibration_episode=args.calibration_episode, source=args.source,
+                   rig_id=args.rig, slam=args.slam, dry_run=args.dry_run, no_calibration=args.no_calibration,
+                   episodes=args.episodes)
 
 
 def cmd_intake(args, root: DataRoot, task: TaskRef) -> int:
@@ -123,5 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     root = data_root()
     if args.command == "sim":
         return cmd_sim(args, root)
+    if args.command == "run":
+        return cmd_run(args, root)
     task = _task(args, root)
     return {"intake": cmd_intake, "process": cmd_process, "status": cmd_status}[args.command](args, root, task)
