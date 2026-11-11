@@ -1,37 +1,47 @@
-# `dataproc sim`: synthetic episodes with ground truth
+# `dataproc sim`: synthetic recordings with ground truth
 
-`dataproc.sim` renders raw episodes in the exact Pi format ([CONTRACT.md](CONTRACT.md), `dataproc.raw.v1`) from a
-known trajectory, so intake, processing, SLAM and the gripper-width stage can be tested without hardware. Every
-episode passes `RawEpisode.validate(decode_videos=True)` with zero problems (unless faults are injected on purpose).
+`dataproc.sim` renders raw episodes from a known trajectory, so calibration, processing, SLAM and the
+gripper-width stage can be tested without hardware. Each one is first rendered in dataproc's own format
+([CONTRACT.md](CONTRACT.md), `dataproc.raw.v1`; it passes `RawEpisode.validate(decode_videos=True)` with zero
+problems unless faults are injected on purpose), plus `truth.npz`.
+
+**By default `dataproc sim` then writes it in the Pi's format** (`dataproc/pi_format.contract_to_pi`, what the Pi 5
+puts in `/data/incoming`: docs/PI_ADAPTER.md) as `episode_NNNNNN`, with `truth.npz` carried over and listed in the
+manifest, so it goes through `calibrate` → `run --slam oracle` → `package` exactly like real data. `--contract`
+writes the contract episode itself instead (for intake/process tests).
 
 ```bash
-export DATAPROC_ROOT=/tmp/sim_root                                       # a separate scratch root, never the real one
-dataproc sim --out $DATAPROC_ROOT/incoming --episodes 1 --calibration   # a gripper-calibration episode
-dataproc sim --out $DATAPROC_ROOT/incoming --episodes 5                  # five demonstrations
-dataproc sim --out $DATAPROC_ROOT/incoming --episodes 2 --fast --seed 3  # small + quick, for tests
+export DATAPROC_ROOT=/tmp/sim_root                                 # a separate scratch root, never the real one
+dataproc sim --out /tmp/sim_src --episodes 1 --calibration --fast  # episode_000000: a calibration
+dataproc sim --out /tmp/sim_src --episodes 5 --fast                # episode_000001..000005: demonstrations
+dataproc calibrate block_raise episode_000000 --source /tmp/sim_src --rig rig_v1_fast
+dataproc run block_raise episode_000001 episode_000005 --source /tmp/sim_src --slam oracle
 ```
 
-**Do not run `dataproc sim` against the real data root on the Jetson** (`~/data`): the synthetic episodes land
-in the real `incoming/` and the next intake mixes them into real tasks, and `sim` copies the (nominal) rig yaml it
-rendered with into `rigs/` if that `<rig_id>.yaml` is missing there. Always point `DATAPROC_ROOT` (or `--out` and
-`--rigs-dir`) at a scratch directory.
+**Do not run `dataproc sim` against the real data on the Jetson** (`/data/incoming`, `~/data`): `sim` copies the
+(nominal) rig yaml it rendered with into `rigs/` if that `<rig_id>.yaml` is missing there. Always point
+`DATAPROC_ROOT` (or `--rigs-dir`) and `--out` at scratch directories.
 
 | Flag | Meaning |
 |---|---|
-| `--out DIR` | where the episode directories go (created) |
-| `--episodes N` | number of episodes (default 1) |
-| `--calibration` | calibration episodes (fixed pose + wobble, width swept over the full range) |
-| `--seed S` | base seed; episode number `n` uses seed `S * 1000003 + n` (default 0) |
+| `--out DIR` | where the recording directories go (created) |
+| `--episodes N` | number of recordings (default 1) |
+| `--calibration` | calibration recordings (fixed pose + wobble, width swept over the full range) |
+| `--seed S` | base seed; recording number `n` uses seed `S * 1000003 + n` (default 0) |
 | `--duration SEC` | recording length incl. pre-roll and 0.5 s post-roll (default 15; `--fast`: 5) |
 | `--rig PATH` | rig yaml (default `configs/rigs/rig_v1.yaml`) |
-| `--fast` | low-resolution rig `<rig_id>_fast` (main x0.25 = 320x180, ultrawide x0.5 = 410x308) and 2 s pre-roll |
-| `--session ID` | session id (default `sim-<UTC yyyymmddTHHMMSSffffff>`, so repeated runs never collide) |
+| `--fast` | low-resolution rig `<rig_id>_fast` (main x0.25 = 320x180, ultrawide x0.5 = 410x308) and 2 s pre-roll; pass `--rig rig_v1_fast` to `dataproc calibrate` |
+| `--imu-gap SEC` | remove SEC of IMU samples from the middle of each recording (an IMU dropout: `run` rejects it at validate with `imu_gap`, so it lands in `failed/`) |
+| `--contract` | write dataproc's own format (`<session>_episode_NNNNNN`, with `.verified`) instead of the Pi's |
+| `--session ID` | session id (default `sim-<UTC yyyymmddTHHMMSSffffff>`); names the `--contract` directories; in Pi format only recorded in `truth.npz` (the adapter's session id is `pi-<date>`) |
 | `--rigs-dir DIR` | the rig yaml used is copied there as `<rig_id>.yaml` **if missing** (default `$DATAPROC_ROOT/rigs`); an existing, different file is left alone with a warning |
-| `--unverified` | do not write `.verified` (as if the Jetson had not checked the transfer yet) |
+| `--unverified` | with `--contract`: do not write `.verified` (as if the Jetson had not checked the transfer yet) |
 
-Episode directories are `<session>_episode_NNNNNN`; `NNNNNN` (also `meta.json` `episode_number`) continues after
-the largest `..._episode_NNNNNN` number already in `--out`. The wall anchor is the real time of generation, so
-intake orders episodes in the order they were made.
+Numbering: `NNNNNN` (Pi `meta.json` `episode`, or contract `episode_number`) continues after the largest
+`episode_NNNNNN` / `..._episode_NNNNNN` number already in `--out`, so calibration and demonstration runs can share
+one `--out` and every recording stays unique (the adapter names it `pi-<date>_episode_NNNNNN`). The Pi-format copy
+carries the frame `exposure_ns` column (the sim knows it) and the whole recording is the button span (the adapter has
+no button presses). The wall anchor is the real time of generation.
 
 Python API (`dataproc.sim.episode`):
 
@@ -42,7 +52,7 @@ generate_episode(out_dir, rig, kind="demonstration" | "calibration", seed=0, dur
                  unix_anchor_ns=None, crf=10, preset="veryfast", extra_quads=()) -> SimEpisode
 fast_rig(rig_yaml_path) -> (yaml_dict, RigConfig)        # the --fast rig
 read_truth(episode_dir) -> dict                          # truth.npz
-run_sim(...)                                             # the CLI driver
+run_sim(..., pi_format=False, imu_gap_s=None)             # the CLI driver (pi_format=True unless --contract)
 ```
 
 ## Time-stamp convention

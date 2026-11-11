@@ -179,7 +179,7 @@ t_ns,sample_idx,gx,gy,gz,ax,ay,az
     && touch "$ep/.synced"
   ```
 
-  `dataproc intake` only takes episodes that have `.verified`. An episode that also contains any other
+  Intake (`dataproc/intake.py`) only takes episodes that have `.verified`. An episode that also contains any other
   dot-prefixed file (an rsync temp file: a re-send in progress) is left in `incoming/` untouched and retried on the
   next intake. Otherwise intake re-checks the manifest and the counts (`RawEpisode.validate`) and moves the
   episode into the task, or moves it to `quarantine/<episode_dir>/` (`__2`, `__3`, ... on name collisions) with

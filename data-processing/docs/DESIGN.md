@@ -1,77 +1,82 @@
 # dataproc design
 
-`dataproc` runs on the Jetson. It takes raw episodes that the Pi 5 delivered to `incoming/` (format:
-[CONTRACT.md](CONTRACT.md)) and turns a task's episodes into one `output/<folder>.zarr.zip` that trains with both
-`umi_policy_dunetp` (behavior prompting) and `umi_policy_dunet` (plain diffusion), unchanged. Everything runs
-offline, after recording.
+`dataproc` runs on the Jetson. It takes the recordings the Pi 5 delivered to `/data/incoming/` (its format:
+[PI_ADAPTER.md](PI_ADAPTER.md); dataproc's own raw format: [CONTRACT.md](CONTRACT.md)) and turns them into training
+`.zarr.zip` files that train with both `umi_policy_dunetp` (behavior prompting) and `umi_policy_dunet` (plain
+diffusion), unchanged. Everything runs offline, after recording.
+
+## Commands
+
+```
+dataproc calibrate TASK EPISODE_DIR [--source /data/incoming] [--rig rig_pi_v1]
+dataproc run TASK_FOLDER START_DIR END_DIR [--source /data/incoming] [--slam auto|orbslam3|oracle|none]
+                                          [--retry-failed] [--force] [--dry-run]
+dataproc package DATASET FOLDER [FOLDER ...] [--overwrite]
+dataproc status TASK_FOLDER
+dataproc sim --out DIR [--episodes N] [--calibration] [--fast] [--imu-gap SEC] [--contract] ...
+```
+
+- **`calibrate`** (`dataproc/calibrate/`): fit and check the gripper calibration on one recording **before**
+  anything is created. On success, create a new task folder (`TASK`, else `TASK_2`, `TASK_3`, …) holding it; on
+  failure print why and create nothing. **One folder = one calibration = one session** on one hardware setup.
+  Details: [PI_ADAPTER.md](PI_ADAPTER.md).
+- **`run`** (`dataproc/run/`): process the recordings START_DIR..END_DIR (inclusive) of a calibrated folder, one at
+  a time, with the folder's rig and calibration. Only recordings that pass every stage become `episode_N`
+  (numbered from **`episode_1`**); the others go to `failed/`. It builds no zip. Details:
+  [PI_ADAPTER.md](PI_ADAPTER.md); the stages: [PROCESS.md](PROCESS.md).
+- **`package`** (`dataproc/package/`): combine the exported episodes of any task folders (sessions of one task
+  and/or several tasks) into one `.zarr.zip` in the cluster's dataset layout ([EXPORT.md](EXPORT.md)).
+- **`status`** (`dataproc/status.py`, read only) and **`sim`** (`dataproc/sim/`, synthetic Pi-format recordings
+  with ground truth, [SIM.md](SIM.md)).
+
+`dataproc/cli.py` only parses the arguments and calls each folder's `cli_*` function. `intake`
+([INTAKE.md](INTAKE.md)) and `process` ([PROCESS.md](PROCESS.md)) are modules that `calibrate` and `run` use; they
+are no longer commands.
 
 ## Folder layout
 
 Root: `$DATAPROC_ROOT`, default `~/data` (`dataproc/paths.py`).
 
 ```
-incoming/<pi_episode>/                 as delivered by the Pi (+ .verified from the Jetson)
-tasks/<folder>/
-  task.yaml                            label, rig, created, notes (dataproc/config.py)
-  episodes.csv                         one row per intaken episode
-  calibration/<pi_episode>[__k]/raw/   gripper-calibration episodes (--calibration)
-  episode_N/raw/                       the raw episode, moved unchanged; never written to afterwards
-  episode_N/processed/                 stage outputs + status.json
-  output/<folder>.zarr.zip, output/report.json
-rigs/<rig_id>.yaml                     rig description (configs/rigs/rig_v1.yaml is the nominal one)
-quarantine/<pi_episode>[__k]/          rejected episodes + reason.json
-.intake.lock                           flock held by a running intake
+pi_sources.csv                         every Pi recording taken (calibration / demonstration; ingested / failed /
+                                       quarantined), keyed by the sha256 of its MANIFEST.sha256
+incoming/                              brief staging of converted copies (.adapt-tmp/ while converting); empty
+                                       between commands
+tasks/<folder>/                        one calibration = one session: block_raise, block_raise_2, ...
+  task.yaml                            label (= TASK, also for block_raise_2), rig, created, notes
+  episodes.csv                         ledger: one row per slot a recording entered (append-only)
+  gripper_range.json                   the calibration result (copy)
+  calibration/<pi_name>/{raw/, processed/}
+  episode_N/{raw/, processed/}         passed every stage (processed/episode.zarr exists); N from 1, gap-free
+  failed/<pi_name>/{raw/, processed/, reason.json}   failed or rejected at some stage; never packaged
+  .staging/<pi_name>/{raw/, processed/}              in progress, or waiting for SLAM; never packaged
+  report.json                          the last run: outcome per recording
+datasets/<label>/<DATASET>/<DATASET>.zarr.zip + package.json      written by package (several labels: multi/)
+rigs/<rig_id>.yaml                     rig description, copied from configs/rigs/ if missing
+quarantine/<pi_name>[__k]/             recordings intake rejected (a duplicate) + reason.json
+.run.lock                              flock held by calibrate / run
 ```
 
-`episode_N` starts at `episode_0` (no leading zeros); directories sort numerically (`episode_2` before
-`episode_10`). Task, folder and rig names are `[A-Za-z0-9_-]+`; Pi episode dir names are
-`[A-Za-z0-9][A-Za-z0-9._-]*` (`paths.validate_episode_dir_name`). `--task` accepts a folder name, `name/episode_N`, or a path inside
-`<root>/tasks/`.
+`raw/` is the converted recording, moved in unchanged and never written to afterwards; `processed/` holds the stage
+outputs and `status.json`. Directories sort numerically (`episode_2` before `episode_10`). Task, folder, dataset and
+rig names are `[A-Za-z0-9_-]+`; Pi recording dir names are `[A-Za-z0-9][A-Za-z0-9._-]*`
+(`paths.validate_episode_dir_name`). Stage status and inputs hashes do not depend on the episode dir's path, so the
+`.staging/<pi_name>` → `episode_N` rename keeps every processed output valid.
 
-## `dataproc intake --task NAME [--new] [--calibration]`
+## Intake (used by `calibrate` and `run`)
 
-- `--task` is required.
-- **Lock:** `fcntl.flock(LOCK_EX | LOCK_NB)` on `<root>/.intake.lock`; if it is held, exit 1 with "another intake
-  is running".
-- **Target folder** (`paths.resolve_intake_target`):
-  - no folder → create `<task>/`;
-  - the folder exists → add to it (it must be a directory);
-  - `--new` while it exists → create the first free `<task>_1`, `<task>_2`, … (any existing entry counts as taken).
-- **Candidates:** only `incoming/` dirs that have `.verified`. A dir that contains any other dot-prefixed entry (an
-  rsync temp file: transfer or re-send in progress) is **left in `incoming/`** and reported as "skipped: transfer in
-  progress". Nothing waiting → no folder is created.
-- **Order:** an episode whose `meta.json` is invalid is quarantined first, before sorting. The rest are taken
-  oldest first by `EpisodeMeta.start_unix_ns`, ties broken by (`session_id`, `episode_number`).
-- **Checks**, each failure → quarantine with that reason:
-  - every `RawEpisode.validate` error (manifest + counts; reason = the problem codes);
-  - `duplicate`: the Pi dir name or the (`session_id`, `episode_number`) pair already appears in the
-    `episodes.csv` of **any** task folder (never ingest twice, never delete);
-  - `rig_mismatch`: `meta.json` `rig_id` differs from the target `task.yaml` `rig`.
-- **Quarantine:** `quarantine/<pi_name>/` + `reason.json`; on a name collision `<pi_name>__2`, `__3`, …
-- **Move:** with `os.rename` (same filesystem) to `episode_N/raw/`; if it fails with `EXDEV`, error out, never copy.
-  Numbering starts at `episode_0`, otherwise max existing + 1 (gaps are not refilled; any `episode_N` entry counts).
-- `--calibration` sends the next waiting episode to `calibration/<pi_name>/raw/` instead (`__2`, `__3`, … on a
-  name collision).
-- **`task.yaml`** is written on folder creation, atomically (temp file + rename), with `label` = the task name (so
-  `block_raise_1` is still labelled `block_raise`) and `rig` taken from `meta.json`.
-- **`episodes.csv`**: header + one row per intaken episode, append-only (temp + rename, or an fsync'd append):
+`dataproc/intake.py` files converted copies from `incoming/` into a task folder: contract checks, dedupe, ledger,
+quarantine, crash-safe moves. `calibrate` uses it with a new folder (`TASK`, `TASK_2`, …) and the calibration slot;
+`run` with the **staging target** (an existing folder; the recording goes to `.staging/<pi_name>/raw/`, and `run`
+later moves it to `episode_N` or `failed/`). Rules and decisions: [INTAKE.md](INTAKE.md).
 
-  ```
-  slot,pi_name,session_id,episode_number,kind,rig_id,start_unix_ns,intake_unix_ns,manifest_sha256
-  ```
-
-  `slot` = `episode_N` or `calibration/<name>`; `kind` = `demonstration` | `calibration`; `manifest_sha256` = the
-  sha256 of the `MANIFEST.sha256` file.
-
-## `dataproc process` and `dataproc status`
-
-`dataproc process --task NAME [--episode N] [--force] [--slam orbslam3|oracle]` and `dataproc status --task NAME`:
-the steps, the stages (check, slam, grid, pose, width, validate, images, export, plus the task-level calibration),
-the skip rules (`inputs_hash`), the validate thresholds, `report.json` and the exit codes are in
-[PROCESS.md](PROCESS.md).
-
-`dataproc sim --out DIR --episodes N [--calibration]` writes synthetic episodes in the raw format plus `truth.npz`
-(pose, width), for tests ([SIM.md](SIM.md)).
+- **Checks**, each failure → `quarantine/<pi_name>/` with `reason.json`: every `RawEpisode.validate` error;
+  `duplicate` (the Pi dir name or the (`session_id`, `episode_number`) pair is already in the `episodes.csv` of any
+  task folder); `rig_mismatch` (`meta.json` `rig_id` ≠ `task.yaml` `rig`).
+- **Moves** are `os.rename` on one filesystem; `EXDEV` is an error, never a copy.
+- **`episodes.csv`**: `slot,pi_name,session_id,episode_number,kind,rig_id,start_unix_ns,intake_unix_ns,
+  manifest_sha256`. `slot` = `episode_N`, `calibration/<name>`, `.staging/<name>` or `failed/<name>`; the newest
+  row of a recording is where it is now.
 
 ## Conventions
 
@@ -135,10 +140,14 @@ the TCP in the world frame, width in metres.
 
 | Module | Role |
 |---|---|
+| `dataproc/cli.py` | argparse front end: parses, then calls `<command>/cli.py` |
+| `dataproc/calibrate/`, `dataproc/run/`, `dataproc/package/` | one folder per command (`cli.py` prints and returns the exit code) |
+| `dataproc/pi_adapter.py`, `dataproc/pi_intake.py` | Pi → contract conversion; the adapt + intake part calibrate and run share |
+| `dataproc/pi_format.py` | the reverse (contract → Pi format), for `dataproc sim` and the tests |
+| `dataproc/intake.py`, `dataproc/process.py`, `dataproc/stages/`, `dataproc/export/` | intake, the stages, the zarr writer |
 | `dataproc/paths.py` | root, task-folder and episode-dir resolution (pure path logic) |
 | `dataproc/raw_episode.py` | the single reader/validator of a raw episode |
 | `dataproc/config.py` | `task.yaml` and rig yaml schemas |
-| `dataproc/cli.py` | argparse front end |
 
 Code taken from `sensor_rig/` or `iPhUMI/` is vendored (copied) with its source path and commit in a header
 comment; `dataproc` imports neither.

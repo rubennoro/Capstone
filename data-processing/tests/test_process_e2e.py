@@ -122,7 +122,7 @@ def test_raw_untouched_and_no_extra_folders(tmp_path_factory, tmp_path):
 def test_status_command(done, monkeypatch, capsys):
     root, _ = done
     monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
-    assert cli.main(["status", "--task", TASK]) == 0
+    assert cli.main(["status", TASK]) == 0
     out = capsys.readouterr().out
     assert "calibration: done (cal_episode_000000)" in out
     assert "3 exported" in out and "not episodes" not in out
@@ -148,20 +148,20 @@ def test_status_lists_staging_and_failed(tmp_path_factory, tmp_path, monkeypatch
     p.write_text(json.dumps(st))
     (td / "failed" / "s_bad" / "raw").mkdir(parents=True)
     (td / "failed" / "s_bad" / "reason.json").write_text(json.dumps({"stage": "validate", "reasons": ["imu_gap"]}))
-    assert cli.main(["status", "--task", TASK]) == 0
+    assert cli.main(["status", TASK]) == 0
     out = capsys.readouterr().out
     assert "3 episodes, 3 exported" in out and "not episodes (never packaged):" in out
     assert re.search(r"^\.staging/s_wait\s+slam\s+waiting for SLAM\s+slam: slam_unavailable$", out, re.M), out
     assert re.search(r"^failed/s_bad\s+validate\s+failed\s+imu_gap$", out, re.M), out
-    assert cli.main(["status", "--task", "nope"]) == 1
-    assert "run intake first" in capsys.readouterr().err
+    assert cli.main(["status", "nope"]) == 1
+    assert "dataproc calibrate first" in capsys.readouterr().err
 
 
 def test_status_before_processing(tmp_path_factory, tmp_path, monkeypatch, capsys):
     root = copy_root(template_root(tmp_path_factory), tmp_path / "root")
     monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
     before = tree_digest(root.path)
-    assert cli.main(["status", "--task", TASK]) == 0
+    assert cli.main(["status", TASK]) == 0
     out = capsys.readouterr().out
     assert "pending" in out and "calibration: not_processed" in out
     assert tree_digest(root.path) == before            # read-only
@@ -170,7 +170,10 @@ def test_status_before_processing(tmp_path_factory, tmp_path, monkeypatch, capsy
 def test_cli_process_rerun_prints_table(tmp_path_factory, tmp_path, monkeypatch, capsys):
     root = copy_root(processed_root(tmp_path_factory)[0], tmp_path / "root")
     monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
-    assert cli.main(["process", "--task", TASK, "--slam", "oracle"]) == 0
+    from dataproc.paths import data_root
+    from dataproc.process import cli_process
+
+    assert cli_process(data_root(), TASK, slam="oracle") == 0      # dataproc process is no longer a CLI command
     out = capsys.readouterr().out
     assert "ran: nothing (up to date)" in out and "exported" in out and "report.json" in out
     for k in range(N_DEMOS):

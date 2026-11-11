@@ -1,7 +1,24 @@
-# `dataproc intake`: decisions
+# Intake (`dataproc/intake.py`): decisions
 
-DESIGN.md's "intake" section holds the rules. This file adds the decisions made when implementing them
-(`dataproc/intake.py`, tests in `tests/test_intake.py`). The orchestrator merges it into DESIGN.md later.
+Intake files converted recordings from `incoming/` into a task folder. **It is no longer a CLI command:**
+`dataproc calibrate` and `dataproc run` call it through `dataproc/pi_intake.py` (`run_intake(root, task, new=...,
+calibration=..., staging=...)`). DESIGN.md's "Intake" section holds the rules; this file adds the decisions made
+when implementing them (tests in `tests/test_intake.py` and `tests/run/test_run_intake_staging.py`). The CLI-style
+names below (`--task NAME`, `--new`, `--calibration`) are the `run_intake` arguments `task`, `new` and
+`calibration`.
+
+How the two commands use it:
+- **`calibrate`**: `new=True, calibration=True`. The folder is the first free one of `TASK`, `TASK_2`, `TASK_3`, …
+  (`paths.resolve_intake_target`; any existing entry counts as taken), and the recording goes to
+  `calibration/<pi_name>/raw/`.
+- **`run`**: the **staging target**, `staging=True`. The folder must already exist with its `task.yaml` (it is never
+  created; `new` and `calibration` are refused), and the recording goes to `tasks/<folder>/.staging/<pi_name>/raw/`
+  instead of `episode_N`. `run` later moves it on with `move_slot` (to `episode_N`, numbered from `episode_1`, when
+  it passed every stage; to `failed/<pi_name>/` otherwise), which appends the new slot's ledger row.
+  `episodes.csv` stays append-only: the newest row of a recording is where it is now. `reconcile` knows all four
+  slot kinds (`episode_N`, `calibration/<x>`, `.staging/<x>`, `failed/<x>`).
+- Without `staging`, intake still numbers `episode_N` from `episode_0` (max existing + 1); only `run`'s promotion
+  starts at `episode_1`.
 
 ## One run, step by step
 
@@ -91,7 +108,7 @@ them. See "Code map" below.
 
 11. **Ingest** (`ingest`; no reasons):
     - Create the task folder and `task.yaml` lazily, on the first ingest, so a run that only quarantines creates no
-      folder. `task.yaml` gets: `label` = `--task NAME` as given (so `--new` folders `block_raise_1` are labelled
+      folder. `task.yaml` gets: `label` = `--task NAME` as given (so `--new` folders `block_raise_2` are labelled
       `block_raise`), `rig` = `meta.rig_id`, `created` = ISO UTC, `notes` "". It is written atomically (dot temp
       file, fsync, rename).
     - Write `.intake_pending.json`, `mkdir episode_N`, then `os.rename(incoming/<name>, episode_N/raw)`. `EXDEV` is

@@ -100,22 +100,24 @@ def test_single_episode_missing(root):
 
 
 def test_fatal_setup_errors(tmp_path_factory, tmp_path, capsys):
-    from dataproc import cli
     import os
+
+    from dataproc.paths import data_root
+    from dataproc.process import cli_process
 
     root = copy_root(template_root(tmp_path_factory), tmp_path / "root")
     os.environ["DATAPROC_ROOT"] = str(root.path)
     try:
-        assert cli.main(["process", "--task", "other", "--slam", "oracle"]) == 1
+        assert cli_process(data_root(), "other", slam="oracle") == 1
         assert "run intake first" in capsys.readouterr().err
         assert not (root.tasks / "other").exists()
         (root.rigs / "rig_v1_fast.yaml").rename(root.rigs / "moved.yaml")
-        assert cli.main(["process", "--task", TASK, "--slam", "oracle"]) == 1
+        assert cli_process(data_root(), TASK, slam="oracle") == 1
         assert "rig_v1_fast.yaml is missing" in capsys.readouterr().err
         assert not (task_dir(root) / "output").exists() and not (task_dir(root) / "episode_0" / "processed").exists()
         (root.rigs / "moved.yaml").rename(root.rigs / "rig_v1_fast.yaml")
         (task_dir(root) / "task.yaml").unlink()
-        assert cli.main(["process", "--task", TASK, "--slam", "oracle"]) == 1
+        assert cli_process(data_root(), TASK, slam="oracle") == 1
         assert "task.yaml is missing" in capsys.readouterr().err
     finally:
         del os.environ["DATAPROC_ROOT"]

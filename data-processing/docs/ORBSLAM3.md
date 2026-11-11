@@ -1,6 +1,6 @@
 # ORB-SLAM3 on the Jetson (native build) for the `orbslam3` SLAM backend
 
-`dataproc process` (without `--slam oracle`) runs ORB-SLAM3's `mono_inertial_euroc` directly on the Jetson. It
+`dataproc run` (`--slam auto` or `orbslam3`) runs ORB-SLAM3's `mono_inertial_euroc` directly on the Jetson. It
 looks for the build in `$ORB_SLAM3_DIR`, default `~/ORB_SLAM3`.
 
 > **Status (2026-11-07): built on the Jetson, not yet run on data.** Built natively on the Jetson Orin

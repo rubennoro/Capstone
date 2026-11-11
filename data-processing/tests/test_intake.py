@@ -1,4 +1,5 @@
-"""``dataproc intake`` (dataproc/intake.py; rules: docs/DESIGN.md "intake" + docs/INTAKE.md)."""
+"""dataproc/intake.py (rules: docs/DESIGN.md "intake" + docs/INTAKE.md). Intake is no longer a CLI command;
+``cli_main`` drives its printing front end ``cli_intake`` with the old argument shape."""
 
 from __future__ import annotations
 
@@ -11,11 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from dataproc import cli
 from dataproc.config import load_task_config
 from dataproc.intake import LEDGER_COLUMNS, LEDGER_NAME, LOCK_NAME, PENDING_NAME, IntakeError, LockHeldError, \
     read_ledger, run_intake
-from dataproc.paths import data_root
+from dataproc.paths import data_root, resolve_task
 from dataproc.raw_episode import COMPLETE, MANIFEST, VERIFIED
 from fixtures import UNIX0_NS, build_episode, corrupt_hash, drop_csv_row, make_non_monotonic, read_meta, \
     remove_file
@@ -29,6 +29,17 @@ def root(monkeypatch, tmp_path):
 
 def _quiet(*a, **k):
     pass
+
+
+def cli_main(argv: list[str]) -> int:
+    """``["intake", "--task", T, ("--new"), ("--calibration")]`` -> ``cli_intake`` (T resolved like the former
+    ``dataproc intake --task``)."""
+    from dataproc.intake import cli_intake
+
+    assert argv[:2] == ["intake", "--task"], argv
+    root = data_root()
+    return cli_intake(root, resolve_task(argv[2], root).folder, new="--new" in argv[3:],
+                      calibration="--calibration" in argv[3:])
 
 
 def ep(root, name, *, offset_s: float = 0, **kw) -> Path:
@@ -118,21 +129,21 @@ def test_new_with_nothing_waiting_creates_nothing(root, capsys):
 
 def test_nothing_waiting_creates_nothing(root, capsys):
     root.incoming.mkdir(parents=True)
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     assert "nothing waiting" in capsys.readouterr().out
     assert not root.tasks.exists() and not root.quarantine.exists()
 
 
 def test_incoming_missing(root, capsys):
     root.path.mkdir(parents=True, exist_ok=True)
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     assert "incoming/ does not exist" in capsys.readouterr().out
     assert not root.tasks.exists()
 
 
 def test_root_missing(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path / "nope"))
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     assert not (tmp_path / "nope").exists()
 
 
@@ -150,7 +161,7 @@ def test_dot_temp_file_means_transfer_in_progress(root, capsys):
     d = ep(root, "a", episode_number=1)
     (d / ".cam0.mp4.Xy12ab").write_bytes(b"partial")
     ep(root, "b", episode_number=2)
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     out = capsys.readouterr().out
     assert "a  ->  skipped: transfer in progress" in out
     assert (d / ".cam0.mp4.Xy12ab").exists() and (d / VERIFIED).exists()
@@ -216,7 +227,7 @@ def test_invalid_meta_quarantined_first(root):
 
 def test_all_quarantined_creates_no_task_folder(root, capsys):
     corrupt_hash(ep(root, "bad"))
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     assert "bad  ->  quarantined: hash_mismatch" in capsys.readouterr().out
     assert not root.tasks.exists() or not (root.tasks / "block_raise").exists()
 
@@ -386,7 +397,7 @@ def test_exdev_errors_without_copy(root, monkeypatch, capsys):
         return real_rename(src, dst)
 
     monkeypatch.setattr(os, "rename", fake)
-    assert cli.main(["intake", "--task", "block_raise"]) == 1
+    assert cli_main(["intake", "--task", "block_raise"]) == 1
     assert "EXDEV" in capsys.readouterr().err
     assert (root.incoming / "a" / "meta.json").exists()
     assert not (root.tasks / "block_raise" / "episode_0" / "raw").exists()
@@ -403,7 +414,7 @@ def test_reconcile_after_crash(root, capsys):
     os.rename(d, t / "episode_1" / "raw")
     # and a calibration move with no row and no pending record
     build_episode(t / "calibration" / "cal_x" / "raw", session_id="s03", episode_number=0)
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     out = capsys.readouterr().out
     assert "reconciled: block_raise/episode_1" in out and "reconciled: block_raise/calibration/cal_x" in out
     rs = {r["slot"]: r for r in rows(root)}
@@ -434,7 +445,7 @@ def test_lock_held_exits_1(root, capsys):
     fd = os.open(root.path / LOCK_NAME, os.O_RDWR | os.O_CREAT)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
-        assert cli.main(["intake", "--task", "block_raise"]) == 1
+        assert cli_main(["intake", "--task", "block_raise"]) == 1
         assert "another intake is running" in capsys.readouterr().err
         with pytest.raises(LockHeldError):
             intake(root)
@@ -448,7 +459,7 @@ def test_target_is_a_file_exits_1(root, capsys):
     root.tasks.mkdir(parents=True)
     (root.tasks / "block_raise").write_text("")
     ep(root, "a")
-    assert cli.main(["intake", "--task", "block_raise"]) == 1
+    assert cli_main(["intake", "--task", "block_raise"]) == 1
     assert "not a directory" in capsys.readouterr().err
     assert (root.incoming / "a").is_dir()
 
@@ -481,21 +492,21 @@ def test_cli_end_to_end(root, capsys):
     ep(root, "s01_e1", episode_number=1, offset_s=0)
     corrupt_hash(ep(root, "s01_e2", episode_number=2, offset_s=1))
     ep(root, "s01_e3", episode_number=3, offset_s=2, verified=False)
-    assert cli.main(["intake", "--task", "block_raise"]) == 0
+    assert cli_main(["intake", "--task", "block_raise"]) == 0
     out = capsys.readouterr().out
     assert "s01_e1  ->  episode_0" in out
     assert "s01_e2  ->  quarantined: hash_mismatch" in out
     assert "s01_e3  ->  skipped: not verified" in out
     assert "1 ingested into tasks/block_raise (created), 1 quarantined, 1 left in incoming" in out
     (root.incoming / "s01_e3" / VERIFIED).touch()
-    assert cli.main(["intake", "--task", str(root.tasks / "block_raise"), "--new"]) == 0
+    assert cli_main(["intake", "--task", str(root.tasks / "block_raise"), "--new"]) == 0
     assert "s01_e3  ->  episode_0" in capsys.readouterr().out
     assert (root.tasks / "block_raise_2" / "episode_0" / "raw").is_dir()
 
 
 def test_cli_calibration(root, capsys):
     ep(root, "c1", episode_number=1)
-    assert cli.main(["intake", "--task", "block_raise", "--calibration"]) == 0
+    assert cli_main(["intake", "--task", "block_raise", "--calibration"]) == 0
     assert "c1  ->  calibration/c1" in capsys.readouterr().out
 
 
@@ -631,7 +642,7 @@ def test_readonly_episode_dir_skipped(root, capsys):
     ep(root, "b", episode_number=2, offset_s=1)
     os.chmod(root.incoming / "a", 0o555)
     try:
-        assert cli.main(["intake", "--task", "block_raise"]) == 0
+        assert cli_main(["intake", "--task", "block_raise"]) == 0
         out = capsys.readouterr().out
         assert "a  ->  skipped: permission denied (owner uid" in out and "mode dr-xr-xr-x" in out
         assert _state(root)[2] == {"block_raise": ["episode_0/raw"]}
@@ -666,7 +677,7 @@ def test_readonly_root_dirs_exit_1_and_create_nothing(root, capsys, which):
     os.chmod(d, 0o555)
     try:
         for _ in range(2):
-            assert cli.main(["intake", "--task", "block_raise"]) == 1
+            assert cli_main(["intake", "--task", "block_raise"]) == 1
             assert "permission denied" in capsys.readouterr().err
     finally:
         os.chmod(d, 0o755)
@@ -702,7 +713,7 @@ def test_error_mid_run_prints_partial_summary(root, monkeypatch, capsys):
         return real(src, dst)
 
     monkeypatch.setattr(I, "_move", rn)
-    assert cli.main(["intake", "--task", "block_raise"]) == 1
+    assert cli_main(["intake", "--task", "block_raise"]) == 1
     out, err = capsys.readouterr()
     assert "a  ->  episode_0" in out and "before the error: 1 ingested" in out
     assert "stopped at b; nothing after it was processed" in err
@@ -712,7 +723,7 @@ def test_error_mid_run_prints_partial_summary(root, monkeypatch, capsys):
 def test_unexpected_error_mid_run(root, monkeypatch, capsys):
     ep(root, "a")
     monkeypatch.setattr(I.Ledger, "append", lambda *a: (_ for _ in ()).throw(RuntimeError("disk on fire")))
-    assert cli.main(["intake", "--task", "block_raise"]) == 1
+    assert cli_main(["intake", "--task", "block_raise"]) == 1
     err = capsys.readouterr().err
     assert "unexpected error: disk on fire" in err and "stopped at a" in err
 
@@ -721,7 +732,8 @@ def test_concurrent_processes(root):
     for i in range(6):
         ep(root, f"e{i}", offset_s=i, episode_number=i)
     code = (f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r}); "
-            "from dataproc.cli import main; sys.exit(main(['intake', '--task', 'block_raise']))")
+            "from dataproc.intake import cli_intake; from dataproc.paths import data_root; "
+            "sys.exit(cli_intake(data_root(), 'block_raise'))")
     ps = [subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
           for _ in range(4)]
     rcs = [p.wait() for p in ps]
@@ -760,7 +772,7 @@ def test_bad_ledger_in_other_folder_exits_1(root, capsys):
     (root.tasks / "other").mkdir(parents=True)
     (root.tasks / "other" / LEDGER_NAME).write_text("garbage\n")
     ep(root, "a")
-    assert cli.main(["intake", "--task", "block_raise"]) == 1
+    assert cli_main(["intake", "--task", "block_raise"]) == 1
     assert "unexpected header" in capsys.readouterr().err
     assert (root.incoming / "a").is_dir()
 
@@ -781,7 +793,7 @@ def test_readonly_existing_target_folder(root, capsys):
     before = _tree(root)
     os.chmod(t, 0o555)
     try:
-        assert cli.main(["intake", "--task", "block_raise"]) == 1
+        assert cli_main(["intake", "--task", "block_raise"]) == 1
         err = capsys.readouterr().err
         assert "permission denied" in err and f"effective uid {os.geteuid()}" in err
     finally:
@@ -798,7 +810,7 @@ def test_readonly_calibration_subdir(root, capsys):
     ep(root, "c", episode_number=2, offset_s=1)
     os.chmod(cal, 0o555)
     try:
-        assert cli.main(["intake", "--task", "block_raise", "--calibration"]) == 1
+        assert cli_main(["intake", "--task", "block_raise", "--calibration"]) == 1
         assert "calibration/ folder" in capsys.readouterr().err
     finally:
         os.chmod(cal, 0o755)
@@ -812,7 +824,7 @@ def test_readonly_quarantine_checked_before_reconcile(root, capsys):
     os.chmod(root.quarantine / "x", 0o555)
     os.chmod(root.quarantine, 0o555)
     try:
-        assert cli.main(["intake", "--task", "block_raise"]) == 1
+        assert cli_main(["intake", "--task", "block_raise"]) == 1
         err = capsys.readouterr().err
     finally:
         os.chmod(root.quarantine, 0o755)
@@ -826,7 +838,7 @@ def test_reconcile_permission_error_is_clean(root, capsys):
     ep(root, "a")
     os.chmod(root.quarantine / "x", 0o555)                           # quarantine/ itself writable
     try:
-        assert cli.main(["intake", "--task", "block_raise"]) == 1
+        assert cli_main(["intake", "--task", "block_raise"]) == 1
         err = capsys.readouterr().err
     finally:
         os.chmod(root.quarantine / "x", 0o755)
@@ -899,7 +911,7 @@ def test_failed_first_ingest_rolls_back_task_folder(root, monkeypatch, capsys, n
     monkeypatch.setattr(I, "_move", lambda s, d: (_ for _ in ()).throw(OSError(5, "EIO")))
     argv = ["intake", "--task", "block_raise"] + (["--new"] if new else []) + (["--calibration"] if calibration
                                                                                else [])
-    assert cli.main(argv) == 1
+    assert cli_main(argv) == 1
     out, err = capsys.readouterr()
     assert [x for x in _tree(root) if not x.startswith("incoming") and x != LOCK_NAME] == \
         [x for x in before if not x.startswith("incoming")]
@@ -923,7 +935,7 @@ def test_partial_summary_when_only_skipped_before_error(root, monkeypatch, capsy
     (root.incoming / "u").mkdir(parents=True)
     ep(root, "a")
     monkeypatch.setattr(I.Ledger, "append", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
-    assert cli.main(["intake", "--task", "block_raise"]) == 1
+    assert cli_main(["intake", "--task", "block_raise"]) == 1
     out, err = capsys.readouterr()
     assert "stopped at a" in err and "nothing waiting" not in out
     assert "a  ->  error: boom (already moved out of incoming" in out

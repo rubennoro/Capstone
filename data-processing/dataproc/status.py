@@ -39,9 +39,9 @@ class TaskStatus:
         from dataproc.intake import read_ledger
 
         if not self.task_dir.is_dir():
-            raise FileNotFoundError(f"no task folder {self.task_dir} (run intake first)")
+            raise FileNotFoundError(f"no task folder {self.task_dir} (create it with dataproc calibrate first)")
         if not (self.task_dir / "task.yaml").is_file():
-            raise FileNotFoundError(f"{self.task_dir / 'task.yaml'} is missing (run intake first)")
+            raise FileNotFoundError(f"{self.task_dir / 'task.yaml'} is missing (create it with dataproc calibrate first)")
         self.task = load_task_config(self.task_dir / "task.yaml")
         self.ledger = read_ledger(self.task_dir / "episodes.csv")
 

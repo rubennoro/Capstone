@@ -35,7 +35,7 @@ from dataproc.sim.trajectory import make_trajectory
 
 __all__ = ["Faults", "SimEpisode", "generate_episode", "finger_tag_poses_virt", "fast_rig", "TRUTH_VERSION",
            "TRUTH_FILE", "EXPOSURE_NS", "FRAME_PHASE_NS", "DEFAULT_IMU_RATE_HZ", "TAG_Y_M", "TAG_TILT_DEG",
-           "default_t0_ns", "read_truth", "run_sim", "next_episode_number", "DEFAULT_RIG_PATH"]
+           "default_t0_ns", "read_truth", "run_sim", "next_episode_number", "DEFAULT_RIG_PATH", "SIM_TMP"]
 
 TRUTH_VERSION = "dataproc.sim.truth.v1"
 TRUTH_FILE = "truth.npz"
@@ -403,15 +403,30 @@ def _ensure_rig_file(rigs_dir: Path, rig_id: str, text: str, log) -> None:
     log(f"wrote {dst}")
 
 
+SIM_TMP = ".sim-tmp"                     # out/<this>/: contract episodes while their Pi-format copy is written
+
+
 def run_sim(out, episodes: int = 1, calibration: bool = False, seed: int = 0, duration_s: float | None = None,
             rig_path=None, fast: bool = False, session_id: str | None = None, rigs_dir=None, verified: bool = True,
-            log=print) -> list[SimEpisode]:
-    """``dataproc sim``: write ``episodes`` episodes into ``out`` as ``<session>_episode_NNNNNN`` (numbering
-    continues after the largest existing number in ``out``). ``fast``: the ``<rig_id>_fast`` low-resolution rig
-    (:func:`fast_rig`) and 5 s episodes with a 2 s pre-roll. The rig yaml used is copied to ``rigs_dir`` if missing.
+            pi_format: bool = False, imu_gap_s: float | None = None, log=print) -> list[SimEpisode]:
+    """``dataproc sim``: write ``episodes`` episodes into ``out``. Numbering ``NNNNNN`` continues after the largest
+    ``..._episode_NNNNNN`` / ``episode_NNNNNN`` number already in ``out``, so several calls (calibration, then
+    demonstrations) can share one ``out``.
+
+    * ``pi_format`` (the CLI default): what the Pi 5 writes (:func:`dataproc.pi_format.contract_to_pi`), as
+      ``episode_NNNNNN`` with Pi ``meta.json`` ``episode`` = ``NNNNNN`` and ``truth.npz`` carried over (so
+      ``--slam oracle`` works). ``session_id`` is then only recorded in ``truth.npz``; ``verified`` is ignored.
+    * otherwise the contract format (docs/CONTRACT.md) as ``<session>_episode_NNNNNN``.
+
+    ``fast``: the ``<rig_id>_fast`` low-resolution rig (:func:`fast_rig`) and 5 s episodes with a 2 s pre-roll.
+    ``imu_gap_s``: remove that many seconds of IMU samples from the middle of each recording (an IMU dropout; the
+    ``validate`` stage rejects it with ``imu_gap``). The rig yaml used is copied to ``rigs_dir`` if missing.
     """
+    import shutil
+
     from dataproc.config import load_rig
     from dataproc.paths import validate_episode_dir_name
+    from dataproc.pi_format import contract_to_pi
 
     rig_path = Path(rig_path) if rig_path is not None else DEFAULT_RIG_PATH
     if fast:
@@ -424,6 +439,11 @@ def run_sim(out, episodes: int = 1, calibration: bool = False, seed: int = 0, du
     duration = duration_s if duration_s is not None else (5.0 if fast else 15.0)
     preroll = 2.0 if fast else 2.5
     make_trajectory(rig, "calibration" if calibration else "demonstration", seed, duration, preroll)  # validate
+    faults = None
+    if imu_gap_s is not None:
+        if not 0 < imu_gap_s < duration / 2:
+            raise ValueError(f"imu gap must be in (0, duration / 2 = {duration / 2:g}) s, got {imu_gap_s}")
+        faults = {"imu_gaps": [(duration / 2 - imu_gap_s / 2, imu_gap_s)]}
     now = time.time_ns()
     session = session_id or f"sim-{time.strftime('%Y%m%dT%H%M%S', time.gmtime(now / 1e9))}{now // 1000 % 10**6:06d}"
     kind = "calibration" if calibration else "demonstration"
@@ -436,10 +456,23 @@ def run_sim(out, episodes: int = 1, calibration: bool = False, seed: int = 0, du
     for k in range(episodes):
         n = first + k
         name = validate_episode_dir_name(f"{session}_episode_{n:06d}")
-        ep = generate_episode(out / name, rig, kind=kind, seed=seed * 1_000_003 + n, duration_s=duration,
-                              preroll_s=preroll, session_id=session, episode_number=n, verified=verified,
-                              unix_anchor_ns=time.time_ns())
-        log(f"{ep.path}  {kind}, {duration:g} s, cam0 {ep.frame_counts['cam0']} / cam1 {ep.frame_counts['cam1']} "
-            f"frames, {ep.imu_count} IMU samples, {ep.timings_s['total']:.1f} s")
+        where = out / SIM_TMP / name if pi_format else out / name
+        if pi_format:
+            shutil.rmtree(where, ignore_errors=True)
+        ep = generate_episode(where, rig, kind=kind, seed=seed * 1_000_003 + n, duration_s=duration,
+                              preroll_s=preroll, session_id=session, episode_number=n, faults=faults,
+                              verified=verified, unix_anchor_ns=time.time_ns())
+        if pi_format:
+            ep.path = contract_to_pi(where, out / f"episode_{n:06d}", n, with_exposure=True)
+            shutil.rmtree(where)
+        log(f"{ep.path}  {kind}{' (Pi format)' if pi_format else ''}, {duration:g} s, "
+            f"cam0 {ep.frame_counts['cam0']} / cam1 {ep.frame_counts['cam1']} frames, {ep.imu_count} IMU samples, "
+            f"{ep.timings_s['total']:.1f} s")
         done.append(ep)
+    if pi_format:
+        tmp = out / SIM_TMP
+        if tmp.is_dir() and not any(tmp.iterdir()):
+            tmp.rmdir()
+        if done:
+            log(f"rig {rig.rig_id}: pass --rig {rig.rig_id} to dataproc calibrate (--source {out})")
     return done

@@ -12,28 +12,33 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Current state (2026-11-05)
 
-- **`dataproc` (branch `rnoro/data-work`, folder `data-processing/`): Jetson-side intake + offline processing for the
-  Pi 5 sensor rig.** The Pi (black box, not written) records each episode (2 MP4s + frame CSVs + IMU CSV + meta.json +
-  MANIFEST.sha256 + COMPLETE) and rsyncs it to the Jetson's `/data/rig/incoming/` (record-then-transfer, per the
-  transmission-plan PDF). Format for the Pi team: `data-processing/docs/CONTRACT.md`.
-  - `dataproc intake --task NAME [--new] [--calibration]`: verified episodes → `tasks/<folder>/episode_N/raw/`
-    (`--new` makes `<name>_1`, `_2`…), ledger, quarantine with reasons, crash-safe.
-  - `dataproc process --task NAME [--episode N] [--force] [--slam orbslam3|oracle]`: calibration → per episode
-    Check → Slam → Grid → Pose → Width → Validate → Images → Export → `output/<folder>.zarr.zip` + `report.json`
-    (iPhUMI zarr schema, for both `umi_policy_dunetp` and `umi_policy_dunet`). `dataproc status --task NAME`.
-  - `dataproc sim`: synthetic episodes with ground truth, for testing without hardware.
-  - **Jetson how-to: `data-processing/README.md`** (one-time setup, practice run, per-session steps, troubleshooting).
-    Its practice-run commands were run verbatim on 2026-11-05 and work.
-  - 505 tests, all with the **oracle** SLAM backend. Commits `96ff703`, `3fb0ead`, `ce9ba42`, `0f4ab7c` (local, not
-    pushed). One reviewer signed off each wave. Docs: `data-processing/docs/{DESIGN,INTAKE,PROCESS,EXPORT,GEOMETRY,SIM}.md`.
+- **`dataproc` (branch `rnoro/data-work`, folder `data-processing/`): Jetson-side processing of the Pi 5 rig's
+  recordings into training zips.** The Pi (black box, not written) records each episode in its own format (2 MP4s +
+  frame CSVs + IMU CSV + meta.json + MANIFEST.sha256 + COMPLETE) into `/data/incoming/episode_NNNNNN/`;
+  `dataproc/pi_adapter.py` converts a copy (mapping: `data-processing/docs/PI_ADAPTER.md`; `/data/incoming` is only
+  read). 2026-11-10: CLI redesigned into three steps per session:
+  - `dataproc calibrate TASK EPISODE_DIR [--source /data/incoming] [--rig rig_pi_v1]`: fits + checks the gripper
+    calibration (opening `max_width - min_width` must be the rig's `gripper.max_opening_m`, 0.110 m ± 0.010 m on
+    `rig_pi_v1`; the 0.010 m tolerance is a default to confirm). Failure: diagnostics + hints, nothing created. Success: a new
+    folder `tasks/TASK` (then `TASK_2`, `TASK_3`…; label stays `TASK`). One folder = one calibration = one session.
+  - `dataproc run TASK_FOLDER START_DIR END_DIR [--slam auto|orbslam3|oracle|none] [--retry-failed] [--force]
+    [--dry-run]`: the range one recording at a time via `.staging/`; passed every stage → `episode_1`, `episode_2`…;
+    failed → `failed/<name>/` + `reason.json`; no SLAM → waits in `.staging/` (exit 3). No zip.
+  - `dataproc package DATASET FOLDER...`: exported episodes of any folders → `datasets/<task>/<DATASET>/<DATASET>.zarr.zip`
+    + `package.json` (iPhUMI zarr schema, for both `umi_policy_dunetp` and `umi_policy_dunet`); prints the rsync/train
+    commands. Also `dataproc status TASK_FOLDER`, and `dataproc sim` (Pi-format fake recordings with ground truth by
+    default; `--contract`, `--imu-gap`). `intake` and `process` are no longer commands (modules kept).
+  - **Jetson how-to: `data-processing/README.md`** (setup, practice run, per-session steps, troubleshooting) and
+    `data-processing/DIRECTIONS.md`. The practice run was run verbatim on 2026-11-10 and works.
+  - TESTCOUNT tests, all with the **oracle** SLAM backend. Redesign waves 1–2 committed (`5330902`, `a1ddbbc`; local,
+    not pushed); wave 3 (CLI, Pi-format sim, docs) uncommitted pending review. Docs:
+    `data-processing/docs/{DESIGN,PI_ADAPTER,PROCESS,EXPORT,INTAKE,GEOMETRY,SIM}.md`.
   - Env: a py3.10 venv with `pip install -e data-processing[test]` (pins in DESIGN.md "Development environment");
     run pytest with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` (a ROS plugin crashes otherwise).
   - 2026-11-07, on the Jetson: Docker removed. ORB-SLAM3 is **built natively** at `~/ORB_SLAM3` (v1.0-release
     `0df83dd`; Pangolin v0.6 in `/usr/local`; 8 GB swap at `/swapfile`). Exact recipe and patches:
-    `data-processing/docs/ORBSLAM3.md`. Python deps pinned in `pyproject.toml` (py3.12 env `~/envs/env_dataproc`, 507
-    tests pass). **Not yet run on data.** The Pi's recordings in `/data/incoming` don't match CONTRACT.md yet (meta.json,
-    CSV headers, cam0/cam1 roles swapped, no `.verified`), and the Pi writes to `/data/incoming`, not
-    `/data/rig/incoming` (use `DATAPROC_ROOT=/data`).
+    `data-processing/docs/ORBSLAM3.md`. Python deps pinned in `pyproject.toml` (py3.12 env `~/envs/env_dataproc`).
+    **Not yet run on real data**, and the Jetson checkout predates the redesign (pull, then re-run the tests).
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -82,12 +87,14 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-0. `dataproc` (deferred on purpose; see data-processing/docs):
-   - Connect native ORB-SLAM3 to the real recordings in `/data/incoming` (format mismatch first; see Current state).
-   - Training check: load an output zip with `UmiTaskDataset` (umi / umi_prompt) and run one forward+backward of both
-     policies (needs a torch env).
-   - `dataproc ship` (copy the zip to laptop/cluster with checksum), `rig-verify` (the Jetson script the Pi calls),
-     `docs/STATUS.md`.
+0. `dataproc` (see data-processing/README.md and docs/):
+   - Review + commit the redesign's wave 3 (CLI wiring, Pi-format sim, docs); confirm the 0.010 m opening tolerance.
+   - On the Jetson: pull, run the tests, then the first real session: `dataproc calibrate block_raise <cal dir>`,
+     `dataproc run block_raise <first> <last>` (native ORB-SLAM3), `dataproc package <name> block_raise`. Measure the
+     real gripper opening for `rig_pi_v1.yaml` `gripper.max_opening_m` (0.110 m is the planned value, unmeasured).
+   - Training check: load a `package` zip with `UmiTaskDataset` (umi / umi_prompt) and run one forward+backward of
+     both policies (needs a torch env).
+   - `dataproc ship` (copy the zip to the cluster with checksum), `rig-verify` (the Jetson script the Pi calls).
    - Deployment design: Pi stream mode over Ethernet ("one capture pipeline, two outputs"), deployment must import
      `dataproc.imageprep`, same TCP definition as the rig's `T_cam_tcp`, policy inference speed on the Orin Nano.
    - On hardware: Kalibr calibration, Pi timestamp semantics (`timestamp_ref`).

@@ -1,95 +1,79 @@
-# `dataproc process` and `dataproc status`
+# Processing: the calibration and the per-episode stages
 
-`process` turns a task folder's raw episodes into `output/<folder>.zarr.zip` (schema: [DESIGN.md](DESIGN.md),
-"Output zarr contract") plus `output/report.json`. `status` shows where every episode is. The step names below are
-the method and class names in the code, in the same order.
+`dataproc run` (via `dataproc/run/`) processes each recording with the stages below; `dataproc calibrate` fits the
+calibration they use. Each exported episode is one `processed/episode.zarr` in the final schema
+([DESIGN.md](DESIGN.md), "Output zarr contract"); **no zip is built here**: `dataproc package` combines them
+([EXPORT.md](EXPORT.md)). `dataproc status TASK_FOLDER` shows where every episode is. The step names below are the
+function, method and class names in the code.
 
-```bash
-dataproc process --task NAME [--episode N] [--force] [--slam orbslam3|oracle]   # default --slam orbslam3
-dataproc status  --task NAME
-```
-
-`--slam oracle` uses the synthetic ground truth (`raw/truth.npz`, written by `dataproc sim`). On an episode without
-that file, the slam stage fails with `oracle_no_truth` and a message pointing to `--slam orbslam3`.
+`--slam oracle` uses the synthetic ground truth (`raw/truth.npz`, written by `dataproc sim`). On a recording
+without that file, the slam stage fails with `oracle_no_truth` and a message pointing to `--slam orbslam3`.
 
 ## Code layout
 
 | Module | Contents |
 |---|---|
-| `dataproc/process.py` | `TaskProcessor` (the command), `EpisodeProcessor` (one episode), `run_process`, `cli_process` |
+| `dataproc/process.py` | `load_folder_context`, `process_calibration`, `EpisodeProcessor` (one episode dir); `TaskProcessor` / `run_process` / `cli_process` (every `episode_N` of a folder, `output/report.json`; Python API only, not a command) |
 | `dataproc/stages/base.py` | the `Stage` interface, `StageFailed`, `ProcessContext`, `Episode`, `Calibration`, `rig_sections` |
-| `dataproc/stages/calibration.py` | `CalibrationStep` (task level), `newest_calibration` |
+| `dataproc/stages/calibration.py` | `fit_calibration` (pure), `write_calibration_result`, `CalibrationStep` (reuse), `newest_calibration` |
 | `dataproc/stages/check.py` | `CheckStage` (+ the pure `check_episode`, `rig_consistency`) |
 | `dataproc/stages/geometry.py` | `SlamStage`, `GridStage`, `PoseStage`, `WidthStage` (they call `slam/`, `stages/pose.py`, `stages/width.py`) |
 | `dataproc/stages/validate.py` | `ValidateStage` (+ the pure `validate_episode` and every threshold constant) |
 | `dataproc/stages/output.py` | `ImagesStage`, `ExportStage` |
 | `dataproc/files.py` | process-specific helpers: JSON (atomic), canonical hashing of stage inputs, `status.json` read/write |
 | `dataproc/fsutil.py` | generic filesystem plumbing shared with intake: `write_atomic` (dot temp file + fsync + rename), renames, locks |
-| `dataproc/report.py` | `episode_summary`, `format_table` (shared by process and status) |
+| `dataproc/report.py` | `episode_summary`, `format_table` (shared by run, process and status) |
 | `dataproc/status.py` | `TaskStatus` (the status command) |
 
 A stage is a class with `name`, `version`, `deps`, `inputs(ctx, ep) -> dict` (what goes into its hash) and
 `run(ctx, ep) -> dict` (the `outputs` recorded in `status.json`). It raises
 `StageFailed("failed" | "rejected", reasons, message)`.
 
-## `TaskProcessor.run()`
+## The folder context (`load_folder_context`)
 
-1. **`load_task`**. Reads `tasks/<folder>/task.yaml`, `episodes.csv` and `rigs/<task.yaml rig>.yaml`. It lists
-   the episodes: `episode_N` directories that have a `raw/`, in numeric order. Empty `episode_N/` directories and
-   dot-entries (`.intake_pending.json`, temp files) are ignored. Writes nothing. **Exit 1, with nothing created**,
-   when any of these holds:
-   - the task folder is missing ("run intake first");
-   - `task.yaml` is missing ("run intake first") or invalid;
-   - the rig yaml is missing or invalid;
-   - `episodes.csv` is malformed;
-   - `--episode N` names no `episode_N` with a `raw/`.
+Reads `tasks/<folder>/task.yaml`, `episodes.csv` and `rigs/<task.yaml rig>.yaml`, and resolves the SLAM backend
+(`auto` → `orbslam3` if built, else `none`). Writes nothing. A missing or invalid task folder, `task.yaml`, rig yaml
+or ledger stops the command before anything is changed. One `ImagePrep` (remap table) is shared by the whole run.
 
-   `process` never creates folders other than `processed/` (and its subdirectories) and `output/`. It never writes
-   into `raw/`.
-2. **`process_calibration`** (`CalibrationStep`). Picks the newest `calibration/<name>/raw`, by ledger
-   `intake_unix_ns`; one without a ledger row counts as oldest. It runs these checks in order:
-   - the contract check;
-   - the calibration's `meta.rig_id` must equal the task's rig;
-   - decode the ultrawide, remap each frame with the run's shared `ImagePrep.to_virtual` (`ctx.prep`), detect the
-     tags;
-   - `fit_gripper_range`.
+## The calibration (`fit_calibration`, `CalibrationStep`; version 2)
 
-   It writes `calibration/<name>/processed/{gripper_range.json, status.json}` and copies `gripper_range.json` to
-   `tasks/<folder>/gripper_range.json`. The task-level copy always mirrors the current result: it is removed when
-   there is no calibration or the newest one failed. The step is skipped (the saved range is reused) when its hash
-   (manifest, `aruco`, `virtual_ultrawide`, `cameras.ultrawide`, task rig, version) is unchanged and its status is
-   `done` or `failed`, unless `--force`. Results:
-   - `done`;
-   - `no_calibration`;
-   - `calibration_failed`, with a reason: `invalid_episode`, `rig_mismatch`, `gripper_range_fit` or `exception`.
+**`fit_calibration(raw_dir, rig, prep, task_rig)`** reads one calibration recording and writes nothing. Its checks,
+in order (the first failure is the result, with its reason code):
+1. the contract check, videos decoded (`invalid_episode`);
+2. `rig_consistency`: meta `rig_id` vs the rig (`rig_mismatch`), each camera's resolution and fps vs the rig yaml
+   (`rig_resolution_mismatch`, `rig_fps_mismatch`);
+3. every ultrawide frame remapped with `ImagePrep.to_virtual`, the finger tags detected;
+4. `fit_gripper_range` (`gripper_range_fit`: too few usable both-tag frames);
+5. **the opening check:** `max_width - min_width` (metres, exactly the full opening the width stage exports) must
+   be within `gripper.opening_tolerance_m` of `gripper.max_opening_m` (`opening_out_of_range`). Without a `gripper`
+   section in the rig yaml the check is skipped with a warning.
 
-   An unexpected exception writes `calibration/<name>/processed/error.txt`, which is removed after a later
-   successful fit. A saved `gripper_range.json` that cannot be loaded (for any reason) is fitted again.
+An unexpected exception is `exception` (traceback kept). Fewer than `MIN_CYCLES` = 5 open/close cycles is a warning
+only. The result carries `calibration_diagnostics` (per-tag and both-tag detection counts, z statistics, cycle
+count, closed/open tag distance), which `dataproc calibrate` prints with hints.
 
-   When the result is not `done`, every episode's width stage fails with `no_calibration` / `calibration_failed`.
-3. **`episodes_to_process`**. All episodes, or only `--episode N`.
-4. **`process_episode`**. Runs `EpisodeProcessor(ctx, episode).run()` on each episode, sequentially. One
-   `ImagePrep` (remap table) is shared by the whole run.
-5. **`build_output`**. Always rebuilds `output/<folder>.zarr.zip` from every episode whose export is `done`, also
-   those not processed in this call (for example with `--episode N`), in `episode_N` order. The build writes a
-   temp file and renames it, so a failed build leaves the previous zip as it was. **An existing zip is never
-   deleted.**
-   - The build fails (for example ENOSPC): the old zip is kept untouched and the traceback goes to
-     `output/error.txt`. The report has `zip: null` and a `zip_note` naming the failure.
-   - Nothing is exportable: no zip is built and the old zip is kept untouched. The report has `zip: null` and
-     `zip_note: "no exportable episodes; previous zip kept and is stale"`.
-   - In both cases the exit code is 1, and `dataproc status` shows the kept zip as `stale`. `output/error.txt` is
-     removed after a later successful build.
-6. **`write_report`**. Writes `output/report.json` and prints the summary table. The report has:
-   - `task`, `label`, `rig_id`, `rig_nominal_sections` (`rig.nominal_sections()`), `slam_backend`,
-     `dataproc_version`, `created`, `duration_s`;
-   - `calibration`: `{state, name, reason, ran, gripper_range}`;
-   - `episodes`: one row each, `{slot, pi_name, status, last_stage, stages, reasons, n_steps, ran_this_call}`;
-   - `totals`: counts by status, plus `n_steps`;
-   - `zip` (`path`, `n_episodes`, `n_steps`, `n_ultrawide`, `episode_names`) when this call built it, else
-     `null` with a `zip_note`.
+**The rig yaml `gripper` section** (`config.GripperConfig`, part of the calibration hash):
 
-   **Exit code:** 0 when the zip was built. 1 when nothing is exportable or a fatal error occurred.
+```yaml
+gripper:
+  max_opening_m: 0.110          # rig_pi_v1: the real gripper's full opening (tag-to-tag x)
+  opening_tolerance_m: 0.010
+```
+
+`rig_v1` (and the `--fast` sim rig) use 0.060 m, the opening the simulator sweeps.
+
+**`write_calibration_result`** saves a fit as `calibration/<name>/processed/{gripper_range.json, status.json}`
+(`error.txt` for an exception) and the task copy `tasks/<folder>/gripper_range.json`. `dataproc calibrate` calls it
+before the folder is used, with the same inputs hash `CalibrationStep` computes.
+
+**`CalibrationStep`** (`process_calibration`, at the start of every run) picks the newest
+`calibration/<name>/raw` (by ledger `intake_unix_ns`; a folder made by `calibrate` has exactly one) and **reuses**
+the saved result when its hash (manifest, `aruco`, `virtual_ultrawide`, `cameras.ultrawide`, `gripper`, task rig,
+`CALIBRATION_VERSION`, dataproc version) is unchanged and its status is `done` or `failed`; otherwise (a rig edit,
+`--force`, an unreadable saved range) it fits again. The task copy always mirrors the current result: it is removed
+when the newest calibration failed. Results: `done`, `no_calibration`, `calibration_failed` (with a reason). When
+not `done`, every episode's width stage fails with `no_calibration` / `calibration_failed`; `run` refuses a folder
+whose calibration is not `done`.
 
 ## `EpisodeProcessor.run()`
 
@@ -137,8 +121,14 @@ stages after it are recorded as `skipped`, with reason `"<stage> <status>"`.
 | **images** | kept grid rows, both MP4s | `images.npz` (frame indices; images stay in memory) | failed: `main_frame_missing` | camera sections, `virtual_ultrawide`, 10 Hz, 25 ms |
 | **export** | images, kept pose/width rows | `episode.zarr` | — | `task.yaml` `label`, `pi_name` |
 
-**Names.** `episode_names` uses the ledger `pi_name` of the slot. If that is missing or empty (a reconciled
-row), it falls back to `<meta session_id>_episode_<NNNNNN>`.
+**Names.** `episode_names` uses the ledger `pi_name` of the slot (for `run`: the converted name,
+`pi-<date>_episode_NNNNNN`). If that is missing or empty (a reconciled row), it falls back to
+`<meta session_id>_episode_<NNNNNN>`.
+
+**After the stages** (`dataproc run`, `dataproc/run/episode.py`): export `done` → `.staging/<pi_name>` is renamed to
+the next free `episode_N` (from `episode_1`); `failed`/`rejected` at any stage → `failed/<pi_name>/` with
+`reason.json` (`stage`, `reasons`, `message`, time); slam failed with `slam_unavailable` (no backend) → it stays in
+`.staging/` and waits (exit 3).
 
 ### validate (`dataproc/stages/validate.py`)
 
@@ -167,36 +157,28 @@ These constants are part of the validate hash, so changing one re-runs validate 
 
 | Change | Re-runs |
 |---|---|
-| nothing | nothing (only the zip and report are rebuilt) |
-| `--force` | calibration and every stage of every selected episode |
+| nothing | nothing |
+| `--force` | calibration and every stage of every selected recording |
 | raw episode re-delivered (MANIFEST bytes) | everything for that episode |
 | `world_offset` or `tcp` in the rig yaml | pose, validate, images, export |
 | `task.yaml` `label` | images, export |
-| a new or changed calibration | width, validate, images, export |
+| a changed calibration result (e.g. after a rig edit) | width, validate, images, export |
 | `--slam` backend | slam and everything after it |
 
 A data file changed **after** intake without its manifest changing is not detected by the hash, because the hash
 covers `MANIFEST.sha256`, not the data files. `--force` re-verifies it (check: `hash_mismatch`).
 
-## `dataproc status` (`TaskStatus.run()`)
+## `dataproc status TASK_FOLDER` (`TaskStatus.run()`)
 
 Read-only.
 1. **`load_task`**: reads `task.yaml` and `episodes.csv`; exit 1 if the folder or `task.yaml` is missing.
 2. **`episode_rows`**: one row per `episode_N` with a `raw/`: slot, pi_name, last stage, status
    (`exported` / `rejected` / `failed` / `incomplete` / `pending`), reasons, n_steps.
-3. **`calibration_state`**: the newest calibration, `done` / `calibration_failed` / `not_processed` /
-   `no_calibration`.
-4. **`output_state`**: the zip is `up to date` when all of these hold:
-   - it exists;
-   - the last `report.json` says it was built (`zip` is not `null`);
-   - its own `meta/episode_names` equal the names of the episodes exported now, in order;
-   - it is newer than every exported `episode.zarr` (mtime).
-
-   Otherwise it is `stale (run dataproc process)` (for example a zip kept after a failed build, or with nothing
-   exportable) or `missing`.
+3. **`unfinished_rows`**: "not episodes (never packaged)": every `.staging/<pi_name>` (`in progress`, or
+   `waiting for SLAM`) and every `failed/<pi_name>` (its `reason.json` stage and reasons).
+4. **`calibration_state`**: `done` / `calibration_failed` / `not_processed` / `no_calibration`.
 
 ## Timing (laptop, oracle backend, `--fast` sim episode: 5 s, 150 grid steps)
 
 About 6.5 s per episode on a first run: check 0.3 s, slam 0.15 s, width 3.3 s (tag detection on 150 remapped
-frames), images 1.9 s, export 1.1 s. A second run with nothing changed takes ~0.3 s for 3 episodes (zip rebuild
-only).
+frames), images 1.9 s, export 1.1 s. Re-running a range with nothing new does no processing.

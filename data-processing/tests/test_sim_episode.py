@@ -297,15 +297,15 @@ def test_fast_rig_scales_intrinsics():
     assert np.array_equal(r.T_cam_tcp, full.T_cam_tcp) and r.virtual_ultrawide.resolution == (640, 480)
 
 
-def test_cli_sim(tmp_path, monkeypatch, capsys):
+def test_cli_sim_contract(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
     inc = tmp_path / "incoming"
     assert cli.main(["sim", "--out", str(inc), "--episodes", "1", "--fast", "--duration", "3.5", "--session",
-                     "t1", "--calibration", "--seed", "4"]) == 0
+                     "t1", "--calibration", "--seed", "4", "--contract"]) == 0
     (inc / "other_episode_000004").mkdir()                     # numbering continues after the largest number
     assert next_episode_number(inc) == 5
     assert cli.main(["sim", "--out", str(inc), "--episodes", "1", "--fast", "--duration", "3.5", "--session", "t2",
-                     "--unverified"]) == 0
+                     "--unverified", "--contract"]) == 0
     names = sorted(p.name for p in inc.iterdir())
     assert names == ["other_episode_000004", "t1_episode_000000", "t2_episode_000005"]
     cal = RawEpisode.open(inc / "t1_episode_000000")
@@ -320,6 +320,35 @@ def test_cli_sim(tmp_path, monkeypatch, capsys):
     assert "t1_episode_000000" in out and str(rig_file) in out
 
 
+def test_cli_sim_pi_format(tmp_path, monkeypatch, capsys):
+    """Default output: the Pi's format as ``episode_NNNNNN`` (Pi meta ``episode`` = NNNNNN), numbering shared by
+    calibration and demonstration runs into one --out; ``truth.npz`` carried and listed in the manifest; the
+    adapter takes it without problems."""
+    from dataproc.pi_adapter import convert_episode, inspect_source
+    from dataproc.raw_episode import COMPLETE, MANIFEST
+
+    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path / "root"))
+    src = tmp_path / "src"
+    assert cli.main(["sim", "--out", str(src), "--fast", "--duration", "3.5", "--calibration"]) == 0
+    assert cli.main(["sim", "--out", str(src), "--fast", "--duration", "3.5", "--episodes", "2"]) == 0
+    assert sorted(p.name for p in src.iterdir()) == ["episode_000000", "episode_000001", "episode_000002"]
+    out = capsys.readouterr().out
+    assert "(Pi format)" in out and "pass --rig rig_v1_fast to dataproc calibrate" in out
+    d = src / "episode_000002"
+    assert sorted(p.name for p in d.iterdir()) == sorted(["cam0.mp4", "cam0_frames.csv", "cam1.mp4",
+                                                          "cam1_frames.csv", "imu.csv", "meta.json", TRUTH_FILE,
+                                                          MANIFEST, COMPLETE])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["episode"] == 2 and meta["valid"] is True
+    assert {c["model"]: c["file"] for c in meta["cameras"]} == {"imx219": "cam0.mp4", "imx519": "cam1.mp4"}
+    assert TRUTH_FILE in (d / MANIFEST).read_text()
+    s = inspect_source(d)
+    assert s.ok, s.problem
+    convert_episode(s, tmp_path / "conv", "rig_v1_fast")
+    assert (tmp_path / "conv" / TRUTH_FILE).is_file()
+    assert read_truth(tmp_path / "conv")["kind"] == "demonstration"
+
+
 def test_cli_sim_usage_errors(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
     with pytest.raises(SystemExit) as e:
@@ -327,3 +356,9 @@ def test_cli_sim_usage_errors(tmp_path, monkeypatch, capsys):
     assert e.value.code == 2
     assert cli.main(["sim", "--out", str(tmp_path / "x"), "--fast", "--duration", "2"]) == 1   # too short
     assert "duration_s" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as e:
+        cli.main(["sim", "--out", str(tmp_path / "y"), "--unverified"])                    # Pi format: no .verified
+    assert e.value.code == 2 and "--unverified needs --contract" in capsys.readouterr().err
+    assert cli.main(["sim", "--out", str(tmp_path / "z"), "--fast", "--imu-gap", "4"]) == 1     # > duration / 2
+    assert "imu gap" in capsys.readouterr().err
+    assert not (tmp_path / "y").exists()

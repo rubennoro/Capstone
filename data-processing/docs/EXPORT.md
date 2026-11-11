@@ -1,7 +1,8 @@
 # Images and zarr export
 
 How `dataproc` turns decoded camera frames plus grid-aligned pose/width into the training `.zarr.zip`. The schema
-itself is in [DESIGN.md](DESIGN.md), under "Output zarr contract". This page covers the code and the per-episode artifact.
+itself is in [DESIGN.md](DESIGN.md), under "Output zarr contract". This page covers the code, the per-episode artifact
+(written by `dataproc run`'s export stage) and the dataset zip (written by `dataproc package`).
 
 ## Modules
 
@@ -11,6 +12,7 @@ itself is in [DESIGN.md](DESIGN.md), under "Output zarr contract". This page cov
 | `dataproc/export/frames.py` | **Pure** frame selection on the 60 Hz grid: `nearest_frame_index`, `ultrawide_substream`, `downsample_local`. |
 | `dataproc/export/images.py` | Stage `images` glue: decodes a `RawEpisode`, then runs selection and prep (`prepare_episode_images`). |
 | `dataproc/export/zarr_writer.py` | `EpisodeArrays`, the per-episode `episode.zarr` (`write_episode_zarr` / `load_episode_zarr`), and `build_task_zarr_zip`. |
+| `dataproc/package/` | `dataproc package`: `collect.py` selects the exported episodes of the folders, `build.py` calls `build_task_zarr_zip` and writes `package.json`. |
 | `dataproc/_vendor/` | Copied from iPhUMI at 4be9982: `replay_buffer.py` (verbatim), `imagecodecs_numcodecs.py` (the `JpegXl` subset; id `imagecodecs_jpegxl`), `cv_util.py` (verbatim). |
 
 ## Images
@@ -84,7 +86,24 @@ gripper_width        (N, 1) float32           metres
   - no rotation vector is exactly 0;
   - `uw_upsample_local` is ≥ 0, non-decreasing, and ends at M − 1.
 
-## Task zip: `build_task_zarr_zip(episodes, out_zip_path, *, tmp_dir=None, num_workers=4)`
+## Dataset zip: `dataproc package DATASET FOLDER [FOLDER ...] [--overwrite]`
+
+`process` / `run` never build a zip. `package` (`dataproc/package/`) does:
+1. **Collect** (`collect_episodes`): per folder, in the order given, every `episode_N` (in N order) whose
+   `processed/status.json` says `exported` and whose `processed/episode.zarr` exists. `failed/<pi_name>/` and
+   `.staging/<pi_name>/` (not finished) are listed as excluded and never included.
+2. **Checks:** every folder exists with a `task.yaml`; no folder twice; all folders have the same rig; at least one
+   episode; no Pi episode name twice; each `episode.zarr` label equals its folder's `task.yaml` label. Warning: a
+   label with fewer than 2 episodes (dunetp needs ≥ 2 per label).
+3. **Build** with `build_task_zarr_zip` (below) into `$DATAPROC_ROOT/datasets/<label>/<DATASET>/<DATASET>.zarr.zip`
+   (several labels: `datasets/multi/<DATASET>/`), the cluster's layout
+   (`~/CapstoneProject/datasets/<task>/<dataset>/<dataset>.zarr.zip`). An existing dataset is refused unless
+   `--overwrite`.
+4. **`package.json`** next to it: dataset name, folders (label, rig), per episode the folder, slot, Pi name, label,
+   n_steps and calibration; totals (episodes, steps, per label); rig; dataproc version; sha256 of the zip; creation
+   time. It then prints the `rsync` and `scripts/run_pipeline.sh train` commands.
+
+## The zip writer: `build_task_zarr_zip(episodes, out_zip_path, *, tmp_dir=None, num_workers=4)`
 
 - **Inputs:** `episodes` is a list of `EpisodeArrays` and/or `episode.zarr` paths, in output order.
 - **Build** (the iPhUMI flow, using the vendored `ReplayBuffer` in a temporary `DirectoryStore`):

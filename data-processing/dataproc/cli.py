@@ -1,8 +1,8 @@
-"""``dataproc`` command line: ``run``, ``intake``, ``process``, ``status`` and ``sim`` (behaviour: docs/DESIGN.md;
-``run``: docs/PI_ADAPTER.md).
+"""``dataproc`` command line: ``calibrate`` -> ``run`` -> ``package``, plus ``status`` and ``sim`` (docs/DESIGN.md).
 
-The data root is ``$DATAPROC_ROOT`` (default ``~/data``). ``--task`` is required for intake, process and
-status; it is a task folder name, ``name/episode_N``, or a path inside ``<root>/tasks/``.
+The data root is ``$DATAPROC_ROOT`` (default ``~/data``). This module only parses the arguments and calls each
+command's ``cli_*`` function (``dataproc/calibrate``, ``dataproc/run``, ``dataproc/package``, ``dataproc/status.py``,
+``dataproc/sim``), which prints and returns the exit code.
 """
 
 from __future__ import annotations
@@ -11,12 +11,13 @@ import argparse
 import sys
 
 from dataproc import __version__
-from dataproc.paths import DataRoot, TaskRef, data_root, resolve_task
+from dataproc.paths import DataRoot, data_root
 
 __all__ = ["build_parser", "main"]
 
 _SLAM_CHOICES = ("auto", "orbslam3", "oracle", "none")      # = dataproc.slam.BACKEND_CHOICES (not imported here)
-_TASK_HELP = "task folder name (e.g. block_raise), name/episode_N, or a path inside $DATAPROC_ROOT/tasks (required)"
+_SOURCE_HELP = "where the Pi delivers its recordings; read only (default /data/incoming)"
+_FOLDER_HELP = "task folder under $DATAPROC_ROOT/tasks, as printed by calibrate (e.g. block_raise or block_raise_2)"
 
 
 def _non_negative_int(s: str) -> int:
@@ -29,129 +30,138 @@ def _non_negative_int(s: str) -> int:
     return v
 
 
+def _positive_float(s: str) -> float:
+    try:
+        v = float(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a number, got {s!r}") from None
+    if not v > 0:
+        raise argparse.ArgumentTypeError(f"must be > 0, got {s}")
+    return v
+
+
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="dataproc", description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(prog="dataproc", description="Pi recordings -> training data: calibrate -> run -> "
+                                 "package, plus status and sim (docs/DESIGN.md).")
     ap.add_argument("--version", action="version", version=f"dataproc {__version__}")
-    sub = ap.add_subparsers(dest="command", required=True, metavar="{run,intake,process,status,sim}")
+    sub = ap.add_subparsers(dest="command", required=True, metavar="{calibrate,run,package,status,sim}")
 
-    p = sub.add_parser("run", help="Pi episodes in --source -> adapt -> intake -> process, for one task")
-    p.add_argument("--task", required=True, help="task name: the task folder and the label written to the zarr")
-    p.add_argument("--calibration-episode", metavar="DIR",
-                   help="the gripper-calibration recording: a directory name in --source (required the first time)")
-    p.add_argument("--source", default="/data/incoming", metavar="DIR",
-                   help="where the Pi delivers episodes; read only (default /data/incoming)")
+    p = sub.add_parser("calibrate", help="fit the gripper calibration on one Pi recording; on success create a new "
+                       "task folder (TASK, else TASK_2, TASK_3, ...)",
+                       description="Fit and check the gripper calibration on the Pi recording EPISODE_DIR. On failure "
+                       "print why and create nothing; on success create the first free task folder TASK, TASK_2, "
+                       "TASK_3, ... (one folder = one calibration = one session).")
+    p.add_argument("task", metavar="TASK", help="task name: the label written to the zarr (e.g. block_raise)")
+    p.add_argument("episode_dir", metavar="EPISODE_DIR",
+                   help="the calibration recording: a directory name in --source (e.g. episode_000001)")
+    p.add_argument("--source", default="/data/incoming", metavar="DIR", help=_SOURCE_HELP)
     p.add_argument("--rig", default="rig_pi_v1", metavar="RIG_ID",
-                   help="rig id written into the episodes; selects rigs/<id>.yaml (default rig_pi_v1)")
+                   help="rig id; selects rigs/<id>.yaml and is recorded in task.yaml (default rig_pi_v1)")
+
+    p = sub.add_parser("run", help="process the Pi recordings START_DIR..END_DIR into episode_N of a calibrated "
+                       "task folder (failures go to failed/)",
+                       description="Process every recording in --source from START_DIR to END_DIR (inclusive, "
+                       "natural sort), one at a time. Only recordings that pass every stage become episode_N; the "
+                       "others go to failed/<name>/ with reason.json. Exit 0 = done (also with failures), 3 = "
+                       "waiting for SLAM, 1 = error.")
+    p.add_argument("folder", metavar="TASK_FOLDER", help=_FOLDER_HELP)
+    p.add_argument("start_dir", metavar="START_DIR", help="first recording: a directory name in --source")
+    p.add_argument("end_dir", metavar="END_DIR", help="last recording (inclusive): a directory name in --source")
+    p.add_argument("--source", default="/data/incoming", metavar="DIR", help=_SOURCE_HELP)
     p.add_argument("--slam", choices=_SLAM_CHOICES, default="auto",
-                   help="SLAM backend (default auto = orbslam3 if built, else none: stop at slam until it is)")
-    p.add_argument("--dry-run", action="store_true", help="only list what would be taken in, change nothing")
-    p.add_argument("--episodes", nargs="+", metavar="DIR",
-                   help="take only these directories in --source as demonstrations (default: every new one)")
-    p.add_argument("--no-calibration", action="store_true",
-                   help="process without a calibration episode (every episode is a demonstration; no zip until "
-                   "a calibration is added)")
+                   help="SLAM backend (default auto = orbslam3 if built, else none: stop at slam and wait, exit 3; "
+                   "oracle = ground truth of dataproc sim recordings)")
+    p.add_argument("--retry-failed", action="store_true", help="also re-run recordings of the range in failed/")
+    p.add_argument("--force", action="store_true", help="re-run every stage for the selected range")
+    p.add_argument("--dry-run", action="store_true", help="only list what would happen, change nothing")
 
-    p = sub.add_parser("intake", help="move verified episodes from incoming/ into tasks/<folder>/episode_N/raw/")
-    p.add_argument("--task", required=True, help=_TASK_HELP)
-    p.add_argument("--new", action="store_true", help="if the task folder exists, start <task>_1, <task>_2, ...")
-    p.add_argument("--calibration", action="store_true",
-                   help="send the next waiting episode to calibration/<name>/raw/ instead of episode_N")
+    p = sub.add_parser("package", help="combine the finished episodes of task folders into one training .zarr.zip",
+                       description="Combine every exported episode_N of the FOLDERs into "
+                       "$DATAPROC_ROOT/datasets/<label>/DATASET/DATASET.zarr.zip (+ package.json); several labels "
+                       "go to datasets/multi/. failed/ and .staging/ are never included.")
+    p.add_argument("dataset", metavar="DATASET", help="dataset name (e.g. block_raise-1110)")
+    p.add_argument("folders", metavar="FOLDER", nargs="+", help="task folders to include")
+    p.add_argument("--overwrite", action="store_true", help="replace an existing dataset of that name")
 
-    p = sub.add_parser("process", help="process episodes and rebuild output/<folder>.zarr.zip")
-    p.add_argument("--task", required=True, help=_TASK_HELP)
-    p.add_argument("--episode", type=_non_negative_int, metavar="N", help="only process episode_N")
-    p.add_argument("--force", action="store_true", help="rerun stages even if their inputs are unchanged")
-    p.add_argument("--slam", choices=_SLAM_CHOICES, default="orbslam3",
-                   help="SLAM backend (default orbslam3; oracle = synthetic ground truth, needs raw/truth.npz; "
-                   "none = not installed yet, stop at slam; auto = orbslam3 if built, else none)")
+    p = sub.add_parser("status", help="show the episodes, failed/ and .staging/ recordings and calibration of a "
+                       "task folder (read only)")
+    p.add_argument("folder", metavar="TASK_FOLDER", help=_FOLDER_HELP)
 
-    p = sub.add_parser("status", help="show per-episode processing status of a task")
-    p.add_argument("--task", required=True, help=_TASK_HELP)
-
-    p = sub.add_parser("sim", help="write synthetic episodes (with ground truth) for testing")
-    p.add_argument("--out", required=True, help="output folder, usually $DATAPROC_ROOT/incoming")
-    p.add_argument("--episodes", type=_non_negative_int, default=1, metavar="N", help="number of episodes")
-    p.add_argument("--calibration", action="store_true", help="write gripper-calibration episodes")
+    p = sub.add_parser("sim", help="write synthetic recordings (with ground truth) for testing; Pi format by default",
+                       description="Write synthetic recordings with ground truth (truth.npz, for --slam oracle). "
+                       "Default: the Pi's format as episode_NNNNNN, numbered after the largest number already in "
+                       "--out (so calibration and demonstration runs can share one --out). --contract: dataproc's "
+                       "own raw format as <session>_episode_NNNNNN.")
+    p.add_argument("--out", required=True, help="output folder (a scratch --source; never the real /data/incoming)")
+    p.add_argument("--episodes", type=_non_negative_int, default=1, metavar="N", help="number of recordings")
+    p.add_argument("--calibration", action="store_true", help="write gripper-calibration recordings")
     p.add_argument("--seed", type=_non_negative_int, default=0, metavar="S",
-                   help="base seed (episode n uses seed S*1000003 + n; default 0)")
-    p.add_argument("--duration", type=float, default=None, metavar="SEC",
-                   help="recording length incl. 2.5 s pre-roll and 0.5 s post-roll (default 15, --fast: 5)")
+                   help="base seed (recording n uses seed S*1000003 + n; default 0)")
+    p.add_argument("--duration", type=_positive_float, default=None, metavar="SEC",
+                   help="recording length incl. pre-roll (2.5 s, --fast: 2 s) and 0.5 s post-roll (default 15, --fast: 5)")
     p.add_argument("--rig", default=None, metavar="PATH", help="rig yaml (default configs/rigs/rig_v1.yaml)")
     p.add_argument("--fast", action="store_true",
-                   help="low-resolution rig (<rig_id>_fast: main x0.25, ultrawide x0.5) and short episodes")
+                   help="low-resolution rig (<rig_id>_fast: main x0.25, ultrawide x0.5) and short recordings")
+    p.add_argument("--imu-gap", type=_positive_float, default=None, metavar="SEC",
+                   help="drop SEC of IMU samples mid-recording (an IMU dropout: run rejects it at validate, imu_gap)")
+    p.add_argument("--contract", action="store_true",
+                   help="write dataproc's own raw format (docs/CONTRACT.md) instead of the Pi's")
     p.add_argument("--session", default=None, metavar="ID",
-                   help="session id (default sim-<UTC time, microseconds>); episode dirs are <session>_episode_NNNNNN")
+                   help="session id (default sim-<UTC time, microseconds>); --contract directory names are "
+                   "<session>_episode_NNNNNN (Pi format: only recorded in truth.npz)")
     p.add_argument("--rigs-dir", default=None, metavar="DIR",
                    help="where the rig yaml used is copied if missing (default $DATAPROC_ROOT/rigs)")
-    p.add_argument("--unverified", action="store_true", help="do not write .verified")
+    p.add_argument("--unverified", action="store_true", help="with --contract: do not write .verified")
     for parser in sub.choices.values():
         parser.set_defaults(_parser=parser)        # usage errors print the subcommand's usage line
     return ap
 
 
-def _task(args, root: DataRoot) -> TaskRef:
-    ap = args._parser
-    try:
-        ref = resolve_task(args.task, root)
-    except ValueError as e:
-        ap.error(str(e))
-    if args.command in ("intake", "status") and ref.episode is not None:
-        ap.error(f"{args.command} --task takes a task, not an episode ({args.task!r})")
-    if args.command == "process" and ref.episode is not None:
-        if args.episode is not None and args.episode != ref.episode:
-            ap.error(f"--task names episode_{ref.episode} but --episode is {args.episode}")
-        args.episode = ref.episode
-    return ref
+def cmd_calibrate(args, root: DataRoot) -> int:
+    from dataproc.calibrate.cli import cli_calibrate
+
+    return cli_calibrate(root, args.task, args.episode_dir, source=args.source, rig_id=args.rig)
 
 
 def cmd_run(args, root: DataRoot) -> int:
-    from dataproc.run import cli_run
+    from dataproc.run.cli import cli_run
 
-    return cli_run(root, args.task, calibration_episode=args.calibration_episode, source=args.source,
-                   rig_id=args.rig, slam=args.slam, dry_run=args.dry_run, no_calibration=args.no_calibration,
-                   episodes=args.episodes)
-
-
-def cmd_intake(args, root: DataRoot, task: TaskRef) -> int:
-    from dataproc.intake import cli_intake
-
-    return cli_intake(root, task.folder, new=args.new, calibration=args.calibration)
+    return cli_run(root, args.folder, args.start_dir, args.end_dir, source=args.source, slam=args.slam,
+                   retry_failed=args.retry_failed, force=args.force, dry_run=args.dry_run)
 
 
-def cmd_process(args, root: DataRoot, task: TaskRef) -> int:
-    from dataproc.process import cli_process
+def cmd_package(args, root: DataRoot) -> int:
+    from dataproc.package.cli import cli_package
 
-    return cli_process(root, task.folder, episode=args.episode, force=args.force, slam=args.slam)
+    return cli_package(root, args.dataset, args.folders, overwrite=args.overwrite)
 
 
-def cmd_status(args, root: DataRoot, task: TaskRef) -> int:
+def cmd_status(args, root: DataRoot) -> int:
     from dataproc.status import cli_status
 
-    return cli_status(root, task.folder)
+    return cli_status(root, args.folder)
 
 
 def cmd_sim(args, root: DataRoot) -> int:
     from dataproc.sim.episode import run_sim
 
-    if args.duration is not None and not args.duration > 0:
-        args._parser.error(f"--duration must be > 0, got {args.duration}")
+    if args.unverified and not args.contract:
+        args._parser.error("--unverified needs --contract (the Pi format has no .verified)")
     try:
         run_sim(out=args.out, episodes=args.episodes, calibration=args.calibration, seed=args.seed,
                 duration_s=args.duration, rig_path=args.rig, fast=args.fast, session_id=args.session,
-                rigs_dir=args.rigs_dir if args.rigs_dir is not None else root.rigs, verified=not args.unverified)
+                rigs_dir=args.rigs_dir if args.rigs_dir is not None else root.rigs, verified=not args.unverified,
+                pi_format=not args.contract, imu_gap_s=args.imu_gap)
     except (ValueError, OSError) as e:
         print(f"dataproc sim: {e}", file=sys.stderr)
         return 1
     return 0
 
 
+COMMANDS = {"calibrate": cmd_calibrate, "run": cmd_run, "package": cmd_package, "status": cmd_status,
+            "sim": cmd_sim}
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = build_parser()
-    args = ap.parse_args(argv)
-    root = data_root()
-    if args.command == "sim":
-        return cmd_sim(args, root)
-    if args.command == "run":
-        return cmd_run(args, root)
-    task = _task(args, root)
-    return {"intake": cmd_intake, "process": cmd_process, "status": cmd_status}[args.command](args, root, task)
+    args = build_parser().parse_args(argv)
+    return COMMANDS[args.command](args, data_root())
