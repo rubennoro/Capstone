@@ -30,15 +30,19 @@ Running status between working sessions. Update it at the end of each conversati
     default; `--contract`, `--imu-gap`). `intake` and `process` are no longer commands (modules kept).
   - **Jetson how-to: `data-processing/README.md`** (setup, practice run, per-session steps, troubleshooting) and
     `data-processing/DIRECTIONS.md`. The practice run was run verbatim on 2026-11-10 and works.
-  - TESTCOUNT tests, all with the **oracle** SLAM backend. Redesign waves 1–2 committed (`5330902`, `a1ddbbc`; local,
-    not pushed); wave 3 (CLI, Pi-format sim, docs) uncommitted pending review. Docs:
+  - 603 tests (+1 skipped), all with the **oracle** SLAM backend. Redesign committed in 3 waves (`5330902`, `a1ddbbc`,
+    `43e2347` + follow-up; local, not pushed). The final review pass was skipped by choice (user: good enough; from now
+    on only real data, so `sim` is dev-only). Docs:
     `data-processing/docs/{DESIGN,PI_ADAPTER,PROCESS,EXPORT,INTAKE,GEOMETRY,SIM}.md`.
   - Env: a py3.10 venv with `pip install -e data-processing[test]` (pins in DESIGN.md "Development environment");
     run pytest with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` (a ROS plugin crashes otherwise).
   - 2026-11-07, on the Jetson: Docker removed. ORB-SLAM3 is **built natively** at `~/ORB_SLAM3` (v1.0-release
     `0df83dd`; Pangolin v0.6 in `/usr/local`; 8 GB swap at `/swapfile`). Exact recipe and patches:
     `data-processing/docs/ORBSLAM3.md`. Python deps pinned in `pyproject.toml` (py3.12 env `~/envs/env_dataproc`).
-    **Not yet run on real data**, and the Jetson checkout predates the redesign (pull, then re-run the tests).
+    **Not yet run on real data**, and the Jetson checkout predates the redesign (push, pull, then re-run the tests).
+    On the Jetson: leave `DATAPROC_ROOT` unset (`~/data`); `DATAPROC_ROOT=/data` is refused because the root's
+    `incoming/` would be the Pi's `/data/incoming`. Delete a pre-redesign `~/data/rigs/rig_pi_v1.yaml` (no `gripper:`
+    section; calibrate/run stop on it).
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -88,7 +92,7 @@ Running status between working sessions. Update it at the end of each conversati
 ## Next time
 
 0. `dataproc` (see data-processing/README.md and docs/):
-   - Review + commit the redesign's wave 3 (CLI wiring, Pi-format sim, docs); confirm the 0.010 m opening tolerance.
+   - Push `rnoro/data-work` (ask first); confirm the 0.010 m opening tolerance.
    - On the Jetson: pull, run the tests, then the first real session: `dataproc calibrate block_raise <cal dir>`,
      `dataproc run block_raise <first> <last>` (native ORB-SLAM3), `dataproc package <name> block_raise`. Measure the
      real gripper opening for `rig_pi_v1.yaml` `gripper.max_opening_m` (0.110 m is the planned value, unmeasured).
