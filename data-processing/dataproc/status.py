@@ -1,5 +1,5 @@
-"""``dataproc status --task NAME``: per-episode processing state, calibration state, and whether the output zip is
-up to date. Read-only: never creates or changes anything (docs/PROCESS.md)."""
+"""``dataproc status``: per-episode processing state of a task folder, its ``.staging/`` and ``failed/``
+recordings, and the calibration state. Read-only: never creates or changes anything (docs/PROCESS.md)."""
 
 from __future__ import annotations
 
@@ -24,16 +24,14 @@ class TaskStatus:
         self.task_dir = root.tasks / folder
         self.task = None
         self.ledger: list[dict] = []
-        self.newest_zarr_mtime: float | None = None
         self.exported: list[str] = []
 
     def run(self) -> dict:
         self.load_task()
         episodes = self.episode_rows()
         calibration = self.calibration_state()
-        output = self.output_state()
         return {"task": self.folder, "label": self.task.label, "rig": self.task.rig, "episodes": episodes,
-                "calibration": calibration, "n_exported": len(self.exported), **output}
+                "unfinished": self.unfinished_rows(), "calibration": calibration, "n_exported": len(self.exported)}
 
     def load_task(self) -> None:
         """Reads ``task.yaml`` and ``episodes.csv``."""
@@ -57,10 +55,7 @@ class TaskStatus:
             status = load_status(d / "processed")
             s = episode_summary(status)
             rows.append({"slot": d.name, "pi_name": pi.get(d.name, ""), **s})
-            z = d / "processed" / "episode.zarr"
-            if s["status"] == "exported" and z.is_dir():
-                m = _mtime_tree(z)
-                self.newest_zarr_mtime = m if self.newest_zarr_mtime is None else max(self.newest_zarr_mtime, m)
+            if s["status"] == "exported" and (d / "processed" / "episode.zarr").is_dir():
                 self.exported.append(status["export"].get("outputs", {}).get("name") or pi.get(d.name, ""))
         return rows
 
@@ -80,47 +75,32 @@ class TaskStatus:
         out["task_gripper_range"] = (self.task_dir / GRIPPER_RANGE_FILE).is_file()
         return out
 
-    def output_state(self) -> dict:
-        """The zip is ``up to date`` when it exists, the last ``report.json`` says it was built (``zip`` not null),
-        its ``meta/episode_names`` are exactly the names of the episodes exported now, in order, and it is newer
-        than every exported ``episode.zarr``. Otherwise ``stale`` (a kept older zip) or ``missing``."""
-        from dataproc.process import REPORT_FILE, zip_path
+    def unfinished_rows(self) -> list[dict]:
+        """``.staging/<pi_name>`` (in progress, or waiting for SLAM: its last recorded stage) and
+        ``failed/<pi_name>`` (``reason.json``: stage and reasons) entries of ``dataproc run``."""
+        from dataproc.paths import FAILED_DIR, STAGING_DIR
 
-        zp = zip_path(self.task_dir, self.folder)
-        if not zp.is_file():
-            state = "missing" if self.exported else "missing (nothing exportable)"
-            return {"zip": str(zp), "zip_exists": False, "zip_state": state}
-        report = read_json(self.task_dir / "output" / REPORT_FILE)
-        built = isinstance(report, dict) and report.get("zip") is not None
-        names = _zip_episode_names(zp)
-        stale = (not built or names != self.exported
-                 or (self.newest_zarr_mtime is not None and self.newest_zarr_mtime > zp.stat().st_mtime))
-        return {"zip": str(zp), "zip_exists": True, "zip_episode_names": names,
-                "zip_state": "stale (run dataproc process)" if stale else "up to date"}
-
-
-def _zip_episode_names(zp: Path) -> list[str] | None:
-    """``meta/episode_names`` of a task zip (None if it cannot be read)."""
-    import zarr
-
-    try:
-        store = zarr.ZipStore(str(zp), mode="r")
-        try:
-            return [str(x) for x in zarr.open_group(store, mode="r")["meta/episode_names"][:]]
-        finally:
-            store.close()
-    except Exception:  # noqa: BLE001
-        return None
+        rows = []
+        for d in _subdirs(self.task_dir / STAGING_DIR):
+            status = load_status(d / "processed")
+            s = episode_summary(status)
+            waiting = "slam_unavailable" in ((status.get("slam") or {}).get("reasons") or [])
+            rows.append({"entry": f"{STAGING_DIR}/{d.name}", "last_stage": s["last_stage"],
+                         "state": "waiting for SLAM" if waiting else "in progress",
+                         "reasons": ["slam: slam_unavailable"] if waiting else s["reasons"]})
+        for d in _subdirs(self.task_dir / FAILED_DIR):
+            rec = read_json(d / "reason.json", {})
+            rec = rec if isinstance(rec, dict) else {}
+            rows.append({"entry": f"{FAILED_DIR}/{d.name}", "state": "failed", "last_stage": rec.get("stage"),
+                         "reasons": [str(r) for r in rec.get("reasons") or []] or [rec.get("message") or
+                                                                                   "no reason.json"]})
+        return rows
 
 
-def _mtime_tree(p: Path) -> float:
-    best = p.stat().st_mtime
-    for q in p.rglob("*"):
-        try:
-            best = max(best, q.stat().st_mtime)
-        except OSError:
-            pass
-    return best
+def _subdirs(d: Path) -> list[Path]:
+    if not d.is_dir():
+        return []
+    return sorted(p for p in d.iterdir() if p.is_dir() and not p.name.startswith("."))
 
 
 def task_status(root: DataRoot, folder: str) -> dict:
@@ -132,14 +112,18 @@ def format_status(st: dict) -> str:
              "-" if e["n_steps"] is None else e["n_steps"], "; ".join(e["reasons"]) or "-"]
             for e in st["episodes"]]
     c = st["calibration"]
-    return "\n".join([
+    lines = [
         f"task {st['task']} (label {st['label']}, rig {st['rig']}): {len(st['episodes'])} episodes, "
         f"{st['n_exported']} exported",
         format_table(rows, ["slot", "pi_name", "last_stage", "status", "n_steps", "reasons"]),
-        f"calibration: {c['state']}" + (f" ({c['name']})" if c.get("name") else "")
-        + (f": {c['reason']}" if c.get("reason") else ""),
-        f"output: {st['zip']}: {st['zip_state']}",
-    ])
+    ]
+    if st.get("unfinished"):
+        lines += ["not episodes (never packaged):",
+                  format_table([[u["entry"], u["last_stage"] or "-", u["state"], "; ".join(u["reasons"]) or "-"]
+                                for u in st["unfinished"]], ["entry", "last_stage", "state", "reasons"])]
+    lines.append(f"calibration: {c['state']}" + (f" ({c['name']})" if c.get("name") else "")
+                 + (f": {c['reason']}" if c.get("reason") else ""))
+    return "\n".join(lines)
 
 
 def cli_status(root: DataRoot, folder: str) -> int:

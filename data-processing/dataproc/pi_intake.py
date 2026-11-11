@@ -22,8 +22,8 @@ from typing import Callable
 
 from dataproc.paths import DataRoot
 
-__all__ = ["RUN_LOCK", "REPO_RIGS", "PiIntakeError", "TakeResult", "ensure_rig", "clear_staging", "adapt_sources",
-           "intake_adapted", "taken_sources"]
+__all__ = ["RUN_LOCK", "REPO_RIGS", "PiIntakeError", "TakeResult", "ensure_rig", "check_rig_copy", "clear_staging",
+           "adapt_sources", "intake_adapted", "taken_sources", "set_source_status"]
 
 #: Held (``fsutil.FileLock``) by every command that adapts Pi recordings into ``incoming/`` and takes them in.
 RUN_LOCK = ".run.lock"
@@ -45,16 +45,39 @@ class TakeResult:
 
 
 def ensure_rig(root: DataRoot, rig_id: str, log: Callable = print) -> None:
-    """Copy ``configs/rigs/<rig_id>.yaml`` to ``rigs/<rig_id>.yaml`` if it is missing there (never overwrites)."""
+    """Copy ``configs/rigs/<rig_id>.yaml`` to ``rigs/<rig_id>.yaml`` if it is missing there (never overwrites).
+    An existing copy is checked by :func:`check_rig_copy`."""
     dst = root.rig_file(rig_id)
-    if dst.is_file():
-        return
     src = REPO_RIGS / f"{rig_id}.yaml"
+    if dst.is_file():
+        check_rig_copy(dst, src)
+        return
     if not src.is_file():
         raise PiIntakeError(f"no rig yaml for {rig_id!r}: neither {dst} nor {src} exists")
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, dst)
     log(f"rig: copied {src.name} to {dst}")
+
+
+def check_rig_copy(dst: Path, src: Path) -> None:
+    """Raise :class:`PiIntakeError` when the data root's rig yaml ``dst`` has no ``gripper`` section but the repo's
+    ``src`` (same rig id) has one: ``dst`` is a copy from before the section existed, and with it the calibration
+    opening check would be skipped without anyone noticing. Nothing to check when ``src`` does not exist or either
+    file cannot be parsed (loading the rig reports that)."""
+    import yaml
+
+    if not src.is_file():
+        return
+    try:
+        mine, repo = yaml.safe_load(dst.read_text(encoding="utf-8")), yaml.safe_load(src.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return
+    if not isinstance(mine, dict) or not isinstance(repo, dict) or "gripper" in mine or "gripper" not in repo:
+        return
+    section = yaml.safe_dump({"gripper": repo["gripper"]}, sort_keys=False).rstrip()
+    raise PiIntakeError(f"{dst} has no gripper section, but the repo's {src} has one: the copy predates it, and "
+                        "without it the calibration opening check is skipped. Add the section to "
+                        f"{dst}:\n{section}\nor delete {dst} (the repo copy is then used).")
 
 
 def clear_staging(root: DataRoot) -> None:
@@ -94,10 +117,18 @@ def adapt_sources(root: DataRoot, sources: list, rig_id: str) -> tuple[dict, dic
     return adapted, problems
 
 
+def set_source_status(root: DataRoot, manifest_sha256: str, status: str) -> bool:
+    """Change the ``status`` of a recording in ``pi_sources.csv`` (see
+    :func:`~dataproc.pi_adapter.update_source_status`)."""
+    from dataproc.pi_adapter import SOURCES_FILE, update_source_status
+
+    return update_source_status(root.path / SOURCES_FILE, manifest_sha256, status)
+
+
 def intake_adapted(root: DataRoot, task: str, adapted: dict, kind: str, *, calibration: bool = False,
-                   new: bool = False, log: Callable = print) -> TakeResult:
-    """Run intake on the episodes :func:`adapt_sources` put in ``incoming/`` (``task``, ``new`` and
-    ``calibration`` as for :func:`~dataproc.intake.run_intake`), then append a ``pi_sources.csv`` row (``kind``,
+                   new: bool = False, staging: bool = False, log: Callable = print) -> TakeResult:
+    """Run intake on the episodes :func:`adapt_sources` put in ``incoming/`` (``task``, ``new``, ``calibration``
+    and ``staging`` as for :func:`~dataproc.intake.run_intake`), then append a ``pi_sources.csv`` row (``kind``,
     the folder, ingested / quarantined) for each source that reached intake. Raises :class:`PiIntakeError` if
     intake left anything in ``incoming/``."""
     from dataproc.intake import run_intake
@@ -106,7 +137,7 @@ def intake_adapted(root: DataRoot, task: str, adapted: dict, kind: str, *, calib
     res = TakeResult(None)
     if not adapted:
         return res
-    result = run_intake(root, task, new=new, calibration=calibration, log=log)
+    result = run_intake(root, task, new=new, calibration=calibration, log=log, staging=staging)
     res.folder = result.folder
     for o in result.outcomes:
         s = adapted.get(o.pi_name)

@@ -1,7 +1,7 @@
-"""End to end: sim (1 calibration + 3 demos, --fast) -> intake -> process (oracle) -> zip, checked against truth."""
+"""End to end: sim (1 calibration + 3 demos, --fast) -> intake -> process (oracle) -> the exported episodes (in a
+zip built as ``dataproc package`` does), checked against truth."""
 
 import json
-import os
 import re
 
 import numpy as np
@@ -16,9 +16,8 @@ from dataproc.process import run_process
 from dataproc.report import STAGE_NAMES as STAGES
 from dataproc.sim.episode import read_truth
 from dataproc.stages.width import GripperRange
-from dataproc._vendor.replay_buffer import ReplayBuffer
-from test_process_common import (N_DEMOS, TASK, T_from, copy_root, processed_root, quiet, task_dir, template_root,
-                                 tree_digest)
+from test_process_common import (N_DEMOS, TASK, T_from, copy_root, processed_root, quiet, task_dir, task_zip,
+                                 template_root, tree_digest)
 
 
 @pytest.fixture(scope="module")
@@ -26,17 +25,17 @@ def done(tmp_path_factory):
     return processed_root(tmp_path_factory)
 
 
-def test_zip_and_report(done):
+def test_report(done):
     root, res = done
     td = task_dir(root)
-    assert res.exit_code == 0 and res.zip_path == td / "output" / f"{TASK}.zarr.zip" and res.zip_path.is_file()
+    assert res.exit_code == 0 and not (td / "output" / f"{TASK}.zarr.zip").exists()     # package builds zips
     rep = json.loads((td / "output" / "report.json").read_text())
     assert rep == res.report
     assert rep["totals"]["exported"] == N_DEMOS and rep["totals"]["episodes"] == N_DEMOS
     assert rep["calibration"]["state"] == "done" and rep["calibration"]["name"] == "cal_episode_000000"
     assert rep["rig_id"] == "rig_v1_fast" and "tcp" in rep["rig_nominal_sections"]
     assert rep["slam_backend"] == "oracle" and rep["dataproc_version"] and rep["created"]
-    assert rep["zip"]["n_episodes"] == N_DEMOS
+    assert "zip" not in rep
     for e in rep["episodes"]:
         assert e["status"] == "exported" and e["reasons"] == [] and e["n_steps"] == 150
         assert set(e["stages"].values()) == {"done"}
@@ -47,7 +46,7 @@ def test_zip_and_report(done):
 def test_replay_buffer_contents(done):
     root, _ = done
     td = task_dir(root)
-    rb = ReplayBuffer.create_from_path(str(td / "output" / f"{TASK}.zarr.zip"))
+    rb = task_zip(root)
     ledger = [r for r in read_ledger(td / "episodes.csv") if r["kind"] == "demonstration"]
     assert rb.n_episodes == N_DEMOS
     assert rb.meta["episode_names"][:].tolist() == [r["pi_name"] for r in ledger]
@@ -75,7 +74,7 @@ def test_pose_and_width_vs_truth(done):
     td = task_dir(root)
     rig = load_rig(root.rigs / "rig_v1_fast.yaml")
     gr = GripperRange.load(td / "gripper_range.json")
-    rb = ReplayBuffer.create_from_path(str(td / "output" / f"{TASK}.zarr.zip"))
+    rb = task_zip(root)
     for k in range(N_DEMOS):
         ep = td / f"episode_{k}"
         v = json.loads((ep / "processed" / "validate.json").read_text())["kept"]
@@ -116,7 +115,8 @@ def test_raw_untouched_and_no_extra_folders(tmp_path_factory, tmp_path):
     new_dirs = {p.relative_to(root.path) for p in root.path.rglob("*") if p.is_dir()} - before
     for d in new_dirs:
         parts = d.parts
-        assert "processed" in parts or parts[:3] == ("tasks", TASK, "output"), d
+        assert "processed" in parts or parts[:3] == ("tasks", TASK, "output"), d       # output/: report.json only
+    assert sorted(p.name for p in (td / "output").iterdir()) == ["report.json"]
 
 
 def test_status_command(done, monkeypatch, capsys):
@@ -125,22 +125,34 @@ def test_status_command(done, monkeypatch, capsys):
     assert cli.main(["status", "--task", TASK]) == 0
     out = capsys.readouterr().out
     assert "calibration: done (cal_episode_000000)" in out
-    assert "up to date" in out and "3 exported" in out
+    assert "3 exported" in out and "not episodes" not in out
     for k in range(N_DEMOS):
         assert re.search(rf"^episode_{k}\s+demo_episode_00000{k}\s+export\s+exported\s+150\s+-$", out, re.M), out
 
 
-def test_status_stale_and_missing(tmp_path_factory, tmp_path, monkeypatch, capsys):
+def test_status_lists_staging_and_failed(tmp_path_factory, tmp_path, monkeypatch, capsys):
+    """``.staging/<x>`` (waiting for SLAM, or in progress) and ``failed/<x>`` (its reason.json) are listed apart
+    from the episodes; a missing folder is an error."""
+    import shutil
+
     root = copy_root(processed_root(tmp_path_factory)[0], tmp_path / "root")
     td = task_dir(root)
     monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
-    z = td / "output" / f"{TASK}.zarr.zip"
-    os.utime(z, (1, 1))                                # older than every episode.zarr
+    (td / ".staging").mkdir()
+    shutil.copytree(td / "episode_0", td / ".staging" / "s_wait")
+    p = td / ".staging" / "s_wait" / "processed" / "status.json"
+    st = json.loads(p.read_text())
+    st["slam"] = {"status": "failed", "reasons": ["slam_unavailable"], "reason": "no SLAM backend installed"}
+    for s in STAGES[2:]:
+        st[s] = {"status": "skipped", "reason": "slam failed"}
+    p.write_text(json.dumps(st))
+    (td / "failed" / "s_bad" / "raw").mkdir(parents=True)
+    (td / "failed" / "s_bad" / "reason.json").write_text(json.dumps({"stage": "validate", "reasons": ["imu_gap"]}))
     assert cli.main(["status", "--task", TASK]) == 0
-    assert "stale" in capsys.readouterr().out
-    z.unlink()
-    assert cli.main(["status", "--task", TASK]) == 0
-    assert f"{TASK}.zarr.zip: missing" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "3 episodes, 3 exported" in out and "not episodes (never packaged):" in out
+    assert re.search(r"^\.staging/s_wait\s+slam\s+waiting for SLAM\s+slam: slam_unavailable$", out, re.M), out
+    assert re.search(r"^failed/s_bad\s+validate\s+failed\s+imu_gap$", out, re.M), out
     assert cli.main(["status", "--task", "nope"]) == 1
     assert "run intake first" in capsys.readouterr().err
 
@@ -151,7 +163,7 @@ def test_status_before_processing(tmp_path_factory, tmp_path, monkeypatch, capsy
     before = tree_digest(root.path)
     assert cli.main(["status", "--task", TASK]) == 0
     out = capsys.readouterr().out
-    assert "pending" in out and "calibration: not_processed" in out and "missing" in out
+    assert "pending" in out and "calibration: not_processed" in out
     assert tree_digest(root.path) == before            # read-only
 
 

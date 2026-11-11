@@ -18,14 +18,12 @@ from pathlib import Path
 
 from dataproc.config import ConfigError, load_task_config
 from dataproc.files import load_status, read_json
-from dataproc.paths import DataRoot, episode_dirs, validate_name
+from dataproc.paths import FAILED_DIR, STAGING_DIR, DataRoot, episode_dirs, validate_name
 from dataproc.report import episode_summary
 
 __all__ = ["FAILED_DIR", "STAGING_DIR", "MIN_EPISODES_PER_LABEL", "PackageError", "FolderInfo", "PackagedEpisode",
            "ExcludedEntry", "Selection", "collect_episodes"]
 
-FAILED_DIR = "failed"
-STAGING_DIR = ".staging"
 REASON_FILE = "reason.json"
 #: The prompting policy (umi_policy_dunetp) samples its prompt from another demonstration of the same label.
 MIN_EPISODES_PER_LABEL = 2

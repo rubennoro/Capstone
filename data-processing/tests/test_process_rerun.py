@@ -11,9 +11,8 @@ from dataproc.files import load_status
 from dataproc.process import run_process
 from dataproc.report import STAGE_NAMES as STAGES
 from dataproc.stages.geometry import SlamStage
-from dataproc._vendor.replay_buffer import ReplayBuffer
 from test_process_common import (N_DEMOS, TASK, copy_root, fast_rig_dict, processed_root, quiet, task_dir,
-                                 template_root, write_rig)
+                                 task_zip, template_root, write_rig)
 
 
 @pytest.fixture
@@ -34,11 +33,11 @@ def _calib_start(root):
 def test_second_run_skips_everything(root):
     before, cal = _starts(root), _calib_start(root)
     res = run_process(root, TASK, slam="oracle", log=quiet)
-    assert res.exit_code == 0 and res.zip_path.is_file()
+    assert res.exit_code == 0
     assert res.ran == {f"episode_{k}": [] for k in range(N_DEMOS)}
     assert _starts(root) == before and _calib_start(root) == cal
     assert res.report["calibration"]["ran"] is False
-    assert res.report["duration_s"] < 15                   # only the zip rebuild
+    assert res.report["duration_s"] < 5                    # nothing to do
 
 
 def test_force_reruns_everything(root):
@@ -52,9 +51,7 @@ def test_force_reruns_everything(root):
 
 
 def test_world_offset_change_reruns_pose_and_later(root):
-    td = task_dir(root)
-    z = td / "output" / f"{TASK}.zarr.zip"
-    pos0 = ReplayBuffer.create_from_path(str(z)).data["gripper_right_eef_pos"][:]
+    pos0 = task_zip(root).data["gripper_right_eef_pos"][:]
     before = _starts(root)
     d = fast_rig_dict()
     d["world_offset"] = {"translation_m": [0.5, -0.2, 0.1], "yaw_deg": 75.0}
@@ -67,7 +64,7 @@ def test_world_offset_change_reruns_pose_and_later(root):
     for k in range(N_DEMOS):
         for s in STAGES:
             assert (after[k][s] > before[k][s]) == (s in later), (k, s)
-    pos1 = ReplayBuffer.create_from_path(str(z)).data["gripper_right_eef_pos"][:]
+    pos1 = task_zip(root).data["gripper_right_eef_pos"][:]
     assert pos1.shape == pos0.shape and np.abs(pos1 - pos0).max() > 0.1
     # relative motion is unchanged (the offset is a left-multiplied rigid transform)
     assert np.allclose(np.linalg.norm(np.diff(pos1, axis=0), axis=1), np.linalg.norm(np.diff(pos0, axis=0), axis=1),
@@ -84,18 +81,17 @@ def test_label_change_reruns_images_and_export_only(root):
     res = run_process(root, TASK, slam="oracle", log=quiet)
     assert res.exit_code == 0
     assert res.ran == {f"episode_{k}": ["images", "export"] for k in range(N_DEMOS)}
-    rb = ReplayBuffer.create_from_path(str(res.zip_path))
+    rb = task_zip(root)
     assert rb.meta["task_names"][:].tolist() == ["eraser_lift"] * N_DEMOS
 
 
-def test_single_episode_then_zip_rebuilt(root):
+def test_single_episode(root):
     before = _starts(root)
     res = run_process(root, TASK, episode=1, force=True, slam="oracle", log=quiet)
     assert res.exit_code == 0 and res.ran == {"episode_1": list(STAGES)}
     after = _starts(root)
     assert after[0] == before[0] and after[2] == before[2] and after[1]["check"] > before[1]["check"]
-    assert res.report["zip"]["n_episodes"] == N_DEMOS and len(res.report["episodes"]) == N_DEMOS
-    assert ReplayBuffer.create_from_path(str(res.zip_path)).n_episodes == N_DEMOS
+    assert res.report["totals"]["exported"] == N_DEMOS and len(res.report["episodes"]) == N_DEMOS
 
 
 def test_single_episode_missing(root):

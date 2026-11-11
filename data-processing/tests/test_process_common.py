@@ -3,6 +3,7 @@
 ``template_root(tmp_path_factory)`` builds, once per pytest process, a data root with the ``--fast`` sim rig:
 1 calibration + 3 demonstrations, intaken into ``tasks/block_raise`` (the slow part, ~45 s). ``processed_root``
 also runs ``process --slam oracle`` once on a copy. Tests work on copies (:func:`copy_root`), never on these.
+``task_zip`` concatenates a folder's exported episodes into a training zip (as ``dataproc package`` does).
 """
 
 from __future__ import annotations
@@ -60,6 +61,33 @@ def copy_root(src: DataRoot, dst: Path) -> DataRoot:
 
 def task_dir(root: DataRoot, folder: str = TASK) -> Path:
     return root.tasks / folder
+
+
+def exported_zarrs(root: DataRoot, folder: str = TASK) -> list[Path]:
+    """``processed/episode.zarr`` of every exported ``episode_N``, in N order."""
+    from dataproc.files import load_status
+    from dataproc.paths import episode_dirs
+    from dataproc.report import episode_summary
+
+    return [d / "processed" / "episode.zarr" for d in episode_dirs(task_dir(root, folder))
+            if episode_summary(load_status(d / "processed"))["status"] == "exported"]
+
+
+def task_zip(root: DataRoot, folder: str = TASK):
+    """The folder's exported episodes as one training zip (``build_task_zarr_zip``, as ``dataproc package``),
+    read into memory as a vendored ``ReplayBuffer``. The zip is built outside the root (which may be shared)."""
+    import tempfile
+
+    import zarr
+
+    from dataproc._vendor.replay_buffer import ReplayBuffer
+    from dataproc.export.zarr_writer import build_task_zarr_zip
+
+    with tempfile.TemporaryDirectory() as tmp:
+        zp = Path(tmp) / f"{folder}.zarr.zip"
+        build_task_zarr_zip(exported_zarrs(root, folder), zp, tmp_dir=tmp, num_workers=1)
+        with zarr.ZipStore(str(zp), mode="r") as store:
+            return ReplayBuffer.copy_from_store(store, store=zarr.MemoryStore())
 
 
 def fast_rig_dict() -> dict:

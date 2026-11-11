@@ -3,7 +3,8 @@
 Layout under the root (``$DATAPROC_ROOT``, default ``~/data``)::
 
     incoming/<pi_episode>/            raw episodes as the Pi delivers them (docs/CONTRACT.md)
-    tasks/<folder>/                   task.yaml, episodes.csv, calibration/, episode_N/{raw,processed}, output/
+    tasks/<folder>/                   task.yaml, episodes.csv, calibration/, episode_N/{raw,processed},
+                                      failed/<pi_episode>/, .staging/<pi_episode>/ (dataproc run)
     rigs/<rig_id>.yaml                rig descriptions (dataproc.config.load_rig)
     quarantine/<pi_episode>/          episodes intake rejected, with reason.json
 
@@ -18,12 +19,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 __all__ = [
-    "ENV_ROOT", "DEFAULT_ROOT", "NAME_RE", "EPISODE_DIR_RE", "DataRoot", "TaskRef", "data_root", "validate_name",
+    "STAGING_DIR", "FAILED_DIR", "ENV_ROOT", "DEFAULT_ROOT", "NAME_RE", "EPISODE_DIR_RE", "DataRoot", "TaskRef", "data_root", "validate_name",
     "validate_episode_dir_name", "episode_index", "episode_dirs", "next_episode_index", "resolve_task",
     "resolve_intake_target",
 ]
 
 ENV_ROOT = "DATAPROC_ROOT"
+#: ``tasks/<folder>/.staging/<pi_name>/``: a recording ``dataproc run`` is processing (or that waits for SLAM).
+STAGING_DIR = ".staging"
+#: ``tasks/<folder>/failed/<pi_name>/``: a recording that failed or was rejected at some stage (never packaged).
+FAILED_DIR = "failed"
 DEFAULT_ROOT = Path.home() / "data"             # /home/<user>/data
 
 #: Allowed task, folder and rig names.

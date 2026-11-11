@@ -21,6 +21,12 @@ and :meth:`Intake.handle` reads as the per-episode steps. Collaborators: :class:
 lazily and rolled back after a failed first ingest) and :class:`DuplicateIndex` (names and session/episode pairs
 already taken). Generic filesystem plumbing lives in :mod:`dataproc.fsutil`.
 
+**Staging target** (``staging=True``, used by ``dataproc run``): the folder must already exist with its
+``task.yaml`` (it is never created), and each episode goes to ``tasks/<folder>/.staging/<pi_name>/raw`` instead of
+``episode_N``. ``dataproc run`` later moves it on with :func:`move_slot` (to ``episode_N`` when it passed every
+stage, to ``failed/<pi_name>`` otherwise), which appends the new slot's ledger row. ``episodes.csv`` stays
+append-only: the newest row of a recording is where it is now; :meth:`Intake.reconcile` knows all four slot kinds.
+
 Nothing is ever deleted or copied; raw files are never opened for writing.
 """
 
@@ -40,13 +46,15 @@ from pathlib import Path
 
 from dataproc import __version__, fsutil
 from dataproc.config import ConfigError, TaskConfig, dump_task_config, load_task_config
-from dataproc.paths import DataRoot, episode_dirs, next_episode_index, resolve_intake_target, validate_name
+from dataproc.paths import (FAILED_DIR, STAGING_DIR, DataRoot, episode_dirs, next_episode_index,
+                            resolve_intake_target, validate_name)
 from dataproc.raw_episode import MANIFEST, VERIFIED, EpisodeMeta, Problem, RawEpisode, RawEpisodeError, \
     ValidationReport
 
 __all__ = [
     "LOCK_NAME", "LEDGER_NAME", "LEDGER_COLUMNS", "TASK_YAML", "PENDING_NAME", "REASON_NAME", "IntakeError",
     "LockHeldError", "EpisodeOutcome", "IntakeResult", "run_intake", "read_ledger", "format_summary", "cli_intake",
+    "reconcile", "move_slot",
 ]
 
 LOCK_NAME = ".intake.lock"
@@ -184,17 +192,24 @@ def _task_folders(root: DataRoot) -> list[Path]:
 
 
 def _slots_on_disk(task_dir: Path) -> list[tuple[str, str, Path]]:
-    """``(slot, kind, raw_dir)`` for every ``episode_N/raw`` and ``calibration/<x>/raw`` present."""
+    """``(slot, kind, raw_dir)`` for every ``episode_N/raw``, ``calibration/<x>/raw``, ``.staging/<x>/raw`` and
+    ``failed/<x>/raw`` present (the last two are demonstrations ``dataproc run`` has not finished / that failed)."""
     out = []
     for d in episode_dirs(task_dir):
         if os.path.lexists(d / "raw"):
             out.append((d.name, DEMONSTRATION, d / "raw"))
-    cal = task_dir / "calibration"
-    if cal.is_dir() and not cal.is_symlink():
-        for d in sorted(cal.iterdir()):
-            if not d.name.startswith(".") and os.path.lexists(d / "raw"):
-                out.append((f"calibration/{d.name}", CALIBRATION, d / "raw"))
+    for sub, kind in (("calibration", CALIBRATION), (STAGING_DIR, DEMONSTRATION), (FAILED_DIR, DEMONSTRATION)):
+        parent = task_dir / sub
+        if parent.is_dir() and not parent.is_symlink():
+            for d in sorted(parent.iterdir()):
+                if not d.name.startswith(".") and os.path.lexists(d / "raw"):
+                    out.append((f"{sub}/{d.name}", kind, d / "raw"))
     return out
+
+
+def _named_slot(slot: str) -> bool:
+    """True for ``calibration/<x>``, ``.staging/<x>`` and ``failed/<x>``: slots whose dir name is the Pi name."""
+    return slot.split("/", 1)[0] in ("calibration", STAGING_DIR, FAILED_DIR) and "/" in slot
 
 
 def _read_pending(task_dir: Path) -> dict:
@@ -424,9 +439,20 @@ class TaskTarget:
         self.rig = rig_id
         self._ready = True
 
-    def next_slot(self, pi_name: str, calibration: bool) -> tuple[Path, str, str]:
-        """``(slot_dir, slot, kind)`` for the next episode: ``episode_N`` (N = next free number), or with
-        ``calibration`` ``calibration/<pi_name>[__k]`` (creating ``calibration/`` if missing). Not created yet."""
+    def next_slot(self, pi_name: str, calibration: bool, staging: bool = False) -> tuple[Path, str, str]:
+        """``(slot_dir, slot, kind)`` for the next episode: ``episode_N`` (N = next free number), with
+        ``calibration`` ``calibration/<pi_name>[__k]`` (creating ``calibration/`` if missing), or with ``staging``
+        ``.staging/<pi_name>`` (creating ``.staging/`` if missing; an existing one is an :class:`IntakeError`).
+        Not created yet."""
+        if staging:
+            st = self.dir / STAGING_DIR
+            if not os.path.lexists(st):
+                os.mkdir(st)
+                self.note_made(st)
+            slot_dir = st / pi_name
+            if os.path.lexists(slot_dir):
+                raise IntakeError(f"{slot_dir} already exists (an unfinished dataproc run of the same recording)")
+            return slot_dir, f"{STAGING_DIR}/{pi_name}", DEMONSTRATION
         if calibration:
             cal = self.dir / "calibration"
             if not os.path.lexists(cal):
@@ -480,9 +506,14 @@ class TaskTarget:
 class Intake:
     """One ``dataproc intake`` run. :meth:`run` is the whole sequence; each step is one method below it."""
 
-    def __init__(self, root: DataRoot, task: str, new: bool = False, calibration: bool = False, log=print):
+    def __init__(self, root: DataRoot, task: str, new: bool = False, calibration: bool = False, log=print,
+                 staging: bool = False):
         validate_name(task)
+        if staging and (new or calibration):
+            raise IntakeError("the staging target takes demonstrations into an existing folder (no --new, no "
+                              "--calibration)")
         self.root, self.task, self.new, self.calibration, self.log = root, task, new, calibration, log
+        self.staging = staging
         self.result = IntakeResult(None, None)
         self.quarantine_area = Quarantine(root)
         self.target: TaskTarget | None = None
@@ -554,7 +585,7 @@ class Intake:
 
     def reconcile_task_folder(self, task_dir: Path) -> None:
         """One task folder of :meth:`reconcile`. The Pi dir name comes from the pending record when its slot
-        matches, else ``<x>`` for calibration, else empty."""
+        matches, else ``<x>`` for ``calibration/<x>``, ``.staging/<x>`` and ``failed/<x>``, else empty."""
         ledger = Ledger(task_dir)
         known = ledger.slots()
         pending = None
@@ -565,7 +596,7 @@ class Intake:
                 pending = _read_pending(task_dir)
             if pending.get("slot") == slot and isinstance(pending.get("pi_name"), str):
                 pi_name = pending["pi_name"]
-            elif kind == CALIBRATION:
+            elif _named_slot(slot):
                 pi_name = slot.split("/", 1)[1]
             else:
                 pi_name = ""
@@ -613,11 +644,19 @@ class Intake:
         """Resolve the target folder (``resolve_intake_target``), load it as a :class:`TaskTarget` (its
         ``task.yaml`` rig, if any), check ``incoming/`` / ``tasks/`` / ``quarantine/`` share one filesystem, check
         the target (and ``calibration/``) is writable, and load the :class:`DuplicateIndex` from every ledger.
-        Sets ``result.folder`` / ``result.task_dir``; creates nothing (the folder is made on the first ingest)."""
-        try:
-            folder = resolve_intake_target(self.root.tasks, self.task, self.new)
-        except ValueError as e:
-            raise IntakeError(str(e)) from None
+        Sets ``result.folder`` / ``result.task_dir``; creates nothing (the folder is made on the first ingest). The
+        staging target requires ``tasks/<task>/task.yaml`` to exist already."""
+        if self.staging:
+            folder = self.task
+            ty = self.root.tasks / folder / TASK_YAML
+            if not (self.root.tasks / folder).is_dir() or not fsutil.is_regular_file(ty):
+                raise IntakeError(f"task folder {self.root.tasks / folder} does not exist or has no {TASK_YAML} "
+                                  "(the staging target never creates one)")
+        else:
+            try:
+                folder = resolve_intake_target(self.root.tasks, self.task, self.new)
+            except ValueError as e:
+                raise IntakeError(str(e)) from None
         self.target = TaskTarget(self.root, self.task, folder)
         self.result.folder, self.result.task_dir = folder, self.target.dir
         self.check_same_filesystem()
@@ -739,7 +778,7 @@ class Intake:
         slot_dir = None
         try:
             target.ensure(meta.rig_id)
-            slot_dir, slot, kind = target.next_slot(c.name, self.calibration)
+            slot_dir, slot, kind = target.next_slot(c.name, self.calibration, self.staging)
             manifest_sha = _manifest_sha(c.path)
             target.write_pending(slot, c.name, kind)
             os.mkdir(slot_dir)
@@ -765,13 +804,49 @@ class Intake:
 
 # --------------------------------------------------------------------------------------------- public entry points
 
-def run_intake(root: DataRoot, task: str, new: bool = False, calibration: bool = False, log=print) -> IntakeResult:
-    """Run one intake for task name ``task`` (``[A-Za-z0-9_-]+``) into ``resolve_intake_target(...)``.
+def run_intake(root: DataRoot, task: str, new: bool = False, calibration: bool = False, log=print,
+               staging: bool = False) -> IntakeResult:
+    """Run one intake for task name ``task`` (``[A-Za-z0-9_-]+``) into ``resolve_intake_target(...)``, or with
+    ``staging`` into ``tasks/<task>/.staging/<pi_name>/`` of the existing folder ``task``.
 
     ``log`` receives progress lines (reconcile notes). Raises :class:`IntakeError` (incl. :class:`LockHeldError`);
     quarantined episodes are not errors. See :class:`Intake` and docs/INTAKE.md.
     """
-    return Intake(root, task, new=new, calibration=calibration, log=log).run()
+    return Intake(root, task, new=new, calibration=calibration, log=log, staging=staging).run()
+
+
+def reconcile(root: DataRoot, log=print) -> list[tuple[str, str]]:
+    """Only the reconcile step of an intake (under ``.intake.lock``): rebuild the ledger rows a crashed intake or
+    :func:`move_slot` left out, in every task folder. Returns the ``(folder, slot)`` rows rebuilt."""
+    it = Intake(root, "reconcile", log=log)
+    if not root.path.is_dir():
+        return []
+    with it.lock():
+        it.reconcile()
+    return it.result.reconciled
+
+
+def move_slot(task_dir: Path, src_slot: str, dst_slot: str, pi_name: str) -> None:
+    """Rename the demonstration ``task_dir/<src_slot>`` (with its ``raw/`` and ``processed/``) to
+    ``task_dir/<dst_slot>`` (``.staging/<x>``, ``failed/<x>`` or ``episode_N``; its parent is created if needed),
+    then append the ledger row of ``dst_slot``: a copy of ``src_slot``'s newest row (rebuilt from meta.json when it
+    has none) with the new slot and time. The pending record is written first, so :meth:`Intake.reconcile`
+    rebuilds the row (with ``pi_name``) if the process dies between the rename and the append. Raises
+    :class:`IntakeError` if ``dst_slot`` exists or the rename would cross filesystems."""
+    task_dir = Path(task_dir)
+    src, dst = task_dir / src_slot, task_dir / dst_slot
+    if os.path.lexists(dst):
+        raise IntakeError(f"cannot move {src} to {dst}: it already exists")
+    ledger = Ledger(task_dir)
+    rows = [r for r in ledger.rows() if r["slot"] == src_slot]
+    row = dict(rows[-1]) if rows else Ledger.make_row(src_slot, pi_name, _meta_of(src / "raw"), DEMONSTRATION, 0,
+                                                     _manifest_sha(src / "raw"))
+    fsutil.write_atomic(task_dir / PENDING_NAME,
+                        json.dumps({"slot": dst_slot, "pi_name": pi_name, "kind": DEMONSTRATION}) + "\n")
+    dst.parent.mkdir(exist_ok=True)
+    _move(src, dst)
+    row.update(slot=dst_slot, pi_name=pi_name, kind=DEMONSTRATION, intake_unix_ns=str(_now_ns()))
+    ledger.append(row)
 
 
 def format_summary(result: IntakeResult, partial_run: bool = False) -> str:

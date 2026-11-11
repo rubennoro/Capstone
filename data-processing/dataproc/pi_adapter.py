@@ -32,7 +32,7 @@ from dataproc.raw_episode import (COMPLETE, DATA_FILES, FRAMES_HEADER, IMU_HEADE
 
 __all__ = ["ADAPTER_VERSION", "SENSOR_ROLES", "DEFAULT_EXPOSURE_NS", "SOURCES_FILE", "SOURCES_COLUMNS",
            "PiEpisodeError", "PiSource", "inspect_source", "scan_sources", "session_id_for", "converted_name",
-           "convert_episode", "adapt_into", "read_sources", "append_sources"]
+           "convert_episode", "adapt_into", "read_sources", "append_sources", "update_source_status"]
 
 ADAPTER_VERSION = 1
 #: Camera role by sensor model (the Pi's file names are not used: its cam0 is the IMX219).
@@ -344,7 +344,25 @@ def append_sources(path: Path, rows: list[dict]) -> None:
     """Append rows (``SOURCES_COLUMNS``) to ``pi_sources.csv``, rewriting it atomically."""
     if not rows:
         return
-    allrows = read_sources(path) + [{k: str(r.get(k, "")) for k in SOURCES_COLUMNS} for r in rows]
+    _write_sources(path, read_sources(path) + rows)
+
+
+def update_source_status(path: Path, manifest_sha256: str, status: str) -> bool:
+    """Set ``status`` of the row of ``manifest_sha256`` (``dataproc run``: ``ingested`` -> ``failed`` and back on
+    ``--retry-failed``), rewriting the file atomically. Returns False (nothing written) when there is no such row
+    or it already has that status."""
+    rows = read_sources(path)
+    hit = [r for r in rows if r.get("source_manifest_sha256") == manifest_sha256]
+    if not hit or all(r.get("status") == status for r in hit):
+        return False
+    for r in hit:
+        r["status"] = status
+    _write_sources(path, rows)
+    return True
+
+
+def _write_sources(path: Path, rows: list[dict]) -> None:
+    allrows = [{k: str(r.get(k, "")) for k in SOURCES_COLUMNS} for r in rows]
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=SOURCES_COLUMNS, lineterminator="\n")
     w.writeheader()
