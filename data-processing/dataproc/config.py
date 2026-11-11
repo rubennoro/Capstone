@@ -49,7 +49,8 @@ from dataproc.paths import NAME_RE
 
 __all__ = [
     "RIG_SCHEMA", "CAMERA_MODEL_TYPES", "PROVENANCE", "TIMESTAMP_REFS", "DEFAULT_WORLD_OFFSET", "ConfigError",
-    "TaskConfig", "CameraModel", "CameraConfig", "VirtualCamera", "ImuNoise", "ImuConfig", "ArucoConfig", "RigConfig",
+    "TaskConfig", "CameraModel", "CameraConfig", "VirtualCamera", "ImuNoise", "ImuConfig", "ArucoConfig",
+    "GripperConfig", "RigConfig",
     "load_task_config", "dump_task_config", "load_rig", "parse_rig",
 ]
 
@@ -71,7 +72,7 @@ class ConfigError(ValueError):
 @dataclass(frozen=True)
 class TaskConfig:
     """``tasks/<folder>/task.yaml``. ``label`` is the task name stored in the zarr (``block_raise`` also for the
-    folder ``block_raise_1``); ``rig`` is the rig id of its episodes; ``created`` is an ISO 8601 string."""
+    folder ``block_raise_2``); ``rig`` is the rig id of its episodes; ``created`` is an ISO 8601 string."""
 
     label: str
     rig: str
@@ -157,6 +158,15 @@ class ArucoConfig:
     nominal_z_m: float                   # rough tag depth along the virtual ultrawide z axis (outlier filter)
 
 
+@dataclass(frozen=True)
+class GripperConfig:
+    """What the calibration fit must measure: ``max_width - min_width`` (the finger-tag separation range, metres,
+    exactly what the width stage exports as the full opening) within ``opening_tolerance_m`` of ``max_opening_m``."""
+
+    max_opening_m: float
+    opening_tolerance_m: float
+
+
 @dataclass(frozen=True, eq=False)
 class RigConfig:
     schema: str
@@ -168,6 +178,7 @@ class RigConfig:
     imu: ImuConfig
     aruco: ArucoConfig
     T_world_offset: np.ndarray           # 4x4, applied on the left in the gravity-aligned z-up world
+    gripper: GripperConfig | None = None  # None: the rig yaml has no gripper section (opening check skipped)
     notes: str = ""
     source_path: str | None = None
 
@@ -459,10 +470,17 @@ def parse_rig(d: Any, src: str = "<rig>") -> RigConfig:
     if aruco.left_id == aruco.right_id:
         raise am.err("right_id", "left_id and right_id must differ")
 
+    gripper = None
+    if m.has("gripper"):
+        gm = m.sub("gripper")
+        gripper = GripperConfig(gm.float("max_opening_m", positive=True),
+                                gm.float("opening_tolerance_m", positive=True))
+        gm.finish()
+
     T_world_offset = _world_offset(m)
     m.finish()
     return RigConfig(schema=schema, rig_id=rig_id, cameras=cameras, virtual_ultrawide=virtual, T_cam_tcp=T_cam_tcp,
-                     tcp_provenance=tcp_prov, imu=imu, aruco=aruco, T_world_offset=T_world_offset,
+                     tcp_provenance=tcp_prov, imu=imu, aruco=aruco, T_world_offset=T_world_offset, gripper=gripper,
                      notes=notes.strip(), source_path=src)
 
 

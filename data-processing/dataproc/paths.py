@@ -160,7 +160,8 @@ def resolve_intake_target(tasks_dir: str | os.PathLike, name: str, new: bool) ->
 
     * nothing named ``tasks_dir/<name>`` -> ``name`` (it will be created);
     * it exists and ``new`` is False -> ``name`` (add to it); ``ValueError`` if it is not a directory;
-    * it exists and ``new`` is True -> the first of ``name_1``, ``name_2``, ... that is not taken.
+    * it exists and ``new`` is True -> the first of ``name_2``, ``name_3``, ... that is not taken (the first
+      folder is ``name`` itself, so the second session of a task is ``name_2``).
 
     Any entry counts as taken (``os.path.lexists``: also files and dangling symlinks). Creates nothing.
     """
@@ -173,7 +174,7 @@ def resolve_intake_target(tasks_dir: str | os.PathLike, name: str, new: bool) ->
         if not target.is_dir():
             raise ValueError(f"{target} exists but is not a directory")
         return name
-    k = 1
+    k = 2
     while os.path.lexists(tasks_dir / f"{name}_{k}"):
         k += 1
     return f"{name}_{k}"

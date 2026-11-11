@@ -32,6 +32,7 @@ import numpy as np
 __all__ = [
     "Z_TOLERANCE_M", "DEFAULT_TAG_DET_THRESHOLD", "TagDetection", "GripperRange", "GripperRangeError",
     "aruco_dictionary", "detect_tags", "detect_tags_in_frames", "detect_episode_tags", "fit_gripper_range",
+    "calibration_diagnostics", "count_open_close_cycles",
     "gripper_width_offset", "calibration_interpolator", "episode_widths", "width_on_grid",
 ]
 
@@ -231,6 +232,72 @@ def fit_gripper_range(detections_per_frame, rig, tag_det_threshold: float = DEFA
                         left_to_right={"a": a_lr, "b": b_lr}, right_to_left={"a": a_rl, "b": b_rl},
                         fit_stats={"n_both_frames": int(widths.size), "mae_left_to_right": mae_lr,
                                    "mae_right_to_left": mae_rl, "n_frames": n, "detection_rate": det_rate})
+
+
+def count_open_close_cycles(widths, low: float = 0.25, high: float = 0.75) -> int:
+    """Open/close cycles in a width sequence: the number of times it rises above ``low + high * span`` after having
+    been below ``low * span`` (span = max - min; the hysteresis keeps jitter at one level from counting)."""
+    w = np.asarray(widths, dtype=np.float64).reshape(-1)
+    if w.size < 2:
+        return 0
+    lo, span = float(np.min(w)), float(np.ptp(w))
+    if span <= 0:
+        return 0
+    down, up = lo + low * span, lo + high * span
+    cycles, closed = 0, False
+    for x in w:
+        if x <= down:
+            closed = True
+        elif x >= up and closed:
+            cycles += 1
+            closed = False
+    return cycles
+
+
+def calibration_diagnostics(detections_per_frame, rig, tag_det_threshold: float = DEFAULT_TAG_DET_THRESHOLD,
+                            z_tolerance: float = Z_TOLERANCE_M) -> dict:
+    """What a calibration episode's tag detections look like, for explaining a failed (or doubtful) fit.
+
+    Keys: ``n_frames``; ``left_id`` / ``right_id`` with ``n_left`` / ``n_right`` (frames the tag was seen in) and
+    their rates; ``n_both`` / ``both_rate``; ``detection_rate`` (the fit's ``min(n_left, n_right) / n_frames``) and
+    ``tag_det_threshold``; ``z_window_m`` ``[lo, hi]`` (``aruco.nominal_z_m +- z_tolerance``), ``n_in_window``
+    (both tags inside it: the frames the fit uses) and ``median_z_m`` (over every finger tag seen, None if none);
+    ``n_cycles`` (:func:`count_open_close_cycles` on the in-window widths); ``closed_width_m`` / ``open_width_m``
+    (min / max tag-to-tag x, the fit's ``min_width`` / ``max_width``) and ``closed_distance_m`` /
+    ``open_distance_m`` (3-D tag-centre distance in those two frames). Values that need frames are None without.
+    """
+    frames = [_norm_frame(f) for f in detections_per_frame]
+    n = len(frames)
+    left_id, right_id = rig.aruco.left_id, rig.aruco.right_id
+    nominal_z = rig.aruco.nominal_z_m
+    zmin, zmax = nominal_z - z_tolerance, nominal_z + z_tolerance
+    n_left = sum(left_id in f for f in frames)
+    n_right = sum(right_id in f for f in frames)
+    zs, pairs = [], []
+    for f in frames:
+        l = _tvec(f[left_id]) if left_id in f else None
+        r = _tvec(f[right_id]) if right_id in f else None
+        zs += [float(t[-1]) for t in (l, r) if t is not None]
+        if l is not None and r is not None:
+            pairs.append((l, r))
+    n_both = len(pairs)
+    inside = [(l, r) for l, r in pairs if zmin < l[-1] < zmax and zmin < r[-1] < zmax]
+    widths = np.array([r[0] - l[0] for l, r in inside], dtype=np.float64)
+    rate = (lambda k: k / n if n else 0.0)
+    out = {"n_frames": n, "left_id": int(left_id), "right_id": int(right_id), "n_left": int(n_left),
+           "n_right": int(n_right), "left_rate": rate(n_left), "right_rate": rate(n_right), "n_both": n_both,
+           "both_rate": rate(n_both), "detection_rate": rate(min(n_left, n_right)),
+           "tag_det_threshold": float(tag_det_threshold), "z_window_m": [float(zmin), float(zmax)],
+           "nominal_z_m": float(nominal_z), "n_in_window": int(widths.size),
+           "median_z_m": float(np.median(zs)) if zs else None,
+           "n_cycles": count_open_close_cycles(widths), "closed_width_m": None, "open_width_m": None,
+           "closed_distance_m": None, "open_distance_m": None}
+    if widths.size:
+        i_lo, i_hi = int(np.argmin(widths)), int(np.argmax(widths))
+        out.update(closed_width_m=float(widths[i_lo]), open_width_m=float(widths[i_hi]),
+                   closed_distance_m=float(np.linalg.norm(inside[i_lo][1] - inside[i_lo][0])),
+                   open_distance_m=float(np.linalg.norm(inside[i_hi][1] - inside[i_hi][0])))
+    return out
 
 
 # --------------------------------------------------------------------------------------------- widths

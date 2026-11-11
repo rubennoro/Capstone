@@ -73,6 +73,11 @@ aruco:                                                # finger tags (iPhUMI aruc
   right_id: 1
   nominal_z_m: 0.098                                  # tag depth along the virtual ultrawide z (outlier filter only)
 
+gripper:                                              # checked by the calibration fit (dataproc calibrate)
+  max_opening_m: 0.060                                # max_width - min_width (tag-to-tag x, metres). The simulator
+  opening_tolerance_m: 0.010                          # sweeps 0.030-0.090 m (sim/trajectory.py CALIB_WIDTH_RANGE_M);
+                                                      # fitted on sim calibration episodes: 0.0601-0.0605 m
+
 world_offset:                                         # optional; applied on the left in the z-up world (pose stage
   translation_m: [0.1, 0.2, 0.3]                      # input). Yaw about +z must be >= 1 deg from a multiple of 360 so no pose has
   yaw_deg: 30.0                                       # rotation vector 0.

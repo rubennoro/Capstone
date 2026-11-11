@@ -147,12 +147,26 @@ _DEL = object()
     ("aruco.right_id", 0, "must differ"),
     ("aruco.marker_size_m", True, "aruco.marker_size_m"),
     ("bogus", 1, "bogus: unknown key"),
+    ("gripper.max_opening_m", 0, "gripper.max_opening_m: must be > 0"),
+    ("gripper.opening_tolerance_m", _DEL, "gripper.opening_tolerance_m: missing"),
+    ("gripper.extra", 1.0, "gripper.extra: unknown key"),
 ])
 def test_rig_errors(rig_dict, path, value, where):
     d = copy.deepcopy(rig_dict)
     _set(d, path, value)
     with pytest.raises(ConfigError, match=where):
         parse_rig(d, "rig.yaml")
+
+
+def test_gripper_section(rig_dict):
+    from dataproc.config import GripperConfig
+
+    pi = load_rig(RIG_V1.with_name("rig_pi_v1.yaml"))
+    assert pi.gripper == GripperConfig(0.110, 0.010)
+    assert load_rig(RIG_V1).gripper == GripperConfig(0.060, 0.010)       # what the simulator's sweep measures
+    d = copy.deepcopy(rig_dict)
+    del d["gripper"]
+    assert parse_rig(d, "rig.yaml").gripper is None                     # optional: older rig files still load
 
 
 def test_rig_file_name_must_match_id(tmp_path):

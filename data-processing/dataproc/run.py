@@ -18,7 +18,6 @@ Exit codes: 0 = output zip built, 3 = stopped at SLAM (no backend installed yet)
 
 from __future__ import annotations
 
-import shutil
 import sys
 import time
 import traceback
@@ -28,16 +27,13 @@ from typing import Callable
 
 from dataproc.fsutil import FileLock
 from dataproc.paths import DataRoot, validate_name
+from dataproc.pi_intake import RUN_LOCK, PiIntakeError, adapt_sources, clear_staging, ensure_rig, intake_adapted
 
 __all__ = ["RunError", "RunResult", "run_pipeline", "cli_run", "EXIT_OK", "EXIT_FAILED", "EXIT_WAITING_FOR_SLAM"]
 
 EXIT_OK, EXIT_FAILED, EXIT_WAITING_FOR_SLAM = 0, 1, 3
-RUN_LOCK = ".run.lock"
-REPO_RIGS = Path(__file__).resolve().parents[1] / "configs" / "rigs"
-
-
-class RunError(Exception):
-    """Stops the run before anything is changed (or between steps, with what was done so far reported)."""
+#: Stops the run before anything is changed (or between steps, with what was done so far reported).
+RunError = PiIntakeError
 
 
 @dataclass
@@ -57,32 +53,6 @@ def _task_has_calibration(task_dir: Path) -> bool:
     return cdir.is_dir() and any((d / "raw").is_dir() for d in cdir.iterdir() if not d.name.startswith("."))
 
 
-def _ensure_rig(root: DataRoot, rig_id: str, log) -> None:
-    dst = root.rig_file(rig_id)
-    if dst.is_file():
-        return
-    src = REPO_RIGS / f"{rig_id}.yaml"
-    if not src.is_file():
-        raise RunError(f"no rig yaml for {rig_id!r}: neither {dst} nor {src} exists")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dst)
-    log(f"rig: copied {src.name} to {dst}")
-
-
-def _clear_staging(root: DataRoot) -> None:
-    """``incoming/`` must hold nothing but our own leftovers, so intake can only take what this run adapted."""
-    from dataproc.pi_adapter import ADAPT_TMP
-
-    inc = root.incoming
-    if not inc.is_dir():
-        return
-    shutil.rmtree(inc / ADAPT_TMP, ignore_errors=True)
-    stray = sorted(p.name for p in inc.iterdir() if not p.name.startswith("."))
-    if stray:
-        raise RunError(f"{inc} is not empty ({', '.join(stray[:5])}{' ...' if len(stray) > 5 else ''}); "
-                       "run `dataproc intake` for them or move them away first")
-
-
 def run_pipeline(root: DataRoot, task: str, calibration_episode: str | None = None,
                  source: Path = Path("/data/incoming"), rig_id: str = "rig_pi_v1", slam: str = "auto",
                  dry_run: bool = False, no_calibration: bool = False, episodes: list[str] | None = None,
@@ -92,9 +62,7 @@ def run_pipeline(root: DataRoot, task: str, calibration_episode: str | None = No
     episode (everything is taken in and processed; the width stage then fails until one is added, so no zip is
     built). ``episodes``: take only these source directories as demonstrations (default: every new one).
     ``backend``: a SLAM backend instance (tests)."""
-    from dataproc.intake import run_intake
-    from dataproc.pi_adapter import (SOURCES_FILE, PiEpisodeError, adapt_into, append_sources, converted_name,
-                                     read_sources, scan_sources)
+    from dataproc.pi_adapter import SOURCES_FILE, read_sources, scan_sources
     from dataproc.process import run_process
     from dataproc.slam import resolve_backend_name
 
@@ -170,37 +138,18 @@ def run_pipeline(root: DataRoot, task: str, calibration_episode: str | None = No
 
     root.path.mkdir(parents=True, exist_ok=True)
     with FileLock(root.path / RUN_LOCK):
-        _ensure_rig(root, rig_id, log)
-        _clear_staging(root)
+        ensure_rig(root, rig_id, log)
+        clear_staging(root)
         root.incoming.mkdir(parents=True, exist_ok=True)
 
         # 2.-4. adapt + intake, recording every source that reached intake
         def take(srcs, kind: str, calibration: bool) -> None:
-            names = {}
-            for s in srcs:
-                try:
-                    names[adapt_into(s, root.incoming, rig_id).name] = s
-                except PiEpisodeError as e:
-                    res.skipped[s.name] = f"cannot convert: {e}"
-                    log(f"  skip {s.name}: cannot convert: {e}")
-            if not names:
-                return
-            result = run_intake(root, task, calibration=calibration, log=log)
-            rows = []
-            for o in result.outcomes:
-                s = names.get(o.pi_name)
-                if s is None:
-                    continue
-                res.outcomes[s.name] = o.describe()
-                log(f"  {s.name} -> {o.pi_name} -> {o.describe()}")
-                if o.status in ("ingested", "quarantined"):
-                    rows.append({"source_name": s.name, "source_manifest_sha256": s.manifest_sha256,
-                                 "converted_name": o.pi_name, "task": task, "kind": kind, "status": o.status,
-                                 "adapted_unix_ns": time.time_ns()})
-            append_sources(root.path / SOURCES_FILE, rows)
-            left = sorted(p.name for p in root.incoming.iterdir() if not p.name.startswith("."))
-            if left:
-                raise RunError(f"intake left {left} in {root.incoming}; see the lines above")
+            adapted, problems = adapt_sources(root, srcs, rig_id)
+            for name, why in problems.items():
+                res.skipped[name] = why
+                log(f"  skip {name}: {why}")
+            taken = intake_adapted(root, task, adapted, kind, calibration=calibration, log=log)
+            res.outcomes.update({name: o.describe() for name, o in taken.outcomes.items()})
 
         if cal_src is not None:
             take([cal_src], "calibration", calibration=True)

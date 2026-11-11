@@ -78,6 +78,9 @@ def rig_sections(rig) -> dict:
         "aruco": {"dict": a.dict, "marker_size_m": a.marker_size_m, "left_id": a.left_id, "right_id": a.right_id,
                   "nominal_z_m": a.nominal_z_m},
         "world_offset": {"T_world_offset": rig.T_world_offset},
+        "gripper": (None if rig.gripper is None else
+                    {"max_opening_m": rig.gripper.max_opening_m,
+                     "opening_tolerance_m": rig.gripper.opening_tolerance_m}),
     }
 
 

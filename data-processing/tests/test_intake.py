@@ -98,11 +98,11 @@ def test_new_creates_suffixed_folders(root):
     intake(root)
     ep(root, "b", episode_number=2)
     r1 = intake(root, new=True)
-    assert r1.folder == "block_raise_1" and r1.outcomes[0].slot == "episode_0"
+    assert r1.folder == "block_raise_2" and r1.outcomes[0].slot == "episode_0"
     ep(root, "c", episode_number=3)
     r2 = intake(root, new=True)
-    assert r2.folder == "block_raise_2"
-    for f in ("block_raise_1", "block_raise_2"):
+    assert r2.folder == "block_raise_3"
+    for f in ("block_raise_2", "block_raise_3"):
         assert load_task_config(root.tasks / f / "task.yaml").label == "block_raise"
 
 
@@ -490,7 +490,7 @@ def test_cli_end_to_end(root, capsys):
     (root.incoming / "s01_e3" / VERIFIED).touch()
     assert cli.main(["intake", "--task", str(root.tasks / "block_raise"), "--new"]) == 0
     assert "s01_e3  ->  episode_0" in capsys.readouterr().out
-    assert (root.tasks / "block_raise_1" / "episode_0" / "raw").is_dir()
+    assert (root.tasks / "block_raise_2" / "episode_0" / "raw").is_dir()
 
 
 def test_cli_calibration(root, capsys):

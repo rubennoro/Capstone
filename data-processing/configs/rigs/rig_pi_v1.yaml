@@ -64,6 +64,9 @@ aruco:                                                # finger tags (iPhUMI aruc
   left_id: 0
   right_id: 1
   nominal_z_m: 0.098
+gripper:                                              # checked by `dataproc calibrate` (docs/PROCESS.md)
+  max_opening_m: 0.110                                # max_width - min_width of the fit (tag-to-tag x, metres)
+  opening_tolerance_m: 0.010
 world_offset:                                         # as rig_v1 (see docs/GEOMETRY.md)
   translation_m: [0.1, 0.2, 0.3]
   yaw_deg: 30.0

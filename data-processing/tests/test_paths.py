@@ -102,22 +102,24 @@ def test_intake_target(tmp_path):
     assert not tasks.exists()                                         # pure: nothing created
     (tasks / "block_raise").mkdir(parents=True)
     assert resolve_intake_target(tasks, "block_raise", new=False) == "block_raise"
-    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_1"
-    (tasks / "block_raise_1").mkdir()
-    (tasks / "block_raise_3").mkdir()
-    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_2"   # first free
-    (tasks / "block_raise_2").write_text("")                          # a file also blocks the name
-    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_4"
+    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_2"
+    (tasks / "block_raise_2").mkdir()
+    (tasks / "block_raise_4").mkdir()
+    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_3"   # first free
+    (tasks / "block_raise_3").write_text("")                          # a file also blocks the name
+    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_5"
+    (tasks / "block_raise_1").mkdir()                                 # _1 is never used (the first is the name)
+    assert resolve_intake_target(tasks, "block_raise", new=True) == "block_raise_5"
     assert sorted(p.name for p in tasks.iterdir()) == ["block_raise", "block_raise_1", "block_raise_2",
-                                                       "block_raise_3"]
+                                                       "block_raise_3", "block_raise_4"]
     with pytest.raises(ValueError):
         resolve_intake_target(tasks, "bad/name", new=False)
 
 
 def test_intake_target_on_suffixed_name(tmp_path):
-    (tmp_path / "block_raise_1").mkdir()
-    assert resolve_intake_target(tmp_path, "block_raise_1", new=True) == "block_raise_1_1"
-    assert isinstance(resolve_intake_target(Path(tmp_path), "block_raise_1", new=False), str)
+    (tmp_path / "block_raise_2").mkdir()
+    assert resolve_intake_target(tmp_path, "block_raise_2", new=True) == "block_raise_2_2"
+    assert isinstance(resolve_intake_target(Path(tmp_path), "block_raise_2", new=False), str)
 
 
 # --------------------------------------------------------------------------------------------- fix round (R-intake)
@@ -150,17 +152,17 @@ def test_huge_episode_numbers(tmp_path):
 
 def test_intake_target_counts_dangling_symlink(tmp_path):
     (tmp_path / "br").mkdir()
-    os.symlink(tmp_path / "nowhere", tmp_path / "br_1")
-    assert resolve_intake_target(tmp_path, "br", new=True) == "br_2"
+    os.symlink(tmp_path / "nowhere", tmp_path / "br_2")
+    assert resolve_intake_target(tmp_path, "br", new=True) == "br_3"
     os.symlink(tmp_path / "nowhere", tmp_path / "solo")
-    assert resolve_intake_target(tmp_path, "solo", new=True) == "solo_1"
+    assert resolve_intake_target(tmp_path, "solo", new=True) == "solo_2"
 
 
 def test_intake_target_existing_non_directory(tmp_path):
     (tmp_path / "br").write_text("x")
     with pytest.raises(ValueError, match="not a directory"):
         resolve_intake_target(tmp_path, "br", new=False)
-    assert resolve_intake_target(tmp_path, "br", new=True) == "br_1"
+    assert resolve_intake_target(tmp_path, "br", new=True) == "br_2"
 
 
 def test_resolve_task_normalises_dotdot(tmp_path):
