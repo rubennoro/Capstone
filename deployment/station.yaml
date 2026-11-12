@@ -21,7 +21,8 @@ franka_control:
   realtime: ignore                                 # TODO: set to enforce once the PC has a PREEMPT_RT kernel (PLAN §9)
 
 process_frames:
-  mock_episode: ~/rig_episodes/ep_0003             # TODO: a recorded Pi episode, used only by --mock
+  rig_file: process_frames/rigs/rig_pi_v2.yaml     # the real rig file (v2: main 1600x1200 @ 30, ultrawide 1280x960 @ 30)
+  mock_episode: ~/Downloads/episode_000045         # a real Pi recording (both cameras 30 FPS, main 1600x1200), used only by --mock
 
 policy:
   kind: hold_still                                 # hold_still until a rig-trained diffusion checkpoint exists (PLAN §6.2)
