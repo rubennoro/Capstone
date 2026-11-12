@@ -538,8 +538,8 @@ How each rule is tested: section 13, `test_safety_gate.cpp` (each main-sim case 
 
 - **The limit is the config key `watchdog.limit_s`** (in `franka_control/config.yaml`, default 0.5 s, overridable in
   `station.yaml`). `message_comms`' `launch.py` check reads the real value and requires it above its own longest gap
-  between two requests outside homing, 0.32 s (`loop_ms` + its 0.3 s main-thread timeouts). `ConfigLoader` refuses a
-  value below 0.5 s, which keeps that margin.
+  between two requests outside homing, 0.42 s (`loop_ms` 0.02 s + its `commands_s` 0.2 s + its `health_s` 0.2 s).
+  `ConfigLoader` refuses a value below 0.5 s, which keeps that margin.
 - **Fed by every C3 request that decodes** (`heartbeat`, `set_waypoints`, `get_state`, ...), not only `heartbeat`:
   each one proves the manager is alive. `CommandServer` calls `shared.markAlive(now)`.
 - **Armed only in `running` and `holding`.** In `idle` and `stopped` nothing moves, and in `fault` the arm is
@@ -613,7 +613,8 @@ Each step that fails ends the process with a FATAL line (deploy §7.6) and exit 
    `endpoints.state`, `endpoints.commands`, `session_root` (all required in the station) and `contracts/contracts/limits.yaml`
    (section 10). Every problem is listed at once.
    `FATAL franka_control: station.yaml: franka_control.safety.v_max_m_per_s: must be > 0: fix station.yaml`.
-2. Session folder: `--session DIR` → `DIR/franka_control/`; alone → `<session_root>/<YYYY-MM-DD_HH-MM-SS>_franka_control_alone/`.
+2. Session folder: `--session DIR` → `DIR/franka_control/`; alone → `<session_root>/<YYYY-MM-DD_HH-MM-SS>_franka_control_alone/franka_control/`, the same layout as in a run
+   (deploy §4.2).
    Writes `config_effective.yaml` (the merged settings) there. That is its only output; everything else goes to the
    log (stderr).
 3. `realtime: enforce`: `mlockall(MCL_CURRENT | MCL_FUTURE)` so the loop's memory is never paged out (a failure is a
@@ -974,7 +975,7 @@ Top level:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `F_T_TCP` | 4×4 floats, row-major | rotation −45° about the flange z axis; translation `[0, 0, 0.150]` (= 0.1034 + `finger_extra_m` 0.0466) | flange → TCP, a fixed constant set by the hardware: the Franka Hand's TCP (0.1034 m out along the flange z axis) plus the extra length of our printed fingers along z (`finger_extra_m`, typed in here only: our printed fingertips are 150 mm from the plate, so 0.0466). Must be a rigid transform within `rotation_tol`. |
+| `F_T_TCP` | 4×4 floats, row-major | rotation −45° about the flange z axis; translation `[0, 0, 0.150]` | flange → TCP, a fixed constant set by the hardware: the Franka Hand's TCP axes, with our printed fingertips 150 mm out from the flange plate along its z axis (stock fingertips are at 0.1034 m). Typed in here only. Must be a rigid transform within `rotation_tol`. |
 
 franka_control only uses `F_T_TCP`. Its agreement with `deployment/gripper.yaml` and the rig file's `T_cam_tcp` is
 checked by `deploy check` and the geometry tool in `deploy/` (PLAN §6.6), not here.
@@ -1234,8 +1235,7 @@ drive time with a `FakeClock`; the few that need real threads wait on a conditio
 ## 14. Hardware-only items (PLAN §8, phase 4)
 
 Not testable on the laptop; each has a TODO in `config.yaml`: the workspace box and cone around the
-table; the home posture (the after-homing box check catches a wrong one); `finger_extra_m` in `F_T_TCP` (the printed
-fingers' length); the payload (`load`); the gripper's
+table; the home posture (the after-homing box check catches a wrong one); the payload (`load`); the gripper's
 `width_offset_m` and max opening with the printed fingers; collision thresholds and impedance gains (tracking error
 ≤ 2 mm, no reflexes while holding); the real-time check (libfranka's `communication_test`, success rate ≥ 0.99; the
 loop-timing log line under load).

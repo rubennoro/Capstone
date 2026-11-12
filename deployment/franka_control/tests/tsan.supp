@@ -1,0 +1,6 @@
+# ThreadSanitizer suppressions for build-tsan/ (STRUCTURE.md 12.2).
+# The system libzmq is not built with TSan: the lock-free queues between an application thread and libzmq's own I/O
+# thread are invisible to TSan, so it reports every message buffer handed over between them. Only reports with a
+# libzmq frame are suppressed; races in franka_control's own code are still reported and fail the tests.
+race:libzmq.so
+called_from_lib:libzmq.so
