@@ -1,0 +1,34 @@
+# Every setting of the policy process, with its default (policy/STRUCTURE.md section 7).
+# Override any key in the station file's `policy:` section; an unknown key there is an error.
+
+# --- meant to be set in station.yaml ---
+kind: null                      # diffusion | hold_still; required unless --mock (PLAN 6.2: one station line)
+checkpoint: null                # the .ckpt file (opened read-only); required for kind diffusion
+device: cuda                    # cuda | cpu (PLAN 9 device backup)
+diffusion_steps: null           # int >= 1, or null = the checkpoint's own number (PLAN 9 fewer-steps backup)
+
+# --- start-up and serving ---
+warmup_inferences: 2            # warm-up calls before ready (1st pays CUDA set-up, 2nd is representative)
+warmup_gripper_width_m: 0.05    # gripper width in the warm-up (and probe) observation, m
+reset_max_s: 0.5                # a slower reset is logged as a warning (PLAN 4 limit)
+poll_s: 0.05                    # serve-loop poll; how quickly SIGINT/SIGTERM is noticed between requests
+self_check_timeout_s: 20.0      # launch.py: time allowed for `python -m policy.self_check`
+
+# --- what the checkpoint must match ---
+training_timing:
+  obs_down_sample_steps: 3      # 60 Hz data -> 50 ms steps (C1/C4)
+  ultrawide_down_sample_steps: 1  # 10 Hz ultrawide -> 100 ms steps
+
+# --- C4 field names -> the model's own names (STRUCTURE.md 4.7) ---
+key_map:
+  obs:
+    eef_pos: gripper_right_eef_pos
+    eef_rot6d: gripper_right_eef_rot_axis_angle                     # rot6d despite the name
+    eef_rot6d_wrt_start: gripper_right_eef_rot_axis_angle_wrt_start
+    gripper_width_m: gripper_right_gripper_width
+    main: camera_right_main_rgb
+    ultrawide: camera_right_ultrawide_rgb
+  action:
+    eef_pos: right_pos
+    eef_rot6d: right_rot
+    gripper_width_m: right_gripper_width

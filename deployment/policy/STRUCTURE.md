@@ -144,10 +144,10 @@ exit code 0.
 - It calls `policy.infer()` `warmup_inferences` times (default 2: the first one pays for CUDA/cuDNN set-up, the
   second gives a representative time), timing each one, then calls `policy.reset()`.
 - The times are logged (`warm-up inference 1/2: 1.84 s, 2/2: 0.09 s on cuda`) and written to `startup.json`.
-- The synthetic input can make a model produce a chunk that fails a C4 **value** check (e.g. rot6d rows that are not
-  unit length on black images). During warm-up only, a `ContractError` with `problem == "value"` is logged as a
-  **warning** and warm-up continues. Any other warm-up failure (shape, dtype, CUDA, any exception) is fatal. In normal
-  serving every contract failure of its own reply is fatal (section 3.5).
+- **Every warm-up failure is fatal**, a C4 contract failure of the chunk included, values too (shape, dtype, NaN,
+  non-unit or non-perpendicular rot6d), as are CUDA errors and any other exception. The validator only checks what
+  any sane model output satisfies (step 0 near the anchor is not a contract rule), so a chunk that fails it on the
+  neutral observation means the model is broken. This is the same rule as in normal serving (section 3.5).
 - `HoldStillPolicy` runs the same warm-up; it costs microseconds and proves its reply path before ready.
 
 ### 3.4 `reset` stays under 0.5 s
@@ -242,9 +242,11 @@ class Policy(ABC):
 
 1. `gripper_width_m` (float32) is clipped to `[0, w_max]`, where `w_max` is the **largest float32 value ≤
    `gripper_width_max_m`** (the max opening from `contracts/limits.yaml`, 0.08 m): `np.float32(max)` if that is ≤ max,
-   else `np.nextafter(np.float32(max), np.float32(0))`. The rounding matters because the validator compares the
-   float32 width with the float64 limit: `np.float32(0.07)` is 0.0700000003, above 0.07, and would be refused, while
-   `np.float32(0.08)` is 0.0799999982 and needs no step down.
+   else `np.nextafter(np.float32(max), np.float32(0))`. The rounding matters because the width is checked again
+   in float64 downstream: `franka_control`'s safety gate compares each waypoint's width (float64) with the max opening
+   and rejects (and faults on) one above it, and the C4 validator also compares in float64. `np.float32(0.07)` is
+   0.0700000003, above 0.07, so a width clipped to it would be refused, while `np.float32(0.08)` is 0.0799999982
+   and needs no step down.
 2. `n` = how many of the 16 steps were changed by the clip.
 3. It returns `ActionChunk(eef_pos, eef_rot6d, gripper_width_m, width_clipped=n)`, which runs the C4 validator.
 
@@ -757,7 +759,7 @@ and fixtures in `conftest.py`); none are stored as files.
 | `test_policy_factory.py` | no | each kind builds its class; `KIND` matches; choosing `diffusion` where torch is blocked gives the stated `PolicyLoadError` |
 | `test_import_without_torch.py` | no | in a subprocess with an import blocker for `torch`, `behavior_prompting`, `hydra`, `dill`, `timm`, `diffusers`: `import policy`, building `hold_still`, `PolicyServer`, `self_check` and `probe` all work, and none of the blocked modules was imported |
 | `test_app.py` | no | `python -m policy --mock` as a subprocess (light env, `hold_still`): the ready file appears only after the port answers; `startup.json` written; `config` answered; SIGINT → exit 0, no FATAL line; a broken station section → exit 1 with one `FATAL policy: ...` last line; no `--session` → the `_policy_alone` folder |
-| `test_warm_up.py` | no | with a fake policy whose warm-up chunk fails a C4 value check (non-unit rot6d): a warning is logged and start-up continues; with one that raises another error (shape, exception): fatal |
+| `test_warm_up.py` | no | the warm-up calls `infer` `warmup_inferences` times, records each time, then calls `reset`; a fake policy whose warm-up chunk fails a C4 value check (non-unit rot6d, NaN) is fatal; so is one with a wrong shape and one that raises another exception |
 | `test_self_check.py` | no | JSON-line format; `hold_still` all pass; `diffusion` with torch blocked → `fail` with the "policy environment" hint; missing checkpoint → `fail` |
 | `test_launch.py` | no | `program()` uses `python.light` with `--mock` and `python.policy` otherwise; unset `kind` → `fail` and no self-check run; busy port → `fail`; self-check lines become `CheckResult`s; a self-check that crashes or times out → one `fail` with its stderr; `--mock` checks need no checkpoint, GPU or policy Python |
 | `test_probe.py` | no | against a `hold_still` `PolicyServer` in the same test: all steps pass; against `RaisingPolicy`: the `ErrorReply` is printed |
