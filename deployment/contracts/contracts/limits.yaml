@@ -1,0 +1,10 @@
+# The numeric tolerances the contract validators use (contracts/STRUCTURE.md section 4.7).
+# These are part of the contract: changing one changes what both sides accept, so it is a version bump of every
+# message it applies to (section 7). franka_control (C++) reads max_waypoints and rotation_tol from this file.
+rotation_tol: 1.0e-6        # C2, C3: rotation part of a pose orthonormal within this
+anchor_row_tol: 1.0e-5      # C4 Observation: last rows equal 0 / identity rot6d within this
+rot6d_norm_tol: 0.1         # C4: rot6d vectors of length 1 +- this (from main-sim's policy_contract.py)
+rot6d_dot_max: 0.1          # C4: rot6d vectors perpendicular within this (|cos angle| <= this)
+gripper_width_max_m: 0.08   # C4 ActionChunk (and policy's clipping): max opening, the Franka Hand limit
+                            # TODO: measure the max fingertip opening with the printed fingers
+max_waypoints: 64           # C3 SetWaypoints: most waypoints in one request

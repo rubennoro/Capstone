@@ -112,6 +112,12 @@ validation, no `schema` key.
 Arrays given to a constructor are not copied or converted: a `float64` array where `float32` is required is an error,
 not silently cast. This catches dtype mistakes in the sender instead of the receiver.
 
+**Value checks on float arrays compare in float64.** Every range or tolerance check on a float array (widths against
+`[0, gripper_width_max_m]`, anchor rows, rot6d norms and dot products, rigid-pose checks) first casts the values to
+float64 (a private copy used only for the check; the message keeps its own array) and compares there. Under numpy 2.x,
+comparing a float32 array with a Python float runs in float32, so `float32(0.07)` = 0.0700000003 would pass a 0.07
+maximum; in float64 it is correctly refused.
+
 ## 4. The messages
 
 Field tables copied from PLAN section 4. Order matters: it is the order on the wire (section 5) and the order the
@@ -289,7 +295,7 @@ accepted and counted in C2's `gate.pulled_back`.
 - **`start`** is allowed from `idle` or `stopped` (`Ack(ok=true)`); from any other mode it is refused with
   `Ack(ok=false, reason=...)`.
 - **`home`** is allowed only from `idle` or `stopped`, and otherwise refused with `Ack(ok=false, ...)`. While it runs
-  the mode is `homing`; on success it ends in **`idle`**. Homing has **its own timeout of 30 s** (`home_timeout_s` in
+  the mode is `homing`; on success it ends in **`idle`**. Homing has **its own timeout of 30 s** (`homing.timeout_s` in
   `franka_control/config.yaml`); exceeding it ends homing with `Ack(ok=false, reason=...)`.
 - `home` blocks its reply until the home pose is reached, so `message_comms` cannot send heartbeats meanwhile (a REQ
   socket must get its reply before it sends again). So the **watchdog pauses while homing** and **resumes** as soon as
@@ -615,7 +621,7 @@ All under `contracts/tests/`; run with
 | `test_message.py` | building validates; `to_dict` order is the field order with `schema` first; `from_dict` refuses missing and unknown keys; frozen; a float64 array is not cast to float32 |
 | `test_registry.py` | every schema maps to exactly one class; duplicate registration is refused; `decode(expect=...)` refuses another valid type but lets `ErrorReply` through |
 | `test_limits.py` | `limits.yaml` loads; a missing or unknown key is refused |
-| `test_c0.py`, `test_c1.py`, `test_c2.py`, `test_c3.py`, `test_c4.py`, `test_common.py` | each message's own rules: enums, JPEG keyframe, C1 images only when both cameras are ok (none at all otherwise), rigid-pose check (incl. a transposed matrix), increasing times, length agreement, `max_waypoints`, C2 `homing` mode, `loop_late`, `gate.pulled_back` and its bounds, C3 reply `shortened ≤ accepted` and `skipped`, the `sizes.py` constants used in every C1/C4 shape, anchor rows, rot6d norm/perpendicular, an odd step 0 accepted (not a contract rule), width range (a width of `gripper_width_max_m` + 1 mm is refused: the validator does not clip), `width_clipped` in `[0, ACTION_STEPS]`, NaN/inf |
+| `test_c0.py`, `test_c1.py`, `test_c2.py`, `test_c3.py`, `test_c4.py`, `test_common.py` | each message's own rules: enums, JPEG keyframe, C1 images only when both cameras are ok (none at all otherwise), rigid-pose check (incl. a transposed matrix), increasing times, length agreement, `max_waypoints`, C2 `homing` mode, `loop_late`, `gate.pulled_back` and its bounds, C3 reply `shortened ≤ accepted` and `skipped`, the `sizes.py` constants used in every C1/C4 shape, anchor rows, rot6d norm/perpendicular, an odd step 0 accepted (not a contract rule), width range (a width of `gripper_width_max_m` + 1 mm is refused: the validator does not clip), float array checks in float64 (with a 0.07 m maximum, a float32 width of 0.07, which is 0.0700000003, is refused), `width_clipped` in `[0, ACTION_STEPS]`, NaN/inf |
 | `test_examples.py` | for every example from `build_examples()` (all five contracts): good ones decode and their `values` match, broken ones fail with exactly their `field` and `problem`. For the stored files: every file in `examples/` is listed in `index.yaml` and vice versa; only C2/C3 (and their `ack`/`error` replies) are stored; the folder equals a fresh `make_examples` output (no stale files) |
 | `test_rpc.py` | request/reply over `tcp://127.0.0.1:*`; with `poll_s` and `cancel`, a reply that arrives normally is returned, a `cancel()` turning true raises `TransportCancelled` within about one `poll_s`, the next request on the same client works (new socket) and the late reply is dropped, `timeout_s` still raises `TransportTimeout` when `cancel()` stays false, and giving only one of `poll_s`/`cancel` is refused; a timeout raises `TransportTimeout` after about the timeout, the request was sent once, and the next request works (new socket); a late reply is dropped; a broken request gets `ErrorReply` naming the field; an unknown request type gets `ErrorReply`; a raising handler gets `ErrorReply` and the server keeps serving; a wrong reply type raises `ContractError`; `RemoteError` carries the text |
 | `test_pubsub.py` | messages arrive in order; `receive` returns `None` after the timeout; a broken message raises `ContractError`; a message of another type raises |
