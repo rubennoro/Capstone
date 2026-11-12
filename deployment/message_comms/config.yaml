@@ -1,0 +1,42 @@
+# message_comms: every setting, with its default (STRUCTURE.md section 8).
+# station.yaml's `message_comms:` section may override any key here; a key that is not here is refused.
+# Times are in the unit in their name.
+#
+# Two rules tie these to franka_control (both checked by launch.py against franka_control's real config):
+# - Heartbeat gap: in one cycle the main thread may wait on one C3 request and one C1 get_health, so the longest gap
+#   between heartbeats (outside homing) is loop_ms/1000 + timeouts.commands_s + timeouts.health_s
+#   (0.02 + 0.2 + 0.2 = 0.42 s). It must stay below franka_control's watchdog.limit_s (0.5 s).
+# - Homing: timeouts.home_s must be above franka_control's homing.timeout_s (30 s), so franka_control answers first.
+# Camera stale/down limits are not here: they live only in process_frames/config.yaml (this process trusts C1 status).
+
+exec_h: 8                     # waypoints sent per policy step, 1-16 (PLAN section 9 backup: raise it if the policy is slow)
+lookahead_ms: 0               # added to every waypoint time (STRUCTURE.md 6.6), integer >= 0
+pose_source: target           # target | measured: which C2 pose is the proprio and the anchor (6.7)
+odd_chunk_max_pos_m: 0.02     # odd-chunk check: step 0's largest distance from the anchor (PLAN section 4)
+odd_chunk_max_rot_deg: 5.0    # odd-chunk check: step 0's largest rotation from the anchor
+anchor_fallback_m: 0.02       # with target: use measured for a step when target and measured are farther apart
+loop_ms: 20                   # main loop period = heartbeat period (50 Hz)
+status_ms: 250                # status line refresh
+health_poll_ms: 500           # get_health period, in every phase
+history_s: 1.0                # length of the C2 state history
+max_state_age_ms: 50          # newest state older than this -> skip the step
+state_lost_s: 1.0             # no C2 message for this long -> conclude
+max_image_age_ms: 250         # newest main image older than this -> skip
+state_recv_hwm: 1000          # C2 subscriber queue length (every message is needed for the seq check)
+timeouts:
+  commands_s: 0.2             # C3 heartbeat, start, stop, set_waypoints, get_state
+  health_s: 0.2               # C1 get_health (main thread)
+  frames_s: 1.0               # C1 get_frames (worker)
+  policy_hang_s: 5.0          # C4 infer: the hang limit (PLAN section 5)
+  config_s: 5.0               # C4 config
+  reset_s: 1.0                # C4 reset (the policy must answer in < 0.5 s)
+  prompt_s: 60.0              # C4 prompt (never sent to a plain diffusion policy)
+  home_s: 90.0                # C3 home; must be above franka_control's homing.timeout_s (30 s)
+  startup_s: 20.0             # startup checks; below the launcher's 30 s ready timeout
+task_name: null               # for prompt; required only if the policy says uses_prompt
+prompt_index: 0               # for prompt
+operator_script: null         # null: the keyboard. A path: a ScriptedOperator script (relative: see deploy 6.2)
+skip_warn_s: 1.0              # steps skipped longer than this -> status line SKIPPING (never a conclude)
+log_steps: true               # write steps.jsonl
+save_tap: false               # save each sent step's observation, chunk and waypoints to tap/ (first real-arm runs)
+tap_images_every: 10          # with save_tap: include the four images every this many steps

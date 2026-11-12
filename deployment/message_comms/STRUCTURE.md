@@ -195,8 +195,8 @@ def load_settings(station_file: Path, session: Path | None, mock: bool) -> Setti
 cannot import `deploy`: maps merge key by key; other values are replaced; an override key that is not in
 `config.yaml` is an error. It also reads `endpoints.*` and `session_root` from the station file. It checks every value
 (types, ranges, `exec_h` between 1 and 16, `pose_source` one of two words) and raises one `SettingsError` listing
-every problem. With no `--session`, it makes `<session_root>/<YYYY-MM-DD_HH-MM-SS>_message_comms_alone/`
-(deploy §4.2).
+every problem. With no `--session`, it makes `<session_root>/<YYYY-MM-DD_HH-MM-SS>_message_comms_alone/` as the
+session folder and writes into its `message_comms/` subfolder, the same layout as in a run (deploy §4.2).
 
 ### 4.2 The three clients
 
@@ -356,6 +356,7 @@ class StepDone:
 @dataclass(frozen=True)
 class StepSkipped:
     job: StepJob; problem: Problem; health: HealthReport | None
+    width_clipped: int            # the chunk's width_clipped (an odd chunk); 0 when no chunk arrived
 
 @dataclass(frozen=True)
 class NoNewFrame:
@@ -452,6 +453,11 @@ failed, what to check). "A new failure rule is one entry in `FailureMonitor`" (P
   - any other → `CONTRACT_VIOLATION`.
 - **Anything else** → `INTERNAL_ERROR`.
 
+**Not a problem:** a cancelled `home` (`RequestCancelled`, raised by `FrankaClient.home` when `contracts`'
+`TransportCancelled` comes back because `interrupted()` turned true). It happens only because this process asked for
+it (Ctrl-C or SIGTERM), so it never reaches `from_exception` and never becomes `INTERNAL_ERROR`: the home handler
+catches it and takes the Ctrl-C or the SIGTERM path (section 5.7).
+
 `check_state` knows `franka_control`'s modes (C2): `idle`, `running`, `holding`, `stopped`, `homing`, `fault`.
 - `fault` is a conclude in every phase.
 - `stopped` is a conclude only in `RUNNING` when this process has not sent `stop`. After our own `stop` it is the
@@ -490,7 +496,7 @@ class EpisodeLoop:
     def cycle(self) -> None                                # one loop cycle (tests call it directly)
     def run(self) -> int                                   # cycles until DONE; returns the exit code (0 or 1)
     def interrupt(self) -> None                            # SIGINT handler: sets the interrupt flag, nothing else
-    def interrupt_set(self) -> bool                        # read by FrankaClient.home between slices
+    def interrupt_set(self) -> bool                        # interrupt OR terminate flag; read by FrankaClient.home between slices
     def terminate(self) -> None                            # SIGTERM handler: sets the terminate flag, nothing else
     def progress(self) -> LoopProgress
     @property
@@ -801,7 +807,8 @@ they arrive. If a step is slower, the arm reaches the last waypoint and holds th
 
 1. Accepted only in `IDLE` with the worker idle. `franka_control` allows `home` from `idle` or `stopped`, which are
    the only modes `IDLE` can be in.
-2. Show the homing status line (section 4.9), then pause heartbeats. Call `franka.home(interrupted=loop.interrupt_set)`.
+2. Show the homing status line (section 4.9), then pause heartbeats. Call `franka.home(interrupted=loop.interrupt_set)`;
+   `interrupt_set()` is true when the interrupt flag (SIGINT, Ctrl-C) **or** the terminate flag (SIGTERM) is set.
    It waits for the reply for up to `timeouts.home_s` (90 s) in `loop_ms` slices, and checks the interrupt flag
    between slices. While it runs, C2 shows mode `homing`.
    - `franka_control` pauses its watchdog while homing and resumes it when homing ends.
@@ -812,10 +819,13 @@ they arrive. If a step is slower, the arm reaches the last waypoint and holds th
 
 **How homing can be interrupted.** Only two ways: the robot's external stop button (immediate), or Ctrl-C.
 
-- **On Ctrl-C:** `home()` sees the flag within one slice.
+- **On Ctrl-C or SIGTERM:** `home()` sees the flag within one slice.
   - It drops the reply: it closes its C3 socket with linger 0, so nothing stays queued, and raises
     `RequestCancelled`.
-  - message_comms then exits at once (exit 0, open episode none, since homing only runs in `IDLE`). It does not send
+  - The home handler catches `RequestCancelled` and takes the Ctrl-C path (exit 0; an open episode would be recorded
+    `stopped`) or the SIGTERM path (exit 0; an open episode would be recorded `aborted` with the reason `stopped by
+    deploy: another process exited`). Homing only runs in `IDLE`, so in practice there is no open episode.
+  - message_comms then exits at once. It does not send
     `stop`: `franka_control` is busy with `home` and could not answer.
   - The launcher then stops `franka_control` (deploy §5.4), and that stops the arm.
 - **Other keys** do nothing during homing.
@@ -1142,7 +1152,7 @@ PROCESS_CLASS = MessageCommsProcess
 | `operator_script` exists, when set | fail | `check_helpers.file_exists` |
 | a terminal for the keyboard when `operator_script` is null | fail: `no terminal for the keyboard: run deploy run in a terminal, or set message_comms.operator_script` | `sys.stdin.isatty()` in the launcher |
 | `exec_h` in 1–16, `pose_source` one of the two words, every timeout and odd-chunk limit > 0, `tap_images_every ≥ 1` | fail |
-| heartbeat gap and homing against `franka_control`'s real settings: `loop_ms/1000 + commands_s + health_s < watchdog.limit_s` and `home_s > homing.timeout_s`, both read with `deploy.load_process_config(DEPLOYMENT_ROOT / "franka_control", self.station.section("franka_control"))` (section 8) | fail, naming both values | read from `self.config` and the loaded `franka_control` config | read from `self.config` (a few lines; the process checks again at start, since `launch.py` can't import the package) |
+| heartbeat gap and homing against `franka_control`'s real settings: `loop_ms/1000 + commands_s + health_s < watchdog.limit_s` and `home_s > homing.timeout_s`, both read with `deploy.load_process_config(DEPLOYMENT_ROOT / "franka_control", self.station.section("franka_control"))` (section 8) | fail, naming both values | read from `self.config` and the loaded `franka_control` config |
 | `exec_h`, `pose_source`, operator, tap | info | e.g. `exec_h = 8 (0.40 s per step; PLAN §9 backup)`, `pose_source = target`, `operator: keyboard`, `tap: off` |
 
 It does **not** probe the other three processes' endpoints. At `deploy check` time nothing is started yet, and at
@@ -1175,7 +1185,8 @@ Exit codes: `0` for the operator's quit, a SIGINT or a SIGTERM; `1` for a conclu
 alone in its own terminal (e.g. `python -m process_frames --station station.yaml --mock`, `python -m policy --station
 station.yaml --mock`, and the `franka_control` binary with `--mock`). Then in another terminal:
 `python -m message_comms --station deployment/station.yaml`. It makes its own session folder
-`<session_root>/<timestamp>_message_comms_alone/` and writes no ready file. Its log lines (stderr) and the status line
+`<session_root>/<timestamp>_message_comms_alone/`, writes into its `message_comms/` subfolder (the same layout as in
+a run) and writes no ready file. Its log lines (stderr) and the status line
 (stdout) share that terminal. If one of the three is missing, startup fails after `startup_s` naming it.
 
 ## 11. Unit tests
@@ -1209,7 +1220,7 @@ does not need `robot-utils`.
 | `test_episode_loop.py` | with fakes, `FakeClock`, `ManualWorker` and `ScriptedOperator`, driving `cycle()`. **The next chunk is asked while the current one runs:** the next step is submitted in the same cycle the waypoints are sent, before their last time. **Waypoints replace correctly:** chunk ids increase, each set is sent once, a result from an ended episode is dropped. **Heartbeats during slow steps:** a step held back for 2 s still gives one heartbeat per cycle. `s` or `q` while a step runs sends `stop` in that same cycle. `home` pauses heartbeats and they resume after. `prompt` is sent only when `uses_prompt`, after `reset`, before `start`. A refused `start` returns to idle with no episode. Ctrl-C → `stop`, then exit 0. SIGTERM → `stop`, episode `aborted` with `stopped by deploy: another process exited`, exit 0. Ctrl-C during homing (fake `home` that never answers) → exits within one slice, socket closed. A `stopped` C2 message older than the `start` acknowledgement does not conclude; one after it does. A fault together with a broken C2 message is reported as `ARM_FAULT`. **The `s` key:** in `RUNNING` it sends `stop`, records `stopped` and returns to `IDLE` with the run still going; then `h` homes and `c` starts episode 2 (the episode counter goes up, `reset` is sent again); in `RESETTING` it cancels the start without recording an episode; in `IDLE` it only sends `stop`. `q` and Ctrl-C end the run with exit 0. Long skipping never concludes. `home` shows the homing status line. Gate and `loop_late` deltas are taken from the episode start. With `save_tap` the tap is written after the next step is submitted, without it never. Startup: the ready file is written only after state, config and cameras are ok; a config mismatch concludes. Episode records are written with the right outcome |
 | `test_failure_monitor.py` | **every row of section 7 (and so of PLAN §5)** gives its stated kind and message (one parametrized case per row: the detection input → `Problem` → `Verdict`); `from_exception` maps each exception type and request as in 4.7; `check_state` for `fault`, self-`stopped` in `RUNNING` (and not after our own `stop`, nor from messages before the `start` acknowledgement), `homing` only in `HOMING`, state lost; the normal-operation rows (`SHORTENED`, `PULLED_BACK`, `WIDTH_CLIPPED`, `LOOP_LATE`) never stop anything; `width_clipped` is summed per episode and reset at the next start; counts and their per-episode reset |
 | `test_operator.py` | `ScriptedOperator` runs whole episodes (c → wait_steps → y → q) against `LoopProgress` values; `wait_s` with `FakeClock`; a script with two episodes (c → y, c → s, h, c → n, q) runs to the end; a bad script (unknown entry or key, or a last entry other than `q`, e.g. ending on `s`) is refused with the line; `KeyboardOperator` key mapping from a pipe (no terminal); a hint for a key that doesn't fit the phase |
-| `test_status_line.py` | idle, running, waiting, `SKIPPING` and homing lines as in 4.9; `short`, `pulled`, `clip` and `late loops` shown; never longer than 120 characters; negative margin shown |
+| `test_status_line.py` | idle, running, waiting, `SKIPPING` and homing lines as in 4.9; `short`, `pulled`, `clip`, `odd` and `late loops` shown; never longer than 120 characters; negative margin shown |
 | `test_session_log.py` | the four files appear in the session folder; each episode outcome and its fields; every line is flushed at once; an open episode is closed on exit; the tap: no `tap/` folder when `save_tap` is false; with it, one `.npz` per sent step holding the listed arrays, images only every `tap_images_every` steps |
 | `test_settings.py` | `config.yaml` loads; a station override merges (maps key by key); an unknown key is refused with its path; every range check; no `--session` makes the `_alone` folder |
 | `test_flow.py` | PLAN §7 "message flow": the real `message_comms` (`main()`) against `fake_servers.py` (a fake `process_frames`, a hold-still `policy` and a fake `franka_control` with C3 server + C2 publisher, all on free ports) with a script. One episode runs: waypoints arrive with increasing `chunk_id`, heartbeats keep coming, `stop` is sent first at exit, exit 0. It covers every row of section 7 (PLAN §7: the full normal step and every row of PLAN §5).

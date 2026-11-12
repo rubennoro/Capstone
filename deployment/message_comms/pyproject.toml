@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "message_comms"
+version = "1.0.0"
+description = "Deployment manager process: episode loop, keyboard, routing, pose conversions, failure handling"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "contracts",            # installed editable from deployment/contracts (pip install -e)
+    "scipy==1.15.3",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[tool.setuptools]
+packages = ["message_comms"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"
