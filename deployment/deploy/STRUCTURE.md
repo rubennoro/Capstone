@@ -15,7 +15,9 @@ where this file and PLAN.md disagree, PLAN.md wins and this file is fixed.
 It knows nothing about frames, poses or the arm. Everything process-specific is in that process's `launch.py`; the
 launcher only runs those descriptions. The one exception is the small **geometry tool** (`python -m deploy.geometry`,
 section 6.6): it computes the rig file's `T_cam_tcp` from `gripper.yaml` and `franka_control`'s `F_T_TCP`, and
-`deploy check` checks those three files still agree. Its job is small, and so is its code: five small classes.
+`deploy check` checks those three files still agree. Its job is small, and so is its code: eight small classes, five
+for the launcher (`Station`, `Session`, `CheckResult`, `ManagedProcess`, `Launcher`) and three for the geometry tool
+(`GripperFile`, `RigTcp`, `TcpTriangle`), plus a few pure functions.
 
 Terms used below:
 
@@ -75,10 +77,14 @@ class Station:
     ready_timeout_s: Mapping[str, float]                    # per process name
     stop_timeout_s: float
     poll_s: float
+    tcp_check_max_mm: float                                 # the TCP triangle check's limits (6.6)
+    tcp_check_max_deg: float
     def python(self, env: str) -> str                       # "light" or "policy": the interpreter path
     def endpoint(self, name: str) -> str                    # e.g. "commands" -> "tcp://127.0.0.1:5630"
     def section(self, process: str) -> Mapping[str, Any]    # that process's overrides ({} if absent)
     def resolve(self, value: str) -> Path                   # "~" expanded; relative paths against the station file's folder
+
+def parse_endpoint(endpoint: str) -> tuple[str, int]        # "tcp://host:port" -> (host, port); ValueError otherwise
 ```
 
 `load` takes `mock` because a few keys are needed only without it (`python.policy`, `endpoints.pi_*`; section 6.1).
@@ -114,6 +120,7 @@ class CheckResult:
     detail: str           # one line: what was found, and on failure what to check
 
 def print_table(results: Sequence[CheckResult], out: TextIO) -> None
+def exit_code(results: Sequence[CheckResult]) -> int        # 2 if any fail, else 0
 ```
 
 `warn` does not stop `deploy run` (e.g. "rig file is the stand-in"). `fail` does. `info` reports a fact, e.g. which
@@ -130,13 +137,15 @@ What the base class gives every subclass:
 ```
 class ManagedProcess(ABC):
     def __init__(self, station: Station, mock: bool, session: Session | None) -> None
-                                     # session is None for `deploy check` (nothing is started)
+                                     # session is None for `deploy check` (nothing is started); the Launcher
+                                     # sets `session` after the checks, before start()
     station: Station
     mock: bool
+    session: Session | None
     folder: Path                     # DEPLOYMENT_ROOT / NAME
     config: Mapping[str, Any]        # NAME/config.yaml merged with station.section(NAME) (section 6.3)
-    log_path: Path | None            # session.log_path(NAME)
-    ready_file: Path | None          # session.ready_file(NAME)
+    log_path: Path | None            # session.log_path(NAME) (a property: follows `session`)
+    ready_file: Path | None          # session.ready_file(NAME) (a property)
 
     def config_path(self, key: str) -> Path      # a path setting, resolved by where its value came from (section 6.3)
     def command(self) -> list[str]   # program() + the common arguments (section 4.2); not overridden
@@ -146,12 +155,20 @@ class ManagedProcess(ABC):
     def returncode(self) -> int | None             # None while running
     def stop(self, timeout_s: float) -> int | None # SIGTERM, wait timeout_s, then SIGKILL; returns the exit code
     def fatal_line(self) -> str | None             # the last "FATAL ..." line of its log (section 7.6)
+    def failure_message(self, code: int, during_startup: bool = False) -> str   # the one-line report of 5.3
 ```
+
+A broken station section for this process (an unknown override key) does not raise in `__init__`: it is reported by
+`base_checks()` as a `fail` named `overrides`, and the launcher then skips that process's `checks()`, so `deploy
+check` still lists every other problem.
 
 - `start` opens `log_path`, writes the command as its first line, and starts the command with `subprocess.Popen`:
   stdout and stderr to the log, stdin closed, `cwd=folder`, its own process group, environment = the launcher's +
   `PYTHONUNBUFFERED=1` (so log lines appear at once) + `extra_env()`. The one exception is the terminal process
-  (section 4.1, `USES_TERMINAL`).
+  (section 4.1, `USES_TERMINAL`). **`cwd` is never `deployment/`** (it is the process's own folder, also for the
+  terminal process): `python -m <pkg>` puts its working folder first on the path, and from `deployment/` the folder
+  `deployment/<pkg>/` (or `deployment/contracts/`) is imported as an empty namespace package before the editable
+  install (section 7.2). For the same reason `check_helpers.python_imports` runs its subprocess with `cwd="/"`.
 - `wait_ready` calls `is_ready()` every `poll_s` until it returns true. It raises `LaunchError` if the process exits
   first, or if `timeout_s` passes (section 5.3 gives the messages).
 - `stop` sends **SIGTERM** to the process group, waits up to `timeout_s`, then sends SIGKILL to the group. For the
@@ -384,7 +401,7 @@ Two hand-written files sit at the top of `deployment/` (PLAN rule 4):
 | File | Holds | Read by |
 |---|---|---|
 | `station.yaml` | every setting `deploy check` and `deploy run` need: hosts, ports, paths, which policy, the process overrides (6.1–6.4) | `Station`, every process |
-| `gripper.yaml` | our hand-entered gripper constants: where the ultrawide camera sits on the flange and how it is tilted (6.5) | only the geometry tool and its `deploy check` (6.6) |
+| `gripper.yaml` | our hand-entered gripper constants: where the ultrawide camera sits, in the **hand** frame, and how it is tilted (6.5) | only the geometry tool and its `deploy check` (6.6) |
 
 `station.yaml` is small: shared things at the top level, then one section per process holding only that process's
 **overrides** of its own `config.yaml`.
@@ -586,6 +603,7 @@ F_T_H: np.ndarray        # Rz(-45 deg), zero translation: the Franka Hand's moun
 def camera_pose(position_m: np.ndarray, up_axis: np.ndarray, tilt_deg: float) -> np.ndarray   # H_T_cam, 4x4, hand frame
 def invert(T: np.ndarray) -> np.ndarray                                                        # rigid inverse
 def pose_error(A: np.ndarray, B: np.ndarray) -> tuple[float, float]                            # (mm, deg) between two poses
+def as_rigid(value: object, label: str) -> np.ndarray     # a 4x4 list checked to be rigid; GeometryError naming label
 
 # rig_tcp.py
 class RigTcp:
@@ -601,6 +619,10 @@ class TcpTriangle:
     F_T_cam: np.ndarray                                                 # F_T_H @ camera_pose(...)
     def compute(self) -> np.ndarray                                     # T_cam_tcp = invert(F_T_cam) @ F_T_TCP
     def check(self, mock: bool) -> CheckResult                          # for deploy check (below)
+
+def triangle_check(station: Station, gripper_file: Path, mock: bool) -> CheckResult
+    # what deploy check runs: TcpTriangle(...).check(mock), with a file that can't be read reported as the same
+    # fail (warn with --mock), naming it
 ```
 
 `RigTcp.read` accepts the Euler form too (`rotation: {euler_xyz_deg}` + `translation_m`, as in older rig files); it
@@ -649,6 +671,14 @@ The four process planners and executors follow these.
 - The `deployment/` folder itself is **never** put on `sys.path`. Each package is found because its folder is installed
   in editable mode (`pip install -e <folder>`), which puts `deployment/<folder>/` on the path. (If `deployment/` were on
   the path, `import policy` could find the outer `policy/` folder instead of the package inside it.)
+- **Never run Python with `deployment/` as the working folder** for `python -m ...` or `python -c ...`: Python puts
+  the working folder first on the path, so it is the same mistake. The outer folder (`deployment/contracts/`) is then
+  imported as an empty namespace package, found before the editable install's finder, and imports fail
+  (`cannot import name ... from 'contracts' (unknown location)`). So the launcher starts every process with
+  `cwd` = its own folder (3.4); tests run from inside their folder (7.4). The `deploy` command (the console script)
+  works from any folder, `deployment/` included, since a console script doesn't put the working folder on the path;
+  `python -m deploy` and `python -m deploy.geometry` run from `deployment/` stop with a message saying so. (The
+  alternative, `pip install -e <folder> --config-settings editable_mode=compat`, is a note for INSTRUCTIONS.md.)
 
 ### 7.3 Python, environments and pinned versions
 
@@ -688,21 +718,23 @@ The four process planners and executors follow these.
 
 ### 7.4 Tests
 
-- **pytest, one command per folder**, run from `deployment/`. One folder per command because pytest reads its options
-  (below) from the folder's own `pyproject.toml` (or `pytest.ini`), found from the test path; two folders in one
-  command would share one set of options.
+- **pytest, one command per folder, run from inside that folder** (`cd <folder> && ... -m pytest tests`). Not from
+  `deployment/`: there, the folder name (e.g. `deployment/contracts/`) is picked up as an empty namespace package
+  before the installed (editable) package, and imports fail (`cannot import name ... from 'contracts' (unknown
+  location)`). One folder per command also because pytest reads its options (below) from the folder's own
+  `pyproject.toml` (or `pytest.ini`); two folders in one command would share one set of options.
 
   ```
-  # light environment (python.light)
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest contracts/tests
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest deploy/tests
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest process_frames/tests
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest message_comms/tests
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest franka_control/tests     # franka_control's launch.py (Python)
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest policy/tests             # without torch: torch tests skip
+  # light environment (python.light), from deployment/
+  (cd contracts && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests)
+  (cd deploy && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests)
+  (cd process_frames && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests)
+  (cd message_comms && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests)
+  (cd franka_control && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests)   # franka_control's launch.py (Python)
+  (cd policy && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests)           # without torch: torch tests skip
   # policy environment (python.policy)
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/miniconda3/envs/behavior_prompting/bin/python -m pytest contracts/tests
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/miniconda3/envs/behavior_prompting/bin/python -m pytest policy/tests
+  (cd contracts && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/miniconda3/envs/behavior_prompting/bin/python -m pytest tests)
+  (cd policy && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/miniconda3/envs/behavior_prompting/bin/python -m pytest tests)
   ```
 
   `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` is needed on this machine: ROS Humble puts pytest plugins on the path that crash
@@ -816,5 +848,9 @@ toward the fingers, translation `[0, 0.016891, 0.149465]` m); `RigTcp.write` kee
 Each process folder also has a `tests/test_launch.py` (its own planner lists it): its `program()`, its `checks()` with a
 broken station section, and its mock choice.
 
-The end-to-end test of PLAN §7 (`deploy run --mock` with scripted keys) needs all four processes, so it is not a
-`deploy/` unit test; it belongs to phase 3 (PLAN §8).
+The end-to-end test of PLAN §7 (milestone 3) is owned by `deploy/`: `tests/test_end_to_end_mock.py` runs
+`python -m deploy run --mock` as a subprocess, with a temporary station file (free local ports, a temporary
+`session_root`, and `message_comms.operator_script` set to a scripted-keys file: `c`, wait for steps, `y`, then `q`),
+and checks exit code 0, `deploy: done`, and the episode recorded as `success` in `<session>/message_comms/episodes.jsonl`.
+It needs all four processes, so it is **skipped until the four `launch.py` files exist** (and while the
+`franka_control` binary is not built or `process_frames.mock_episode` doesn't exist). It belongs to phase 3 (PLAN §8).

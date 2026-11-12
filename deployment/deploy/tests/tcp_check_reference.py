@@ -4,10 +4,11 @@ Worked check of the gripper offsets (the "triangle").
 
 Frames:
   F    flange: Franka convention, origin at the plate centre, z out of the plate toward the fingers.
-  TCP  fingertip point: the Franka Hand TCP, F_T_TCP = Rz(-45 deg), 0.1034 m along flange z (stock fingers).
+  TCP  fingertip point: the Franka Hand TCP, F_T_TCP = Rz(-45 deg), 0.150 m along flange z
+       (franka_control's tcp.F_T_TCP).
   C    ultrawide camera optical frame (OpenCV): x right in the image, y down in the image, z out of the lens.
 
-Inputs that describe the mount (EXAMPLE numbers until the real CAD values are filled in):
+Inputs that describe the mount (a generic EXAMPLE; the real, hand-entered numbers are in deployment/gripper.yaml):
   cam_pos_F     camera lens centre in flange coordinates (m)
   tilt_deg      how far the camera looks "down" toward the fingers, measured from the flange z axis
   up_axis_F     which flange direction is "up" in the camera image (the side the camera sits on)
@@ -28,11 +29,10 @@ def inv(M):
     return T(Ri, -Ri @ t)
 
 
-# --- fixed by the hardware: flange -> fingertip point (Franka Hand nominal; printed fingers may lengthen it) ---
-finger_extra_m = 0.0                       # TODO: extra length of the printed fingers vs stock Franka fingers
-F_T_TCP = T(R.from_euler("z", -45, degrees=True).as_matrix(), [0, 0, 0.1034 + finger_extra_m])
+# --- fixed by the hardware: flange -> fingertip point (Franka Hand axes, our fingertips 150 mm from the plate) ---
+F_T_TCP = T(R.from_euler("z", -45, degrees=True).as_matrix(), [0, 0, 0.150])
 
-# --- the camera mount (EXAMPLE values; replace with CAD) ---
+# --- the camera mount (a generic EXAMPLE) ---
 cam_pos_F = np.array([0.0, 0.07, 0.04])    # 7 cm off-axis toward flange +y, 4 cm out from the plate
 up_axis_F = np.array([0.0, 1.0, 0.0])      # the camera sits on the flange +y side; image "up" points that way
 tilt_deg = 30.0                            # looks 30 deg "down" (toward the flange axis / fingers)
@@ -84,8 +84,9 @@ assert np.allclose(flange_next @ F_T_cam @ T_cam_tcp, tcp_next, atol=1e-9)
 print("\nAll checks passed: the triangle closes, the rig-file form round-trips, and training and robot describe the")
 print("same fingertip point and axes for any arm pose and any policy motion.")
 
-# --- what the CURRENT stand-in rig file implies ---
-T_cam_tcp_standin = T(R.from_euler("xyz", [15, 0, 0], degrees=True).as_matrix(), [0.0, 0.060, 0.200])
-F_T_cam_implied = F_T_TCP @ inv(T_cam_tcp_standin)
-print("\nCurrent stand-in T_cam_tcp (15 deg about x, (0, 0.06, 0.20) m) implies this camera pose on the flange:")
-print("  position (m):", np.round(F_T_cam_implied[:3, 3], 4), " camera z axis in flange:", np.round(F_T_cam_implied[:3, 2], 3))
+# --- the old iPhone-era value (must FAIL the triangle check) ---
+T_cam_tcp_iphone = T(R.from_euler("xyz", [15, 0, 0], degrees=True).as_matrix(), [0.0, 0.060, 0.200])
+F_T_cam_implied = F_T_TCP @ inv(T_cam_tcp_iphone)
+print("\nOld iPhone-era T_cam_tcp (15 deg about x, (0, 0.06, 0.20) m) implies this camera pose on the flange:")
+print("  position (m):", np.round(F_T_cam_implied[:3, 3], 4),
+      " camera z axis in flange:", np.round(F_T_cam_implied[:3, 2], 3))

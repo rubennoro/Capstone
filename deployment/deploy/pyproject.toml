@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deploy"
+version = "0.1.0"
+description = "The deployment launcher (deploy check / deploy run) and the gripper geometry tool"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "numpy==2.2.6",
+    "scipy==1.15.3",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+deploy = "deploy.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["deploy", "deploy.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"
