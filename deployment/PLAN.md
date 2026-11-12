@@ -390,7 +390,7 @@ packets:
   - `_vendor/cv_util.py` as the reference in tests;
   - the tests `test_imageprep.py` and `test_vendored_camera_model.py`;
   - `raw_episode.py` (`read_video_frames`): PyAV decoding, if the Pi sends H.264;
-  - `pi_format.py`: the Pi's file layout, for `ReplaySource` and `FakePiSender`;
+  - `pi_format.py`: the Pi's file layout, for `RecordingPacketSource` and `FakePiSender`;
 - `rnoro/main-sim`, `controlSW/franka_deploy/`:
   - `tasks/frame_select.py`: the frame-picking rule;
 - `behavior_prompting/deps/real-env/real_env/utils/umi_utils.py` (`get_downsampled_camera_images`) and
