@@ -139,38 +139,42 @@ Conventions for all messages:
   runs over Wi-Fi from the Pi. **Broadcast** (publish/subscribe) is
   used for state; **request/reply** for everything else. The encoding is msgpack, with arrays as raw bytes plus shape and dtype.
 
-### C0: Pi 5 → `process_frames` (frame stream over Wi-Fi, plus clock sync)
+### C0: Pi 5 → `process_frames` (paired packets over Wi-Fi, plus clock sync)
 
-**Stand-in.** The Pi's sending side isn't written yet. This is what `process_frames` expects; whoever writes the Pi
-sender implements it (TODO: confirm with the Pi side). Our fake Pi sender speaks exactly this, so `process_frames` can
-be built and tested now.
+**The exact contract is [contracts/PI_PAYLOAD.md](contracts/PI_PAYLOAD.md).** It's written for whoever implements the
+Pi sender. In short:
 
-The Pi sends every frame of both cameras as it's captured: 30 FPS each, one message per frame. `process_frames`
-connects to the Pi's address from `station.yaml` and subscribes. The Pi doesn't wait for requests.
+- **Packets, like the iPhone pipeline.** The Pi sends **one packet per main (IMX519) frame**, as one ZeroMQ
+  **multipart** message on a PUB socket the Pi binds (`endpoints.pi_frames`). A multipart message arrives whole or
+  not at all.
+  - Part 0: a msgpack header (`c0.packet/v1`).
+  - Part 1: the encoded main frame.
+  - Parts 2…: every ultrawide (IMX219) frame captured since the previous packet, in order. H.264 needs every frame
+    exactly once.
+- **The pair.** The header's `pair_seq` names this packet's paired ultrawide frame: the newest one captured not later
+  than the main frame's capture time + 5 ms, at most 50 ms old; −1 if none. That's "the newest ultrawide image at
+  the moment of the main frame", as in iPhUMI.
+- **Real capture times.** Each frame carries its libcamera `SensorTimestamp` (`t_pi_ns`, end of exposure, Pi
+  `CLOCK_BOOTTIME`) and `ExposureTime`. The **packet time** is the main frame's mid-exposure time
+  (`t_pi_ns − exposure_ns/2 + time_offset_ns`), mapped to PC time by the clock sync. iPhUMI's "arrival time minus a
+  fixed guess" is deliberately not copied.
+- **Counters.** `packet_seq` counts main frames, and each camera's `frame_seq` counts its own frames. Gaps mean drops
+  (H.264: that camera is unusable until its next keyframe). Going backwards means the sender restarted.
+- **Encoding.** H.264 with the recording's settings (main 15 Mbit/s, ultrawide 10 Mbit/s, Constrained Baseline, no
+  B-frames, Annex-B, SPS/PPS before every keyframe, a keyframe every 30 frames = 1 s, as recorded). JPEG is the
+  backup.
+- **Clock sync.** A REQ/REP socket the Pi binds (`endpoints.pi_time_sync`): `c0.time_sync_request/v1` →
+  `c0.time_sync_reply/v1 {t_pi_ns}` (the Pi's `CLOCK_BOOTTIME`).
 
-| Field | Type | Meaning |
-|---|---|---|
-| `schema` | string | `c0.frame/v1` |
-| `camera` | string | `main` or `ultrawide` |
-| `sensor` | string | `imx519` or `imx219`; checked against the rig file, so a swapped cable is caught |
-| `seq` | uint64 | per camera; goes up by 1 per frame, so a gap means a dropped frame |
-| `t_pi_ns` | int64 | libcamera `SensorTimestamp`: end of the first row's exposure, on the Pi's `CLOCK_BOOTTIME`. The same meaning as the `t_ns` in the Pi's recordings. |
-| `exposure_ns` | int64 | exposure time in ns (libcamera `ExposureTime` × 1000); 0 if unknown, in which case `process_frames`' `default_exposure_ns` (config.yaml, 5 ms capped at half a frame period) is used |
-| `width`, `height` | int | frame size; must match the rig file |
-| `encoding` | string | `h264` (default) or `jpeg` (backup) |
-| `keyframe` | bool | H.264 only: true for a frame that can be decoded on its own |
-| `data` | bytes | one encoded frame |
+**Why the keyframe interval stays at 1 s:**
+- After a lost frame, that camera can't be used until its next keyframe, up to 1 s with the arm holding.
+- But C0 runs over TCP, which re-sends what Wi-Fi loses, so frames are delayed rather than lost. Real drops come only
+  from the Pi itself or a reconnect.
+- A shorter interval would cost bitrate and make live images compress differently from the training recordings.
+- Revisit it only if `deploy run` logs show drops.
 
-H.264 requirements on the Pi side:
-- The same encoder settings as recording (about 10 Mbit/s), so live images match training.
-- Low-latency settings: no B-frames, so each frame can be decoded as soon as it arrives.
-- A **keyframe at least once a second**, so the decoder can recover after a dropped frame.
-- Annex-B framing (one access unit per message), with SPS/PPS sent before every keyframe.
-- `seq` counts captured frames, so a frame the Pi drops before sending also shows as a gap.
-
-**Clock sync** (request/reply, `process_frames` → Pi, about once a second): `time_sync` → the reply is the Pi's
-current `CLOCK_BOOTTIME` in ns. `process_frames` measures the round trip and estimates the Pi → PC clock offset and
-drift from many of these exchanges.
+**Status:** the Pi sender isn't written yet (PLAN §10). `process_frames`' `FakePiSender` speaks exactly this
+contract, so everything on the PC side can be built and tested now.
 
 ### C1: `process_frames` ↔ `message_comms` (request/reply)
 
@@ -286,7 +290,8 @@ messages, so slowness elsewhere can only make it hold.
 | Policy reply slower than the waypoints it has | slow | arm holds at the last waypoint, then continues |
 | A missed state message (C2 `seq` gap), or the newest state older than its limit | slow | skip that step |
 | A camera `down` (no frame for > down limit, proposed 2 s) or the Pi connection lost | conclude | stop, abort, shut down: "main camera down: check the Pi stream and cable" |
-| A Pi stream restart (that camera's `seq` or `t_pi_ns` goes backwards) | conclude | that camera is latched `down`; same as above |
+| A Pi stream restart (`packet_seq`, a `frame_seq` or `t_pi_ns` goes backwards) | conclude | the cameras are latched `down`; same as above |
+| Packets keep arriving without a paired ultrawide frame for longer than the stale limit | slow, then conclude | the ultrawide is `stale` (steps skipped); past the down limit it's `down` |
 | Clock sync with the Pi lost for > 10 s | conclude | frames stop being used, so the cameras go stale, then `down`; same as above |
 | Policy hung (no reply for > hang limit, proposed 5 s), returns an error, or a broken chunk (fails the contract validator) | conclude | stop, abort, shut down |
 | An odd chunk: step 0 more than 2 cm / 5° from the anchor | slow | skip that step, count it, show it on the status line |
@@ -321,54 +326,62 @@ files and classes. Every folder has the same shape:
 ### 6.1 `process_frames/`
 
 **Inputs:**
-- Two 30 FPS streams from the Pi over Wi-Fi, received directly from the Pi as C0. They do not pass through
-  `message_comms`.
-- Compressed, because raw frames don't fit: two raw streams are roughly 130 MB/s plus 110 MB/s, far more than Wi-Fi
-  carries.
-- **H.264 is the default**, decoded with PyAV like the training videos, so live images match training as closely as
-  possible. JPEG per frame is the backup (section 9).
+- **Paired packets from the Pi over Wi-Fi** (C0, [contracts/PI_PAYLOAD.md](contracts/PI_PAYLOAD.md)): one ZeroMQ
+  multipart message per main frame (30 per second), carrying the main frame, the ultrawide frames since the last
+  packet, and which one is the pair. Received directly from the Pi, not through `message_comms`.
+- Compressed, because raw frames don't fit over Wi-Fi. **H.264 is the default**, decoded with PyAV like the training
+  videos, so live images match training as closely as possible. JPEG per frame is the backup (section 9).
 - Wi-Fi adds delay and occasional drops. Those are "slow" cases (section 5).
-- **Rig file:** a stand-in copy of `rig_pi_v1.yaml` with both cameras set to 30 FPS. Its header says
-  `TODO: replace with the v2 rig file`, and `deploy check` warns while it's in use. The resolutions, lens models and
-  TCP in it are nominal until v2 arrives.
+- **Rig file:** `rigs/rig_pi_v2.yaml`, the real one (main 1600×1200 @ 30, ultrawide 1280×960 @ 30).
 
 **Two sides, running at the same time:**
 
 ```
- Pi 5 ──C0 (every frame, 30 FPS each)──► receiving side: decode → Pi time to PC time → ring buffers → health
+ Pi 5 ──C0 packets (30/s)──► receiving side: check → decode both cameras → packet time to PC time → packet buffer → health
                                                 │
- message_comms ──C1 get_frames─────────► serving side: pick 2+2 frames from the buffers → image prep → reply
+ message_comms ──C1 get_frames──► serving side: pick packets (iPhUMI's rule) → image prep → reply
 ```
 
 **Receiving side** (always on, paced by the Pi):
-1. Takes in every C0 message as it arrives, whether or not anyone has asked for frames.
-2. Checks it against the rig file (sensor, size) and checks `seq` for drops.
-3. Decodes it to RGB. After a dropped H.264 frame, the following frames are marked unusable until the next keyframe,
+1. Takes in every packet as it arrives, whether or not anyone has asked for frames.
+2. Checks it against the contract and the rig file: part count, sensors, sizes, encodings, `packet_seq` and each
+   camera's `frame_seq`.
+3. Decodes the main frame, and feeds every ultrawide frame to the ultrawide decoder in order (H.264 needs each one
+   exactly once). Decoded ultrawide frames are kept by `frame_seq`, so the pair can be found even when it came in an
+   earlier packet. After a gap in a camera's `frame_seq`, that camera's frames are unusable until its next keyframe,
    so a corrupted image is never served.
-4. Converts its time to PC mid-exposure time, using the clock sync.
-5. Puts it in that camera's ring buffer, and updates that camera's health.
+4. Computes the **packet time**: the main frame's mid-exposure time, mapped to PC time by the clock sync.
+5. Stores the packet (main image, paired ultrawide image or none, packet time, the pair's own capture time) in the
+   packet buffer (the last ~1 s), and updates each camera's health.
 
-**Serving side** (only when `message_comms` sends `get_frames`):
-1. Picks 2 main and 2 ultrawide frames from the buffers.
-2. Image prep turns them into 224×224.
-3. Replies with images, times and health (C1).
+**Serving side** (only when `message_comms` sends `get_frames`), iPhUMI's `get_downsampled_camera_images` rule over
+packets:
+1. Anchors on the newest packet's time T.
+2. Takes the main images from the packets nearest T − 50 ms and T, and the ultrawide images from the packets nearest
+   T − 100 ms and T.
+3. If a chosen packet is more than 2 frame periods from its target, or lacks a usable image for that camera, there
+   are no images in the reply: that camera is reported `stale` for this reply, and the step is skipped.
+4. Image prep turns the four images into 224×224.
+5. Replies (C1). The ultrawide images' times are their packets' times, as in iPhUMI, where a packet's images share
+   one timestamp.
 
 **Classes:**
 
 | Class | Job | Swappable implementations |
 |---|---|---|
-| `FrameSource` (interface) | yields C0 frame messages | `PiStreamSource` (subscribes to the Pi, or to the fake Pi sender, over the network), `ReplaySource` (reads a recorded Pi episode straight from files, for unit tests) |
-| `FrameDecoder` (interface) | encoded frame → RGB array; reports frames that can't be used (after a drop, before the next keyframe) | `H264Decoder` (PyAV, default), `JpegDecoder` (backup), `RawDecoder` (tests) |
+| `PacketSource` (interface) | yields C0 packets (header + parts) | `PiPacketSource` (SUB to the Pi, or to the fake Pi, over the network), `RecordingPacketSource` (builds packets from a recorded Pi episode straight from files, for unit tests) |
+| `FrameDecoder` (interface) | encoded frame → RGB array; reports frames that can't be used (after a gap, before the next keyframe) | `H264Decoder` (PyAV, default), `JpegDecoder` (backup), `RawDecoder` (tests) |
 | `ClockSync` | runs the `time_sync` exchanges with the Pi | |
 | `ClockMap` | Pi time → PC time, from the clock sync's offset and drift | |
-| `FrameBuffer` | the last ~1 s of frames for one camera | |
-| `FrameSelector` | picks the frames nearest the wanted times, within tolerance | |
+| `PacketBuffer` | the last ~1 s of decoded packets | |
+| `PacketSelector` | iPhUMI's rule: picks the packets nearest the wanted times, within 2 frame periods | |
 | `ImagePrep` | letterbox / remap → 224×224 | |
-| `CameraHealth` | `ok` / `stale` / `down` per camera, from frame ages and rates | |
+| `CameraHealth` | `ok` / `stale` / `down` per camera, from the age of its last usable image | |
 | `RigConfig` | loads and validates the rig file | |
-| `Receiver` | the receiving side: source → decoder → clock map → buffers → health, in its own thread | |
+| `Receiver` | the receiving side: source → checks → decoders → clock map → packet buffer → health, in its own thread | |
 | `FramesServer` | the serving side: answers C1 | |
-| `FakePiSender` | a stand-in Pi: replays a recorded Pi episode as C0 messages at 30 FPS, and answers `time_sync`. Can drop frames, pause or stop on command, for tests. | |
+| `PacketPairer` | the Pi's pairing rule (PI_PAYLOAD.md §5), as a small class, so `FakePiSender` and the tests use exactly the rule the Pi must follow | |
+| `FakePiSender` | a stand-in Pi: turns a recorded Pi episode (both cameras) into C0 packets at 30 FPS, re-encoded with the Pi's H.264 settings, and answers `time_sync`. Can drop frames or packets, pause or stop on command, for tests and `--mock`. | |
 
 **Code to start from:**
 - `rnoro/data-work`, `data-processing/dataproc/`:
@@ -378,26 +391,32 @@ files and classes. Every folder has the same shape:
   - the tests `test_imageprep.py` and `test_vendored_camera_model.py`;
   - `raw_episode.py` (`read_video_frames`): PyAV decoding, if the Pi sends H.264;
   - `pi_format.py`: the Pi's file layout, for `ReplaySource` and `FakePiSender`;
-  - `configs/rigs/rig_pi_v1.yaml`: the stand-in rig file.
 - `rnoro/main-sim`, `controlSW/franka_deploy/`:
   - `tasks/frame_select.py`: the frame-picking rule;
+- `behavior_prompting/deps/real-env/real_env/utils/umi_utils.py` (`get_downsampled_camera_images`) and
+  `real_env/peripherals/{iphone.py,base_camera.py}`: iPhUMI's packet-based picking, which `PacketSelector` follows;
   - `peripherals/clock_map.py`: Pi clock → PC clock.
 
 **Unit tests:**
 - 224 images identical to `cv_util` on several input sizes.
 - The remap puts a known point at the expected pixel.
 - Mid-exposure times match the formula.
-- Frame picking at 30 and 60 FPS, with jitter and dropped frames.
+- Packet picking matches iPhUMI's `get_downsampled_camera_images` on the same timestamps (a copied reference in the
+  tests), with jitter and dropped packets.
+- The Pi's pairing rule (`PacketPairer`): normal 30/30 FPS, phase offsets, 0 or 2 ultrawide frames in a packet, a
+  pair from an earlier packet, no pair (−1).
+- Every ultrawide frame is decoded exactly once and in order, including frames that are nobody's pair.
 - Clock sync and clock mapping with offset, drift and uneven round trips (like Wi-Fi).
-- C0 messages from `FakePiSender` pass the contract validator. Wrong sensor, size, schema or encoding is refused.
-- A dropped H.264 frame: nothing is served until the next keyframe, then serving resumes.
+- C0 packets from `FakePiSender` pass the contract validator. A wrong part count, sensor, size, schema, encoding or
+  `pair_seq` is refused.
+- A dropped packet or a gap in one camera's `frame_seq`: that camera serves nothing until its next keyframe, then
+  serving resumes.
 - Health transitions ok → stale → ok and ok → down, driven by a `FakePiSender` that pauses or stops.
 - C1 replies pass the contract validator.
 - The rig loader rejects broken rig files.
 
-**Made easy to change:** the camera settings come only from the rig file, so the v2 file replaces the stand-in with
-no code change. A new Pi format is a new `FrameDecoder`. A change to C0 is confined to `FrameSource` and the contract.
-Rates and limits live in `config.yaml`.
+**Made easy to change:** the camera settings come only from the rig file. A new encoding is a new `FrameDecoder`. A
+change to C0 is confined to `PacketSource`, `PacketPairer` and the contract. Rates and limits live in `config.yaml`.
 
 ### 6.2 `policy/`
 
@@ -720,12 +739,13 @@ or the network.
 | Waypoints per step `exec_h` (`message_comms`) | 8 (0.4 s) | more waypoints per step | the policy is slower than 0.4 s per step |
 | Real-time scheduling (`franka_control`) | enforce: the PC has a PREEMPT_RT kernel, and the loop runs at real-time priority | libfranka's "ignore real-time" mode, plus a loop-timing warning on the status line | no RT kernel installed yet. Fine for first tests; expect occasional reflexes under load |
 | Arm (`franka_control`) | `LibfrankaArm` | `FakeArm` | testing without the robot (`deploy run --mock`) |
-| Camera source (`process_frames`) | the real Pi | `FakePiSender` (a recorded Pi episode, sent as C0) | testing without the Pi (`deploy run --mock`) |
+| Camera source (`process_frames`) | the real Pi | `FakePiSender` (a recorded Pi episode, sent as C0 packets) | testing without the Pi (`deploy run --mock`) |
 
 ## 10. Open items
 
 None of them block the plans or the code.
 
-- **The Pi's sending side:** who writes it, and confirming it matches C0. Until then, `FakePiSender` stands in.
+- **The Pi's sending side:** who writes it. It must implement [contracts/PI_PAYLOAD.md](contracts/PI_PAYLOAD.md)
+  exactly (pairing, multipart packets, clock sync). Until then, `FakePiSender` stands in.
 - **`exec_h`:** the final number of waypoints per step. It starts at 8 and is tuned once the policy is timed on the
   real PC.
