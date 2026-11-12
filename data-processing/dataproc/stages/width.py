@@ -4,8 +4,8 @@
 # (get_gripper_width_offset); interpolators from .../utils/interpolation_util.py. All at commit 4be9982.
 """Stages ``gripper_range`` and ``width``: finger ArUco tags on the virtual ultrawide -> gripper width.
 
-* :func:`detect_tags`: ``DICT_4X4_50`` (``rig.aruco``) on the virtual pinhole image, ``CORNER_REFINE_SUBPIX``,
-  ``solvePnP`` with the virtual K and zero distortion, every tag ``marker_size_m``. ``tvec`` is in the **virtual**
+* :func:`detect_tags`: ``DICT_4X4_50`` (``rig.aruco``) on the virtual pinhole image (RGB -> grey), ``CORNER_REFINE_SUBPIX``,
+  bits read at ``PIXELS_PER_CELL`` / ``IGNORED_MARGIN_PER_CELL`` (finer than iPhUMI's OpenCV defaults), ``solvePnP`` with the virtual K and zero distortion, every tag ``marker_size_m``. ``tvec`` is in the **virtual**
   ultrawide optical frame (x right, y down, z forward), metres.
 * :func:`fit_gripper_range` (calibration episode): frames with both tags at ``|tvec_z - nominal_z| < 0.08``;
   ``width = right.x - left.x``; raw min / max; robust linear maps ``right.x = a + b * left.x`` and back (polyfit,
@@ -58,11 +58,25 @@ def aruco_dictionary(rig) -> "cv2.aruco.Dictionary":
 
 # --------------------------------------------------------------------------------------------- detection
 
+#: Cell sampling for reading a marker's bits (OpenCV defaults: 4 px per cell, 0.13 margin). The Pi rig's finger tags
+#: are small (~35 px) and seen at a slant in the virtual view, so with the defaults the outline is found but the bits
+#: are often misread and the tag rejected (episode_000056: left tag 24% -> 83%, no wrong ids). A deliberate
+#: difference from iPhUMI, which uses the OpenCV defaults.
+PIXELS_PER_CELL = 10
+IGNORED_MARGIN_PER_CELL = 0.2
+
+
 def _detect(img: np.ndarray, aruco_dict, marker_size_m: float, K: np.ndarray, refine_subpix: bool = True):
-    """iPhUMI ``detect_localize_aruco_tags_iphone`` with one marker size for every id."""
+    """iPhUMI ``detect_localize_aruco_tags_iphone`` with one marker size for every id, two differences: a colour
+    image is converted to grey as **RGB** (OpenCV's own conversion inside ``detectMarkers`` assumes BGR, which swaps
+    the red and blue weights), and bits are read with :data:`PIXELS_PER_CELL` / :data:`IGNORED_MARGIN_PER_CELL`."""
+    if img.ndim == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     param = cv2.aruco.DetectorParameters()
     if refine_subpix:
         param.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    param.perspectiveRemovePixelPerCell = PIXELS_PER_CELL
+    param.perspectiveRemoveIgnoredMarginPerCell = IGNORED_MARGIN_PER_CELL
     detector = cv2.aruco.ArucoDetector(dictionary=aruco_dict, detectorParams=param)
     corners, ids, _ = detector.detectMarkers(image=img)
     if len(corners) == 0:
