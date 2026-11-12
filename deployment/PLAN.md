@@ -16,7 +16,9 @@ The setup:
   every part that depends on them has a plug-and-play backup (section 9).
 - The policy is a **plain diffusion policy** first. Prompting (behavior prompting) can be added later without
   changing the rest (section 6.2).
-- The gripper is the **Franka Hand with our printed fingers**.
+- The gripper is the **Franka Hand with our printed fingers**. Its opening is at most **80 mm** (the Franka Hand's
+  stroke), so the handheld rig is limited to 80 mm too (`gripper.max_opening_m: 0.080` in the rig file). Every
+  width in the training data is then one the robot can reproduce.
 
 Milestones:
 

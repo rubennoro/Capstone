@@ -67,7 +67,9 @@ aruco:                                                # finger tags (iPhUMI aruc
   right_id: 1
   nominal_z_m: 0.098
 gripper:                                              # checked by `dataproc calibrate` (docs/PROCESS.md)
-  max_opening_m: 0.110                                # max_width - min_width of the fit (tag-to-tag x, metres)
+  max_opening_m: 0.080                                # max_width - min_width of the fit (tag-to-tag x, metres). 0.080, not
+                                                      # 0.110: limited to the Franka Hand's 80 mm stroke (2026-11-12), so
+                                                      # every demonstrated width is one the robot can reproduce.
   opening_tolerance_m: 0.010
 world_offset:                                         # as rig_v1 (see docs/GEOMETRY.md)
   translation_m: [0.1, 0.2, 0.3]
