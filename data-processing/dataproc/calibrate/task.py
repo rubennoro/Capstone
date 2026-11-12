@@ -2,7 +2,7 @@
 
 ::
 
-    res = calibrate_task(root, "block_raise", "episode_000001", source=Path("/data/incoming"), rig_id="rig_pi_v1")
+    res = calibrate_task(root, "block_raise", "episode_000001", source=Path("/data/incoming"), rig_id="rig_pi_v2")
     res.ok, res.folder, res.fit.opening_m, res.reasons
 
 Steps (everything after the inspect step runs under ``FileLock($ROOT/.run.lock)``):
@@ -77,7 +77,7 @@ def source_problem_code(problem: str) -> str:
 
 
 def calibrate_task(root: DataRoot, task: str, episode_dir: str, source: Path = Path("/data/incoming"),
-                   rig_id: str = "rig_pi_v1", log: Callable = print) -> CalibrateResult:
+                   rig_id: str = "rig_pi_v2", log: Callable = print) -> CalibrateResult:
     """``dataproc calibrate`` (see the module docstring). Returns the result for every recording problem; raises
     :class:`CalibrateError` (or :class:`~dataproc.pi_intake.PiIntakeError`) only when the command cannot run."""
     from dataproc.pi_adapter import inspect_source

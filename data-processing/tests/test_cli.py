@@ -76,7 +76,7 @@ def test_calibrate_dispatch(monkeypatch, tmp_path):
     seen = _capture(monkeypatch, "dataproc.calibrate.cli", "cli_calibrate")
     assert cli.main(["calibrate", "block_raise", "episode_000001"]) == 7
     assert seen == {"root": tmp_path, "args": ("block_raise", "episode_000001"),
-                    "kw": {"source": "/data/incoming", "rig_id": "rig_pi_v1"}}
+                    "kw": {"source": "/data/incoming", "rig_id": "rig_pi_v2"}}
     assert cli.main(["calibrate", "block_raise", "e2", "--source", "/x", "--rig", "rig_v1_fast"]) == 7
     assert seen["kw"] == {"source": "/x", "rig_id": "rig_v1_fast"}
 

@@ -43,7 +43,7 @@ def format_success(res: CalibrateResult, source: Path) -> str:
 
 
 def cli_calibrate(root: DataRoot, task: str, episode_dir: str, source="/data/incoming",
-                  rig_id: str = "rig_pi_v1") -> int:
+                  rig_id: str = "rig_pi_v2") -> int:
     """``dataproc calibrate TASK EPISODE_DIR [--source DIR] [--rig RIG]``: returns the exit code."""
     try:
         res = calibrate_task(root, task, episode_dir, source=Path(source), rig_id=rig_id, log=print)
