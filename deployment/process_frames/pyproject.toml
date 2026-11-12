@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "process_frames"
+version = "0.1.0"
+description = "Receives the Pi's camera frames (C0) and serves the policy's 224x224 images (C1)"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "contracts",                       # local, editable, installed first
+    "numpy==2.2.6",
+    "opencv-python-headless==4.12.0.88",
+    "scipy==1.15.3",
+    "av==17.1.0",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["process_frames", "process_frames.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"

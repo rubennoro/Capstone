@@ -66,7 +66,7 @@ process_frames/
   config.yaml                  every setting, with its default (section 10)
   pyproject.toml               package "process_frames"; pinned dependencies (section 15)
   rigs/
-    rig_pi_v1_standin.yaml     COPIED from rig_pi_v1.yaml, 3 stated changes (section 3)
+    rig_pi_v1_standin.yaml     COPIED from rig_pi_v1.yaml, 4 stated changes (section 3)
   process_frames/              the Python package
     __init__.py                FOLDER (the process_frames/ folder, for config.yaml and rigs/), NAME = "process_frames"
     __main__.py                `python -m process_frames`: common arguments, logging, FATAL line, exit code (section 12)
@@ -133,7 +133,7 @@ below are today's, and the executor re-runs the command.
 | `_dataproc/geometry/camera_model.py` | `dataproc/geometry/camera_model.py` | `3fb0ead` | none |
 | `_dataproc/geometry/transforms.py` | `dataproc/geometry/transforms.py` | `3fb0ead` | none |
 | `_dataproc/_vendor/cv_util.py` | `dataproc/_vendor/cv_util.py` | `ce9ba42` | none |
-| `rigs/rig_pi_v1_standin.yaml` | `configs/rigs/rig_pi_v1.yaml` | `5330902` | first line `# TODO: replace with the v2 rig file`; `rig_id: rig_pi_v1_standin` (the loader requires `rig_id` = file name); `cameras.main.fps: 60` → `30`. Everything else (resolutions, lens models, TCP) stays nominal, as in the source. |
+| `rigs/rig_pi_v1_standin.yaml` | `configs/rigs/rig_pi_v1.yaml` | `5330902` | four changes: (1) the header comments, whose first line is `# STAND-IN rig file. TODO: replace with the v2 rig file (PLAN §6.1). ...`; (2) `rig_id: rig_pi_v1_standin` (the loader requires `rig_id` = file name); (3) `cameras.main.fps: 60` → `30`; (4) the `tcp:` block: `T_cam_tcp` computed by `deploy.geometry` from `gripper.yaml` and `F_T_TCP`, written as a matrix. Everything else (resolutions, lens models) stays nominal, as in the source. This file is not edited by `process_frames`. |
 | `tests/data/rig_v1.yaml` | `configs/rigs/rig_v1.yaml` | `5330902` | none |
 | `tests/test_imageprep.py` | `tests/test_imageprep.py` | `2f6d3b1` | imports `dataproc.*` → `process_frames._dataproc.*`; `RIG_PATH` → `tests/data/rig_v1.yaml`; the iPhUMI path is `parents[3]`; the vendored-file comparison skips 3 header lines instead of 1 |
 | `tests/test_vendored_camera_model.py` | `tests/test_vendored_camera_model.py` | `3fb0ead` | imports `dataproc.geometry.*` → `process_frames._dataproc.geometry.*` |
@@ -219,7 +219,7 @@ class Settings:
     default_exposure_ns: int
     receive: ReceiveSettings; buffer: BufferSettings; select: SelectSettings; health: HealthSettings
     clock: ClockSettings; h264: H264Settings; server: ServerSettings; log: LogSettings
-    mock_settings: MockSettings; check: CheckSettings      # one small frozen dataclass per config.yaml section
+    mock_settings: MockSettings; check: CheckSettings; probe: ProbeSettings   # one small frozen dataclass per section
 
     @classmethod
     def load(cls, station_path: Path, mock: bool) -> "Settings"    # raises SettingsError listing every problem
@@ -237,11 +237,11 @@ file name, an ultrawide that isn't a fisheye, and a principal point outside the 
 use needs, without touching the copy:
 
 ```
-STANDIN_MARKER = "# TODO: replace with the v2 rig file"
+STANDIN_MARKER = "TODO: replace with the v2 rig file"
 
 def load_live_rig(path: Path) -> RigConfig      # load_rig(path), then: both cameras' sensor is one C0 allows
                                                 #   (imx519 / imx219). Raises ConfigError naming the file and key.
-def is_standin(path: Path) -> bool              # True if a comment line before `schema:` equals STANDIN_MARKER
+def is_standin(path: Path) -> bool              # True if a comment line before `schema:` contains STANDIN_MARKER
 def main(argv: Sequence[str] | None = None) -> int
     # python -m process_frames.rig_file FILE [--json]
     # prints the rig summary (or, with --json, one line:
@@ -444,6 +444,7 @@ class Receiver:
                                                        # FatalError for this process's own unrecoverable problems.
     def run(self, stop: threading.Event, timeout_s: float) -> None   # receive_one until stop
     counters: Mapping[str, ReceiverCounters]
+        # (plus `ignored`: frames of a camera latched down by a stream restart)
         # per camera: received, buffered, dropped (seq gaps), unusable (waiting for a keyframe),
         #             unsynced (no fresh clock), out_of_order, latency_ms (arrival - t_pc, last stats period)
 ```
@@ -549,8 +550,9 @@ Builds everything from `Settings`, runs it, and shuts it down.
 class FramesApp:
     def __init__(self, settings: Settings, ready_file: Path | None, out_dir: Path,
                  clock: Callable[[], int] = time.monotonic_ns) -> None
-    def run(self) -> None            # returns on stop (SIGINT); raises FatalError for an unrecoverable problem
-    def request_stop(self) -> None   # called by the SIGINT handler
+    def run(self) -> None            # returns on stop (SIGINT or SIGTERM); raises FatalError for an unrecoverable problem
+    def request_stop(self) -> None   # called by the SIGINT and SIGTERM handlers
+    frames_endpoint: str | None      # the bound C1 address; with buffers, health, receiver, fake_pi: for tests, logs
 ```
 
 `run()`, in order:
@@ -712,8 +714,8 @@ the future" if the clock estimate is slightly off).
 
 | Status | When |
 |---|---|
-| `ok` | `age ≤ health.stale_s` (0.35 s) |
-| `stale` | `health.stale_s < age ≤ health.down_s` (2 s) |
+| `ok` | a frame has been buffered, and `age ≤ health.stale_s` (0.35 s) |
+| `stale` | `health.stale_s < age ≤ health.down_s` (2 s), or no frame buffered yet and `age ≤ health.down_s` |
 | `down` | `age > health.down_s`, or latched by `mark_down` (a Pi stream restart) |
 
 - `last_frame_age_ms` = age in ms. `fps` = `(n − 1) / (t_newest − t_oldest)` over the buffered frames of the last
@@ -746,7 +748,7 @@ shut down). process_frames exits by itself only for **its own** unrecoverable pr
 | A C0 message (frame or `time_sync` reply) breaks its contract | **FATAL**, naming the message and field | as above |
 | A C1 request that breaks its contract | `RpcServer` answers `ErrorReply` and keeps serving (contracts §6) | concludes on the `RemoteError` |
 | Config or station section invalid; C1 port busy; an exception in any thread | **FATAL** | as above (or `deploy check` / start-up refuses) |
-| SIGINT (from `deploy run`'s stop, or Ctrl-C when alone) | clean stop, exit 0, no FATAL line | — |
+| SIGTERM (from `deploy run`'s stop) or SIGINT (Ctrl-C when alone) | clean stop, exit 0, no FATAL line | — |
 
 ## 10. `config.yaml`
 
@@ -787,9 +789,9 @@ Every key, with its default. The station's `process_frames:` section may overrid
 | `mock.pi_clock_offset_s` | float | `1000.0` | fake Pi clock = PC clock + this ... |
 | `mock.drift_ppm` | float | `20.0` | ... running this much fast |
 | `mock.send_hwm` | int > 0 | `120` | fake Pi PUB queue |
-| `check.probe_s` | float > 0 | `3.0` | `deploy check`: how long to listen to the Pi stream |
-| `check.time_sync_timeout_s` | float > 0 | `1.0` | `deploy check`: wait for the Pi's `time_sync` reply |
+| `check.reachable_timeout_s` | float > 0 | `1.0` | `deploy check`: the TCP connect to the Pi |
 | `check.subprocess_timeout_s` | float > 0 | `10.0` | `deploy check`: the rig-file and import subprocesses |
+| `probe.timeout_s` | float > 0 | `2.0` | `python -m process_frames.probe`: wait for each reply |
 
 The C1 shapes (2 frames per camera, 224×224) are fixed by the contract, not settings. The camera settings (sensor,
 size, fps, lens models) come **only** from the rig file, so the v2 rig file replaces the stand-in with no code change.
@@ -817,7 +819,7 @@ Imports only the standard library, `yaml`, `deploy` and `contracts` (deploy/STRU
 **Ready** (written by `FramesApp`, §5.15 step 7): C1 is answering, and both cameras have been `ok` at the same time at
 least once (so the clock is synced and both streams decode and match the rig file).
 
-**`checks()`**, in this order (all quick; about 6 s in total, most of it the stream probe):
+**`checks()`**, in this order (all quick; a few seconds in total, most of it the two subprocesses):
 
 | Name | How | Result |
 |---|---|---|
@@ -826,14 +828,14 @@ least once (so the clock is synced and both streams decode and match the rig fil
 | `imports` | `python_imports(python.light, ["process_frames", "av", "cv2", "scipy", "zmq"])` | fail names the missing module (PyAV missing → "pip install av==17.1.0") |
 | `decoder` | config | **info**: `h264 (default)`, or `jpeg (backup, PLAN §9)` |
 | `C1 port` | `port_free(endpoints.frames)` | fail: busy |
-| `Pi reachable` (not mock) | `host_reachable` on the host and port of `endpoints.pi_frames` | fail: "no TCP connection to 192.168.1.50:5600: is the Pi on, on this Wi-Fi, and its sender running?" |
-| `Pi time_sync` (not mock) | `rpc_answers(endpoints.pi_time_sync, TimeSyncRequest(), TimeSyncReply, check.time_sync_timeout_s)` | pass with the RTT; fail: no reply / broken reply |
-| `Pi stream` (not mock) | a contracts `Subscriber` on `endpoints.pi_frames` for up to `check.probe_s`, until both cameras have sent frames | pass: "main imx519 1600x900 h264 30.1 fps, ultrawide ..."; fail lists every problem: a camera with no frames, a sensor or size that differs from the rig JSON, an encoding that differs from `decoder`, a C0 contract error |
+| `Pi reachable` (not mock) | `host_reachable` on the host and port of `endpoints.pi_frames`, `check.reachable_timeout_s` | fail: "no TCP connection to 192.168.1.50:5600: is the Pi on, on this Wi-Fi, and its sender running?" |
 | `mock episode` (mock) | the folder exists and has `meta.json` | fail: "process_frames.mock_episode is not set" / not found |
 | `mock ports` (mock) | `port_free` on `endpoints.mock_pi_frames` and `endpoints.mock_pi_time_sync` | fail: busy |
 | `camera source` | — | **info**: `Pi at <host>` or `FakePiSender, stand-in Pi from <episode> (mock)` |
 
-The stream check only reads message fields; it doesn't decode images (decoding is proven at start-up, before ready).
+`launch.py` sends and receives no contract messages (deploy/STRUCTURE.md §4.1). Whether the Pi answers `time_sync`
+correctly and streams frames that match the rig file is checked by the process itself at start-up: until it does,
+the process is not ready, and a mismatch is its FATAL line (§6.1, §9).
 
 ## 12. Running it: `__main__.py`, alone, and what it prints
 
@@ -846,8 +848,10 @@ The common arguments of deploy/STRUCTURE.md §4.2, nothing else. `main(argv: Seq
 1. Logging to stderr in the shared format (`%(asctime)s %(name)s %(levelname)s %(message)s`).
 2. `Settings.load(station, mock)`; a `SettingsError` → FATAL "invalid settings: <every problem>: check
    station.yaml's process_frames section".
-3. The output folder: `--session DIR` → `DIR/process_frames/`; alone → `<session_root>/<YYYY-MM-DD_HH-MM-SS>_process_frames_alone/`.
-4. SIGINT and SIGTERM call `app.request_stop()`.
+3. The output folder: `--session DIR` → `DIR/process_frames/`; alone → `<session_root>/<YYYY-MM-DD_HH-MM-SS>_process_frames_alone/process_frames/`, the same layout as in a run
+   (deploy/STRUCTURE.md §4.2).
+4. SIGINT and SIGTERM call `app.request_stop()`: the launcher stops processes with SIGTERM, Ctrl-C sends SIGINT; both
+   are a clean stop.
 5. `FramesApp(settings, ready_file, out_dir).run()`. Normal return → exit 0. `FatalError` → last stderr line
    `FATAL process_frames: <what>: <check>`, exit 1.
 
@@ -899,7 +903,7 @@ Socket tests use short limits (e.g. `stale_s` 0.2, `down_s` 0.5) so they run fas
 | `test_imageprep.py` | COPIED (§3): letterbox bit-identical to iPhUMI's `cv_util` on 9 sizes; the vendored `cv_util` equals the iPhUMI source; main prep; **the remap puts a known world point at the expected virtual and 224 pixel** (0° and 12° `R_phys_virt`); prep composition and input validation |
 | `test_vendored_camera_model.py` | COPIED (§3): camera models against OpenCV, round trips, remap tables |
 | `test_imageprep_live.py` | **224 images identical to `cv_util` at the stand-in rig's sizes** (main 1600×900; ultrawide: the remap output 640×480 letterboxed) and at other sizes; `ImagePrep(standin_rig)` builds; the remap puts a known point at the expected pixel for the stand-in rig's lens |
-| `test_copies.py` | each COPIED file equals its source (`git show <branch>:<path>`) apart from the provenance header and the listed changes; the stand-in rig parses to the same values as `rig_pi_v1.yaml` except `rig_id` and the main fps. Skipped when git or the source branch is not available |
+| `test_copies.py` | each COPIED file equals its source (`git show <branch>:<path>`) apart from the provenance header and the listed changes; the stand-in rig parses to the same values as `rig_pi_v1.yaml` except `rig_id`, the main fps and the `tcp` block (header comments are not compared). Skipped when git or the source branch is not available |
 | `test_rig_file.py` | the stand-in loads with both cameras at 30 FPS and is detected as stand-in; `rig_v1.yaml` is not; **broken rig files are refused** with the key named: invalid YAML, missing key, unknown key, wrong `schema`, `rig_id` ≠ file name, non-positive size, principal point outside the image, ultrawide not a fisheye, a sensor C0 doesn't allow; `python -m process_frames.rig_file --json` prints the expected JSON and exit codes |
 | `test_settings.py` | `config.yaml` loads and every key in §10 exists with its type; an override merges; **an unknown override key is refused with its path**; a wrong type or range is refused; relative paths resolve from the right folder; `--mock` swaps in the mock endpoints and requires `mock_episode`; every problem is listed at once |
 | `test_frame_times.py` | **mid-exposure times match the formula**: `t_pi_ns − exposure_ns // 2 + time_offset_ns`; `exposure_ns = 0` uses `min(default, period // 2)`; a `start_of_exposure` rig gives `+`; the receiver's buffered `t_pc_ns` = formula − the clock offset |
@@ -914,8 +918,8 @@ Socket tests use short limits (e.g. `stale_s` 0.2, `down_s` 0.5) so they run fas
 | `test_fake_pi_sender.py` | over `127.0.0.1:*`: **C0 messages from `FakePiSender` pass the contract validator** (received with contracts' `Subscriber`); `seq` +1 per frame; `drop_next` makes a gap of n; `pause`/`resume` per camera; the clip loops with `seq` and time still increasing; `time_sync` replies follow `pi_clock_ns`; after `stop()` nothing answers |
 | `test_frames_server.py` | with hand-filled buffers and health (no sockets for the logic, one socket test for the binding): **C1 replies pass the contract validator** (encode, decode with `expect=FramesReply`); images equal `ImagePrep` of the picked frames; times are the picked frames' times; **both or nothing**: one camera `stale` or `down` → no images at all; a failed pick → no images and that camera `stale` in that reply; `get_health` |
 | `test_pipeline.py` | the whole process inside the test (`FramesApp` with `--mock` settings on `127.0.0.1:*`, the real `H264Decoder`) and a C1 `RpcClient`: becomes ready; replies valid; times within 2 ms of the fake Pi's true capture times (the offset and drift removed); **a served image is bit-identical to the offline prep of the same recorded frame** (live path = training path); **a dropped H.264 frame: no frame from after the drop is served until the next keyframe, then serving resumes**; **health ok → stale → ok** by `pause`/`resume` of one camera (no images meanwhile), and **ok → down** by `stop()` (the Pi lost); the same with `decoder: jpeg`; a fake Pi with the wrong sensor in the rig → `run()` raises FATAL |
-| `test_main.py` | `python -m process_frames --station <tmp> --mock` as a subprocess: writes the ready file; SIGINT → exit 0, no FATAL line; a broken rig file → exit 1, last line `FATAL process_frames: rig file invalid: ...`; an unknown station key → exit 1 naming it; alone without `--session` it makes its `_alone` folder |
-| `test_launch.py` | (deploy/STRUCTURE.md §9) `program()`; `checks()` with a broken station section and with a missing rig file (fail lines); the stand-in warning; `--mock` skips the Pi checks and checks `mock_episode`; the `Pi stream` check against a `FakePiSender` passes, and fails for a wrong sensor and for a camera that sends nothing |
+| `test_main.py` | `python -m process_frames --station <tmp> --mock` as a subprocess: writes the ready file; SIGINT → exit 0, no FATAL line; SIGTERM → exit 0, no FATAL line; a broken rig file → exit 1, last line `FATAL process_frames: rig file invalid: ...`; an unknown station key → exit 1 naming it; alone without `--session` it writes into `<session_root>/<ts>_process_frames_alone/process_frames/` |
+| `test_launch.py` | (deploy/STRUCTURE.md §9) `program()`; `checks()` with a broken station section and with a missing rig file (fail lines); the stand-in warning; `--mock` skips the Pi check and checks `mock_episode`; `Pi reachable` passes against a listening local port and fails against a closed one |
 
 The contract tests PLAN §7 asks of each process are the C0 and C1 rows above (`test_fake_pi_sender.py`,
 `test_pi_recording.py`, `test_receiver.py`, `test_frames_server.py`, `test_pipeline.py`); their examples are generated
