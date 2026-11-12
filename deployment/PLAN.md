@@ -667,7 +667,8 @@ are listed in its plan (section 6). Across folders:
   - the C++ tests read the same example files for C2/C3, so Python and C++ agree.
 - **Message flow:** `message_comms` against fake versions of the other three. This covers the full normal step and
   every row of section 5. The shutdown order is tested in `deploy/`'s launcher tests.
-- **End to end (milestone 3):** `deploy run --mock` with scripted keys runs episodes and shuts down cleanly.
+- **End to end (milestone 3):** `deploy run --mock` with scripted keys runs episodes and shuts down cleanly. Owned
+  by `deploy/`: `deploy/tests/test_end_to_end_mock.py`, skipped until all four `launch.py` files exist.
 
 ## 8. How the work is done (subagents)
 
