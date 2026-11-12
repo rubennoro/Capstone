@@ -1,0 +1,22 @@
+# Our hand-entered gripper constants (PLAN §6.6, deploy/STRUCTURE.md §6.5). No CAD import: we type these in.
+#
+# Where the ULTRAWIDE (IMX219) camera sits on the gripper. It is the camera SLAM tracks during training, so it defines
+# the training TCP. The IMX519 (main, tilted 30 deg) does not enter this calculation. The finger length is NOT here: it
+# lives only in franka_control's tcp.F_T_TCP (fingertips 150 mm from the flange plate).
+#
+# Frames:
+#   hand H:  the Franka Hand's own axes (= the flange rotated -45 deg about its z axis). Origin at the centre of the
+#            flange plate; z out toward the fingers; y = the direction the fingers close; x = "up/down" on the gripper.
+#   camera:  OpenCV optical (z out of the lens, x right in the image, y down in the image).
+#
+# The two ASSUMED values are taken as true for building and testing. If a later measurement differs, edit them here
+# and rerun the geometry tool; nothing else changes.
+#
+# After any change: run `python -m deploy.geometry`. It recomputes T_cam_tcp in the rig file.
+# `deploy check` fails if this file, franka_control's F_T_TCP and the rig file disagree (> 2 mm / 0.5 deg).
+ultrawide:
+  position_mm: [55.0, 0.0, 10.0]   # lens centre in the hand frame: 55 mm above the centre line, 10 mm out from the
+                                   # plate (back end of the 100 mm mount). ASSUMED TRUE (2026-11-12); not yet measured.
+  up_side: +x                      # the side the camera sits on ("top" of the gripper): the Franka Hand's +x side.
+                                   # ASSUMED TRUE (2026-11-12); not yet checked against the robot's displayed pose.
+  tilt_deg: 15.0                   # looks 15 deg down toward the fingers, from the hand z axis.
