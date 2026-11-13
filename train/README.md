@@ -1,5 +1,7 @@
 # train/: from Jetson data to a trained policy
 
+New here? Start with [DIRECTIONS.md](DIRECTIONS.md): day-0 setup (what to fill in, how to check each connection) and the order to run things.
+
 Laptop scripts that move a processed task folder from the Jetson to the laptop, upload its dataset to the Explorer
 cluster, train there, and bring the results back. Every script takes `-h` (help) and `--dry-run` (print every
 ssh/rsync command, run and write nothing).
