@@ -51,9 +51,57 @@ script needs a value that is still a `<...>` placeholder, it stops and names the
 | `DEFAULT_EPOCHS` | `60` | you want longer or shorter full runs by default |
 | `CLUSTER_RUNS` | `CapstoneProject/policies` | the home quota is too small (one run ≈ 2.5 GB) |
 
-To change a setting just for yourself without editing the tracked file, put the line in
-`train/config.local.env` (same syntax, ignored by git, read after `config.env`), for example
-`JETSON_HOST="jetson"`.
+#### How to change a setting (step by step)
+
+There are two ways. **Way B is recommended**, especially for `JETSON_HOST`, because it keeps your Jetson's address
+out of git.
+
+**Way A: edit `config.env` directly.**
+
+1. In VS Code's file list on the left, open the `train` folder and click `config.env`.
+2. Find the line for the setting, for example `JETSON_HOST="<user@jetson-host or ~/.ssh/config alias>"`.
+3. Replace only the text **between the two double quotes**. Keep the quotes, and don't add spaces around the `=`.
+   Before: `JETSON_HOST="<user@jetson-host or ~/.ssh/config alias>"`
+   After:  `JETSON_HOST="ruben@192.168.1.50"`
+4. Save with **Ctrl+S**.
+
+Downside: `config.env` is tracked by git, so this change gets committed the next time someone commits `train/`.
+
+**Way B: put your changes in a separate file, `config.local.env`.**
+
+The scripts read `config.env` first, then `config.local.env`. Anything you write in the second file replaces the
+default, and git ignores that file, so it never gets committed.
+
+1. In VS Code's file list on the left, **right-click the `train` folder** and choose **New File...**
+2. Name it exactly `config.local.env` and press **Enter**. The empty file opens.
+3. For every setting you want to change, copy its line from `config.env` into the new file and change the value
+   between the quotes. Copy only the lines you are changing, one per line. For example:
+   ```
+   JETSON_HOST="ruben@192.168.1.50"
+   SLURM_TIME="04:00:00"
+   ```
+   Same rules as in Way A: keep the double quotes, no spaces around `=`, and the name on the left must be spelled
+   exactly as in `config.env` (capital letters and underscores).
+4. Save with **Ctrl+S**.
+
+The file sits in your laptop's copy of `train/`. When you submit a job, it is also copied to the cluster
+automatically.
+
+**Check that it worked.** In the VS Code terminal (**Terminal → New Terminal**), run:
+
+```bash
+cd ~/Capstone
+train/pull.sh block_raise --dataset test --dry-run
+```
+
+Nothing is copied or changed. Look at the printed lines that start with `[dry-run] rsync`: they should contain your
+value, for example `ruben@192.168.1.50:data/tasks/block_raise/`. If you see
+`error: JETSON_HOST is not set (value: '<user@jetson-host ...>')`, the scripts did not pick up your value: check the
+file name (`config.local.env`, inside `train/`), the spelling of `JETSON_HOST`, and the quotes, then save and run
+the command again.
+
+**To undo a change:** delete that line from `config.local.env` and save. The default from `config.env` applies again.
+To undo all of them, delete the whole `config.local.env` file.
 
 ### 1.3 Check every connection once
 
