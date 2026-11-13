@@ -110,8 +110,9 @@ torch, and each process can be run and watched alone.
 6. While the arm executes them, the manager starts the next step at once.
 
 By the time a chunk arrives its first waypoints are already in the past and are skipped. The arm never holds if
-`L + 2C ≤ (exec_h − 1) × 50 ms`, where L is the image latency (capture → laptop, about 75–110 ms measured on the live
-Pi) and C is one step (frames + policy + the C3 round trip). With `exec_h` = 8 that needs C ≤ about 120 ms. A slower
+`L + 2C + d_up ≤ (exec_h − 1) × 50 ms`, where L is the image latency (capture → laptop, about 75–110 ms measured on
+the live Pi), C is one step (frames + policy + the C3 round trip) and d_up the one-way delay for the waypoints to reach
+the PC (under 1 ms wired, a few ms on Wi-Fi). With `exec_h` = 8 that needs C ≤ about 120 ms. A slower
 step is not a failure: the arm reaches the last waypoint and holds until new ones arrive ("slow"). The status line
 shows the margin. `exec_h` is a setting (section 13).
 
@@ -163,7 +164,8 @@ original msgpack C0 design (H.264, time-sync socket) is not carried over.
 ### 5.2 C1 and C4 (inside the laptop)
 
 The same messages as in `rnoro/deployment` (C1 `get_frames` / `get_health`; C4 `config`, `reset`, `infer`, optional
-`prompt`), with the fields of section 4.1. C1 times are on the laptop clock. Full field tables go in
+`prompt`), with the fields of section 4.1. One change: the C4 `config` reply also carries the policy's `kind`
+(`hold_still` / `diffusion`), so the manager can apply the `settled` rule of section 9 (`c4.config.reply/v2`). C1 times are on the laptop clock. Full field tables go in
 `policy_deploy/STRUCTURE.md`. A broken chunk (contract validator) ends the run; a chunk whose step 0 is more than
 2 cm / 5° from the anchor is "odd": skipped and counted.
 
@@ -184,9 +186,11 @@ Unchanged from `rnoro/deployment`. The PC binds the PUB; the laptop subscribes.
 | `gate` | counters | waypoints accepted / shortened / pulled back / rejected since start |
 | `loop_late` | uint64 | late 1 kHz cycles since start |
 
-Rate: 100 Hz. The laptop needs at least 50 Hz. `t_ns` repeats unchanged after a fault (the loop has ended) and briefly
-around homing; the laptop ignores repeated times for interpolation and for its clock map. Freshness is judged from the
-mapped `t_ns`, never from arrival time: a link stall can deliver a burst of old states.
+Rate: 100 Hz. The laptop needs at least 50 Hz. `t_ns` repeats unchanged after a fault (the loop has ended), briefly
+around homing, and for up to 1 s after a stopped homing (`control.settle_timeout_s`); the laptop ignores repeated times
+for interpolation and for its clock map. Freshness is judged from the mapped `t_ns`, never from arrival time: a link
+stall can deliver a burst of old states. Liveness ("no C2 for 2 s") is judged from arrival time, since `t_ns` can
+repeat.
 
 ### 5.4 C3: laptop → PC, commands (request/reply)
 
@@ -200,13 +204,13 @@ inside franka_control, not as a client).
 | `heartbeat` | none | ok. Every manager loop cycle (20 ms), with or without new waypoints. |
 | `start` | none | ok (`idle`/`stopped` → `holding` at the current target), or refused with the reason |
 | `stop` | none | ok: stop following, hold. Never refused. |
-| `home` | none | ok when the home pose is reached (blocking joint move of all 7 joints); refused unless `idle`/`stopped` |
+| `home` | none | ok when the home pose is reached (blocking joint move of all 7 joints); refused unless `idle`/`stopped`; `ok: false` with a reason starting `stopped:` when the PC's `s` stopped the move (the PC is then `stopped`) |
 | `set_waypoints` | `chunk_id`; `t_ns` int64 (N,) increasing, **PC clock**; `O_T_TCP` float64 (N, 4, 4); `gripper_width_m` float64 (N,) | `accepted` (shortened ones included), `shortened`, `skipped` (time already passed), `rejected` with reasons. Replaces every waypoint not yet reached. |
 
 `hello` replaces `rnoro/deployment`'s cross-folder read of `franka_control/config.yaml`: the laptop checks at start-up
 that the PC's watchdog fits its heartbeat budget, that `F_T_TCP` matches `contracts/frames.yaml`, that the limits
-match, and that the PC's `mock` flag matches its own. It is the only change to franka_control's C3, additive, and the
-1 kHz path doesn't see it.
+match, and that the PC's `mock` flag matches its own. It is the only new C3 message, additive, and the 1 kHz path
+doesn't see it. (The C++ codec also drops the laptop-only schema names: STRUCTURE.md §3.4.)
 
 **What "policy output → arm motion" means on the PC.** The laptop sends timed Cartesian TCP poses, never joint
 targets. For each waypoint the gate checks: time not passed (else skipped) and at most `max_lead_s` ahead (now
@@ -224,8 +228,8 @@ it. The cost: the gate has no joint-limit check; a target near a limit ends in a
 a fault.
 
 **Watchdog.** With no C3 request for `watchdog_limit_s` while `holding`/`running`, franka_control stops following and
-holds (`stopped`). The arm at most finishes the plan it already accepted (under 1 s ahead). `idle` needs no watchdog:
-the loop holds the pose anyway.
+holds (`stopped`). The arm at most finishes the plan it already accepted (at most (`exec_h` − 1) × 50 ms ahead: 0.35 s
+at `exec_h` 8, 0.55 s at 12; never more than `max_lead_s`). `idle` needs no watchdog: the loop holds the pose anyway.
 
 ### 5.5 Shared files in `deployment/contracts/`
 
@@ -234,7 +238,7 @@ the loop holds the pose anyway.
 | the C2/C3 Python message classes | laptop manager, its fake PC, the PC's run wrapper | the definitions above, with validators |
 | `limits.yaml` | both (C++ too) | rotation tolerance, max gripper width 0.08, max waypoints 64 |
 | `frames.yaml` | both (C++ too) | `F_T_TCP`, the one definition of the TCP (section 9) |
-| `link.yaml` | both | the link: the PC's and the laptop's addresses, ports, watchdog, timeouts (section 6) |
+| `link.yaml` | both (C++ too) | the link: the PC's and the laptop's addresses, ports, watchdog, timeouts (section 6) |
 | `examples/` | Python and C++ tests | example and deliberately broken C2/C3 messages |
 
 Both machines use the same commit. `hello` carries the PC's commit and `policy_deploy check` shows both.
@@ -253,9 +257,11 @@ interface, picked by one setting:
 | `round_trip` (default) | a `hello` twice a second: the PC's time against the midpoint of the round trip; the shortest round trips of a 10 s window, fitted for offset and drift | half the round-trip asymmetry: well under 1 ms wired, a few ms at worst on Wi-Fi |
 | `one_way` (backup) | every C2: PC `t_ns` against laptop arrival, only when `t_ns` advanced; the least-delayed of a 5 s window | the minimum PC→laptop latency: about 1.5 ms wired, a few ms on Wi-Fi |
 
-Guards for both: at least 2 s of samples before the first step; at start-up the map must agree with a `hello` sample
-within 5 ms (else refuse to start); fit jumps are logged; and three waypoint sets in a row that the PC skipped
-entirely while the laptop thought they were in the future end the run (`clock mismatch`). The PC never changes its
+Guards for both: at least 2 s of samples before the first step (and again after a long `home`, which sends no hellos);
+at start-up the map must agree with a `hello` sample within 5 ms (else refuse to start; a real check for `one_way`,
+while `round_trip` builds its map from those same hellos); fit jumps are logged; and three waypoint sets in a row that
+the PC skipped entirely while the laptop thought they were in the future, or sent while the newest C2 `t_ns` was more
+than 20 ms ahead of the mapped "now" (a map running behind), end the run (`clock mismatch`). The PC never changes its
 clock and needs no clock code. Chrony/PTP on the wall clock was rejected: it would put the PC's gate and watchdog on a
 clock that can jump.
 
@@ -282,7 +288,7 @@ with reserved addresses on the router, nothing at all.
 | Setting | Value | Why it costs nothing when wired |
 |---|---|---|
 | Heartbeat | every 20 ms | |
-| PC watchdog | 1.0 s | the arm finishes the plan it already accepted (under 0.5 s ahead) and holds anyway; the watchdog only decides when that hold becomes `stopped` |
+| PC watchdog | 1.0 s | the arm finishes the plan it already accepted (at most (`exec_h` − 1) × 50 ms ahead: 0.35 s at `exec_h` 8, 0.55 s at 12) and holds anyway; the watchdog only decides when that hold becomes `stopped` |
 | C3 timeout (laptop) | 0.3 s | only reached when something is wrong |
 | Newest state older than (skip the step) | 100 ms | wired, the newest state is a few ms old |
 | No state for (conclude) | 2.0 s | the PC protects itself; this only decides how fast the laptop reports a dead PC |
@@ -290,7 +296,7 @@ with reserved addresses on the router, nothing at all.
 
 These are numbers in `link.yaml`, so they can be tightened once wired if ever useful (for example a 0.5 s watchdog).
 The rule the laptop checks at start-up against `hello`: its worst gap between heartbeats (loop period + C3 timeout +
-local health timeout + a jitter allowance, 0.57 s) must be below the PC's watchdog.
+local health timeout + a jitter allowance: 0.02 + 0.3 + 0.05 + 0.2 = 0.57 s) must be below the PC's watchdog.
 
 On Wi-Fi a stall longer than the watchdog stops the arm and the laptop concludes: annoying, never unsafe. The Pi
 stream (about 30 Mbit/s) shares the laptop's radio with C2/C3 (well under 1 Mbit/s); a wired laptop removes that
@@ -298,7 +304,7 @@ contention, which is the main practical gain of cabling it.
 
 **Who can command the arm.** C3 has no authentication and the PC sits on a shared lab network either way.
 franka_control binds C2/C3 only to its ASUS_5g address (never `0.0.0.0`), and a firewall rule on the PC lets only the
-laptop's addresses (Wi-Fi and wired) reach those ports. Encryption (ZeroMQ CURVE) can be added later.
+laptop's addresses (Wi-Fi and wired) and the PC itself (its status line and console) reach those ports. Encryption (ZeroMQ CURVE) can be added later.
 
 ## 7. Failure rule
 
@@ -316,7 +322,7 @@ only make the arm hold.
 | Problem | Kind | Reaction |
 |---|---|---|
 | A camera stale (no new frame for 0.35 s), a missed frame pick | slow | skip the step |
-| The ultrawide repeating an old frame (the Pi's `uw_reused`) for more than one frame | slow, then conclude | the pair must be captured within 50 ms before its main frame; ultrawide health counts only new frames, so a stalled IMX219 goes stale, then down |
+| The ultrawide repeating an old frame (the Pi's `uw_reused`) for more than one frame | slow, then conclude | a pair is usable only if both: its capture lies within [main − 60 ms, main + 25 ms] (`pair_max_age_ms` 60, `pair_max_lead_ms` 25; the live Pi pairs the nearest frame, ultrawide 16 ms newer in the recorded packet; the lead is confirmed from `pi_collect`'s pair-gap report), and the same ultrawide frame has been the pair of at most 2 consecutive packets (`pair_max_reuse` 2: a third consecutive packet with it gets no ultrawide image, whatever the timing). Ultrawide health counts only new frames at their own capture time, so a stalled IMX219 goes stale, then down |
 | A camera down (2 s), the Pi stream restarted or lost | conclude | "main camera down: check the Pi and ASUS_5g" |
 | Policy slower than the waypoints it has | slow | the arm holds at the last waypoint |
 | An odd chunk | slow | skip, count |
@@ -326,7 +332,9 @@ only make the arm hold.
 | C2 `seq` goes backwards | conclude | "franka_control restarted on the PC" |
 | Clock mismatch (section 5.6), or `hello` disagreeing at start-up | conclude | names the field |
 | The PC reports `fault` (reflex, lost FCI connection, rejected waypoint, homing failed) | conclude | the PC holds; a fault needs Ctrl-C and a restart of `control_deploy run` on the PC (after releasing the user stop if it was a reflex) |
-| The PC `stopped` on its own (watchdog) | conclude | "the PC's watchdog stopped the arm: check the link" |
+| The PC `stopped` during an episode without the laptop asking (its watchdog, or `s` on the PC's keyboard) | conclude | "the PC stopped the arm (watchdog or the PC's `s`): check the link and the PC" |
+| Between episodes, the PC's keys change its mode (`stopped` after `s`, `homing` after `h`/`g`) | normal | the laptop follows C2: `c` works from `idle`/`stopped`; while C2 shows `homing` the laptop refuses `c` and `h` itself (a hint on the status line; it stays idle, never concludes). A `start` the PC refuses is a hint too |
+| A C3 `home` answered `ok: false` with a reason starting `stopped:` (`s` on the PC stopped the move) | normal | the arm holds where it stopped (`stopped`); the laptop shows it and stays idle. A `home` refused with `refused: mode is homing` (the PC's own `h`/`g` started first) is a hint too. Any other `ok: false` or no reply to `home` is a conclude. |
 | The laptop dies, sleeps, or the link drops | (PC side) | the watchdog stops following and holds; the PC stays up; the next laptop run reconnects with `start` |
 | A message failing its contract | conclude | names the message and field. A broken C3 request gets an error reply from the PC (not a fault); the laptop concludes on it. |
 | Operator `s` | episode ends | `stop`, recorded `stopped`; `h` then `c` for the next one |
@@ -346,19 +354,30 @@ Each plan is the brief for that folder's `STRUCTURE.md`.
 PC), disturbed as little as possible. Changes: build paths (`../contracts` → `../../contracts`; config, limits,
 `frames.yaml` and example paths are baked in at build time, so rebuild after the move), hint texts, the `hello`
 request, `F_T_TCP` read from `contracts/frames.yaml`, `max_lead_s` 1.5 s, the bind address from `contracts/link.yaml`, and
-the keyboard below. No change to the loop, gate, supervisor logic, shared state, homing motion or gripper worker.
+the keyboard below. No change to the 1 kHz cycle (`ControlLoop::step`), the gate, the impedance controller, the trajectory, the homing
+motion or finger moves; the keyboard and stop-during-homing need small additive changes to the supervisor, shared
+state, the control thread's session loop and the gripper worker, plus: one new state-machine event (homing aborted →
+`stopped`), a new `Gripper::home()` for the hand's homing, SIGHUP handled like SIGTERM, a `--keyboard` flag, and in
+`LibfrankaArm`/`FakeArm` the sticky stop flag becomes a per-call stop epoch (a sticky flag would mislabel every later
+reflex as a requested stop). The last one is on the verified path and is tested at bring-up.
 libfranka 0.9.2 in `~/franka/` and `build.sh` are reused.
 
-**Entry:** `control_deploy check | run [--mock]`, a small Python wrapper on the PC (its checks: config valid, arm
+**Entry:** `control_deploy check | run | console | firewall [--mock] [--local] [--station FILE]`, a small Python wrapper on the PC (its checks: config valid, arm
 reachable, realtime mode, payload set, link address present on this PC, firewall rule; then it runs the binary in the
-terminal and shows a status line). `--mock` uses the fake arm and fake gripper.
+terminal and shows a status line). `--mock` uses the fake arm and fake gripper; `--local` binds 127.0.0.1 (tests);
+`firewall` prints the nftables rule built from `link.yaml`.
+
+**Homing and stop on the PC:** `g` runs the Franka Hand's homing (C2 shows `homing`), then returns the fingers to the
+commanded width. A C3 `stop` or the PC's `s` during any homing move stops the move and holds where it stopped
+(`stopped`); if the move finishes first, it ends normally (`idle`). Whether libfranka's stop mid-move needs a recovery,
+and whether the hand's homing can be interrupted, is checked at bring-up; either outcome is safe.
 
 **Start model:** the operator runs `control_deploy run` on the PC **before** the laptop. It connects, the Franka Hand
 homes its fingers once, and the arm holds where it is. It stays up across laptop runs and is restarted only after a
 fault or at the end of the day.
 
-**PC keyboard** (inside franka_control, not a C3 client; each key refused while `running`/`holding`, i.e. while the
-laptop is driving an episode):
+**PC keyboard** (inside franka_control, not a C3 client; `h` and `g` are refused while `running`/`holding`, i.e. while
+the laptop is driving an episode; `s` and `q` are never refused):
 
 | Key | Does |
 |---|---|
@@ -387,12 +406,16 @@ previous is ready, and stops them in reverse. It never starts or stops anything 
 alone (`python -m policy_deploy.frames`, `.policy`, `.manager`). A read-only link probe (`python -m
 policy_deploy.manager.pc_probe`) shows the C2 rate, `seq` gaps, the clock fit and C3 round trips.
 
-**Start-up order of the manager:** C2 arriving for 2 s (the clock map fills) → `hello` checked (section 5.4) → PC
-mode `idle`/`stopped` (wait while `homing`; refuse in `fault`, `running`, `holding`) → `get_state` → heartbeats start
-→ policy config checked → both cameras ok → ready.
+**Start-up order of the manager:** C2 arriving → while C2 shows `running`/`holding` (an earlier laptop session's
+episode), wait without sending anything on C3, up to 2 × the watchdog, so the PC's watchdog can stop it; likewise
+while C2 shows `homing` (a home left running by an earlier run), up to 60 s → `hello`
+exchanges start and give 2 s of clock samples → `hello` checked (section 5.4) → `get_state` mode `idle`/`stopped`
+(wait while `homing`; refuse in `fault`) → heartbeats start → policy config checked → both cameras ok → ready.
+A commit different from the PC's is a warning, not a refusal; every difference that matters is caught by the `hello`
+checks. A trained policy is refused on the real arm while `frames.yaml` says `settled: false` (section 9).
 
 **Laptop keyboard:** `c` start an episode, `y` / `n` end it as success / failure, `s` stop, `h` home (C3 `home`),
-`q` quit. Same meaning as in `rnoro/deployment`.
+`q` quit. Same meaning as in `rnoro/deployment`; `c` and `h` are refused locally while C2 shows `homing` (section 7).
 
 **From `rnoro/deployment`:**
 - frames: the pi_v1 path (`pi_stream_source`, `receiver`, buffer, selector, image prep copied from dataproc unchanged,
@@ -412,8 +435,10 @@ mode `idle`/`stopped` (wait while `homing`; refuse in `fault`, `running`, `holdi
 
 **First thing to measure on the laptop:** the policy's speed and memory on the RTX 3050 Ti (35 W cap). Estimate for
 the v1 architecture (two CLIP ViT-B/16 encoders + a 1D UNet, 16 diffusion steps): about 3.1–3.3 GB of the 4 GB, and
-150–220 ms per inference, likely over the budget at `exec_h` 8. Measured with the policy's warm-up timings and its
-probe on the `run_001` checkpoint (iPhone-trained, but the same architecture). Backups in section 13.
+150–220 ms per inference, likely over the budget at `exec_h` 8. `run_001` is a prompting checkpoint (a different,
+larger architecture, refused by the plain diffusion policy), so speed is measured with a small benchmark tool that
+builds the plain diffusion architecture with random weights; `run_001` gives only load time, host RAM and the GPU
+memory of real weights. Backups in section 13 (`precision: bf16` = autocast).
 
 ## 9. The TCP frame
 
@@ -429,7 +454,8 @@ must use the same point **and the same axes**, or every motion the policy output
   90° turn about z from training's axes.
 
 The rule: **the TCP on the wire (C2 and C3) is the training TCP.** It is defined once, in
-`contracts/frames.yaml`, read by franka_control and by the laptop. The 90° difference is fixed there, by changing
+`contracts/frames.yaml`, read by franka_control and by the laptop. Its `settled: false` key (laptop only) makes
+`policy_deploy` refuse a trained policy on the real arm until this section is done. The 90° difference is fixed there, by changing
 `F_T_TCP`'s rotation (its sign follows from which side of the hand the camera is mounted), never by a correction on
 the laptop. The PC's gate doesn't depend on the TCP axes (the box uses position, the cone the flange z axis).
 
@@ -447,7 +473,8 @@ All unit tests run on a laptop without the Pi, the arm or a GPU.
   row of section 7.
 - **End to end per machine:** `policy_deploy run --mock` with scripted keys; `control_deploy run --mock` with a
   scripted console.
-- **Across the two:** the laptop manager against the real `franka_control --mock` on localhost.
+- **Across the two:** on the laptop, the laptop's processes against the real `franka_control --mock --local`, built
+  there without libfranka (fake arm only).
 
 ## 11. How the work is done
 
