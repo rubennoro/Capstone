@@ -9,7 +9,7 @@ import numpy as np
 from av.codec.context import Flags
 from av.video.frame import PictureType
 
-from contracts import Frame
+from contracts import EncodedFrame
 
 from process_frames.errors import DecodeError
 from process_frames.frame_decoder import FrameDecoder
@@ -39,22 +39,23 @@ class H264Decoder(FrameDecoder):
         ctx.thread_type = self.thread_type
         return ctx
 
-    def decode(self, frame: Frame) -> np.ndarray | None:
+    def decode(self, frame: EncodedFrame) -> np.ndarray | None:
         if self._waiting:
-            if not frame.keyframe:
+            if not frame.info.keyframe:
                 return None
             self._ctx = self._fresh_context()          # nothing from before the gap can leak in
             self._waiting = False
         try:
             pictures = self._ctx.decode(av.Packet(frame.data))
         except av.error.FFmpegError as e:
-            raise DecodeError(self.camera, frame.seq, f"FFmpeg: {e}") from e
+            raise DecodeError(self.camera, frame.info.frame_seq, f"FFmpeg: {e}") from e
         if len(pictures) != 1:
-            raise DecodeError(self.camera, frame.seq,
+            raise DecodeError(self.camera, frame.info.frame_seq,
                               f"{len(pictures)} pictures from one access unit, expected exactly 1")
         pic = pictures[0]
         if pic.pict_type == PictureType.B:
-            raise DecodeError(self.camera, frame.seq, "B picture: the stream has B-frames, which C0 forbids")
+            raise DecodeError(self.camera, frame.info.frame_seq,
+                              "B picture: the stream has B-frames, which C0 forbids")
         return pic.to_ndarray(format="rgb24")
 
     def notify_gap(self) -> None:

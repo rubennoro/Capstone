@@ -16,7 +16,7 @@ from process_frames._dataproc.config import ConfigError, RigConfig, load_rig
 
 #: A comment line before ``schema:`` containing this marks the stand-in rig file.
 STANDIN_MARKER = "TODO: replace with the v2 rig file"
-#: The sensors contract C0 allows (contracts' Frame.sensor).
+#: The sensors contract C0 allows (contracts' FrameInfo.sensor).
 C0_SENSORS = ("imx519", "imx219")
 ROLES = ("main", "ultrawide")
 

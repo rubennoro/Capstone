@@ -23,8 +23,9 @@ _INT_RANGES = {
     "int64": (-(2**63), 2**63 - 1),
     "int": (-(2**63), 2**63 - 1),
     "uint64": (0, 2**64 - 1),
+    "uint32": (0, 2**32 - 1),
 }
-SCALAR_KINDS = ("int64", "uint64", "int", "float64", "bool", "str", "bytes")
+SCALAR_KINDS = ("int64", "uint64", "uint32", "int", "float64", "bool", "str", "bytes")
 ARRAY_DTYPES = ("uint8", "int64", "uint64", "float32", "float64")
 
 
@@ -254,7 +255,7 @@ def _spec_of(x: Any) -> FieldSpec:
 
 def scalar(kind: str, choices: tuple | None = None, min: float | None = None,  # noqa: A002
            max: float | None = None) -> Any:  # noqa: A002
-    """One value: kind is int64, uint64, int, float64, bool, str or bytes."""
+    """One value: kind is int64, uint64, uint32, int, float64, bool, str or bytes."""
     return _field(ScalarSpec(kind, choices, min, max))
 
 

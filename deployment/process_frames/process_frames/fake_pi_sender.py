@@ -1,21 +1,22 @@
-"""FakePiSender: the stand-in Pi for unit tests and --mock (STRUCTURE.md §5.14). Never used on the real arm.
+"""FakePiSender: the stand-in Pi for unit tests and --mock (STRUCTURE.md §5.16). Never used on the real arm.
 
-It plays back a short recorded clip only to produce realistic C0 traffic, and speaks exactly C0: thread
-"fake-pi-frames" binds a PUB socket and sends every frame when it is due; thread "fake-pi-time" binds a REP socket and
-answers time_sync with ``pi_clock_ns(now)``. The clip loops with ``seq`` and the clock still counting up.
+It plays back a short recorded clip only to produce realistic C0 traffic, and speaks exactly C0 (PI_PAYLOAD.md):
+thread "fake-pi-frames" binds a PUB socket and sends one multipart packet per main frame, paired by PacketPairer, at
+the recording's rhythm (30 FPS); thread "fake-pi-time" binds a REP socket and answers time_sync with
+``pi_clock_ns(now)``. The clip loops with every counter and the clock still counting up.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 import threading
 import time
 from typing import Callable
 
-from contracts import Publisher, RpcServer, TimeSyncReply, TimeSyncRequest
+from contracts import EncodedFrame, Packet, PacketPublisher, RpcServer, TimeSyncReply, TimeSyncRequest
 
-from process_frames.pi_recording import PiRecording
+from process_frames.packet_pairer import PacketPairer
+from process_frames.pi_recording import PiRecording, with_seq_and_time
 
 log = logging.getLogger("process_frames.fake_pi_sender")
 
@@ -42,8 +43,9 @@ class FakePiSender:
         self._bind_error: BaseException | None = None
         self._lock = threading.Lock()
         self._paused = {cam: False for cam in CAMERAS}
-        self._drop = {cam: 0 for cam in CAMERAS}
-        self.sent = {cam: 0 for cam in CAMERAS}
+        self._drop_frames = {cam: 0 for cam in CAMERAS}
+        self._drop_packets = 0
+        self.sent = {"packets": 0, "ultrawide": 0}       # packets sent, ultrawide frames sent in them
 
     # ---------------------------------------------------------------------------------------------- control
 
@@ -73,7 +75,8 @@ class FakePiSender:
         self._threads = []
 
     def pause(self, camera: str | None = None) -> None:
-        """Stop sending (None: both). Frames due meanwhile are lost: their seq numbers are skipped."""
+        """The Pi stops encoding that camera's frames (None: both); their frame_seq numbers are skipped. Main
+        paused: no packets at all (packet_seq still counts). Ultrawide paused: packets without ultrawide frames."""
         with self._lock:
             for cam in self._cams(camera):
                 self._paused[cam] = True
@@ -83,10 +86,17 @@ class FakePiSender:
             for cam in self._cams(camera):
                 self._paused[cam] = False
 
-    def drop_next(self, camera: str, n: int = 1) -> None:
-        """Skip the next n frames of that camera (a seq gap)."""
+    def drop_frames(self, camera: str, n: int = 1) -> None:
+        """The Pi drops that camera's next n frames before encoding them (a frame_seq gap; main: no packet for
+        them, a packet_seq gap)."""
         with self._lock:
-            self._drop[camera] += int(n)
+            self._drop_frames[self._cams(camera)[0]] += int(n)
+
+    def drop_packets(self, n: int = 1) -> None:
+        """The next n packets are lost on the way, as when ZeroMQ's queue is full: packet_seq and both cameras'
+        frame_seq show gaps."""
+        with self._lock:
+            self._drop_packets += int(n)
 
     @staticmethod
     def _cams(camera: str | None) -> tuple[str, ...]:
@@ -95,6 +105,22 @@ class FakePiSender:
         if camera not in CAMERAS:
             raise ValueError(f"unknown camera {camera!r}")
         return (camera,)
+
+    def _skip_frame(self, camera: str) -> bool:
+        with self._lock:
+            if self._paused[camera]:
+                return True
+            if self._drop_frames[camera] > 0:
+                self._drop_frames[camera] -= 1
+                return True
+            return False
+
+    def _lose_packet(self) -> bool:
+        with self._lock:
+            if self._drop_packets > 0:
+                self._drop_packets -= 1
+                return True
+            return False
 
     # ---------------------------------------------------------------------------------------------- threads
 
@@ -111,38 +137,34 @@ class FakePiSender:
             self._bound[kind].set()
 
     def _run_frames(self) -> None:
-        pub = self._bind("frames", "frames_endpoint", lambda: Publisher(self.frames_endpoint, self._send_hwm))
+        pub = self._bind("frames", "frames_endpoint", lambda: PacketPublisher(self.frames_endpoint, self._send_hwm))
         if pub is None:
             return
-        rec = self.recording
-        t0 = rec.start_ns
-        # per camera: the index of the next due frame, counting over all loops (= its seq)
-        nxt = {cam: 0 for cam in CAMERAS}
-        n = {cam: len(rec.cameras[cam].frames) for cam in CAMERAS}
-
-        def due_ns(cam: str) -> int:
-            k, i = divmod(nxt[cam], n[cam])
-            return self._start_ns + k * rec.duration_ns + (rec.cameras[cam].frames[i].t_pi_ns - t0)
-
+        t0 = self.recording.start_ns
+        pairer: PacketPairer[EncodedFrame] = PacketPairer()
         try:
-            while not self._stop.is_set():
-                cam = min(CAMERAS, key=due_ns)
-                wait_ns = due_ns(cam) - self._clock()
-                if wait_ns > 0:
+            for ev in self.recording.events():
+                while not self._stop.is_set():                    # wait until the Pi would handle it
+                    wait_ns = self._start_ns + (ev.due_ns - t0) - self._clock()
+                    if wait_ns <= 0:
+                        break
                     self._stop.wait(min(wait_ns / 1e9, _POLL_S))
+                if self._stop.is_set():
+                    return
+                if self._skip_frame(ev.camera):
                     continue
-                seq = nxt[cam]
-                nxt[cam] += 1
-                with self._lock:
-                    skip = self._paused[cam] or self._drop[cam] > 0
-                    if not self._paused[cam] and self._drop[cam] > 0:
-                        self._drop[cam] -= 1
-                if skip:
+                frame = with_seq_and_time(ev.frame, ev.frame_seq,
+                                          self.pi_clock_ns(self._start_ns + (ev.capture_ns - t0)))
+                if ev.camera == "ultrawide":
+                    pairer.add_ultrawide(frame.info.frame_seq, frame.info.t_pi_ns, frame)
                     continue
-                recorded = rec.cameras[cam].frames[seq % n[cam]]
-                frame = dataclasses.replace(recorded, seq=seq, t_pi_ns=self.pi_clock_ns(self._clock()))
-                pub.publish(frame)
-                self.sent[cam] += 1
+                uw, pair = pairer.take(frame.info.t_pi_ns)
+                packet = Packet.build(ev.frame_seq, frame, uw, pair)   # packet_seq counts main frames captured
+                if self._lose_packet():
+                    continue
+                pub.publish(packet)
+                self.sent["packets"] += 1
+                self.sent["ultrawide"] += len(uw)
         finally:
             pub.close()
 

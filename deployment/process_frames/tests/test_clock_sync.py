@@ -34,7 +34,7 @@ def new_map():
 @pytest.fixture(scope="module")
 def recording(pi_episode_no_exposure):
     return PiRecording.load(pi_episode_no_exposure, encoding="jpeg", max_seconds=1.0, keyframe_interval=4,
-                            bitrate=1_000_000, jpeg_quality=50)
+                            jpeg_quality=50)
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ def test_a_broken_time_sync_reply_is_fatal_naming_the_field():
     def serve():
         if rep.poll(5000):
             rep.recv()
-            rep.send(pack_obj({"schema": "c0.time_sync.reply/v1"}))
+            rep.send(pack_obj({"schema": "c0.time_sync_reply/v1"}))
         done.set()
 
     t = threading.Thread(target=serve)

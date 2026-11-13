@@ -12,7 +12,7 @@ from helpers import contract_error
 
 ALL_SCHEMAS = {
     "ack/v1", "error/v1",
-    "c0.frame/v1", "c0.time_sync/v1", "c0.time_sync.reply/v1",
+    "c0.packet/v1", "c0.time_sync_request/v1", "c0.time_sync_reply/v1",
     "c1.get_frames/v1", "c1.frames/v1", "c1.get_health/v1", "c1.health/v1",
     "c2.state/v1",
     "c3.set_waypoints/v1", "c3.set_waypoints.reply/v1", "c3.heartbeat/v1", "c3.start/v1", "c3.stop/v1",

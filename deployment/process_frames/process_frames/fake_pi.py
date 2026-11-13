@@ -1,4 +1,4 @@
-"""``python -m process_frames.fake_pi --station FILE``: run the fake Pi alone (STRUCTURE.md §5.14).
+"""``python -m process_frames.fake_pi --station FILE``: run the fake Pi alone (STRUCTURE.md §5.16).
 
 Binds the station's ``endpoints.mock_pi_*`` and plays back ``process_frames.mock_episode`` until Ctrl-C / SIGTERM.
 A ``python -m process_frames`` (no --mock) whose station points ``endpoints.pi_*`` at those addresses can then be
@@ -33,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         s = Settings.load(args.station, mock=True)
         m = s.mock_settings
         rec = PiRecording.load(s.mock_episode, encoding=s.decoder, max_seconds=m.max_seconds,
-                               keyframe_interval=m.keyframe_interval, bitrate=m.bitrate, jpeg_quality=m.jpeg_quality)
+                               keyframe_interval=m.keyframe_interval, jpeg_quality=m.jpeg_quality)
     except (SettingsError, PiRecordingError) as e:
         print(f"fake_pi: {e}", file=sys.stderr)
         return 1

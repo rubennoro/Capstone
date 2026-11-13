@@ -14,15 +14,15 @@ from process_frames.settings import SCHEMA, Settings
 
 # Every key of STRUCTURE.md §10 with its default.
 DEFAULTS = {
-    "rig_file": "rigs/rig_pi_v1_standin.yaml", "decoder": "h264", "mock_episode": None,
-    "default_exposure_ns": 5000000, "receive.timeout_s": 0.1, "receive.recv_hwm": 120, "buffer.keep_s": 1.0,
-    "select.main_spacing_ms": 50, "select.ultrawide_spacing_ms": 100, "select.tolerance_ms": 25,
+    "rig_file": "rigs/rig_pi_v2.yaml", "decoder": "h264", "mock_episode": None,
+    "default_exposure_ns": 5000000, "receive.timeout_s": 0.1, "receive.recv_hwm": 60, "buffer.keep_s": 1.0,
+    "select.main_spacing_ms": 50, "select.ultrawide_spacing_ms": 100, "select.tolerance_frames": 2.0,
     "health.stale_s": 0.35, "health.down_s": 2.0, "health.fps_window_s": 1.0, "clock.interval_s": 1.0,
     "clock.timeout_s": 0.5, "clock.startup_exchanges": 10, "clock.window_s": 60.0, "clock.best_fraction": 0.3,
     "clock.drift_min_span_s": 10.0, "clock.max_drift_ppm": 500.0, "clock.max_sync_age_s": 10.0,
     "h264.thread_type": "SLICE", "server.poll_s": 0.05, "server.join_timeout_s": 2.0, "log.stats_every_s": 10.0,
-    "mock.max_seconds": 10.0, "mock.keyframe_interval": 30, "mock.bitrate": 10000000, "mock.jpeg_quality": 90,
-    "mock.pi_clock_offset_s": 1000.0, "mock.drift_ppm": 20.0, "mock.send_hwm": 120,
+    "mock.max_seconds": 10.0, "mock.keyframe_interval": 30, "mock.jpeg_quality": 90,
+    "mock.pi_clock_offset_s": 1000.0, "mock.drift_ppm": 20.0, "mock.send_hwm": 30,
     "check.reachable_timeout_s": 1.0, "check.subprocess_timeout_s": 10.0, "probe.timeout_s": 2.0,
 }
 
@@ -45,10 +45,10 @@ def test_config_yaml_has_every_key_with_its_default():
 
 def test_defaults_load(tmp_path):
     s = Settings.load(write_station(tmp_path / "station.yaml"), mock=False)
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v1_standin.yaml"
+    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2.yaml"
     assert s.decoder == "h264" and s.mock is False and s.mock_episode is None
     assert s.clock.startup_exchanges == 10 and isinstance(s.clock.interval_s, float)
-    assert s.select.tolerance_ms == 25.0 and s.h264.thread_type == "SLICE"
+    assert s.select.tolerance_frames == 2.0 and s.h264.thread_type == "SLICE"
     assert s.frames == "tcp://127.0.0.1:*" and s.session_root == tmp_path / "sessions"
 
 
@@ -83,7 +83,7 @@ def test_relative_paths_resolve_from_the_right_folder(tmp_path):
     st = write_station(tmp_path / "station.yaml", process_frames={"mock_episode": "eps/ep1"})
     s = Settings.load(st, mock=True)
     assert s.mock_episode == tmp_path / "eps" / "ep1"                      # station value: station's folder
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v1_standin.yaml"        # default: process_frames/
+    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2.yaml"                # default: process_frames/
     st = write_station(tmp_path / "station.yaml", process_frames={"rig_file": "my_rigs/r.yaml"})
     assert Settings.load(st, mock=False).rig_file == tmp_path / "my_rigs" / "r.yaml"
 

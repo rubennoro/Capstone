@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
-from contracts import Frame
+from contracts import EncodedFrame, FrameInfo
 
 from conftest import MAIN_SIZE, pattern
 from process_frames.errors import DecodeError
@@ -23,10 +23,14 @@ N = 25
 KEYINT = 10
 
 
-def to_frames(encoded, size=MAIN_SIZE, encoding="h264"):
+def info(seq, keyframe, size=MAIN_SIZE, encoding="h264", sensor="imx519"):
     w, h = size
-    return [Frame(camera="main", sensor="imx519", seq=i, t_pi_ns=1000 + i, exposure_ns=0, width=w, height=h,
-                  encoding=encoding, keyframe=key, data=data) for i, (data, key) in enumerate(encoded)]
+    return FrameInfo(sensor=sensor, frame_seq=seq, t_pi_ns=1000 + seq, exposure_ns=0, width=w, height=h,
+                     encoding=encoding, keyframe=keyframe)
+
+
+def to_frames(encoded, size=MAIN_SIZE, encoding="h264"):
+    return [EncodedFrame(info(i, key, size, encoding), data) for i, (data, key) in enumerate(encoded)]
 
 
 @pytest.fixture(scope="module")
@@ -67,11 +71,14 @@ def test_h264_bit_identical_to_offline_decode(stream, reference, thread_type):
     assert np.abs(out[3].astype(int) - stream[0][3].astype(int)).mean() < 20
 
 
-def test_keyframes_every_interval(stream):
-    assert [f.keyframe for f in stream[1]] == [i % KEYINT == 0 for i in range(N)]
+def test_keyframes_every_interval_with_sps_pps_and_constrained_baseline(stream):
+    assert [f.info.keyframe for f in stream[1]] == [i % KEYINT == 0 for i in range(N)]
     for f in stream[1]:
-        if f.keyframe:
-            assert f.data.startswith(b"\x00\x00\x00\x01") and (f.data[4] & 0x1F) == 7      # SPS first
+        assert f.data.startswith(b"\x00\x00\x00\x01")                                  # Annex-B
+        if f.info.keyframe:
+            assert (f.data[4] & 0x1F) == 7                                                # SPS first, then PPS
+            assert f.data[5] == 66 and f.data[6] & 0x40                                   # Constrained Baseline
+            assert b"\x00\x00\x00\x01\x68" in f.data or b"\x00\x00\x01\x68" in f.data
 
 
 def test_frames_before_the_first_keyframe_are_none(stream, reference):
@@ -97,8 +104,7 @@ def test_after_a_gap_none_until_the_next_keyframe_then_identical(stream, referen
 
 def test_garbage_is_a_decode_error():
     dec = H264Decoder("main", "SLICE")
-    junk = Frame(camera="main", sensor="imx519", seq=7, t_pi_ns=1, exposure_ns=0, width=160, height=90,
-                 encoding="h264", keyframe=True, data=b"\x00\x00\x00\x01\x65" + bytes(range(256)) * 4)
+    junk = EncodedFrame(info(7, True), b"\x00\x00\x00\x01\x65" + bytes(range(256)) * 4)
     with pytest.raises(DecodeError) as e:
         dec.decode(junk)
     assert e.value.camera == "main" and e.value.seq == 7
@@ -148,8 +154,7 @@ def test_jpeg_matches_imdecode_and_bgr_to_rgb():
 
 
 def test_corrupt_jpeg_is_a_decode_error():
-    bad = Frame(camera="ultrawide", sensor="imx219", seq=3, t_pi_ns=1, exposure_ns=0, width=128, height=96,
-                encoding="jpeg", keyframe=True, data=b"\xff\xd8not a jpeg")
+    bad = EncodedFrame(info(3, True, (128, 96), "jpeg", "imx219"), b"\xff\xd8not a jpeg")
     with pytest.raises(DecodeError) as e:
         JpegDecoder("ultrawide").decode(bad)
     assert e.value.seq == 3

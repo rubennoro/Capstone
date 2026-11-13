@@ -34,7 +34,7 @@ class BufferSettings:
 class SelectSettings:
     main_spacing_ms: float
     ultrawide_spacing_ms: float
-    tolerance_ms: float
+    tolerance_frames: float
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,6 @@ class LogSettings:
 class MockSettings:
     max_seconds: float
     keyframe_interval: int
-    bitrate: int
     jpeg_quality: int
     pi_clock_offset_s: float
     drift_ppm: float
@@ -151,7 +150,7 @@ SCHEMA: dict[str, Callable[[Any], str | None]] = {
     "buffer.keep_s": _float_gt0,
     "select.main_spacing_ms": _float_gt0,
     "select.ultrawide_spacing_ms": _float_gt0,
-    "select.tolerance_ms": _float_gt0,
+    "select.tolerance_frames": _float_gt0,
     "health.stale_s": _float_gt0,
     "health.down_s": _float_gt0,
     "health.fps_window_s": _float_gt0,
@@ -169,7 +168,6 @@ SCHEMA: dict[str, Callable[[Any], str | None]] = {
     "log.stats_every_s": _float_gt0,
     "mock.max_seconds": _float_gt0,
     "mock.keyframe_interval": _int_min(1),
-    "mock.bitrate": _int_min(1),
     "mock.jpeg_quality": _int_range(1, 100),
     "mock.pi_clock_offset_s": _float_any,
     "mock.drift_ppm": _float_any,
@@ -327,7 +325,7 @@ class Settings:
             receive=ReceiveSettings(float(f["receive.timeout_s"]), f["receive.recv_hwm"]),
             buffer=BufferSettings(float(f["buffer.keep_s"])),
             select=SelectSettings(float(f["select.main_spacing_ms"]), float(f["select.ultrawide_spacing_ms"]),
-                                  float(f["select.tolerance_ms"])),
+                                  float(f["select.tolerance_frames"])),
             health=HealthSettings(float(f["health.stale_s"]), float(f["health.down_s"]),
                                   float(f["health.fps_window_s"])),
             clock=ClockSettings(float(f["clock.interval_s"]), float(f["clock.timeout_s"]),
@@ -337,7 +335,7 @@ class Settings:
             h264=H264Settings(f["h264.thread_type"]),
             server=ServerSettings(float(f["server.poll_s"]), float(f["server.join_timeout_s"])),
             log=LogSettings(float(f["log.stats_every_s"])),
-            mock_settings=MockSettings(float(f["mock.max_seconds"]), f["mock.keyframe_interval"], f["mock.bitrate"],
+            mock_settings=MockSettings(float(f["mock.max_seconds"]), f["mock.keyframe_interval"],
                                        f["mock.jpeg_quality"], float(f["mock.pi_clock_offset_s"]),
                                        float(f["mock.drift_ppm"]), f["mock.send_hwm"]),
             check=CheckSettings(float(f["check.reachable_timeout_s"]), float(f["check.subprocess_timeout_s"])),

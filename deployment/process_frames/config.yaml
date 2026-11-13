@@ -1,21 +1,21 @@
 # process_frames defaults (STRUCTURE.md section 10). station.yaml's process_frames: section may override any key here,
 # and nothing else. Durations in seconds unless the name says _ms or _ns. Relative paths: from this folder.
-rig_file: rigs/rig_pi_v1_standin.yaml    # deploy check warns while it is the stand-in
+rig_file: rigs/rig_pi_v2.yaml            # the real rig file (main 1600x1200 @ 30, ultrawide 1280x960 @ 30)
 decoder: h264                            # h264 | jpeg (PLAN §9 backup); also what FakePiSender sends under --mock
 mock_episode: null                       # a recorded Pi episode folder, played back by FakePiSender; --mock only
 default_exposure_ns: 5000000             # used when C0's exposure_ns is 0, capped at half the rig frame period
 
 receive:
-  timeout_s: 0.1                         # wait for one C0 message before checking the stop flag
-  recv_hwm: 120                          # C0 messages ZeroMQ may queue (2 s of both cameras)
+  timeout_s: 0.1                         # wait for one C0 packet before checking the stop flag
+  recv_hwm: 60                           # C0 packets ZeroMQ may queue (2 s); beyond that it drops whole packets
 
 buffer:
-  keep_s: 1.0                            # frames kept per camera
+  keep_s: 1.0                            # packets kept, and decoded ultrawide frames kept for finding a pair
 
 select:
   main_spacing_ms: 50.0                  # 2 main frames, 20 Hz
   ultrawide_spacing_ms: 100.0            # 2 ultrawide frames, 10 Hz
-  tolerance_ms: 25.0                     # a picked frame must be this close to its target
+  tolerance_frames: 2.0                  # a picked packet must be within this many frame periods of its target
 
 health:
   stale_s: 0.35                          # age above which a camera is stale
@@ -44,12 +44,11 @@ log:
 
 mock:
   max_seconds: 10.0                      # how much of mock_episode is loaded and looped
-  keyframe_interval: 30                  # fake H.264: a keyframe every this many frames
-  bitrate: 10000000                      # fake H.264 bit rate
+  keyframe_interval: 30                  # fake H.264: a keyframe every this many frames (bit rate: the recording's)
   jpeg_quality: 90                       # fake JPEG quality
   pi_clock_offset_s: 1000.0              # fake Pi clock = PC clock + this ...
   drift_ppm: 20.0                        # ... running this much fast
-  send_hwm: 120                          # fake Pi PUB queue
+  send_hwm: 30                           # fake Pi PUB queue, in packets (the Pi's SNDHWM)
 
 check:
   reachable_timeout_s: 1.0               # deploy check: the TCP connect to the Pi

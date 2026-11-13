@@ -12,7 +12,7 @@ import pytest
 
 from contracts import FramesReply, GetFramesRequest, GetHealthRequest, HealthReply, RpcClient
 
-from conftest import fast_overrides, wait_for, write_rig, write_station
+from conftest import V2_RIG, fast_overrides, wait_for, write_rig, write_station
 from process_frames._dataproc.imageprep import ImagePrep
 from process_frames.app import FramesApp
 from process_frames.errors import FatalError
@@ -20,12 +20,14 @@ from process_frames.probe import main as probe_main
 from process_frames.settings import Settings
 
 KEYINT = 10
+MS = 1_000_000
 
 
 class Running:
     """FramesApp.run() in a thread, plus a C1 client."""
 
     def __init__(self, tmp_path, episode, **overrides):
+        tmp_path.mkdir(parents=True, exist_ok=True)
         self.station = write_station(tmp_path / "station.yaml",
                                      process_frames=fast_overrides(mock_episode=str(episode), **overrides))
         self.settings = Settings.load(self.station, mock=True)
@@ -43,8 +45,10 @@ class Running:
             self.error = e
 
     def wait_ready(self, timeout_s=15.0):
-        wait_for(lambda: self.ready_file.exists() or not self.thread.is_alive(), timeout_s, "ready")
+        # app.ready is set just after the ready file is written: waiting for it implies the file
+        wait_for(lambda: self.app.ready.is_set() or not self.thread.is_alive(), timeout_s, "ready")
         assert self.error is None, self.error
+        assert self.ready_file.exists()
         self.client = RpcClient("process_frames", self.app.frames_endpoint)
 
     def frames(self) -> FramesReply:
@@ -77,8 +81,8 @@ class Running:
 def running(tmp_path, pi_episode):
     runs = []
 
-    def start(**overrides):
-        r = Running(tmp_path, pi_episode, **overrides)
+    def start(episode=pi_episode, **overrides):
+        r = Running(tmp_path / f"run{len(runs)}", episode, **overrides)
         runs.append(r)
         return r
     yield start
@@ -86,13 +90,13 @@ def running(tmp_path, pi_episode):
         r.stop()
 
 
-def buffered(app, cam, t_pc_ns):
-    return next(f for f in app.buffers[cam].snapshot() if f.t_pc_ns == t_pc_ns)
+def snapshot_by_time(app):
+    return {p.t_pc_ns: p for p in app.buffer.snapshot()}
 
 
 def offline_rgb(recording_cam, index):
     """Decode the recorded C0 stream from its start, as dataproc's read_video_frames decodes a file."""
-    if recording_cam.frames[0].encoding == "jpeg":
+    if recording_cam.frames[0].info.encoding == "jpeg":
         import cv2
         data = np.frombuffer(recording_cam.frames[index].data, np.uint8)
         return cv2.cvtColor(cv2.imdecode(data, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
@@ -113,20 +117,28 @@ def pi_to_pc(fake, t_pi_ns):
     return (t_pi_ns - a0) / slope
 
 
-def check_served(run, reply):
+def check_served(run, reply, prep=None):
+    """Every served image and time against the fake Pi's truth. Returns the served pairs' capture gaps (ms)."""
     app = run.app
-    prep = ImagePrep(app.rig)
+    by_t = snapshot_by_time(app)                        # at once, before a served packet can leave the 1 s buffer
+    prep = prep or ImagePrep(app.rig)
+    gaps = []
     for cam, imgs, times in (("main", reply.main, reply.main_t_ns), ("ultrawide", reply.ultrawide,
                                                                       reply.ultrawide_t_ns)):
         rec = app.fake_pi.recording.cameras[cam]
         for img, t in zip(imgs, times.tolist()):
-            f = buffered(app, cam, t)
-            # time: within 2 ms of the fake Pi's true capture time (offset and drift removed)
-            assert abs(t - pi_to_pc(app.fake_pi, f.t_pi_mid_ns)) < 2_000_000
+            p = by_t[t]                                 # ultrawide times are their packets' times
+            # time: within 2 ms of the fake Pi's true capture time of the main frame (offset and drift removed)
+            assert abs(t - pi_to_pc(app.fake_pi, p.t_pi_mid_ns)) < 2_000_000
             # image: bit-identical to the offline prep of the same recorded frame (live path = training path)
-            rgb = offline_rgb(rec, f.seq % len(rec.frames))
+            seq = p.main_seq if cam == "main" else p.pair_seq
+            rgb = offline_rgb(rec, seq % len(rec.frames))
             ref = prep.prep_main(rgb) if cam == "main" else prep.prep_ultrawide(rgb)
-            assert np.array_equal(img, ref), (cam, f.seq)
+            assert np.array_equal(img, ref), (cam, seq)
+            if cam == "ultrawide":
+                gaps.append(p.pair_gap_ns / 1e6)
+                assert -5.0 <= gaps[-1] <= 33.4 + 5.0          # a pair is 0-33 ms apart (+5 ms)
+    return gaps
 
 
 @pytest.mark.parametrize("decoder", ["h264", "jpeg"])
@@ -146,38 +158,97 @@ def test_ready_valid_replies_true_times_and_bit_identical_images(running, decode
     assert run.app.server.served >= 3
 
 
-def test_dropped_h264_frame_nothing_after_it_until_the_next_keyframe(running):
+def test_v2_sizes_end_to_end_no_ultrawide_frame_lost_or_decoded_twice(running, v2_episode):
+    """FakePiSender -> receiver -> C1 at the real rig file's sizes (main 1600x1200, ultrawide 1280x960)."""
+    run = running(v2_episode, rig_file=str(V2_RIG))
+    run.wait_ready(timeout_s=30)
+    assert run.app.rig.rig_id == "rig_pi_v2"
+    prep = ImagePrep(run.app.rig)
+    gaps = []
+    for _ in range(3):
+        reply = run.wait_frames(timeout_s=20)
+        assert reply.main.shape == (2, 224, 224, 3) and reply.ultrawide.shape == (2, 224, 224, 3)
+        gaps += check_served(run, reply, prep)
+    assert gaps
+    assert_every_frame_decoded_once(run)
+
+
+def assert_every_frame_decoded_once(run):
+    """Stop the fake Pi, let the receiver finish, then: every packet and ultrawide frame sent was decoded exactly
+    once (no more: nothing twice; no fewer: nothing lost)."""
+    run.app.fake_pi.stop()
+    rx, sent = run.app.receiver, run.app.fake_pi.sent
+    c = rx.counters["ultrawide"]
+    last = {"n": -1, "t": time.monotonic()}
+
+    def done():                     # everything arrived, or nothing new for 1 s (then the asserts say what is missing)
+        if rx.packets.received >= sent["packets"] and c.received >= sent["ultrawide"]:
+            return True
+        n = rx.packets.received + c.received
+        if n != last["n"]:
+            last.update(n=n, t=time.monotonic())
+        return time.monotonic() - last["t"] > 1.0
+    wait_for(done, 30, "the receiver to finish")
+    assert (rx.packets.lost, c.dropped) == (0, 0), f"lost {rx.packets.lost} packets, {c.dropped} ultrawide frames"
+    assert (rx.packets.received, c.received) == (sent["packets"], sent["ultrawide"])
+    assert rx.counters["main"].received == sent["packets"] and rx.counters["main"].unusable == 0
+
+
+def first_usable_after_gap(run, cam, what):
+    """Wait until the buffer shows a gap in that camera's usable images followed by a usable one again; the
+    frame_seq of that one."""
+    seen = {}
+
+    def recovered():
+        pk = run.app.buffer.snapshot()
+        seqs = [p.main_seq if cam == "main" else p.pair_seq for p in pk if p.image(cam) is not None]
+        holes = [(a, b) for a, b in zip(seqs, seqs[1:]) if b - a > 1]
+        if holes:
+            seen["holes"] = holes
+        return bool(holes) and seqs[-1] > holes[-1][1]
+    wait_for(recovered, 10, what)
+    return seen["holes"]
+
+
+def test_a_dropped_main_frame_nothing_after_it_until_the_next_keyframe(running):
     run = running()
     run.wait_ready()
     rx = run.app.receiver
     before = rx.counters["main"].dropped
-    run.app.fake_pi.drop_next("main", 1)
+    run.app.fake_pi.drop_frames("main", 1)
     wait_for(lambda: rx.counters["main"].dropped > before, 10, "the drop")
-    gap_seen = {}
-
-    def recovered():
-        seqs = [f.seq for f in run.app.buffers["main"].snapshot()]
-        gaps = [(a, b) for a, b in zip(seqs, seqs[1:]) if b - a > 1]
-        if gaps:
-            gap_seen["gaps"] = gaps
-        return bool(gaps) and seqs[-1] > gaps[-1][1]
-    wait_for(recovered, 10, "a buffered keyframe after the drop")
-    for a, b in gap_seen["gaps"]:
-        assert b % KEYINT == 0, f"first buffered frame after the gap ({a} -> {b}) is not a keyframe"
+    holes = first_usable_after_gap(run, "main", "a usable main keyframe after the drop")
+    for a, b in holes:
+        assert b % KEYINT == 0, f"first usable main frame after the gap ({a} -> {b}) is not a keyframe"
     assert rx.counters["main"].unusable >= 1
-    gap_end = gap_seen["gaps"][-1][1]
-    t_key = next(f.t_pc_ns for f in run.app.buffers["main"].snapshot() if f.seq == gap_end)
+    gap_end = holes[-1][1]
+    t_key = next(p.t_pc_ns for p in run.app.buffer.snapshot() if p.main_seq == gap_end)
     reply = run.wait_frames(lambda r: int(r.main_t_ns[-1]) >= t_key)        # serving resumes
+    check_served(run, reply)
+
+
+def test_a_dropped_packet_nothing_until_the_keyframes_then_serving_resumes(running):
+    run = running()
+    run.wait_ready()
+    rx = run.app.receiver
+    run.app.fake_pi.drop_packets(1)
+    wait_for(lambda: rx.packets.lost >= 1, 10, "the lost packet")
+    assert rx.counters["main"].dropped >= 1
+    holes = first_usable_after_gap(run, "main", "main usable again")
+    assert all(b % KEYINT == 0 for _, b in holes)
+    t_key = next(p.t_pc_ns for p in run.app.buffer.snapshot() if p.main_seq == holes[-1][1])
+    reply = run.wait_frames(lambda r: int(r.main_t_ns[0]) >= t_key)
     check_served(run, reply)
 
 
 def test_health_ok_stale_ok_by_pause_and_ok_down_by_stop(running):
     run = running()
     run.wait_ready()
-    run.app.fake_pi.pause("ultrawide")
+    run.app.fake_pi.pause("ultrawide")           # packets keep coming, without a paired ultrawide
     wait_for(lambda: run.health().ultrawide.status == "stale", 10, "ultrawide stale")
     assert run.health().main.status == "ok"
     assert run.frames().main is None                                   # no images meanwhile
+    assert run.app.receiver.counters["ultrawide"].unpaired > 0
     run.app.fake_pi.resume("ultrawide")
     wait_for(lambda: run.health().ultrawide.status == "ok", 10, "ultrawide ok again")
     run.wait_frames()
@@ -189,9 +260,10 @@ def test_health_ok_stale_ok_by_pause_and_ok_down_by_stop(running):
 def test_stats_line_and_probe(running, tmp_path, capsys):
     run = running()
     run.wait_ready()
-    wait_for(lambda: (tmp_path / "out" / "stats.jsonl").exists(), 10, "stats.jsonl")
+    wait_for(lambda: (run.app.out_dir / "stats.jsonl").exists(), 10, "stats.jsonl")
     line = run.app.stats_line(run.app.stats(time.monotonic_ns()))
     assert line.startswith("stats main ") and "| clock offset" in line and "served" in line
+    assert "| packets lost " in line and "pair gap" in line and "unpaired" in line
     probe_station = write_station(tmp_path / "probe_station.yaml", endpoints={"frames": run.app.frames_endpoint})
     run.wait_frames()
     assert probe_main(["--station", str(probe_station), "--save", str(tmp_path / "png")]) == 0

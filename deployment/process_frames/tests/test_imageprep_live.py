@@ -1,4 +1,5 @@
-"""Live image prep at the stand-in rig's sizes: bit-identical to iPhUMI's cv_util (STRUCTURE.md §13.2)."""
+"""Live image prep at the real rig file's sizes (and the stand-in's): bit-identical to iPhUMI's cv_util
+(STRUCTURE.md §13.2)."""
 
 from __future__ import annotations
 
@@ -15,17 +16,18 @@ def _ref(img):
 
 
 @pytest.fixture(scope="module")
-def prep(standin_rig):
-    return ImagePrep(standin_rig)
+def prep(v2_rig):
+    return ImagePrep(v2_rig)
 
 
-def test_standin_imageprep_builds(prep):
-    assert prep.main.in_res == (1600, 900)
+def test_v2_imageprep_builds(prep, standin_rig):
+    assert prep.main.in_res == (1600, 1200)
     assert prep.ultrawide.in_res == (1280, 960) and prep.ultrawide.virtual_res == (640, 480)
+    assert ImagePrep(standin_rig).main.in_res == (1600, 900)
 
 
-def test_main_224_identical_to_cv_util_at_1600x900(prep):
-    img = np.random.default_rng(5).integers(0, 256, (900, 1600, 3), dtype=np.uint8)
+def test_main_224_identical_to_cv_util_at_1600x1200(prep):
+    img = np.random.default_rng(5).integers(0, 256, (1200, 1600, 3), dtype=np.uint8)
     out = prep.prep_main(img)
     assert out.shape == (224, 224, 3) and out.dtype == np.uint8
     assert np.array_equal(out, _ref(img))
@@ -38,7 +40,8 @@ def test_ultrawide_224_identical_to_cv_util_of_the_remap(prep):
     assert np.array_equal(prep.prep_ultrawide(img), _ref(virt))
 
 
-@pytest.mark.parametrize("size", [(1640, 1232), (1280, 960), (160, 90), (128, 96), (333, 101)])
+@pytest.mark.parametrize("size", [(1600, 1200), (1600, 900), (1640, 1232), (1280, 960), (160, 90), (128, 96),
+                                  (333, 101)])
 def test_letterbox_identical_at_other_sizes(size):
     w, h = size
     img = np.random.default_rng(w + h).integers(0, 256, (h, w, 3), dtype=np.uint8)
@@ -60,11 +63,11 @@ def _centroid(img, around, radius):
 
 
 @pytest.mark.parametrize("P", [[0.0, 0.0, 0.5], [0.12, -0.05, 0.3], [-0.2, 0.1, 0.25]])
-def test_remap_puts_a_known_point_at_the_expected_pixel_for_the_standin_lens(standin_rig, prep, P):
-    phys, virt = physical_model(standin_rig, "ultrawide"), virtual_model(standin_rig)
+def test_remap_puts_a_known_point_at_the_expected_pixel_for_the_v2_lens(v2_rig, prep, P):
+    phys, virt = physical_model(v2_rig, "ultrawide"), virtual_model(v2_rig)
     P = np.array(P)
     uv_phys, ok_p = phys.project(P[None])
-    uv_virt, ok_v = virt.project(P[None])                 # R_phys_virt = identity in the stand-in
+    uv_virt, ok_v = virt.project(P[None])                 # R_phys_virt = identity in rig_pi_v2
     assert ok_p[0] and ok_v[0]
     v = prep.to_virtual(_blob(1280, 960, uv_phys[0], sigma=3.0))
     assert np.linalg.norm(_centroid(v, uv_virt[0], 15) - uv_virt[0]) < 0.35

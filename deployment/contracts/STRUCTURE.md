@@ -18,8 +18,9 @@ truth: where this file and PLAN.md disagree, PLAN.md wins and this file is fixed
    C++ needs) are **committed as files** that the Python tests and the C++ tests of `franka_control/` both read. That
    is how Python and C++ are proven to agree without C++ ever importing Python. The C0, C1 and C4 examples are
    Python-only, so they are generated in memory during the tests and not stored.
-6. **Three tiny transport helpers** over ZeroMQ: a request/reply client, a request/reply server, and a
-   publish/subscribe pair, all with timeouts (section 6 says why these live here).
+6. **Tiny transport helpers** over ZeroMQ: a request/reply client, a request/reply server, a publish/subscribe
+   pair, and a publish/subscribe pair for C0's multipart packets, all with timeouts (section 6 says why these live
+   here).
 
 It knows nothing about cameras, policies or the arm beyond the shape of the messages. It has no process of its own and
 no `launch.py`.
@@ -58,14 +59,14 @@ contracts/
     sizes.py                the fixed C1/C4 sizes as named constants: OBS_STEPS, ACTION_STEPS, STEP_MS, IMAGE_SIZE
     _rot6d.py               private: rot6d row checks (unit length, perpendicular), only for validators
     common.py               Ack, ErrorReply
-    c0_frames.py            Frame, TimeSyncRequest, TimeSyncReply
+    c0_frames.py            PacketHeader, FrameInfo, Packet, EncodedFrame, TimeSyncRequest, TimeSyncReply
     c1_frames.py            GetFramesRequest, FramesReply, GetHealthRequest, HealthReply, HealthReport,
                             CameraHealthReport
     c2_state.py             ArmState, GateCounters
     c3_commands.py          SetWaypoints, SetWaypointsReply, WaypointIssue, Heartbeat, Start, Stop, Home, GetState
     c4_policy.py            PolicyConfigRequest, PolicyConfig, Reset, Observation, ActionChunk, Prompt
     rpc.py                  RpcClient, RpcServer (request/reply)
-    pubsub.py               Publisher, Subscriber (publish/subscribe)
+    pubsub.py               Publisher, Subscriber (publish/subscribe); PacketPublisher, PacketSubscriber (C0 multipart)
     examples.py             Example, build_examples(), examples_dir(), load_index()
     make_examples.py        `python -m contracts.make_examples`: writes the C2/C3 examples to examples/
   examples/                 the shared C2/C3 example files (data, checked into git; section 8)
@@ -86,7 +87,7 @@ apart.
 
 | Helper | Meaning | Python value |
 |---|---|---|
-| `scalar(kind, choices=None, min=None, max=None)` | one value; `kind` is `int64`, `uint64`, `int`, `float64`, `bool`, `str` or `bytes` | `int`, `float`, `bool`, `str`, `bytes` |
+| `scalar(kind, choices=None, min=None, max=None)` | one value; `kind` is `int64`, `uint64`, `uint32`, `int`, `float64`, `bool`, `str` or `bytes` | `int`, `float`, `bool`, `str`, `bytes` |
 | `array(dtype, shape)` | numpy array of exactly this dtype; `shape` is a tuple where `None` means "any length" | `np.ndarray` |
 | `nested(cls)` | a sub-message (a map on the wire) that has no `schema` of its own | an instance of `cls` |
 | `list_of(cls)` | a list of sub-messages | `tuple[cls, ...]` |
@@ -147,43 +148,99 @@ broke its contract, the request type is unknown to this server, or the handler r
 
 ### 4.2 C0: Pi 5 → `process_frames` (`c0_frames.py`)
 
-`Frame`, schema `c0.frame/v1`. Sent on a PUB socket the Pi binds; `process_frames` subscribes.
+The exact contract is [PI_PAYLOAD.md](PI_PAYLOAD.md), written for whoever implements the Pi sender; this section is
+its Python form. The Pi sends **one packet per main (IMX519) frame**: one ZeroMQ **multipart** message on a PUB socket
+the Pi binds. A multipart message arrives whole or not at all, so a packet is never half-received.
+
+| Part | Content |
+|---|---|
+| 0 | the header, a `PacketHeader` message (msgpack, `c0.packet/v1`) |
+| 1 | the main frame: one encoded frame, raw bytes |
+| 2 … 1+N | the N ≥ 0 ultrawide (IMX219) frames captured since the previous packet, raw bytes each, in capture order, matching `header.ultrawide` one to one |
+
+The part count is exactly `2 + len(header.ultrawide)`. A packet usually carries one ultrawide frame; timing jitter
+gives 0 or 2. Every encoded ultrawide frame travels exactly once, in capture order, even one that is nobody's pair,
+because each H.264 frame depends on the ones before it.
+
+`FrameInfo` (sub-message, the "frame map"; the same keys for the main frame and each ultrawide frame):
 
 | Field | Type | Meaning / check |
 |---|---|---|
-| `camera` | str, one of `main`, `ultrawide` | which camera |
-| `sensor` | str, one of `imx519`, `imx219` | the sensor; `process_frames` checks it against the rig file (not the contract) |
-| `seq` | uint64 | per camera; counts **captured** frames (+1 per frame), so a gap means a dropped frame, including one the Pi dropped before sending |
-| `t_pi_ns` | int64 | libcamera `SensorTimestamp` (end of first-row exposure) on the Pi's `CLOCK_BOOTTIME` |
-| `exposure_ns` | int64, ≥ 0 | exposure time in ns = libcamera `ExposureTime` (µs) × 1000; 0 if unknown, in which case `process_frames` uses `default_exposure_ns` from its own `config.yaml` (not the rig file) |
-| `width`, `height` | int, > 0 | frame size; `process_frames` checks it against the rig file |
-| `encoding` | str, one of `h264`, `jpeg` | `h264` default, `jpeg` backup |
-| `keyframe` | bool | H.264: true for a frame that decodes on its own. JPEG: must be true (every JPEG frame decodes on its own) |
-| `data` | bytes, non-empty | one encoded frame: for H.264 exactly **one access unit** (one frame's NAL units) in **Annex-B** framing |
+| `sensor` | str, one of `imx519`, `imx219` | the sensor; `imx519` for the main frame, `imx219` for every ultrawide frame (checked by `PacketHeader`, which catches swapped cameras); `process_frames` also checks it against the rig file |
+| `frame_seq` | uint64 | per camera, counts **captured** frames from 0 (+1 per frame), so a gap means that camera lost frames, including ones the Pi dropped before encoding |
+| `t_pi_ns` | int64 | libcamera `SensorTimestamp` verbatim: the end of the first row's exposure, on the Pi's `CLOCK_BOOTTIME` |
+| `exposure_ns` | int64, ≥ 0 | libcamera `ExposureTime` (µs) × 1000; 0 if unknown, in which case `process_frames` uses `default_exposure_ns` from its own `config.yaml` |
+| `width`, `height` | uint32 | encoded frame size; `process_frames` checks it against the rig file |
+| `encoding` | str, one of `h264`, `jpeg` | `h264` default, `jpeg` backup; the same for every frame of a camera during a run |
+| `keyframe` | bool | H.264: true for a frame that decodes on its own (an IDR frame). JPEG: must be true |
 
-**Requirements on the Pi sender** (the contract can only check some of them; the rest are checked by
-`process_frames`' decoder and tests, and the `FakePiSender` follows all of them):
+`PacketHeader`, schema `c0.packet/v1`:
 
-- **Annex-B framing** (each NAL unit starts with a `00 00 01` / `00 00 00 01` start code), **one access unit per
-  message**.
-- **SPS/PPS before every keyframe**, in the same message as the keyframe (SPS and PPS are the small H.264 headers that
-  describe the stream; with them in front, decoding can start at any keyframe).
-- A **keyframe at least once a second**, so the decoder recovers after a drop; **no B-frames**, so each frame decodes
-  as soon as it arrives; the **same encoder settings as recording** (about 10 Mbit/s), so live images match training.
-- `seq` counts captured frames, not sent ones.
-- `exposure_ns` = libcamera `ExposureTime` × 1000 (libcamera gives µs).
+| Field | Type | Meaning / check |
+|---|---|---|
+| `packet_seq` | uint64 | counts **main frames captured** since the sender started, from 0 (+1 per packet; a main frame the Pi drops still counts). A gap means lost packets; going backwards means the sender restarted |
+| `main` | `FrameInfo` | the frame of part 1 |
+| `ultrawide` | list of `FrameInfo` | the frames of parts 2 … 1+N, in capture order; may be empty |
+| `pair_seq` | int64, ≥ −1 | the `frame_seq` of this packet's paired ultrawide frame (in this packet or an earlier one), or −1 if there is no pair |
 
-`TimeSyncRequest`, schema `c0.time_sync/v1`: no fields. Sent by `process_frames` to the Pi's REP socket about once
-a second.
+`check_values()`: `main.sensor` is `imx519` and every `ultrawide[i].sensor` is `imx219`; the ultrawide frames'
+`frame_seq` strictly increase (capture order; a Pi-side drop may leave a gap) and they share one `encoding`; when the
+packet carries ultrawide frames, `pair_seq` is not newer than the newest of them. A pair from an earlier packet can't
+be checked by the contract (the header doesn't list earlier frames): `process_frames` looks it up among the frames it
+has received.
 
-All of C0, including this `time_sync` format, is a **stand-in**: the Pi side must implement exactly this, and
-confirming it is PLAN §10's open item ("the Pi's sending side").
+**The pairing rule** (the Pi's, PI_PAYLOAD.md §5 rule 3): `pair_seq` is the ultrawide frame with the latest capture
+time not later than the main frame's + 5 ms (comparing `t_pi_ns`), at most 50 ms older than the main frame; −1 if none
+qualifies. With both cameras at 30 FPS a pair is normally 0–33 ms apart. The contract can't check it (it needs the
+frames of earlier packets); `process_frames`' `PacketPairer` implements it for the fake Pi and the tests.
 
-`TimeSyncReply`, schema `c0.time_sync.reply/v1`:
+`EncodedFrame` (a plain frozen dataclass, not a message): `info: FrameInfo`, `data: bytes`: one frame as a decoder
+and a sender handle it.
+
+`Packet` (a plain frozen dataclass, not a message; **a `Packet` object that exists is valid**):
+
+```
+@dataclass(frozen=True)
+class Packet:
+    header: PacketHeader
+    main_data: bytes                      # part 1
+    ultrawide_data: tuple[bytes, ...]     # parts 2 ... 1+N
+    @classmethod
+    def build(cls, packet_seq, main: EncodedFrame, ultrawide: Sequence[EncodedFrame], pair_seq) -> Packet
+    main: EncodedFrame                    # property
+    ultrawide: tuple[EncodedFrame, ...]   # property
+    def to_parts(self) -> list[bytes]     # [encode(header), main_data, *ultrawide_data]
+    @classmethod
+    def from_parts(cls, parts: Sequence[bytes]) -> Packet    # decode(parts[0], PacketHeader), then the part checks
+```
+
+The part checks raise `ContractError` with schema `c0.packet/v1`: a wrong part count is field `parts`, problem
+`value` ("2 parts, the header lists 1 ultrawide frames: expected 3"); an empty part is field `parts[i]`, problem
+`value`; a part that isn't bytes is `parts[i]`, `type`. A broken header raises from `decode` as any message does
+(e.g. field `main.width`, `ultrawide[0].sensor`).
+
+**Requirements on the Pi sender** that the contract can't check (PI_PAYLOAD.md §5; `process_frames`' decoder and
+tests check them, and its `FakePiSender` follows all of them):
+
+- one packet per main frame, sent as soon as that main frame is encoded;
+- every encoded ultrawide frame sent exactly once, in the first packet after it was encoded, in capture order;
+- H.264: the recording's encoder settings (main 15 Mbit/s, ultrawide 10 Mbit/s), Constrained Baseline (no
+  B-frames), one access unit per frame in **Annex-B** framing (each NAL unit starts with a `00 00 01` /
+  `00 00 00 01` start code), SPS/PPS before every keyframe (in the same part), a keyframe every 30 frames (1 s);
+- the Pi's PUB `SNDHWM` is 30 messages (about 1 s), so a PC that falls behind loses whole packets;
+- `packet_seq` and each `frame_seq` start at 0 and never reset during a run; both cameras run at 30 FPS.
+
+`TimeSyncRequest`, schema `c0.time_sync_request/v1`: no fields. Sent by `process_frames` to the Pi's REP socket
+about once a second (10 back to back at start-up).
+
+`TimeSyncReply`, schema `c0.time_sync_reply/v1`:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `t_pi_ns` | int64 | the Pi's current `CLOCK_BOOTTIME` in ns |
+| `t_pi_ns` | int64 | the Pi's `CLOCK_BOOTTIME` in ns, read as close as possible to sending the reply |
+
+**Status:** the Pi sender isn't written yet (PLAN §10). It may use this package to build and check the messages, or
+write the msgpack itself; either way the bytes must match PI_PAYLOAD.md.
 
 ### 4.3 C1: `process_frames` ↔ `message_comms` (`c1_frames.py`)
 
@@ -439,7 +496,8 @@ Rules for every helper:
 - **A request is sent once and never resent.** On a timeout, the client closes its socket (with linger 0, so nothing
   is left queued) and opens a new one, then raises `TransportTimeout`. A late reply to the old socket is thrown away.
   (This is ZeroMQ's "lazy pirate" pattern, as in main-sim's `bridge/link.py`.)
-- One ZeroMQ message = one msgpack blob = one `Message`.
+- One ZeroMQ message = one msgpack blob = one `Message`, except a C0 packet: one multipart message = one `Packet`
+  (its header is one `Message`, its other parts raw frame bytes).
 - Sockets are not shared between threads: each helper is used by one thread.
 - An endpoint `tcp://127.0.0.1:*` binds a free port; the helper's `.endpoint` gives the real address. Unit tests use
   this so they never collide with each other or with a running station.
@@ -490,9 +548,23 @@ class Subscriber:
     def close(self) -> None
 ```
 
+```
+class PacketPublisher:                                             # C0 packets, one multipart message each
+    def __init__(self, endpoint: str, send_hwm: int) -> None
+    endpoint: str
+    def publish(self, packet: Packet) -> None                      # never blocks; drops the whole packet if full
+    def close(self) -> None
+
+class PacketSubscriber:
+    def __init__(self, name: str, endpoint: str, recv_hwm: int) -> None
+    def receive(self, timeout_s: float) -> Packet | None           # None on timeout; ContractError on a bad packet
+    def close(self) -> None
+```
+
 `send_hwm` / `recv_hwm` (ZeroMQ's "high-water mark": how many messages may wait in the queue before new ones are
 dropped) come from the caller's config. Subscribers get every message (no "keep only the newest" option): C0 needs
-every frame to see `seq` gaps and keyframes, and C2 needs every state for its `seq` check.
+every packet to see `packet_seq` / `frame_seq` gaps and keyframes, and C2 needs every state for its `seq` check.
+`PacketSubscriber.receive` takes one multipart message and parses it with `Packet.from_parts`.
 
 Errors (`errors.py`):
 
@@ -569,7 +641,12 @@ examples:
 
 **Which examples** (stored or in memory): for every message, at least one good one; and for each contract the broken
 ones PLAN §7 asks for: wrong shape, wrong dtype, a value out of range (or a wrong unit, e.g. width in mm), a missing
-field, an unknown field, a wrong schema version. Plus, per contract: C1 a reply with one camera `stale` (no images at
+field, an unknown field, a wrong schema version. Plus, per contract: C0 good packet headers with one, zero (a pair
+from an earlier packet) and two ultrawide frames, with no pair (−1) and in JPEG, PI_PAYLOAD.md §8's example among them,
+and broken ones with swapped sensors, a `pair_seq` below −1 or newer than the packet's newest ultrawide frame,
+ultrawide frames out of capture order, two encodings in one camera, a negative or too big `uint32` size, a JPEG
+non-keyframe, and an unknown frame-map key (the multipart part checks have no single-blob example: `test_c0.py` checks
+them); C1 a reply with one camera `stale` (no images at
 all) and a broken one with images while a camera is `down`; C2 good states in `running`, `holding` and `homing`
 with non-zero `loop_late` and `gate.pulled_back`, and broken ones with the transposed pose, an unknown `mode`, a missing
 `loop_late` and a missing `gate.pulled_back`; C3 non-increasing times, mismatched lengths, a non-rigid pose,
@@ -601,11 +678,11 @@ still valid for the contract); `error/v1` and `ack/v1` replies. The stored C2/C3
 
 | Process | Sends | Receives |
 |---|---|---|
-| `process_frames` | `TimeSyncRequest` (RpcClient to the Pi); `FramesReply`, `HealthReply` (RpcServer) | `Frame` (Subscriber); `TimeSyncReply` |
+| `process_frames` | `TimeSyncRequest` (RpcClient to the Pi); `FramesReply`, `HealthReply` (RpcServer) | `Packet` (PacketSubscriber); `TimeSyncReply` |
 | `policy` | `PolicyConfig`, `Ack`, `ActionChunk`, `ErrorReply` (RpcServer) | `PolicyConfigRequest`, `Reset`, `Observation`, `Prompt` |
 | `message_comms` | C1/C3/C4 requests (three RpcClients) | `ArmState` (Subscriber) and every reply |
 | `franka_control` (C++) | `ArmState` (PUB), C3 replies | C3 requests; its own C++ codec, proven by the example files |
-| fake Pi (in `process_frames`) | `Frame` (Publisher), `TimeSyncReply` (RpcServer) | `TimeSyncRequest` |
+| fake Pi (in `process_frames`) | `Packet` (PacketPublisher), `TimeSyncReply` (RpcServer) | `TimeSyncRequest` |
 | `deploy` | nothing: no `launch.py` sends a contract message. Each process checks its own peers itself at start-up (e.g. `process_frames` its `time_sync` to the Pi) and reports a failure with its FATAL line | nothing |
 
 ## 10. Unit tests
@@ -621,7 +698,7 @@ All under `contracts/tests/`; run with
 | `test_message.py` | building validates; `to_dict` order is the field order with `schema` first; `from_dict` refuses missing and unknown keys; frozen; a float64 array is not cast to float32 |
 | `test_registry.py` | every schema maps to exactly one class; duplicate registration is refused; `decode(expect=...)` refuses another valid type but lets `ErrorReply` through |
 | `test_limits.py` | `limits.yaml` loads; a missing or unknown key is refused |
-| `test_c0.py`, `test_c1.py`, `test_c2.py`, `test_c3.py`, `test_c4.py`, `test_common.py` | each message's own rules: enums, JPEG keyframe, C1 images only when both cameras are ok (none at all otherwise), rigid-pose check (incl. a transposed matrix), increasing times, length agreement, `max_waypoints`, C2 `homing` mode, `loop_late`, `gate.pulled_back` and its bounds, C3 reply `shortened ≤ accepted` and `skipped`, the `sizes.py` constants used in every C1/C4 shape, anchor rows, rot6d norm/perpendicular, an odd step 0 accepted (not a contract rule), width range (a width of `gripper_width_max_m` + 1 mm is refused: the validator does not clip), float array checks in float64 (with a 0.07 m maximum, a float32 width of 0.07, which is 0.0700000003, is refused), `width_clipped` in `[0, ACTION_STEPS]`, NaN/inf |
+| `test_c0.py`, `test_c1.py`, `test_c2.py`, `test_c3.py`, `test_c4.py`, `test_common.py` | each message's own rules: enums, JPEG keyframe, C0 sensors per role, `uint32` sizes and `uint64` counters, ultrawide capture order and one encoding, `pair_seq` −1 or not newer than the packet's newest ultrawide frame, multipart round trip with 0/1/2 ultrawide frames, a wrong part count, an empty part and a broken header refused with their field, C1 images only when both cameras are ok (none at all otherwise), rigid-pose check (incl. a transposed matrix), increasing times, length agreement, `max_waypoints`, C2 `homing` mode, `loop_late`, `gate.pulled_back` and its bounds, C3 reply `shortened ≤ accepted` and `skipped`, the `sizes.py` constants used in every C1/C4 shape, anchor rows, rot6d norm/perpendicular, an odd step 0 accepted (not a contract rule), width range (a width of `gripper_width_max_m` + 1 mm is refused: the validator does not clip), float array checks in float64 (with a 0.07 m maximum, a float32 width of 0.07, which is 0.0700000003, is refused), `width_clipped` in `[0, ACTION_STEPS]`, NaN/inf |
 | `test_examples.py` | for every example from `build_examples()` (all five contracts): good ones decode and their `values` match, broken ones fail with exactly their `field` and `problem`. For the stored files: every file in `examples/` is listed in `index.yaml` and vice versa; only C2/C3 (and their `ack`/`error` replies) are stored; the folder equals a fresh `make_examples` output (no stale files) |
 | `test_rpc.py` | request/reply over `tcp://127.0.0.1:*`; with `poll_s` and `cancel`, a reply that arrives normally is returned, a `cancel()` turning true raises `TransportCancelled` within about one `poll_s`, the next request on the same client works (new socket) and the late reply is dropped, `timeout_s` still raises `TransportTimeout` when `cancel()` stays false, and giving only one of `poll_s`/`cancel` is refused; a timeout raises `TransportTimeout` after about the timeout, the request was sent once, and the next request works (new socket); a late reply is dropped; a broken request gets `ErrorReply` naming the field; an unknown request type gets `ErrorReply`; a raising handler gets `ErrorReply` and the server keeps serving; a wrong reply type raises `ContractError`; `RemoteError` carries the text |
-| `test_pubsub.py` | messages arrive in order; `receive` returns `None` after the timeout; a broken message raises `ContractError`; a message of another type raises |
+| `test_pubsub.py` | messages arrive in order; `receive` returns `None` after the timeout; a broken message raises `ContractError`; a message of another type raises; C0 packets arrive whole and in order with 0, 1 or 2 ultrawide frames, a packet one part short raises and the subscriber keeps working, publishing never blocks |

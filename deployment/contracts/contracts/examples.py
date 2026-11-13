@@ -23,7 +23,7 @@ import numpy as np
 import yaml
 
 import contracts
-from contracts.c0_frames import Frame, TimeSyncReply, TimeSyncRequest
+from contracts.c0_frames import FrameInfo, PacketHeader, TimeSyncReply, TimeSyncRequest
 from contracts.c1_frames import (CameraHealthReport, FramesReply, GetFramesRequest, GetHealthRequest, HealthReply,
                                  HealthReport)
 from contracts.c2_state import ArmState, GateCounters
@@ -399,46 +399,100 @@ def _c3() -> list[Example]:
 # ----------------------------------------------------------------------------------------------------------------
 # C0 (in memory)
 
-_H264_KEY = (b"\x00\x00\x00\x01\x67\x64\x00\x28\xac" + b"\x00\x00\x00\x01\x68\xee\x3c\x80"
-             + b"\x00\x00\x00\x01\x65\x88\x84\x00\x33\xff")       # SPS, PPS, IDR (stand-in bytes)
-_H264_DELTA = b"\x00\x00\x00\x01\x41\x9a\x24\x6c\x41"            # one non-IDR slice (stand-in bytes)
-_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 16 + b"\xff\xd9"
+def _main(seq: int, t_pi_ns: int, **change: Any) -> FrameInfo:
+    d = dict(sensor="imx519", frame_seq=seq, t_pi_ns=t_pi_ns, exposure_ns=8_000_000, width=1600, height=1200,
+             encoding="h264", keyframe=False)
+    d.update(change)
+    return FrameInfo(**d)
+
+
+def _uw(seq: int, t_pi_ns: int, **change: Any) -> FrameInfo:
+    d = dict(sensor="imx219", frame_seq=seq, t_pi_ns=t_pi_ns, exposure_ns=6_000_000, width=1280, height=960,
+             encoding="h264", keyframe=False)
+    d.update(change)
+    return FrameInfo(**d)
+
+
+def _in(*path: Any) -> Callable[[Callable[[dict], Any]], Callable[[dict], None]]:
+    """Apply a change to a sub-map: _in("ultrawide", 0)(_set("sensor", "imx519"))."""
+    def wrap(change: Callable[[dict], Any]) -> Callable[[dict], None]:
+        def apply(d: dict) -> None:
+            node: Any = d
+            for key in path:
+                node = node[key]
+            change(node)
+        return apply
+    return wrap
 
 
 def _c0() -> list[Example]:
-    key = Frame(camera="main", sensor="imx519", seq=300, t_pi_ns=5_000_000_000, exposure_ns=8_000_000, width=1600,
-                height=900, encoding="h264", keyframe=True, data=_H264_KEY)
-    delta = Frame(camera="ultrawide", sensor="imx219", seq=301, t_pi_ns=5_033_333_333, exposure_ns=0, width=1640,
-                  height=1232, encoding="h264", keyframe=False, data=_H264_DELTA)
-    jpeg = Frame(camera="main", sensor="imx519", seq=7, t_pi_ns=6_000_000_000, exposure_ns=10_000_000, width=1600,
-                 height=900, encoding="jpeg", keyframe=True, data=_JPEG)
+    # PI_PAYLOAD.md section 8: main 1201 with its pair, ultrawide 1188, captured 5.3 ms before it
+    one = PacketHeader(packet_seq=1201, main=_main(1201, 932_118_204_000),
+                       ultrawide=(_uw(1188, 932_112_937_000),), pair_seq=1188)
+    none_in = PacketHeader(packet_seq=1202, main=_main(1202, 932_151_537_000), ultrawide=(), pair_seq=1188)
+    two = PacketHeader(packet_seq=1203, main=_main(1203, 932_184_870_000, keyframe=True),
+                       ultrawide=(_uw(1189, 932_146_270_000), _uw(1190, 932_179_603_000, keyframe=True)),
+                       pair_seq=1190)
+    unpaired = PacketHeader(packet_seq=7, main=_main(7, 6_000_000_000, exposure_ns=0), ultrawide=(), pair_seq=-1)
+    jpeg = PacketHeader(packet_seq=3, main=_main(3, 6_100_000_000, encoding="jpeg", keyframe=True),
+                        ultrawide=(_uw(2, 6_095_000_000, encoding="jpeg", keyframe=True),), pair_seq=2)
     reply = TimeSyncReply(t_pi_ns=5_100_000_000)
     good = [
-        _good("c0/frame_h264_keyframe", key, {"camera": "main", "sensor": "imx519", "seq": 300, "keyframe": True,
-                                              "width": 1600, "height": 900, "exposure_ns": 8_000_000}),
-        _good("c0/frame_h264_delta", delta, {"camera": "ultrawide", "keyframe": False, "exposure_ns": 0}),
-        _good("c0/frame_jpeg", jpeg, {"encoding": "jpeg", "keyframe": True}),
+        _good("c0/packet_one_ultrawide", one, {"packet_seq": 1201, "main.sensor": "imx519", "main.frame_seq": 1201,
+                                               "main.width": 1600, "main.height": 1200, "ultrawide[0].frame_seq": 1188,
+                                               "ultrawide[0].width": 1280, "pair_seq": 1188},
+              note="PI_PAYLOAD.md section 8"),
+        _good("c0/packet_pair_from_earlier_packet", none_in, {"pair_seq": 1188}, note="no ultrawide frame in it"),
+        _good("c0/packet_two_ultrawide", two, {"ultrawide[1].frame_seq": 1190, "ultrawide[1].keyframe": True,
+                                               "main.keyframe": True}),
+        _good("c0/packet_no_pair", unpaired, {"pair_seq": -1, "main.exposure_ns": 0}),
+        _good("c0/packet_jpeg", jpeg, {"main.encoding": "jpeg", "ultrawide[0].keyframe": True}),
         _good("c0/time_sync_request", TimeSyncRequest()),
         _good("c0/time_sync_reply", reply, {"t_pi_ns": 5_100_000_000}),
     ]
     broken = [
-        _broken("c0/frame_bad_camera", key, _set("camera", "left"), "camera", "value", "unknown camera"),
-        _broken("c0/frame_bad_sensor", key, _set("sensor", "imx477"), "sensor", "value", "unknown sensor"),
-        _broken("c0/frame_bad_encoding", key, _set("encoding", "h265"), "encoding", "value", "unknown encoding"),
-        _broken("c0/frame_jpeg_not_keyframe", jpeg, _set("keyframe", False), "keyframe", "value",
-                "every jpeg frame decodes on its own"),
-        _broken("c0/frame_empty_data", key, _set("data", b""), "data", "value", "empty frame"),
-        _broken("c0/frame_data_as_str", key, _set("data", "frame"), "data", "type", "str instead of bin"),
-        _broken("c0/frame_negative_exposure", key, _set("exposure_ns", -1), "exposure_ns", "value",
-                "negative exposure"),
-        _broken("c0/frame_zero_width", key, _set("width", 0), "width", "value", "width 0"),
-        _broken("c0/frame_seq_negative", key, _set("seq", -5), "seq", "value", "negative uint64"),
-        _broken("c0/frame_keyframe_int", key, _set("keyframe", 1), "keyframe", "type", "bool as an integer"),
-        _broken("c0/frame_missing_data", key, _drop("data"), "data", "missing", "data left out"),
-        _broken("c0/frame_unknown_field", key, _set("gain", 2.0), "gain", "unknown_field",
+        _broken("c0/packet_main_sensor_imx219", one, _in("main")(_set("sensor", "imx219")), "main.sensor", "value",
+                "cameras swapped: the main frame says imx219"),
+        _broken("c0/packet_ultrawide_sensor_imx519", one, _in("ultrawide", 0)(_set("sensor", "imx519")),
+                "ultrawide[0].sensor", "value", "cameras swapped: an ultrawide frame says imx519"),
+        _broken("c0/packet_unknown_sensor", one, _in("main")(_set("sensor", "imx477")), "main.sensor", "value",
+                "unknown sensor"),
+        _broken("c0/packet_bad_encoding", one, _in("main")(_set("encoding", "h265")), "main.encoding", "value",
+                "unknown encoding"),
+        _broken("c0/packet_jpeg_not_keyframe", jpeg, _in("ultrawide", 0)(_set("keyframe", False)),
+                "ultrawide[0].keyframe", "value", "every jpeg frame decodes on its own"),
+        _broken("c0/packet_mixed_ultrawide_encodings", two, _in("ultrawide", 1)(_set("encoding", "jpeg")),
+                "ultrawide[1].encoding", "value", "one camera, two encodings"),
+        _broken("c0/packet_negative_exposure", one, _in("main")(_set("exposure_ns", -1)), "main.exposure_ns",
+                "value", "negative exposure"),
+        _broken("c0/packet_width_negative", one, _in("main")(_set("width", -1600)), "main.width", "value",
+                "width is uint32"),
+        _broken("c0/packet_height_too_big", one, _in("ultrawide", 0)(_set("height", 2**32)), "ultrawide[0].height",
+                "value", "height beyond uint32"),
+        _broken("c0/packet_seq_negative", one, _set("packet_seq", -5), "packet_seq", "value", "negative uint64"),
+        _broken("c0/packet_frame_seq_negative", one, _in("ultrawide", 0)(_set("frame_seq", -1)),
+                "ultrawide[0].frame_seq", "value", "negative uint64"),
+        _broken("c0/packet_keyframe_int", one, _in("main")(_set("keyframe", 1)), "main.keyframe", "type",
+                "bool as an integer"),
+        _broken("c0/packet_t_pi_float", one, _in("main")(_set("t_pi_ns", 9.3e11)), "main.t_pi_ns", "type",
+                "float time"),
+        _broken("c0/packet_pair_seq_below_minus_one", one, _set("pair_seq", -2), "pair_seq", "value",
+                "pair_seq is -1 or a frame_seq"),
+        _broken("c0/packet_pair_seq_newer_than_packet", one, _set("pair_seq", 1189), "pair_seq", "value",
+                "a pair newer than every ultrawide frame sent"),
+        _broken("c0/packet_ultrawide_out_of_order", two, _in("ultrawide", 1)(_set("frame_seq", 1189)),
+                "ultrawide[1].frame_seq", "value", "not in capture order"),
+        _broken("c0/packet_ultrawide_not_a_list", one, lambda d: d.update(ultrawide=d["ultrawide"][0]), "ultrawide",
+                "type", "a single map instead of a list"),
+        _broken("c0/packet_missing_pair_seq", one, _drop("pair_seq"), "pair_seq", "missing", "pair_seq left out"),
+        _broken("c0/packet_missing_keyframe", one, _drop("main", "keyframe"), "main.keyframe", "missing",
+                "a frame map without keyframe"),
+        _broken("c0/packet_unknown_field", one, _set("gain", 2), "gain", "unknown_field",
                 "a field the contract doesn't have"),
-        _broken("c0/frame_schema_version", key, _set("schema", "c0.frame/v2"), "", "schema_version",
-                "a version this side doesn't know", schema="c0.frame/v2"),
+        _broken("c0/packet_unknown_frame_field", one, _in("main")(_set("gain", 2)), "main.gain", "unknown_field",
+                "a frame-map key the contract doesn't have"),
+        _broken("c0/packet_schema_version", one, _set("schema", "c0.packet/v2"), "", "schema_version",
+                "a version this side doesn't know", schema="c0.packet/v2"),
         _broken("c0/time_sync_reply_float", reply, _set("t_pi_ns", 5.1e9), "t_pi_ns", "type", "float time"),
     ]
     return good + broken

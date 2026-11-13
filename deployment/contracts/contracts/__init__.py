@@ -5,7 +5,7 @@ three small ZeroMQ helpers. See contracts/STRUCTURE.md.
 """
 from __future__ import annotations
 
-from contracts.c0_frames import Frame, TimeSyncReply, TimeSyncRequest
+from contracts.c0_frames import EncodedFrame, FrameInfo, Packet, PacketHeader, TimeSyncReply, TimeSyncRequest
 from contracts.c1_frames import (CameraHealthReport, FramesReply, GetFramesRequest, GetHealthRequest, HealthReply,
                                  HealthReport)
 from contracts.c2_state import ArmState, GateCounters
@@ -18,7 +18,7 @@ from contracts.errors import ContractError, RemoteError, TransportCancelled, Tra
 from contracts.examples import Example, build_examples, examples_dir, load_index
 from contracts.limits import ContractLimits
 from contracts.message import Message, Record
-from contracts.pubsub import Publisher, Subscriber
+from contracts.pubsub import PacketPublisher, PacketSubscriber, Publisher, Subscriber
 from contracts.registry import register
 from contracts.rpc import RpcClient, RpcServer
 from contracts.schema import SchemaName
@@ -27,7 +27,7 @@ from contracts.sizes import ACTION_STEPS, IMAGE_SIZE, OBS_STEPS, STEP_MS
 __all__ = [
     "ACTION_STEPS", "IMAGE_SIZE", "OBS_STEPS", "STEP_MS",
     "Ack", "ErrorReply",
-    "Frame", "TimeSyncRequest", "TimeSyncReply",
+    "PacketHeader", "FrameInfo", "Packet", "EncodedFrame", "TimeSyncRequest", "TimeSyncReply",
     "GetFramesRequest", "FramesReply", "GetHealthRequest", "HealthReply", "HealthReport", "CameraHealthReport",
     "ArmState", "GateCounters",
     "SetWaypoints", "SetWaypointsReply", "WaypointIssue", "Heartbeat", "Start", "Stop", "Home", "GetState",
@@ -35,6 +35,6 @@ __all__ = [
     "encode", "decode", "pack_obj", "unpack_obj", "pack_array", "unpack_array",
     "ContractError", "TransportTimeout", "TransportCancelled", "RemoteError",
     "ContractLimits", "Message", "Record", "SchemaName", "register",
-    "RpcClient", "RpcServer", "Publisher", "Subscriber",
+    "RpcClient", "RpcServer", "Publisher", "Subscriber", "PacketPublisher", "PacketSubscriber",
     "Example", "build_examples", "examples_dir", "load_index",
 ]

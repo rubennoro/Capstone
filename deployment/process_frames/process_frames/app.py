@@ -1,5 +1,5 @@
 """FramesApp: builds everything from Settings, runs the threads, writes the ready file and stats, shuts down
-(STRUCTURE.md §4, §5.15)."""
+(STRUCTURE.md §4, §5.17)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from contracts import OBS_STEPS
+
 from process_frames._dataproc.config import ConfigError
 from process_frames._dataproc.imageprep import ImagePrep
 from process_frames.camera_health import OK, CameraHealth
@@ -17,12 +19,12 @@ from process_frames.clock_map import ClockMap
 from process_frames.clock_sync import ClockSync
 from process_frames.errors import FatalError
 from process_frames.fake_pi_sender import FakePiSender
-from process_frames.frame_buffer import FrameBuffer
 from process_frames.frame_decoder import make_decoder
-from process_frames.frame_selector import FrameSelector
 from process_frames.frames_server import FramesServer
+from process_frames.packet_buffer import PacketBuffer
+from process_frames.packet_selector import PacketSelector
+from process_frames.pi_packet_source import PiPacketSource
 from process_frames.pi_recording import PiRecording, PiRecordingError
-from process_frames.pi_stream_source import PiStreamSource
 from process_frames.receiver import CAMERAS, Receiver
 from process_frames.rig_file import is_standin, load_live_rig, rig_summary
 from process_frames.settings import Settings
@@ -48,7 +50,7 @@ class FramesApp:
         self.rig = None
         self.server: FramesServer | None = None
         self.fake_pi: FakePiSender | None = None
-        self.buffers: dict[str, FrameBuffer] = {}
+        self.buffer: PacketBuffer | None = None
         self.health: dict[str, CameraHealth] = {}
         self.clock_map: ClockMap | None = None
         self.clock_sync: ClockSync | None = None
@@ -111,12 +113,13 @@ class FramesApp:
 
         self.health = {cam: CameraHealth(cam, s.health.stale_s, s.health.down_s, s.health.fps_window_s, self._clock)
                        for cam in CAMERAS}
-        self.buffers = {cam: FrameBuffer(cam, s.buffer.keep_s) for cam in CAMERAS}
+        self.buffer = PacketBuffer(s.buffer.keep_s)
+        selector = PacketSelector(fps={cam: rig.cameras[cam].fps for cam in CAMERAS},
+                                  spacing_ns={"main": int(s.select.main_spacing_ms * 1e6),
+                                              "ultrawide": int(s.select.ultrawide_spacing_ms * 1e6)},
+                                  count=OBS_STEPS, tolerance_frames=s.select.tolerance_frames)
         try:
-            self.server = FramesServer(s.frames, self.buffers, self.health,
-                                       FrameSelector(int(s.select.tolerance_ms * 1e6)), prep,
-                                       int(s.select.main_spacing_ms * 1e6), int(s.select.ultrawide_spacing_ms * 1e6),
-                                       self._clock)
+            self.server = FramesServer(s.frames, self.buffer, self.health, selector, prep, self._clock)
         except Exception as e:          # zmq.ZMQError: address in use, bad endpoint
             raise FatalError(f"cannot bind C1 on {s.frames} ({e})", "is another process_frames running?") from e
 
@@ -125,8 +128,7 @@ class FramesApp:
             m = s.mock_settings
             try:
                 recording = PiRecording.load(s.mock_episode, encoding=s.decoder, max_seconds=m.max_seconds,
-                                             keyframe_interval=m.keyframe_interval, bitrate=m.bitrate,
-                                             jpeg_quality=m.jpeg_quality)
+                                             keyframe_interval=m.keyframe_interval, jpeg_quality=m.jpeg_quality)
             except PiRecordingError as e:
                 raise FatalError(f"mock episode unusable: {e}", "check process_frames.mock_episode") from e
             self.fake_pi = FakePiSender(recording, s.pi_frames, s.pi_time_sync,
@@ -144,8 +146,8 @@ class FramesApp:
         self.clock_map = ClockMap(c.window_s, c.best_fraction, c.drift_min_span_s, c.max_drift_ppm, c.max_sync_age_s)
         decoders = {cam: make_decoder(s.decoder, cam, s.h264) for cam in CAMERAS}
         self.clock_sync = ClockSync(pi_time_sync, self.clock_map, c, self._clock)
-        self.receiver = Receiver(PiStreamSource(pi_frames, s.receive.recv_hwm), decoders, rig, self.clock_map,
-                                 self.buffers, self.health, s.default_exposure_ns, self._clock)
+        self.receiver = Receiver(PiPacketSource(pi_frames, s.receive.recv_hwm), decoders, rig, self.clock_map,
+                                 self.buffer, self.health, s.default_exposure_ns, s.buffer.keep_s, self._clock)
         log.info("decoder %s; C1 on %s; Pi frames %s, time_sync %s", s.decoder, self.server.endpoint, pi_frames,
                  pi_time_sync)
         self._thread("clock-sync", lambda: self.clock_sync.run(self._stop))
@@ -189,8 +191,10 @@ class FramesApp:
             why.append("no time_sync reply yet")
         elif not self.clock_map.is_fresh(now):
             why.append(f"no time_sync reply for {self.settings.clock.max_sync_age_s:g} s")
+        if self.receiver.packets.received == 0:
+            why.append("no packets yet")
         for cam in CAMERAS:
-            if self.receiver.counters[cam].received == 0:
+            if self.receiver.packets.received and self.receiver.counters[cam].received == 0:
                 why.append(f"no {cam} frames yet")
             elif self.health[cam].status(now) != OK:
                 why.append(f"{cam} {self.health[cam].status(now)}")
@@ -202,11 +206,17 @@ class FramesApp:
         for cam in CAMERAS:
             r = self.health[cam].report(now)
             c = self.receiver.counters[cam]
-            lat = c.take_latency()
             out[cam] = {"status": r.status, "fps": r.fps, "age_ms": r.last_frame_age_ms, "dropped": r.dropped,
-                        "received": c.received, "buffered": c.buffered, "unusable": c.unusable,
-                        "unsynced": c.unsynced, "out_of_order": c.out_of_order, "ignored": c.ignored,
-                        "latency_mean_ms": lat[0] if lat else None, "latency_max_ms": lat[1] if lat else None}
+                        "received": c.received, "usable": c.usable, "unusable": c.unusable}
+            if cam == "ultrawide":
+                out[cam].update(unpaired=c.unpaired, pair_missing=c.pair_missing)
+        pc = self.receiver.packets
+        period = pc.take_stats()
+        lat, gap = period["latency_ms"], period["pair_gap_ms"]
+        out["packets"] = {"received": pc.received, "buffered": pc.buffered, "lost": pc.lost, "unsynced": pc.unsynced,
+                          "out_of_order": pc.out_of_order, "ignored": pc.ignored,
+                          "latency_mean_ms": lat[0] if lat else None, "latency_max_ms": lat[1] if lat else None,
+                          "pair_gap_mean_ms": gap[0] if gap else None, "pair_gap_max_ms": gap[1] if gap else None}
         st = self.clock_map.stats(now)
         out["clock"] = {"synced": st.synced, "offset_ns": st.offset_ns, "drift_ppm": st.drift_ppm,
                         "rtt_min_ms": st.rtt_min_ms, "last_sync_age_s": st.last_sync_age_s, "samples": st.samples,
@@ -216,13 +226,21 @@ class FramesApp:
 
     @staticmethod
     def stats_line(rec: dict) -> str:
+        def mean_max(d: dict, name: str) -> str:
+            mean, mx = d[f"{name}_mean_ms"], d[f"{name}_max_ms"]
+            return "-" if mean is None else f"{mean:.0f}/{mx:.0f}ms"
+
         parts = []
         for cam in CAMERAS:
             c = rec[cam]
-            lat = (f"{c['latency_mean_ms']:.0f}/{c['latency_max_ms']:.0f}ms" if c["latency_mean_ms"] is not None
-                   else "-")
-            parts.append(f"{cam} {c['status']} {c['fps']:.1f}fps age {c['age_ms']:.0f}ms drop {c['dropped']} "
-                         f"unusable {c['unusable']} unsynced {c['unsynced']} lat {lat}")
+            line = (f"{cam} {c['status']} {c['fps']:.1f}fps age {c['age_ms']:.0f}ms drop {c['dropped']} "
+                    f"unusable {c['unusable']}")
+            if cam == "ultrawide":
+                line += f" unpaired {c['unpaired']}"
+            parts.append(line)
+        p = rec["packets"]
+        parts.append(f"packets lost {p['lost']} unsynced {p['unsynced']} lat {mean_max(p, 'latency')} "
+                     f"pair gap {mean_max(p, 'pair_gap')}")
         k = rec["clock"]
         if k["offset_ns"] is None:
             parts.append("clock not synced")

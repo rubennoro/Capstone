@@ -1,4 +1,4 @@
-"""CameraHealth: ok / stale / down per camera (STRUCTURE.md §5.10, §8). Written by the receiver; its own lock."""
+"""CameraHealth: ok / stale / down per camera (STRUCTURE.md §5.11, §8). Written by the receiver; its own lock."""
 
 from __future__ import annotations
 
