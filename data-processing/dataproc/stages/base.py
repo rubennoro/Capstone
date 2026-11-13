@@ -80,7 +80,9 @@ def rig_sections(rig) -> dict:
         "world_offset": {"T_world_offset": rig.T_world_offset},
         "gripper": (None if rig.gripper is None else
                     {"max_opening_m": rig.gripper.max_opening_m,
-                     "opening_tolerance_m": rig.gripper.opening_tolerance_m}),
+                     "opening_tolerance_m": rig.gripper.opening_tolerance_m,
+                     **({} if rig.gripper.closed_width_m is None else
+                        {"closed_width_m": rig.gripper.closed_width_m})}),
     }
 
 

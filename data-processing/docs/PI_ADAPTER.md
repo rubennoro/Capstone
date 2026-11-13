@@ -18,14 +18,15 @@ dataproc package block_raise-1110 block_raise                        # -> datase
    has no `COMPLETE` (still syncing), doesn't match its `MANIFEST.sha256`, the Pi marked it `valid: false` or with
    `problems`, or it is already in `$DATAPROC_ROOT/pi_sources.csv`.
 2. Under `FileLock($DATAPROC_ROOT/.run.lock)`: copy `configs/rigs/<rig>.yaml` to `rigs/` if missing (an existing
-   copy without the `gripper` section while the repo's has one is an error: it predates the opening check), require
+   copy without the `gripper` section while the repo's has one is an error: it predates the gripper warnings), require
    an empty `incoming/`, and **adapt** the recording into `incoming/pi-<date>_episode_NNNNNN/` (built under
    `incoming/.adapt-tmp/`, contract-checked, then renamed into place).
 3. **Fit and check** (`stages/calibration.fit_calibration`): contract + video decode; rig id and camera
    resolution/fps vs `--rig` (`rig_mismatch`, `rig_resolution_mismatch`, `rig_fps_mismatch`); ArUco tags on every
-   ultrawide frame; `fit_gripper_range`; then the **opening check**: `max_width - min_width` must be within
-   `gripper.opening_tolerance_m` of `gripper.max_opening_m` (`rig_pi_v1`: 0.110 m ± 0.010 m), else
-   `opening_out_of_range`. Fewer than 5 open/close cycles is only a warning.
+   ultrawide frame; `fit_gripper_range`. Then **warnings only** (as in iPhUMI, none of them fails): the opening
+   `max_width - min_width` or the closed width `min_width` more than `gripper.opening_tolerance_m` from
+   `gripper.max_opening_m` / `gripper.closed_width_m` (`rig_pi_v3`: 0.080 m / 0.044 m ± 0.010 m), and fewer than
+   5 open/close cycles.
 4. **Failure:** prints the tag statistics and likely causes (`dataproc/calibrate/diagnostics.py`), deletes the staged
    copy, creates no folder and records nothing, so the same recording can be retried. Exit 1.
 5. **Success:** intake the staged copy as `calibration/<pi_name>/` of the first free folder `TASK`, `TASK_2`,

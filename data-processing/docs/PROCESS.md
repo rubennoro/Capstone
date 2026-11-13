@@ -38,15 +38,18 @@ or ledger stops the command before anything is changed. One `ImagePrep` (remap t
 ## The calibration (`fit_calibration`, `CalibrationStep`; version 2)
 
 **`fit_calibration(raw_dir, rig, prep, task_rig)`** reads one calibration recording and writes nothing. Its checks,
-in order (the first failure is the result, with its reason code):
+in order (the first failure is the result, with its reason code). As in iPhUMI, only the fit can fail a calibration
+that is otherwise readable; the gripper values are warnings:
 1. the contract check, videos decoded (`invalid_episode`);
 2. `rig_consistency`: meta `rig_id` vs the rig (`rig_mismatch`), each camera's resolution and fps vs the rig yaml
    (`rig_resolution_mismatch`, `rig_fps_mismatch`);
 3. every ultrawide frame remapped with `ImagePrep.to_virtual`, the finger tags detected;
 4. `fit_gripper_range` (`gripper_range_fit`: too few usable both-tag frames);
-5. **the opening check:** `max_width - min_width` (metres, exactly the full opening the width stage exports) must
-   be within `gripper.opening_tolerance_m` of `gripper.max_opening_m` (`opening_out_of_range`). Without a `gripper`
-   section in the rig yaml the check is skipped with a warning.
+5. **the gripper warnings** (iPhUMI has none of these; they never fail): a warning when `max_width - min_width`
+   (metres, exactly the full opening the width stage exports) is more than `gripper.opening_tolerance_m` from
+   `gripper.max_opening_m`, and when `min_width` (fully closed) is that far from the optional
+   `gripper.closed_width_m`, which usually means a tag was hidden when the gripper closed. Without a `gripper`
+   section in the rig yaml there is one warning saying so.
 
 An unexpected exception is `exception` (traceback kept). Fewer than `MIN_CYCLES` = 5 open/close cycles is a warning
 only. The result carries `calibration_diagnostics` (per-tag and both-tag detection counts, z statistics, cycle
@@ -56,8 +59,9 @@ count, closed/open tag distance), which `dataproc calibrate` prints with hints.
 
 ```yaml
 gripper:
-  max_opening_m: 0.110          # rig_pi_v1: the real gripper's full opening (tag-to-tag x)
-  opening_tolerance_m: 0.010
+  max_opening_m: 0.080          # rig_pi_v3: the Franka Hand's stroke (tag-to-tag x, open - closed)
+  opening_tolerance_m: 0.010    # for both values
+  closed_width_m: 0.044         # optional: tag-to-tag x fully closed (episode_000056)
 ```
 
 `rig_v1` (and the `--fast` sim rig) use 0.060 m, the opening the simulator sweeps.

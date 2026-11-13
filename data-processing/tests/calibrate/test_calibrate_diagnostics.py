@@ -67,12 +67,7 @@ def test_low_detection_rate_hint():
     assert "dataproc calibrate block_raise episode_000001` again" in text
 
 
-def test_opening_hint_and_rig_hint_without_rig_values():
-    res = _res(["opening_out_of_range"], calibration_diagnostics([_frame(0.05)] * 5, RIG),
-               opening={"measured_m": 0.071, "expected_m": 0.110, "tolerance_m": 0.010, "min_width": 0.0,
-                        "max_width": 0.071})
-    h = hints(res)                                                      # rig yaml unreadable: still useful
-    assert "aruco.marker_size_m wrong" in h[0] and "measured / expected = 0.65" in h[0]
+def test_rig_hint():
     res = _res(["rig_resolution_mismatch", "rig_fps_mismatch"], {})
     assert len(hints(res, RIG)) == 1 and "wrong --rig rig_v1_fast" in hints(res, RIG)[0]
 

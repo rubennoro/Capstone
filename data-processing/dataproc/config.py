@@ -160,11 +160,15 @@ class ArucoConfig:
 
 @dataclass(frozen=True)
 class GripperConfig:
-    """What the calibration fit must measure: ``max_width - min_width`` (the finger-tag separation range, metres,
-    exactly what the width stage exports as the full opening) within ``opening_tolerance_m`` of ``max_opening_m``."""
+    """What the calibration fit is expected to measure, for ``dataproc calibrate``'s warnings (iPhUMI has no such
+    check, so nothing here fails a calibration): ``max_width - min_width`` (the finger-tag separation range, metres,
+    exactly what the width stage exports as the full opening) near ``max_opening_m``, and, when given,
+    ``min_width`` (the tag spacing with the gripper fully closed) near ``closed_width_m``; both within
+    ``opening_tolerance_m``."""
 
     max_opening_m: float
     opening_tolerance_m: float
+    closed_width_m: float | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -178,7 +182,7 @@ class RigConfig:
     imu: ImuConfig
     aruco: ArucoConfig
     T_world_offset: np.ndarray           # 4x4, applied on the left in the gravity-aligned z-up world
-    gripper: GripperConfig | None = None  # None: the rig yaml has no gripper section (opening check skipped)
+    gripper: GripperConfig | None = None  # None: the rig yaml has no gripper section (no opening warnings)
     notes: str = ""
     source_path: str | None = None
 
@@ -474,7 +478,8 @@ def parse_rig(d: Any, src: str = "<rig>") -> RigConfig:
     if m.has("gripper"):
         gm = m.sub("gripper")
         gripper = GripperConfig(gm.float("max_opening_m", positive=True),
-                                gm.float("opening_tolerance_m", positive=True))
+                                gm.float("opening_tolerance_m", positive=True),
+                                gm.float("closed_width_m", positive=True) if gm.has("closed_width_m") else None)
         gm.finish()
 
     T_world_offset = _world_offset(m)

@@ -8,7 +8,8 @@
 #     vis_assembly (the UMI gripper with its soft fingers) plus our top cover (IMX519 on the 30 deg face, IMX219 and
 #     the IMU on the 15 deg face). Regenerate or check them with `python scripts/rig_geometry_from_cad.py [--check]`.
 #   - gripper.max_opening_m is 0.080 (the Franka Hand's stroke), so every demonstrated width is one the robot can
-#     reproduce. The handheld gripper must be limited to 80 mm for `dataproc calibrate` to pass.
+#     reproduce once the handheld gripper is limited to 80 mm, and gripper.closed_width_m is 0.044 (episode_000056).
+#     Both only produce warnings in `dataproc calibrate`: like iPhUMI, only the tag fit itself can fail a calibration.
 # Lens optical centres: in line with the lower hole pair of each camera's 21 x 12.5 mm pattern (6.25 mm down the face
 # from its centre), boards directly on the 4 mm bosses, optical centre 2.5 mm out from the boss tips (2026-11-13).
 # Still nominal (provenance: nominal) until calibrated: the lens height (+-2 mm, along the optical axis), the IMU chip
@@ -82,9 +83,11 @@ aruco:                                                # finger tags (iPhUMI aruc
   left_id: 0
   right_id: 1
   nominal_z_m: 0.098                                  # only used to reject far-off tag detections; rough is fine
-gripper:                                              # checked by `dataproc calibrate` (docs/PROCESS.md)
+gripper:                                              # `dataproc calibrate` warns outside these (docs/PROCESS.md)
   max_opening_m: 0.080                                # max_width - min_width of the fit (tag-to-tag x, metres): the
   opening_tolerance_m: 0.010                          # Franka Hand's 80 mm stroke (the handheld must be limited to it)
+  closed_width_m: 0.044                               # min_width (tags fully closed), episode_000056; far above it
+                                                      # usually means a tag was hidden when the gripper closed
 world_offset:                                         # as rig_v1 (see docs/GEOMETRY.md)
   translation_m: [0.1, 0.2, 0.3]
   yaw_deg: 30.0

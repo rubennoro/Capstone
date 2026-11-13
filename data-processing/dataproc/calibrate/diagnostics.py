@@ -2,13 +2,12 @@
 
 ::
 
-    calibrate: FAILED for episode_000001 - measured opening 0.071 m, expected 0.110 m ± 0.010 m
-      ultrawide frames 452; tag 0 seen 430 (95%), tag 1 seen 401 (89%), both 398 (88%, threshold 20%)
-      both tags at the expected depth (z 0.018-0.178 m): 390; median z 0.097 m
-      open/close cycles: 5; closed 0.012 m, open 0.083 m (tag-to-tag x)
+    calibrate: FAILED for episode_000001 - detection rate 0.100 < 0.2 threshold
+      ultrawide frames 452; tag 0 seen 45 (10%), tag 1 seen 401 (89%), both 40 (9%; fit needs 20% ...)
+      both tags at the expected depth (z 0.018-0.178 m): 40; median z 0.097 m
+      open/close cycles: 5; closed 0.044 m, open 0.124 m (tag-to-tag x)
       likely causes:
-        - aruco.marker_size_m (0.016 m) wrong: the measured opening scales with it (measured / expected = 0.65)
-        ...
+        - tags are seen in only 10% of frames: improve the lighting, reduce motion blur ...
 
 The statistics come from :func:`~dataproc.stages.width.calibration_diagnostics`; the hints from the reason codes of
 :class:`~dataproc.calibrate.task.CalibrateResult` and those statistics.
@@ -69,17 +68,6 @@ def _fit_hints(diag: dict, rig) -> list[str]:
     return out or ["too few usable both-tag frames: record again with both fingers clearly in view"]
 
 
-def _opening_hints(res, rig) -> list[str]:
-    o = res.fit.details.get("opening", {}) if res.fit is not None else {}
-    ratio = (o["measured_m"] / o["expected_m"]) if o.get("expected_m") else None
-    size = f" ({rig.aruco.marker_size_m:.3f} m)" if rig is not None else ""
-    return [f"aruco.marker_size_m{size} wrong: the measured opening scales with it"
-            + (f" (measured / expected = {ratio:.2f})" if ratio is not None else ""),
-            "ultrawide or virtual_ultrawide intrinsics wrong (they also scale the tag positions)",
-            "the gripper was not opened fully and closed fully during the recording",
-            "gripper.max_opening_m in the rig yaml is not this gripper's opening"]
-
-
 _SOURCE_HINTS = {
     "source_missing": "check the directory name: it must be a recording directly inside --source",
     "still_syncing": "the recording is still being recorded or transferred (COMPLETE is written last): wait, then "
@@ -102,8 +90,6 @@ def hints(res, rig=None) -> list[str]:
     for code in res.reasons:
         if code == "gripper_range_fit":
             out += _fit_hints(diag, rig)
-        elif code == "opening_out_of_range":
-            out += _opening_hints(res, rig)
         elif code.startswith("rig_"):
             out.append(f"wrong --rig {res.rig_id}: the recording's cameras (resolution, fps) or rig id do not match "
                        f"rigs/{res.rig_id}.yaml; pass the rig this recorder uses")

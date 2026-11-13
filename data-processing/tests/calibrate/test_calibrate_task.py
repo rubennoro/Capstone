@@ -154,7 +154,41 @@ def test_rig_without_gripper_section_skips_the_opening_check(env):
     rid = rig("rig_nogripper", gripper=None)
     res = calibrate_task(root, TASK, "cal_0", source=source, rig_id=rid, log=quiet)
     assert res.ok
-    assert any("no gripper section" in w and "opening check skipped" in w for w in res.warnings)
+    assert any("no gripper section" in w and "not compared" in w for w in res.warnings)
+
+
+def test_opening_out_of_tolerance_only_warns(env, capsys):
+    """Like iPhUMI, the opening never fails a calibration: it is saved, with a warning in the OK block."""
+    root, source, add, rig = env
+    add("cal_0")
+    rid = rig("rig_wide", **{"gripper.max_opening_m": 0.110})
+    assert cli_calibrate(root, TASK, "cal_0", source=source, rig_id=rid) == 0
+    out = capsys.readouterr().out
+    assert "calibrate: OK -> tasks/block_raise" in out and "2 warnings, read before running dataproc run" in out   # + the 1-cycle one
+    assert "warning: measured opening 0.060 m, expected 0.110 m ± 0.010 m" in out
+    assert "open/close cycles: 1; closed 0.030 m, open 0.090 m" in out
+    assert (root.tasks / TASK / GRIPPER_RANGE_FILE).is_file()
+    # inside the tolerance (both sides): no opening warning
+    for k, rid in enumerate([rig("rig_edge", **{"gripper.max_opening_m": 0.069}),
+                             rig("rig_edge2", **{"gripper.max_opening_m": 0.052})]):
+        add("cal_0", as_name=f"cal_e{k}")
+        res = calibrate_task(root, TASK, f"cal_e{k}", source=source, rig_id=rid, log=quiet)
+        assert res.ok and not any("measured opening" in w for w in res.fit.warnings)
+
+
+def test_closed_width_far_off_warns(env, capsys):
+    """A closed width well above the expected one (a tag hidden when closing) is a warning, not a failure."""
+    root, source, add, rig = env
+    add("cal_0")
+    add("cal_0", as_name="cal_ok")
+    rid = rig("rig_closed", **{"gripper.closed_width_m": 0.015})
+    assert cli_calibrate(root, TASK, "cal_0", source=source, rig_id=rid) == 0
+    out = capsys.readouterr().out
+    assert "min_width (closed) 0.03" in out and "(expected 0.015 m)" in out
+    assert "warning: closed width 0.030 m, expected 0.015 m ± 0.010 m: a finger tag may be hidden" in out
+    rid = rig("rig_closed_ok", **{"gripper.closed_width_m": 0.035})
+    res = calibrate_task(root, TASK, "cal_ok", source=source, rig_id=rid, log=quiet)
+    assert res.ok and not any("closed width" in w for w in res.fit.warnings)
 
 
 # --------------------------------------------------------------------------------------------- failures
@@ -233,19 +267,6 @@ def test_tags_outside_the_depth_window(env, capsys):
     assert "both tags at the expected depth (z 0.420-0.580 m): 0; median z 0.09" in err
 
 
-def test_opening_out_of_tolerance(env, capsys):
-    root, source, add, rig = env
-    add("cal_0")
-    rid = rig("rig_wide", **{"gripper.max_opening_m": 0.110})
-    err = _fail(capsys, root, source, "cal_0", rig=rid,
-                expect_hint=["measured opening 0.060 m, expected 0.110 m ± 0.010 m", "aruco.marker_size_m (0.016 m)",
-                             "measured / expected = 0.55", "not opened fully"])
-    assert "open/close cycles: 1; closed 0.030 m, open 0.090 m" in err
-    # the tolerance is honoured on both sides
-    rid = rig("rig_edge", **{"gripper.max_opening_m": 0.069, "gripper.opening_tolerance_m": 0.010})
-    assert calibrate_task(root, TASK, "cal_0", source=source, rig_id=rid, log=quiet).ok
-
-
 def test_bad_arguments_raise(env):
     root, source, _, _ = env
     with pytest.raises(CalibrateError, match="invalid task name"):
@@ -270,21 +291,22 @@ def test_failed_fit_record_is_not_written_anywhere(env):
     """A failed calibrate leaves no processed/ or status anywhere: the next attempt starts clean."""
     root, source, add, rig = env
     add("cal_0")
-    rid = rig("rig_wide2", **{"gripper.max_opening_m": 0.110})
+    rid = rig("rig_far2", **{"aruco.nominal_z_m": 0.5})
     res = calibrate_task(root, TASK, "cal_0", source=source, rig_id=rid, log=quiet)
-    assert not res.ok and res.reasons == ["opening_out_of_range"] and res.folder is None
+    assert not res.ok and res.reasons == ["gripper_range_fit"] and res.folder is None
     assert json.loads(json.dumps(res.fit.diagnostics))["n_in_window"] > 0
     _assert_nothing_taken(root, source / "cal_0", None)
 
 
 def test_process_refits_when_the_gripper_section_changes(env):
-    """The gripper section is in the calibration inputs hash: editing it makes process fit (and check) again."""
+    """The gripper section is in the calibration inputs hash: editing it makes process fit (and warn) again."""
     root, source, add, rig = env
     add("cal_0")
     assert calibrate_task(root, TASK, "cal_0", source=source, rig_id=RIG, log=quiet).ok
     rig(RIG, **{"gripper.max_opening_m": 0.110})
-    pr = run_process(root, TASK, slam="oracle", log=quiet)
+    logged = []
+    pr = run_process(root, TASK, slam="oracle", log=logged.append)
     assert pr.report["calibration"]["ran"] is True
-    assert pr.report["calibration"]["state"] == "calibration_failed"
-    assert "measured opening 0.060 m, expected 0.110 m" in pr.report["calibration"]["reason"]
-    assert not (root.tasks / TASK / GRIPPER_RANGE_FILE).exists()
+    assert pr.report["calibration"]["state"] == "done"
+    assert any("warning: measured opening 0.060 m, expected 0.110 m" in str(m) for m in logged)
+    assert (root.tasks / TASK / GRIPPER_RANGE_FILE).is_file()

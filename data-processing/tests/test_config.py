@@ -150,6 +150,7 @@ _DEL = object()
     ("gripper.max_opening_m", 0, "gripper.max_opening_m: must be > 0"),
     ("gripper.opening_tolerance_m", _DEL, "gripper.opening_tolerance_m: missing"),
     ("gripper.extra", 1.0, "gripper.extra: unknown key"),
+    ("gripper.closed_width_m", 0, "gripper.closed_width_m: must be > 0"),
 ])
 def test_rig_errors(rig_dict, path, value, where):
     d = copy.deepcopy(rig_dict)

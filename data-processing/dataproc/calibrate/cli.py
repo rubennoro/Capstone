@@ -30,10 +30,15 @@ def format_success(res: CalibrateResult, source: Path) -> str:
     fit = res.fit
     o = fit.details.get("opening", {})
     expected = (f" (expected {o['expected_m']:.3f} m ± {o['tolerance_m']:.3f} m)"
-                if o.get("expected_m") is not None else " (not checked: the rig yaml has no gripper section)")
-    lines = [f"calibrate: OK -> tasks/{res.folder} (label {res.task}, rig {res.rig_id}), calibration {res.slot}",
-             f"  measured opening {fit.opening_m:.3f} m{expected}; min_width {o['min_width']:.4f} m, max_width "
-             f"{o['max_width']:.4f} m",
+                if o.get("expected_m") is not None else " (not compared: the rig yaml has no gripper section)")
+    closed = (f" (expected {o['expected_closed_m']:.3f} m)" if o.get("expected_closed_m") is not None else "")
+    n = len(fit.warnings)
+    head = f"calibrate: OK -> tasks/{res.folder} (label {res.task}, rig {res.rig_id}), calibration {res.slot}"
+    if n:
+        head += f" - {n} warning{'s' if n > 1 else ''}, read before running dataproc run"
+    lines = [head,
+             f"  measured opening {fit.opening_m:.3f} m{expected}; min_width (closed) {o['min_width']:.4f} m"
+             f"{closed}, max_width {o['max_width']:.4f} m",
              *format_stats(fit.diagnostics)]
     lines += [f"  warning: {w}" for w in fit.warnings]
     src = "" if Path(source) == Path("/data/incoming") else f" --source {source}"

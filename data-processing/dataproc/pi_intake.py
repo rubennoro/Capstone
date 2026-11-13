@@ -62,7 +62,7 @@ def ensure_rig(root: DataRoot, rig_id: str, log: Callable = print) -> None:
 def check_rig_copy(dst: Path, src: Path) -> None:
     """Raise :class:`PiIntakeError` when the data root's rig yaml ``dst`` has no ``gripper`` section but the repo's
     ``src`` (same rig id) has one: ``dst`` is a copy from before the section existed, and with it the calibration
-    opening check would be skipped without anyone noticing. Nothing to check when ``src`` does not exist or either
+    opening and closed-width warnings would be skipped without anyone noticing. Nothing to check when ``src`` does not exist or either
     file cannot be parsed (loading the rig reports that)."""
     import yaml
 
@@ -76,7 +76,7 @@ def check_rig_copy(dst: Path, src: Path) -> None:
         return
     section = yaml.safe_dump({"gripper": repo["gripper"]}, sort_keys=False).rstrip()
     raise PiIntakeError(f"{dst} has no gripper section, but the repo's {src} has one: the copy predates it, and "
-                        "without it the calibration opening check is skipped. Add the section to "
+                        "without it the calibration opening warnings are skipped. Add the section to "
                         f"{dst}:\n{section}\nor delete {dst} (the repo copy is then used).")
 
 

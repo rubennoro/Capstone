@@ -1,8 +1,8 @@
 """The task-level **calibration** step: the newest ``calibration/<name>/raw`` -> the gripper range.
 
 Reads the calibration episode (contract check, rig consistency, every ultrawide frame remapped to the virtual
-pinhole, ArUco tags), fits iPhUMI's gripper range, checks the measured opening against the rig yaml ``gripper``
-section, and writes ``calibration/<name>/processed/{gripper_range.json, status.json}``, plus a copy
+pinhole, ArUco tags), fits iPhUMI's gripper range, compares the measured opening and closed width with the rig yaml
+``gripper`` section (warnings only: like iPhUMI, only the fit itself can fail), and writes ``calibration/<name>/processed/{gripper_range.json, status.json}``, plus a copy
 ``tasks/<folder>/gripper_range.json``. That copy always mirrors the current result: it is removed when there is
 no calibration or the newest one failed. Skipped (the saved range is reused) when its ``inputs_hash`` (manifest,
 ``aruco``, ``virtual_ultrawide``, ``cameras.ultrawide``, ``gripper``, task rig) is unchanged since a done or failed
@@ -29,7 +29,7 @@ __all__ = ["GRIPPER_RANGE_FILE", "CALIBRATION_VERSION", "MIN_CYCLES", "Calibrati
            "calibration_inputs_hash", "fit_calibration", "write_calibration_result", "CalibrationStep"]
 
 GRIPPER_RANGE_FILE = "gripper_range.json"
-CALIBRATION_VERSION = 2          # 2: opening check against rig.gripper
+CALIBRATION_VERSION = 3          # 2: opening check against rig.gripper; 3: that check (and closed width) only warns
 _KEY = "gripper_range"           # the record name in calibration/<name>/processed/status.json
 #: Fewer open/close cycles than this in a calibration episode is a warning (the fit still runs).
 MIN_CYCLES = 5
@@ -39,7 +39,7 @@ MIN_CYCLES = 5
 class CalibrationFit:
     """Result of :func:`fit_calibration`. ``status``: ``done`` (``gripper_range`` set) or ``failed`` (``reason``
     and the ``reasons`` codes: validator ``invalid_episode``, ``rig_mismatch`` / ``rig_resolution_mismatch`` /
-    ``rig_fps_mismatch``, ``gripper_range_fit``, ``opening_out_of_range`` or ``exception``). ``diagnostics`` is
+    ``rig_fps_mismatch``, ``gripper_range_fit`` or ``exception``). ``diagnostics`` is
     :func:`~dataproc.stages.width.calibration_diagnostics` (empty when the tags were never detected because an
     earlier check failed); ``details`` holds per-reason data (``opening``, ``rig``, ``contract_errors``);
     ``warnings`` are non-fatal notes; ``error_text`` is the traceback of an ``exception``."""
@@ -61,7 +61,7 @@ class CalibrationFit:
 
     @property
     def opening_m(self) -> float | None:
-        """``max_width - min_width`` of the fit (also when the opening check failed), else None."""
+        """``max_width - min_width`` of the fit, else None."""
         o = self.details.get("opening")
         return None if o is None else o["measured_m"]
 
@@ -114,21 +114,30 @@ def _rig_message(details: dict) -> str:
 
 
 def _check_opening(fit: CalibrationFit, gr, rig) -> None:
-    """Record the measured opening; raise :class:`StageFailed` (``opening_out_of_range``) when it is outside the
-    rig's ``gripper`` tolerance. Without a ``gripper`` section the check is skipped with a warning."""
-    opening = float(gr.max_width - gr.min_width)
+    """Record the measured opening and closed width, and add a warning for each that is outside the rig's
+    ``gripper`` tolerance. Never fails: iPhUMI's calibration has no expected opening, so dataproc only points out a
+    range that looks wrong (a tag hidden when the gripper closes, a gripper not fully opened or closed)."""
+    opening, closed = float(gr.max_width - gr.min_width), float(gr.min_width)
     g = rig.gripper
-    fit.details["opening"] = {"measured_m": opening, "min_width": float(gr.min_width),
+    fit.details["opening"] = {"measured_m": opening, "min_width": closed,
                               "max_width": float(gr.max_width),
                               "expected_m": None if g is None else g.max_opening_m,
-                              "tolerance_m": None if g is None else g.opening_tolerance_m}
+                              "tolerance_m": None if g is None else g.opening_tolerance_m,
+                              "expected_closed_m": None if g is None else g.closed_width_m}
     if g is None:
         fit.warnings.append(f"rig {rig.rig_id} has no gripper section (max_opening_m, opening_tolerance_m): "
-                            "opening check skipped")
-    elif abs(opening - g.max_opening_m) > g.opening_tolerance_m:
-        raise StageFailed("failed", ["opening_out_of_range"],
-                          f"measured opening {opening:.3f} m, expected {g.max_opening_m:.3f} m "
-                          f"± {g.opening_tolerance_m:.3f} m")
+                            "the opening is not compared with anything")
+        return
+    tol = g.opening_tolerance_m
+    if g.closed_width_m is not None and abs(closed - g.closed_width_m) > tol:
+        fit.warnings.append(f"closed width {closed:.3f} m, expected {g.closed_width_m:.3f} m ± {tol:.3f} m: "
+                            + ("a finger tag may be hidden when the gripper closes, or it was never fully closed; "
+                               if closed > g.closed_width_m else "")
+                            + "every demonstration's width is measured from this closed width")
+    if abs(opening - g.max_opening_m) > tol:
+        fit.warnings.append(f"measured opening {opening:.3f} m, expected {g.max_opening_m:.3f} m ± {tol:.3f} m: "
+                            "check that the gripper was fully opened and fully closed, and that both tags stayed "
+                            "in view")
 
 
 def fit_calibration(raw_dir: Path, rig, prep, task_rig: str) -> CalibrationFit:
@@ -137,9 +146,9 @@ def fit_calibration(raw_dir: Path, rig, prep, task_rig: str) -> CalibrationFit:
 
     Steps: contract check with videos decoded and manifest hashed; rig consistency (``meta.rig_id`` == ``task_rig``,
     camera resolution / fps == the rig yaml); ArUco tags on every virtual ultrawide frame (``prep.to_virtual``);
-    :func:`~dataproc.stages.width.calibration_diagnostics`; :func:`~dataproc.stages.width.fit_gripper_range`; the
-    opening check (``max_width - min_width`` within ``rig.gripper.opening_tolerance_m`` of
-    ``rig.gripper.max_opening_m``). Fewer than :data:`MIN_CYCLES` open/close cycles is a warning."""
+    :func:`~dataproc.stages.width.calibration_diagnostics`; :func:`~dataproc.stages.width.fit_gripper_range`. Only
+    those steps can fail it, as in iPhUMI. An opening or closed width outside ``rig.gripper`` (see
+    :func:`_check_opening`) and fewer than :data:`MIN_CYCLES` open/close cycles are warnings."""
     from dataproc.raw_episode import RawEpisode
     from dataproc.stages.check import rig_consistency
     from dataproc.stages.width import (GripperRangeError, calibration_diagnostics, detect_episode_tags,
