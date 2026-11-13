@@ -70,11 +70,12 @@ timeout 2 bash -c '</dev/tcp/<PI>/5555' && echo "sender is up"
 
 ```bash
 cd deployment/process_frames
-~/envs/deploy/bin/python -m process_frames.pi_collect --station ../station.yaml --endpoint tcp://<PI>:5555 \
+~/envs/deploy/bin/python -m process_frames.pi_collect --endpoint tcp://<PI>:5555 \
     --out ~/pi_runs/run_01 --seconds 60 --save-every 0
 ```
 
-- **`--out`:** the folder to write into. Use a new name for each run.
+- **`--endpoint`:** the Pi's sender, using `<PI>` from step 4. This is the only required option.
+- **`--out`:** the folder to write into. Use a new name for each run. Left out, it's `~/pi_runs/<date>_<time>/`.
 - **`--seconds`:** how long to collect. Leave it out and press Ctrl-C to stop.
 - **`--save-every`:** which packets get their images (main + ultrawide JPEG) saved in `jpeg/`. Every packet is still
   received, checked and logged in `headers.jsonl`, whatever this is set to.

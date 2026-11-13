@@ -1,4 +1,6 @@
-"""``python -m process_frames.pi_collect --station FILE [--endpoint EP] [--bind] [--seconds N] [--out DIR]``
+"""``python -m process_frames.pi_collect --endpoint tcp://PI:5555 [--out DIR] [--seconds N] [--save-every S] [--bind]``
+
+(or ``--station FILE`` instead of ``--endpoint``, to take the Pi's address from ``endpoints.pi_frames``)
 
 Collects the Pi's live stream in the format it sends today (not C0, PI_PAYLOAD.md): one ZeroMQ message of three
 parts per packet,
@@ -8,8 +10,9 @@ parts per packet,
     part 2  main camera (imx519) JPEG
     part 3  ultrawide camera (imx219) JPEG
 
-Receive only: nothing is ever sent back to the Pi. By default it connects a SUB socket to ``endpoints.pi_frames``
-(the Pi binds a PUB); ``--bind`` binds instead, for a Pi that connects. Every packet's header is written verbatim to
+Receive only: nothing is ever sent back to the Pi. It connects a SUB socket to ``--endpoint`` (the Pi binds a PUB);
+``--bind`` binds instead, for a Pi that connects. Output goes to ``--out`` (default ``~/pi_runs/<stamp>``, or
+``<session_root>/<stamp>_pi_collect`` with ``--station``). Every packet's header is written verbatim to
 ``headers.jsonl`` with what was seen on arrival (part sizes, decoded image sizes, problems); the JPEGs of the first
 packet and then one packet every ``--save-every`` seconds are written as received. A stats line is printed every
 second. A packet without the expected shape is logged and counted, never fatal. The times are not interpreted yet.
@@ -204,21 +207,34 @@ class Collector:
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m process_frames.pi_collect", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--station", type=Path, required=True, help="the station file (endpoints.pi_frames, session_root)")
-    p.add_argument("--endpoint", default=None, help="override endpoints.pi_frames, e.g. tcp://10.42.0.78:5600")
-    p.add_argument("--bind", action="store_true", help="bind the endpoint (e.g. tcp://0.0.0.0:5600) instead of "
-                                                       "connecting, for a Pi that connects to the Jetson")
+    p.add_argument("--endpoint", default=None, help="the Pi's sender, e.g. tcp://RaspberryPi5.local:5555 or "
+                                                    "tcp://10.42.0.78:5555")
+    p.add_argument("--out", type=Path, default=None, help="output folder (default: ~/pi_runs/<stamp>; with --station: "
+                                                         "<session_root>/<stamp>_pi_collect)")
     p.add_argument("--seconds", type=float, default=None, help="stop after this long (default: until Ctrl-C)")
-    p.add_argument("--out", type=Path, default=None, help="output folder (default: <session_root>/<stamp>_pi_collect)")
-    p.add_argument("--save-every", type=float, default=5.0, help="save one packet's JPEGs this often, in seconds")
+    p.add_argument("--save-every", type=float, default=5.0,
+                   help="save the images of the first packet, then of one packet every this many seconds "
+                        "(default 5; 0 = every packet). Every packet is logged in headers.jsonl either way")
+    p.add_argument("--bind", action="store_true", help="bind the endpoint (e.g. tcp://0.0.0.0:5555) instead of "
+                                                       "connecting, for a Pi that connects to this machine")
+    p.add_argument("--station", type=Path, default=None,
+                   help="optional: take the Pi's address (endpoints.pi_frames) and the output root (session_root) "
+                        "from this station file when --endpoint / --out are not given")
     args = p.parse_args(argv)
-    try:
-        s = Settings.load(args.station, mock=False)
-    except SettingsError as e:
-        print(f"pi_collect: {'; '.join(e.problems)}", file=sys.stderr)
-        return 1
-    endpoint = args.endpoint or s.pi_frames
-    out = args.out or s.session_root / f"{_dt.datetime.now():%Y-%m-%d_%H-%M-%S}_pi_collect"
+    stamp = f"{_dt.datetime.now():%Y-%m-%d_%H-%M-%S}"
+    if args.station is not None:
+        try:
+            s = Settings.load(args.station, mock=False)
+        except SettingsError as e:
+            print(f"pi_collect: {'; '.join(e.problems)}", file=sys.stderr)
+            return 1
+        endpoint = args.endpoint or s.pi_frames
+        out = args.out or s.session_root / f"{stamp}_pi_collect"
+    elif args.endpoint is None:
+        p.error("give --endpoint tcp://<PI>:5555 (or --station FILE to use its endpoints.pi_frames)")
+    else:
+        endpoint = args.endpoint
+        out = args.out or Path("~/pi_runs").expanduser() / stamp
     (out / "jpeg").mkdir(parents=True, exist_ok=True)
 
     stop = threading.Event()

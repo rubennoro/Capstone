@@ -91,39 +91,81 @@ def test_collector_receives_from_a_pi_style_pub_and_never_sends():
         pub.close()
 
 
-def test_main_writes_headers_and_jpegs(tmp_path):
-    ctx = zmq.Context.instance()
-    pub = ctx.socket(zmq.PUB)
-    pub.setsockopt(zmq.LINGER, 0)
-    pub.bind("tcp://127.0.0.1:*")
-    ep = pub.getsockopt_string(zmq.LAST_ENDPOINT)
-    station = tmp_path / "station.yaml"
-    station.write_text(_minimal_station(tmp_path))
-    import threading
-    done = threading.Event()
+class _Sender:
+    """A Pi-style PUB on 127.0.0.1 sending good packets at 30 per second until stopped."""
 
-    def send():
+    def __init__(self):
+        import threading
+        self.pub = zmq.Context.instance().socket(zmq.PUB)
+        self.pub.setsockopt(zmq.LINGER, 0)
+        self.pub.bind("tcp://127.0.0.1:*")
+        self.endpoint = self.pub.getsockopt_string(zmq.LAST_ENDPOINT)
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
         n = 0
-        while not done.is_set():
-            pub.send_multipart(parts(header(packet_no=n, main_no=n, uw_no=n)))
+        while not self.done.is_set():
+            self.pub.send_multipart(parts(header(packet_no=n, main_no=n, uw_no=n)))
             n += 1
-            done.wait(1 / 30)
+            self.done.wait(1 / 30)
 
-    t = threading.Thread(target=send, daemon=True)
-    t.start()
-    out = tmp_path / "out"
-    try:
-        rc = main(["--station", str(station), "--endpoint", ep, "--seconds", "1.5", "--out", str(out)])
-    finally:
-        done.set()
-        t.join(2)
-        pub.close()
-    assert rc == 0
+    def stop(self):
+        self.done.set()
+        self.thread.join(2)
+        self.pub.close()
+
+
+def _check_output(out):
     lines = [json.loads(x) for x in (out / "headers.jsonl").read_text().splitlines()]
     assert len(lines) >= 10 and all(x["problems"] == [] for x in lines)
     assert lines[0]["header"]["version"] == 1
     jpgs = sorted(p.name for p in (out / "jpeg").iterdir())
     assert any(n.endswith("_main.jpg") for n in jpgs) and any(n.endswith("_ultrawide.jpg") for n in jpgs)
+
+
+def test_main_with_endpoint_and_out_needs_no_station(tmp_path):
+    sender = _Sender()
+    out = tmp_path / "out"
+    try:
+        rc = main(["--endpoint", sender.endpoint, "--out", str(out), "--seconds", "1.5"])
+    finally:
+        sender.stop()
+    assert rc == 0
+    _check_output(out)
+
+
+def test_main_default_out_is_pi_runs(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    sender = _Sender()
+    try:
+        assert main(["--endpoint", sender.endpoint, "--seconds", "1.0"]) == 0
+    finally:
+        sender.stop()
+    (run,) = list((tmp_path / "pi_runs").iterdir())
+    assert (run / "headers.jsonl").stat().st_size > 0
+
+
+def test_main_station_supplies_the_endpoint(tmp_path):
+    sender = _Sender()
+    station = tmp_path / "station.yaml"
+    text = "\n".join(f"  pi_frames: {sender.endpoint}" if ln.startswith("  pi_frames:") else ln
+                     for ln in _minimal_station(tmp_path).splitlines())
+    station.write_text(text + "\n")
+    out = tmp_path / "out"
+    try:
+        rc = main(["--station", str(station), "--out", str(out), "--seconds", "1.5"])
+    finally:
+        sender.stop()
+    assert rc == 0
+    _check_output(out)
+
+
+def test_main_without_endpoint_or_station_is_a_usage_error(capsys):
+    with pytest.raises(SystemExit) as e:
+        main([])
+    assert e.value.code == 2 and "--endpoint" in capsys.readouterr().err
 
 
 def _minimal_station(tmp_path) -> str:
