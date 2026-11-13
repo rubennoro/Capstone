@@ -58,7 +58,7 @@ One folder per recording, e.g. `/data/incoming/episode_000004/`. Each recording 
 | Gripper opening width | Measured from the finger ArUco tags in the ultrawide video, scaled by the calibration |
 | Start/stop of the demonstration | None recorded: the **whole clip** is used |
 | Per-frame exposure time | Assumed 5 ms (the Pi doesn't record it yet) |
-| Camera/IMU geometry (lens model, offsets, gripper-tip position, gripper opening) | The rig file `configs/rigs/rig_pi_v2.yaml` (default; `rig_pi_v1.yaml` for the old zoomed-in main camera; estimated values until calibrated) |
+| Camera/IMU geometry (lens model, offsets, gripper-tip position, gripper opening) | The rig file `configs/rigs/rig_pi_v3.yaml` (default: gripper-tip and IMU offsets from CAD, 80 mm opening; `rig_pi_v2.yaml` has the same cameras with estimated offsets and a 110 mm opening; `rig_pi_v1.yaml` for the old zoomed-in main camera; lens and IMU noise values estimated until calibrated) |
 
 ---
 
@@ -167,7 +167,7 @@ clipped to that range, with fully closed reading 0.
 ## 5. Commands and options
 
 ```
-dataproc calibrate TASK EPISODE_DIR [--source /data/incoming] [--rig rig_pi_v2]
+dataproc calibrate TASK EPISODE_DIR [--source /data/incoming] [--rig rig_pi_v3]
 dataproc run TASK_FOLDER START_DIR END_DIR [--source /data/incoming] [--slam auto|orbslam3|oracle|none]
                                           [--retry-failed] [--force] [--dry-run]
 dataproc package DATASET FOLDER [FOLDER ...] [--overwrite]
@@ -287,8 +287,8 @@ What you should see:
   <task> <episode_dir> first`, exit 1.
 
 `--rig rig_v1_fast` is the fake rig `sim --fast` renders with (it copies it to `$DATAPROC_ROOT/rigs/`). Real
-recordings use the default `--rig rig_pi_v2` (main camera 1600x1200 @ 30); recordings from the old zoomed-in main
-camera setting (1600x900 @ 60) need `--rig rig_pi_v1`.
+recordings use the default `--rig rig_pi_v3` (main camera 1600x1200 @ 30, geometry from CAD, gripper opening
+limited to 80 mm); recordings from the old zoomed-in main camera setting (1600x900 @ 60) need `--rig rig_pi_v1`.
 
 **When done, run `unset DATAPROC_ROOT` (or close the terminal).** Otherwise your real runs also go to
 `~/dataproc_practice`.

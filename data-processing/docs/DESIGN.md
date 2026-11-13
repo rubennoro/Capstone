@@ -8,7 +8,7 @@ diffusion), unchanged. Everything runs offline, after recording.
 ## Commands
 
 ```
-dataproc calibrate TASK EPISODE_DIR [--source /data/incoming] [--rig rig_pi_v2]
+dataproc calibrate TASK EPISODE_DIR [--source /data/incoming] [--rig rig_pi_v3]
 dataproc run TASK_FOLDER START_DIR END_DIR [--source /data/incoming] [--slam auto|orbslam3|oracle|none]
                                           [--retry-failed] [--force] [--dry-run]
 dataproc package DATASET FOLDER [FOLDER ...] [--overwrite]

@@ -9,7 +9,9 @@
 #     the IMU on the 15 deg face). Regenerate or check them with `python scripts/rig_geometry_from_cad.py [--check]`.
 #   - gripper.max_opening_m is 0.080 (the Franka Hand's stroke), so every demonstrated width is one the robot can
 #     reproduce. The handheld gripper must be limited to 80 mm for `dataproc calibrate` to pass.
-# Still nominal (provenance: nominal) until calibrated: the lens optical-centre positions (+-2 mm), the IMU chip
+# Lens optical centres: in line with the lower hole pair of each camera's 21 x 12.5 mm pattern (6.25 mm down the face
+# from its centre), boards directly on the 4 mm bosses, optical centre 2.5 mm out from the boss tips (2026-11-13).
+# Still nominal (provenance: nominal) until calibrated: the lens height (+-2 mm, along the optical axis), the IMU chip
 # position on its board, all intrinsics. Kalibr (camera-IMU) and a TCP check replace them.
 schema: dataproc.rig.v1
 rig_id: rig_pi_v3
@@ -28,9 +30,9 @@ cameras:
       distortion: [-0.02, 0.01, 0.0, 0.0]             # by any processing stage (main images are only letterboxed)
     T_imu_cam:                                        # CAD: IMX519 lens on the 30 deg face, 15 deg steeper than the IMU's face
       matrix: [
-        [ 0.000000000,  0.965925826,  0.258819045, -0.046056037],
-        [ 1.000000000,  0.000000000,  0.000000000,  0.029440000],
-        [ 0.000000000,  0.258819045, -0.965925826, -0.014360288],
+        [ 0.000000000,  0.965925826,  0.258819045, -0.040924868],
+        [-1.000000000,  0.000000000,  0.000000000, -0.029440000],
+        [ 0.000000000, -0.258819045,  0.965925826,  0.009361928],
         [ 0.000000000,  0.000000000,  0.000000000,  1.000000000]]
     timestamp_ref: end_of_exposure                    # Pi 5 SensorTimestamp = start-of-frame interrupt = end of the
     time_offset_ns: 0                                 # first row's exposure (sensor_rig/docs/raspberry_pi.md §5)
@@ -43,11 +45,11 @@ cameras:
       type: fisheye-equidistant
       intrinsics: [572.9, 572.9, 639.5, 479.5]        # rig_v1 (820x616) x 1.561 (1640x1232 mode -> 1280x960)
       distortion: [0.02, -0.005, 0.001, 0.0]          # Kannala-Brandt k1..k4 (scale-free), as rig_v1
-    T_imu_cam:                                        # CAD: same face as the IMU (axis swap only); lens 29.5 mm right,
-      matrix: [                                       # 20.9 mm up the face and 10 mm in front of the IMU
-        [ 0.000000000,  1.000000000,  0.000000000, -0.020887073],
-        [ 1.000000000,  0.000000000,  0.000000000,  0.029490000],
-        [ 0.000000000,  0.000000000, -1.000000000, -0.010000336],
+    T_imu_cam:                                        # CAD: same face as the IMU (axis swap only); lens 29.5 mm along -y,
+      matrix: [                                       # 14.6 mm up the face and 6.5 mm in front of the IMU
+        [ 0.000000000,  1.000000000,  0.000000000, -0.014637073],
+        [-1.000000000,  0.000000000,  0.000000000, -0.029490000],
+        [ 0.000000000,  0.000000000,  1.000000000,  0.006500336],
         [ 0.000000000,  0.000000000,  0.000000000,  1.000000000]]
     timestamp_ref: end_of_exposure                    # see main
     time_offset_ns: 0
@@ -57,11 +59,11 @@ virtual_ultrawide:                                    # the iPhone 16 Pro ultraw
   intrinsics: [246.64919, 246.64919, 320.16495, 239.53679]
   rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}
 tcp:                                                  # T_cam_tcp is in the PHYSICAL ultrawide optical frame
-  T_cam_tcp:                                          # CAD: fingertip point 201.4 mm ahead, 61.1 mm below, 8.1 mm right
+  T_cam_tcp:                                          # CAD: fingertip point 204.9 mm ahead, 54.8 mm below, 8.1 mm right
     matrix: [                                         # of the IMX219 (15 deg about x; iPhUMI's iPhone: (0, 64.4, 211.4))
       [ 1.000000000,  0.000000000,  0.000000000,  0.008130000],
-      [ 0.000000000,  0.965925826, -0.258819045,  0.061095479],
-      [ 0.000000000,  0.258819045,  0.965925826,  0.201389292],
+      [ 0.000000000,  0.965925826, -0.258819045,  0.054845479],
+      [ 0.000000000,  0.258819045,  0.965925826,  0.204889292],
       [ 0.000000000,  0.000000000,  0.000000000,  1.000000000]]
   provenance: nominal
 imu:

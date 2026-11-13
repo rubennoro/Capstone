@@ -38,16 +38,23 @@ TCP_AXES = np.column_stack([[1, 0, 0],                 # x: across, the finger-c
                             [0, 1, 0]]).astype(float)  # z: forward, toward the fingertips
 
 # Camera boards: centre of the 21 x 12.5 mm hole pattern on the tips of the 4 mm bosses (our STL coordinates).
+# Re-measured independently on 2026-11-13 (all within 0.04 mm / 0.04 deg, faces exactly 15.00 and 30.00 deg).
 IMX219_BOARD_STL = np.array([77.87, 40.84, 110.49])     # 15 deg face
 IMX519_BOARD_STL = np.array([77.82, 52.165, 135.12])    # 30 deg face
 IMX219_TILT_DEG = 15.0
 IMX519_TILT_DEG = 30.0
-LENS_OUT_MM = 6.0             # optical centre this far out from the boss tips (board + lens). Nominal: +-2 mm.
+# Lens optical centre relative to the hole pattern (user, 2026-11-13): each lens is in line with the LOWER hole pair
+# (the pair further down the face), centred between the two holes; the boards sit directly on the 4 mm bosses (no
+# spacers). Hole pattern 21 x 12.5 mm, so the lens is 12.5 / 2 down the face from the pattern centre.
+LENS_DOWN_MM = 6.25
+LENS_OUT_MM = 2.5             # optical centre out from the boss tips: ~1 mm PCB + ~1.5 mm lens. Nominal: +-2 mm; it
+                              # only moves the camera along its optical axis (1:1 into "ahead" of T_cam_tcp).
 
 # IMU (Modulino Movement, LSM6DSOX): centre of the 16 x 32 mm hole pattern on the 15 deg face (our STL coordinates).
 IMU_STL = np.array([48.38, 31.57, 91.35])
 IMU_FACE_TILT_DEG = 15.0      # the IMU is on the same face as the IMX219
-# IMU axes as mounted: x down the face, y to the right (facing the fingers), z = x cross y.
+# IMU axes as mounted, as seen by someone facing the camera lenses: x down the face, y to their right, z = x cross y
+# (toward that viewer, i.e. out of the face toward the fingers, parallel to the IMX219 axis). Their right is -x.
 
 
 def face_axes(tilt_deg: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -76,13 +83,13 @@ def inv(T: np.ndarray) -> np.ndarray:
 
 def camera_pose(board_stl: np.ndarray, tilt_deg: float) -> np.ndarray:
     right, down, out = face_axes(tilt_deg)
-    lens = board_stl + TOP_COVER_SHIFT + LENS_OUT_MM * out
+    lens = board_stl + TOP_COVER_SHIFT + LENS_DOWN_MM * down + LENS_OUT_MM * out
     return pose(np.column_stack([right, down, out]), lens)   # OpenCV: x right, y down, z out of the lens
 
 
 def imu_pose() -> np.ndarray:
     right, down, out = face_axes(IMU_FACE_TILT_DEG)
-    x, y = down, right
+    x, y = down, -right                                # -right: right as seen facing the lenses (right is +x)
     return pose(np.column_stack([x, y, np.cross(x, y)]), IMU_STL + TOP_COVER_SHIFT)
 
 

@@ -55,9 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("episode_dir", metavar="EPISODE_DIR",
                    help="the calibration recording: a directory name in --source (e.g. episode_000001)")
     p.add_argument("--source", default="/data/incoming", metavar="DIR", help=_SOURCE_HELP)
-    p.add_argument("--rig", default="rig_pi_v2", metavar="RIG_ID",
-                   help="rig id; selects rigs/<id>.yaml and is recorded in task.yaml (default rig_pi_v2: main "
-                   "1600x1200 @ 30; rig_pi_v1 = the old zoomed-in main 1600x900 @ 60)")
+    p.add_argument("--rig", default="rig_pi_v3", metavar="RIG_ID",
+                   help="rig id; selects rigs/<id>.yaml and is recorded in task.yaml (default rig_pi_v3: main "
+                   "1600x1200 @ 30 with the handheld geometry from CAD; rig_pi_v2 = same cameras, estimated "
+                   "geometry; rig_pi_v1 = the old zoomed-in main 1600x900 @ 60)")
 
     p = sub.add_parser("run", help="process the Pi recordings START_DIR..END_DIR into episode_N of a calibrated "
                        "task folder (failures go to failed/)",
