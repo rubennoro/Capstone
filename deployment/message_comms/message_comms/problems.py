@@ -38,6 +38,7 @@ class ProblemCode(Enum):
     CONTRACT_VIOLATION = "contract_violation"
     HOMING_FAILED = "homing_failed"
     STARTUP = "startup"
+    OPERATOR_SCRIPT = "operator_script"   # a ScriptedOperator wait or refused key past operator_script_wait_s
     INTERNAL_ERROR = "internal_error"
     EPISODE_STOP = "episode_stop"         # the operator's s: the episode ends, the run goes on
     OPERATOR_STOP = "operator_stop"       # q or Ctrl-C: the run ends

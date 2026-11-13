@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from contracts import ArmState, ContractError, HealthReport, RemoteError, TransportTimeout
-from message_comms.errors import Refused
+from message_comms.errors import Refused, ScriptError
 from message_comms.problems import Kind, Problem, ProblemCode, Verdict
 from message_comms.settings import Settings
 
@@ -46,6 +46,8 @@ RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
     C.HOMING_FAILED: (Kind.CONCLUDE, "franka_control: homing failed: {detail}",
                       "check the arm's path to the home pose"),
     C.STARTUP: (Kind.CONCLUDE, "startup: {detail}", "check {process}"),
+    C.OPERATOR_SCRIPT: (Kind.CONCLUDE, "operator script: {detail}",
+                        "check the script (message_comms.operator_script) or raise operator_script_wait_s"),
     C.INTERNAL_ERROR: (Kind.CONCLUDE, "{origin}internal error: {detail}", "see the message_comms log"),
     C.EPISODE_STOP: (Kind.NORMAL, "{detail}", "nothing to do: h homes the arm, c starts the next episode"),
     C.OPERATOR_STOP: (Kind.STOP, "{detail}", "nothing to check"),
@@ -97,6 +99,8 @@ class FailureMonitor:
             if exc.schema == "c4.chunk/v1":
                 return Problem(C.INVALID_CHUNK, "policy", f"{exc.field}: {exc.detail}" if exc.field else exc.detail)
             return Problem(C.CONTRACT_VIOLATION, process, str(exc))
+        if isinstance(exc, ScriptError):                     # ScriptTimeout, from ScriptedOperator.poll_key
+            return Problem(C.OPERATOR_SCRIPT, "operator", str(exc))
         return Problem(C.INTERNAL_ERROR, SELF, f"{type(exc).__name__}: {exc}")
 
     def check_state(self, latest: ArmState | None, now_ns: int, episode_running: bool, stop_sent: bool,

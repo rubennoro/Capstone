@@ -36,6 +36,7 @@ timeouts:
 task_name: null               # for prompt; required only if the policy says uses_prompt
 prompt_index: 0               # for prompt
 operator_script: null         # null: the keyboard. A path: a ScriptedOperator script (relative: see deploy 6.2)
+operator_script_wait_s: 30.0  # with a script: the longest a wait, or a key the loop refuses, may take (then exit 1)
 skip_warn_s: 1.0              # steps skipped longer than this -> status line SKIPPING (never a conclude)
 log_steps: true               # write steps.jsonl
 save_tap: false               # save each sent step's observation, chunk and waypoints to tap/ (first real-arm runs)

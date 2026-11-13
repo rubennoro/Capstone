@@ -3,7 +3,7 @@ import pytest
 
 from contracts import ContractError, ErrorReply, RemoteError, TransportCancelled, TransportTimeout
 from fakes import health, make_state
-from message_comms.errors import Refused, RequestCancelled
+from message_comms.errors import Refused, RequestCancelled, ScriptTimeout
 from message_comms.failure_monitor import RULES, FailureMonitor
 from message_comms.problems import Kind, Problem, ProblemCode as C
 
@@ -86,6 +86,9 @@ def rows():
          "franka_control: homing failed: no reply within 90.0 s: check the arm's path to the home pose"),
         ("startup", direct(P(C.STARTUP, "process_frames", "no camera ok within 20 s (main stale)")), C.STARTUP,
          Kind.CONCLUDE, "startup: no camera ok within 20 s (main stale): check process_frames"),
+        ("operator script", exc(ScriptTimeout("s.yaml:3: wait_phase idle: not reached (phase running) after 30.0 s")),
+         C.OPERATOR_SCRIPT, Kind.CONCLUDE, "operator script: s.yaml:3: wait_phase idle: not reached (phase running) "
+         "after 30.0 s: check the script (message_comms.operator_script) or raise operator_script_wait_s"),
         ("internal error", exc(KeyError("x")), C.INTERNAL_ERROR, Kind.CONCLUDE,
          "internal error: KeyError: 'x': see the message_comms log"),
         ("remote internal error", exc(remote("process_frames", "c1.get_frames/v1", "handler failed")),

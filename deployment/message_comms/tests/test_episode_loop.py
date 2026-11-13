@@ -516,10 +516,44 @@ def test_run_with_a_script_two_episodes(settings):
     text = ("- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {wait_phase: idle}\n"
             "- {wait_s: 0.2}\n- {key: h}\n- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: n}\n"
             "- {wait_s: 0.2}\n- {key: q}\n")
-    harness.operator = ScriptedOperator(parse_script(text, "t"), io.StringIO(), harness.clock)
+    harness.operator = ScriptedOperator(parse_script(text, "t"), io.StringIO(), harness.clock,
+                                        settings.operator_script_wait_s)
     harness.loop._operator = harness.operator
     harness.start()
     assert harness.loop.run() == 0
     assert [e["outcome"] for e in episodes(settings)] == ["stopped", "fail"]
     assert harness.calls.count("home") == 1 and harness.calls[-1] in ("stop", "heartbeat")
     assert np.all(np.diff([msg.chunk_id for _, msg in harness.franka.sent]) > 0)
+
+
+def scripted(harness, text, out=None):
+    harness.operator = ScriptedOperator(parse_script(text, "t"), out or io.StringIO(), harness.clock,
+                                        harness.settings.operator_script_wait_s, "t")
+    harness.loop._operator = harness.operator
+
+
+def test_run_with_a_script_retries_a_refused_key(settings):
+    """s while a step is in flight, then h at once: h is refused (the last step is still running) and retried."""
+    harness = LoopHarness(settings)
+    harness.worker.delay_s = 0.2                         # a step is in flight when s is pressed
+    out = io.StringIO()
+    scripted(harness, "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {key: h}\n"
+                      "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 2}\n- {key: y}\n- {key: q}\n", out)
+    harness.start()
+    assert harness.loop.run() == 0, harness.loop.verdict
+    assert "h: waiting for the last policy step to finish" in out.getvalue()
+    assert harness.calls.count("home") == 1
+    assert [e["outcome"] for e in episodes(settings)] == ["stopped", "success"]
+
+
+def test_run_with_a_script_that_waits_forever_concludes(make_settings):
+    settings = make_settings(operator_script_wait_s=1.0)
+    harness = LoopHarness(settings)
+    scripted(harness, "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 100000}\n- {key: y}\n- {key: q}\n")
+    harness.start()
+    assert harness.loop.run() == 1
+    v = harness.loop.verdict
+    assert v.problem.code is C.OPERATOR_SCRIPT and v.kind is Kind.CONCLUDE
+    assert v.what_failed.startswith("operator script: t:3: wait_steps 100000: not reached (phase running, ")
+    assert v.what_to_check == "check the script (message_comms.operator_script) or raise operator_script_wait_s"
+    assert "stop" in harness.calls and [e["outcome"] for e in episodes(settings)] == ["aborted"]

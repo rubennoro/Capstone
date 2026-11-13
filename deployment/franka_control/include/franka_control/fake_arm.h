@@ -26,6 +26,7 @@ class FakeArm : public Arm {
 
   void injectFault(const std::string& text);       // tests: the next cycle throws ArmError(kReflex, text)
   void stallHoming(bool on);                       // tests: moveToJoints never finishes (homing timeout)
+  void ignoreFinish(bool on);                      // tests: a torque session ends only on requestStop (shutdown)
 
  private:
   ArmReading reading() const;
@@ -49,6 +50,7 @@ class FakeArm : public Arm {
   std::atomic<bool> stop_requested_{false};
   std::atomic<bool> fault_pending_{false};
   std::atomic<bool> stall_homing_{false};
+  std::atomic<bool> ignore_finish_{false};
   std::array<char, 256> fault_text_{};
 };
 

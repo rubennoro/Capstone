@@ -1,15 +1,17 @@
 """How `deploy` starts and checks the policy process (STRUCTURE.md 8). Not part of the `policy` package.
 
 Imports only the standard library, `deploy` and `contracts` (deploy/STRUCTURE.md 4): the package itself may need
-torch, so its checks run in a subprocess, `python -m policy.self_check`, in the policy's own environment.
+torch, so its checks run in a subprocess, `python -m policy.self_check`, in the Python that will run the policy:
+`python.policy` for `kind: diffusion`, `python.light` for everything else (`hold_still`, and always with `--mock`).
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 
-from deploy import CheckResult, ManagedProcess, check_helpers
+from deploy import CheckResult, LaunchError, ManagedProcess, check_helpers
 
 STATUSES = ("pass", "warn", "fail", "info")
 
@@ -20,7 +22,18 @@ class PolicyProcess(ManagedProcess):
                   "and the GPU")
 
     def program(self) -> list[str]:
-        return [self.station.python("light" if self.mock else "policy"), "-m", "policy"]
+        return [self._python(), "-m", "policy"]
+
+    def _python(self) -> str:
+        """python.policy (checked to exist) for kind diffusion; python.light otherwise, which needs no torch."""
+        if self.mock or self.config.get("kind") != "diffusion":
+            return self.station.python("light")
+        python = self.station.python("policy")
+        if shutil.which(python) is None:
+            raise LaunchError(f"python.policy not found or not executable: {python} (policy.kind: diffusion runs "
+                              f"in the behavior_prompting environment with torch; set python.policy in "
+                              f"{self.station.path.name})")
+        return python
 
     def checks(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -34,7 +47,10 @@ class PolicyProcess(ManagedProcess):
         return results
 
     def _self_check(self) -> list[CheckResult]:
-        python = self.program()[0]
+        try:
+            python = self._python()
+        except LaunchError as e:                     # already a fail in the program row (base_checks)
+            return [CheckResult(self.NAME, "self_check", "info", f"not run: {e}")]
         cmd = [python, "-m", "policy.self_check", "--station", str(self.station.path)] + (["--mock"] if self.mock
                                                                                           else [])
         timeout_s = float(self.config["self_check_timeout_s"])

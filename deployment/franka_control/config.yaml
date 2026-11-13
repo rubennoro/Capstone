@@ -68,6 +68,7 @@ gripper:                              # max opening: gripper_width_max_m in cont
   grasp_force_n: 20.0
   deadband_m: 0.005
   poll_period_s: 0.02
+  read_rate_hz: 50.0                  # the width read into C2, also during a finger move
   width_offset_m: 0.0                 # TODO: measure with the printed fingers (fingertip opening - hand reading)
   homing_on_start: true
 

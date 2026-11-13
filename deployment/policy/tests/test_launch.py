@@ -66,12 +66,32 @@ def _make(tmp_path: Path, mock: bool, **station_kwargs):
     return _process_class()(Station.load(station_path, mock), mock, None)
 
 
-def test_program_uses_light_with_mock_and_policy_otherwise(tmp_path):
-    p = _make(tmp_path, mock=True, policy={"kind": "hold_still"})
-    assert p.program() == [sys.executable, "-m", "policy"]
-    p = _make(tmp_path, mock=False, policy={"kind": "hold_still"})
-    assert p.program() == ["/nonexistent/policy/python", "-m", "policy"]
+def test_program_uses_policy_python_only_for_diffusion(tmp_path):
+    python = _fake_python(tmp_path, "")
+    for mock, kind, expected in [(True, "hold_still", sys.executable), (True, "diffusion", sys.executable),
+                                 (False, "hold_still", sys.executable), (False, "diffusion", python)]:
+        p = _make(tmp_path, mock=mock, policy={"kind": kind}, policy_python=python)
+        assert p.program() == [expected, "-m", "policy"], (mock, kind)
     assert p.NAME == "policy" and "checkpoint" in p.READY_HINT
+
+
+def test_hold_still_without_mock_needs_no_policy_python(tmp_path):
+    p = _make(tmp_path, mock=False, policy={"kind": "hold_still"})          # python.policy does not exist
+    program = [r for r in p.base_checks() if r.name == "program"]
+    assert len(program) == 1 and program[0].status == "pass" and sys.executable in program[0].detail
+    results = p.checks()                                                    # the real self-check, light Python
+    assert [r for r in results if r.status == "fail"] == []
+    assert {r.name for r in results} >= {"settings", "kind"}
+
+
+def test_diffusion_with_missing_policy_python_fails_the_program_check(tmp_path):
+    p = _make(tmp_path, mock=False, policy={"kind": "diffusion", "checkpoint": "/x/best.ckpt"})
+    program = [r for r in p.base_checks() if r.name == "program"]
+    assert len(program) == 1 and program[0].status == "fail"
+    assert "python.policy not found or not executable: /nonexistent/policy/python" in program[0].detail
+    assert "diffusion" in program[0].detail
+    self_check = [r for r in p.checks() if r.name == "self_check"]                 # not run, no second fail
+    assert len(self_check) == 1 and self_check[0].status == "info" and "not run" in self_check[0].detail
 
 
 def test_unset_kind_fails_and_skips_the_self_check(tmp_path):
@@ -103,14 +123,14 @@ def test_self_check_lines_become_check_results(tmp_path):
 
 def test_self_check_crash_is_one_fail_with_its_stderr(tmp_path):
     python = _fake_python(tmp_path, "sys.stderr.write('No module named policy\\n'); sys.exit(1)")
-    results = _make(tmp_path, mock=False, policy={"kind": "hold_still"}, policy_python=python).checks()
+    results = _make(tmp_path, mock=False, policy={"kind": "hold_still"}, light=python).checks()
     fails = [r for r in results if r.name == "self_check"]
     assert len(fails) == 1 and fails[0].status == "fail" and "No module named policy" in fails[0].detail
 
 
 def test_self_check_garbage_line_is_one_fail(tmp_path):
     python = _fake_python(tmp_path, "print('hello')")
-    results = _make(tmp_path, mock=False, policy={"kind": "hold_still"}, policy_python=python).checks()
+    results = _make(tmp_path, mock=False, policy={"kind": "hold_still"}, light=python).checks()
     fails = [r for r in results if r.name == "self_check"]
     assert len(fails) == 1 and "not a check" in fails[0].detail
 
@@ -118,7 +138,7 @@ def test_self_check_garbage_line_is_one_fail(tmp_path):
 def test_self_check_timeout_is_one_fail(tmp_path):
     python = _fake_python(tmp_path, "sys.stderr.write('importing torch\\n'); sys.stderr.flush(); time.sleep(30)")
     results = _make(tmp_path, mock=False, policy={"kind": "hold_still", "self_check_timeout_s": 0.5},
-                    policy_python=python).checks()
+                    light=python).checks()
     fails = [r for r in results if r.name == "self_check"]
     assert len(fails) == 1 and "timed out" in fails[0].detail
 

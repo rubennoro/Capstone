@@ -136,7 +136,8 @@ Two classes beyond PLAN §6.3's list are needed to run the threads: `ControlLoop
 |---|---|---|---|
 | **control** | real-time (libfranka sets `SCHED_FIFO` inside `robot.control` with `realtime: enforce`) | `ControlLoop`: the libfranka 1 kHz torque callback, and homing moves | `SharedState` (wait-free parts only) |
 | **messaging** | normal | `Supervisor`, `CommandServer` (C3), `StatePublisher` (C2) | `SharedState`; plus `Arm::requestStop()` (homing timeout only) |
-| **gripper** | normal | `GripperWorker`: `franka::Gripper` calls (they block for the length of a finger move) | `SharedState` |
+| **gripper** | normal | `GripperWorker::run`: sends finger moves (`franka::Gripper::grasp`/`move` block for the length of a finger move) | `SharedState` |
+| **gripper-reader** | normal | `GripperWorker::runReader`: reads the finger width at `gripper.read_rate_hz` (50 Hz), also while a move runs | `SharedState` |
 | **main** | normal | `App`: start-up, waits for SIGINT/SIGTERM, shutdown | everything, at start and end only |
 
 The messaging thread repeats, at most every `messaging.poll_max_s` (5 ms):
@@ -174,8 +175,8 @@ Why not the alternatives:
 | snapshot | control → messaging | `TripleBuffer<LoopSnapshot>` | the newest arm reading, target, phase, fault, loop stats |
 | `last_alive_ns` | messaging → control | `std::atomic<int64_t>` | time of the last C3 request (watchdog) |
 | `gripper_target_m` | control → gripper | `std::atomic<double>` | the width the plan asks for now |
-| `gripper_width_m` | gripper → messaging | `std::atomic<double>` | measured fingertip width |
-| `gripper_fault` | gripper → messaging | `std::string` + `std::mutex` | gripper error text; neither thread is the loop, so a mutex is fine |
+| `gripper_width_m` | gripper-reader → messaging | `std::atomic<double>` | measured fingertip width, at most one read period (20 ms) old, also during a finger move |
+| `gripper_fault` | gripper, gripper-reader → messaging | `std::string` + `std::mutex` | gripper error text (the first one is kept); none of these threads is the loop, so a mutex is fine |
 | `shutdown` | main → all | `std::atomic<bool>` | stop cleanly |
 
 `std::atomic<double>` and `std::atomic<int64_t>` are checked with `static_assert(...::is_always_lock_free)` (true on
@@ -635,26 +636,36 @@ Each step that fails ends the process with a FATAL line (deploy §7.6) and exit 
    Wait until it has held for `startup.hold_before_ready_s` (`phase == kTorque`), at most `startup.loop_start_timeout_s`.
    A `RealtimeException` here → `FATAL ...: real-time scheduling unavailable: use a PREEMPT_RT kernel with rtprio 99,
    or set franka_control.realtime: ignore in station.yaml`.
-7. **Sockets:** bind C2 PUB and C3 REP (a busy port → FATAL naming it). Start the messaging thread and the gripper
-   thread. The Supervisor starts in `idle` and posts `kHold`.
+7. **Sockets:** bind C2 PUB and C3 REP (a busy port → FATAL naming it). Start the messaging thread and the two
+   gripper threads (gripper, gripper-reader). The Supervisor starts in `idle` and posts `kHold`.
 8. After the first C2 message is published, create the ready file (`--ready-file`). From here on C3 is answered.
 
 ### 7.4 Shutdown (SIGINT or SIGTERM)
 
-1. The main thread sets `shutdown`.
+1. The main thread sets `shutdown` and calls `gripper.stop()`, which ends a running finger move.
 2. **Control thread:** a torque session holds the current target, settles (5.5) and returns `MotionFinished`; then the
    thread ends. If a homing move is running, the main thread calls `arm.requestStop()` (the move stops; the resulting
    `ArmError` is expected and not a fault).
-3. The main thread joins the control thread (at most `shutdown.timeout_s`, 3 s; if it is still running:
-   `arm.requestStop()`, join again, and a warning).
+3. The main thread waits for the control thread at most `shutdown.timeout_s` (3 s). If it is still running: a
+   warning, `arm.requestStop()`, and a second wait of at most `kShutdownStopWaitS` (1.5 s, a named constant in
+   `app.h`). Then it joins the thread. (If even `requestStop()` doesn't end it within 1.5 s, an error is logged and
+   the join continues; the launcher's SIGKILL is the last resort.)
 4. Then the messaging thread stops (so C2 kept reporting during the settle) and closes its sockets with linger 0; a
-   pending `home` reply is dropped. The gripper thread calls `gripper.stop()` and ends.
+   pending `home` reply is dropped. The two gripper threads saw `shutdown` in step 1 and end after their current
+   iteration: the gripper thread's move was stopped, and it calls `gripper.stop()` once more; the gripper-reader
+   thread finishes its current read.
 5. Exit code 0, no FATAL line (deploy §7.6). A fault that happened earlier was logged at ERROR when it happened.
 
-`shutdown.timeout_s` (3 s) stays below the launcher's `stop_timeout_s` (5 s), after which the launcher would SIGKILL.
-Even then the arm is safe: when the FCI connection drops, the robot stops itself.
+**The shutdown budget.** The launcher waits `launcher.stop_timeout_s` (5 s) after SIGTERM, then SIGKILLs. The worst
+case here is the control thread's two waits, `shutdown.timeout_s` + `kShutdownStopWaitS` = 3 + 1.5 = **4.5 s** (each
+wait may overrun by one 5 ms poll), plus one messaging iteration (≤ 5 ms). The gripper threads end in parallel with
+those waits, since they see `shutdown` at its start: a finger move is stopped at once (even a move that started just
+before `gripper.stop()` lasts at most ~1.6 s), and a read lasts at most one state packet (libfranka's UDP timeout is
+1 s on a silent hand). So the whole shutdown stays under 4.6 s, below 5 s. `shutdown.timeout_s` + 1.5 s must stay
+below `stop_timeout_s` if either is changed. Even a SIGKILL leaves the arm safe: when the FCI connection drops, the
+robot stops itself.
 
-An unexpected exception in the messaging or gripper thread (a bug, a ZeroMQ error) triggers the same shutdown, then a
+An unexpected exception in the messaging or a gripper thread (a bug, a ZeroMQ error) triggers the same shutdown, then a
 FATAL line and exit 1, because without C3/C2 the process can't do its job.
 
 ## 8. Messaging (C2, C3)
@@ -793,10 +804,10 @@ class Codec {                                      // pure; contracts/STRUCTURE.
 | `Arm` (interface) | control (`requestStop`: any) | read state, run the 1 kHz torque loop, homing move, stop |
 | `LibfrankaArm` | control | the real Panda through `franka::Robot` + `franka::Model` |
 | `FakeArm` | control | a simulated arm for `--mock` and tests |
-| `Gripper` (interface) | gripper (`stop`: any) | move to a width, read the width |
-| `FrankaHandGripper` | gripper | the Franka Hand with our printed fingers, through `franka::Gripper` |
-| `FakeGripper` | gripper | simulated fingers |
-| `GripperWorker` | gripper | the gripper thread: follows `gripper_target_m` with a deadband |
+| `Gripper` (interface) | gripper (`moveTo`), gripper-reader (`widthM`), any (`stop`) | move to a width, read the width |
+| `FrankaHandGripper` | gripper, gripper-reader | the Franka Hand with our printed fingers, through one `franka::Gripper` |
+| `FakeGripper` | gripper, gripper-reader | simulated fingers |
+| `GripperWorker` | gripper (`run`), gripper-reader (`runReader`) | follows `gripper_target_m` with a deadband; reports the width |
 | `SafetyGate` | messaging | section 6 |
 | `WaypointTrajectory` | messaging (builds), control (reads its own copy) | section 5.3 |
 | `ImpedanceController` | control | section 5.4 |
@@ -865,6 +876,7 @@ class FakeArm : public Arm {
   FakeArm(const FakeArmConfig& cfg, const Pose& F_T_TCP, const Vec7& q_home, Clock clock);
   void injectFault(const std::string& text);       // tests: the next cycle throws ArmError(kReflex, text)
   void stallHoming(bool on);                       // tests: moveToJoints never finishes (homing timeout)
+  void ignoreFinish(bool on);                      // tests: a torque session ends only on requestStop (shutdown)
 };
 ```
 
@@ -888,11 +900,11 @@ class Gripper {
  public:
   virtual ~Gripper() = default;
   virtual void prepare() = 0;                      // start-up: connect, optional finger homing
-  virtual double widthM() = 0;                     // fingertip opening now
+  virtual double widthM() = 0;                     // fingertip opening now; may run while moveTo runs
   virtual void moveTo(double width_m) = 0;         // blocks until reached, or stopped by an object
   virtual void stop() = 0;                         // any thread: ends a running moveTo
 };
-// All but stop throw GripperError.
+// All but stop throw GripperError. widthM (gripper-reader thread) and moveTo (gripper thread) run concurrently.
 
 class FrankaHandGripper : public Gripper {
  public:
@@ -901,30 +913,52 @@ class FrankaHandGripper : public Gripper {
 class FakeGripper : public Gripper {
  public:
   FakeGripper(const FakeGripperConfig& cfg, std::function<void(int64_t)> sleep_ns);   // tests pass a no-op sleep
+  void failNextMove(bool on);                      // tests: the next moveTo throws GripperError
+  void failNextRead(bool on);                      // tests: the next widthM throws GripperError
 };
 
-class GripperWorker {                              // gripper thread
+class GripperWorker {
  public:
   GripperWorker(Gripper& g, SharedState& shared, const GripperConfig& cfg, Clock clock);
-  void run();                                      // until shutdown or an error
-  void stepOnce();                                 // one iteration (tests)
+  void run();                                      // gripper thread: until shutdown or an error (either loop's)
+  void runReader();                                // gripper-reader thread: until shutdown or an error
+  bool stepOnce();                                 // one command iteration (tests); false after a GripperError
+  bool readStep();                                 // one width read into SharedState (tests); false after one
 };
 ```
 
-- **`GripperWorker`**, every `gripper.poll_period_s` (20 ms): read `gripper_target_m`. If it differs from the last
-  sent width by more than `gripper.deadband_m` (5 mm), call `moveTo(target)` (blocks while the fingers move). Then
-  `widthM()` → `shared.setGripperWidth`. A `GripperError` → `shared.setGripperFault(text)` and the thread ends; the
-  Supervisor goes to `fault`.
-- **The width in C2 is stale while a move runs.** `moveTo` blocks for the whole finger move (up to ~1.6 s for 8 cm at
-  0.05 m/s), and the width is read only after it returns, so C2 `gripper_width_m` shows the width from before the move
-  until the move ends. The next target is also sent only then.
+- **Two loops, two threads.** `moveTo` blocks for the whole finger move (up to ~1.6 s for 8 cm at 0.05 m/s), so the
+  width is read by a separate loop. Otherwise C2 `gripper_width_m`, which the policy observes, would freeze for the
+  whole move, while training saw the true width every frame.
+  - **`run()`** (gripper thread), every `gripper.poll_period_s` (20 ms): read `gripper_target_m`. If it differs from
+    the last sent width by more than `gripper.deadband_m` (5 mm), call `moveTo(target)` (blocks while the fingers
+    move). After a long move it continues at once, without sleeping. It calls `gripper.stop()` when it ends.
+  - **`runReader()`** (gripper-reader thread), every `1 / gripper.read_rate_hz` (20 ms): `widthM()` →
+    `shared.setGripperWidth`. It is the only writer of `gripper_width_m` once the threads run (at start-up the main
+    thread sets it, before they start).
+  - A `GripperError` in either loop → `shared.setGripperFault(text)` and both loops end (a shared flag); the
+    Supervisor goes to `fault`.
+- **The fingers move in segments.** The target is interpolated along the plan, so during a long close it runs ahead
+  of the fingers in steps: each `moveTo` covers what the target moved during the previous one (at least the 5 mm
+  deadband), then the next is sent right away. Between segments the fingers stop for one command round trip. This is
+  kept as it is: removing it needs either preempting a running move (`stop()` + a new `move`, which also halts the
+  fingers) or sending the plan's final width instead of the current one, both changes to tune on the hand.
+- **One `franka::Gripper` connection for both threads.** libfranka 0.9.2's `gripper.h` says its members are
+  thread-safe: commands go over TCP (`move`/`grasp` wait for their reply with the TCP lock released every 10 ms, which
+  is how `stop()` from another thread gets through) and `readOnce` over UDP, under a separate lock. The one exception
+  in its header is that `readOnce` throws `InvalidOperationException` if another `readOnce` is running. `moveTo` also
+  calls `readOnce` (for the current and max width), so `FrankaHandGripper` holds a mutex around each of its two
+  `readOnce` calls, never during `grasp`, `move` or `stop`. A second connection only for reading would avoid the
+  mutex, but it would depend on the hand's server accepting two clients at once, which can't be checked without the
+  hand; the single connection is what the header documents.
 - **`FrankaHandGripper::moveTo(w)`**: hand width = `w − gripper.width_offset_m` (fingertips vs the hand's own
   reading; 0 until measured), clamped to `[0, min(width_max_m, GripperState.max_width)]`. **Closing** (narrower than now
   by more than the deadband): `grasp(width, speed, force, ε_inner = width, ε_outer = max)`, so it holds with
   `grasp_force_n` wherever an object stops the fingers. **Opening:** `move(width, speed)`. Force, speed, deadband and
   finger homing at start-up are config values (`gripper:` in section 10).
-- **`FakeGripper`**: the width moves toward the target at `fake_gripper.speed_m_per_s`, and stops at
-  `fake_gripper.object_width_m` when closing past it.
+- **`FakeGripper`**: the width moves toward the target at `fake_gripper.speed_m_per_s` in 5 ms steps (one `sleep_ns`
+  call each), so `widthM()` from the reader thread sees it change during a move. It stops at
+  `fake_gripper.object_width_m` when closing past it. `stop()` ends a running move where the fingers are.
 
 ## 10. `config.yaml`
 
@@ -1018,7 +1052,8 @@ checked by `deploy check` and the geometry tool in `deploy/` (PLAN §6.6), not h
 | `speed_m_per_s` | float | `0.05` | finger speed for `move` and `grasp` |
 | `grasp_force_n` | float | `20.0` | grasp force |
 | `deadband_m` | float | `0.005` | smaller target changes are not sent |
-| `poll_period_s` | float | `0.02` | gripper thread period |
+| `poll_period_s` | float | `0.02` | gripper thread period (sending moves) |
+| `read_rate_hz` | float | `50.0` | gripper-reader thread rate: the width in C2, also during a move |
 | `width_offset_m` | float | `0.0` | fingertip opening − the hand's reported width. `# TODO: measure with the printed fingers` |
 | `homing_on_start` | bool | `true` | `franka::Gripper::homing()` at start-up (the fingers open and close once) |
 
@@ -1037,7 +1072,7 @@ checked by `deploy check` and the geometry tool in `deploy/` (PLAN §6.6), not h
 |---|---|---|---|
 | `startup.hold_before_ready_s` | float | `0.2` | the loop must hold this long before ready |
 | `startup.loop_start_timeout_s` | float | `10.0` | waiting for the first torque session |
-| `shutdown.timeout_s` | float | `3.0` | settle + join budget; below the launcher's `stop_timeout_s` |
+| `shutdown.timeout_s` | float | `3.0` | settle + join budget; plus `kShutdownStopWaitS` (1.5 s) after `arm.requestStop()`, below the launcher's `stop_timeout_s` (7.4) |
 | `loop_warning.success_rate_min` | float | `0.95` | warn when `control_command_success_rate` drops below this in a window |
 | `loop_warning.late_period_ms` | float | `1.5` | a cycle more than this after the previous one is late (counted in C2 `loop_late`, 5.2) |
 
@@ -1213,8 +1248,8 @@ drive time with a `FakeClock`; the few that need real threads wait on a conditio
 | `test_state_publisher.cpp` | with FakeClock: one message per period; `seq` +1 per broadcast; `get_state` carries the last seq; `mode` (all six values), `error`, `gate` (incl. `pulled_back`) and `loop_late` mapping; with no new snapshot (after a fault) messages keep coming with `seq` +1 and the same `t_ns`; every message passes the C++ decoder's checks; never blocks with no subscriber |
 | `test_config_loader.cpp` | the real `config.yaml` loads; station overrides merge (maps key by key, lists replaced); an unknown override key refused with its path; each bad value refused (negative `v_max`, non-rigid `F_T_TCP`, box min ≥ max, 6-element `q_home`, bad `realtime`, `watchdog.limit_s` 0.4, negative margins); all problems listed at once; endpoints and `session_root` read from `station.yaml`, a missing one refused naming the key; `--mock` works without a reachable `robot_ip`; `max_waypoints` > capacity refused |
 | `test_arm_status.cpp` | `describeArmProblem` (port of `derive_panda_error`): reflex mode wins over error flags; `current_errors` text; `"[]"` and empty mean none; user stop pressed; a ready arm gives `""` |
-| `test_gripper_worker.cpp` | with `FakeGripper` and a no-op sleep: changes below the deadband are not sent; closing and opening reach the target; the fingers stop at `object_width_m` (port of `test_fake_gripper_stalls_at_object`); a `GripperError` sets the gripper fault; the measured width reaches `SharedState` |
-| `test_fake_arm_run.cpp` | (label `threads`) a short real-time run of the whole `App` with `--mock` on free ports and a test REQ client: ready file appears; `get_state` → `idle`; `start`; waypoints moving 5 cm over 1 s with heartbeats → `running`, then `holding`, the fake TCP within 2 mm of the last waypoint; heartbeats stop → `stopped` within 0.5 s + 10 ms; `stop` → `stopped`; `home` → C2 shows `homing`, then `Ack(ok)` and `idle`; `FakeArm::injectFault` → `fault` with the text in C2; shutdown → all threads end, exit code 0 |
+| `test_gripper_worker.cpp` | with `FakeGripper` and a no-op sleep: changes below the deadband are not sent; closing and opening reach the target; the fingers stop at `object_width_m` (port of `test_fake_gripper_stalls_at_object`); a `GripperError` from a move or a read sets the gripper fault; `readStep` puts the measured width in `SharedState`; a fake move passes through intermediate widths. Label `threads`, both loops on their own threads with a fake move that takes real time: the width in `SharedState` takes ≥ 10 distinct values during one 0.8 s move; at shutdown mid-move both loops end within 0.1 s and the move is stopped, not finished |
+| `test_fake_arm_run.cpp` | (label `threads`) a short real-time run of the whole `App` with `--mock` on free ports and a test REQ client: ready file appears; `get_state` → `idle`; `start`; waypoints moving 5 cm over 1 s with heartbeats → `running`, then `holding`, the fake TCP within 2 mm of the last waypoint; heartbeats stop → `stopped` within 0.5 s + 10 ms; `stop` → `stopped`; `home` → C2 shows `homing`, then `Ack(ok)` and `idle`; `FakeArm::injectFault` → `fault` with the text in C2; shutdown → all threads end, exit code 0. A second run: with `FakeArm::ignoreFinish` (a session that never ends by itself) the shutdown takes ≥ `shutdown.timeout_s`, < `shutdown.timeout_s` + `kShutdownStopWaitS` and < 5 s, exit code 0 |
 | `test_launch.py` | (pytest, deploy §9) `program()` with the default and a station-overridden `binary`; `checks()` with a broken station section; `--mock` skips the arm, RT-kernel and rtprio checks; `realtime: ignore` gives a warn |
 
 **Safety cases ported from main-sim's `tests/test_bridge_safety.py`, one for one:**
@@ -1256,7 +1291,8 @@ machine:
   [linear; angular]), `Model::coriolis(state)`.
 - `RobotState` fields `q`, `dq`, `tau_J_d`, `robot_mode`, `current_errors`, `control_command_success_rate`.
 - `franka::Gripper`: `homing`, `move(width, speed)`, `grasp(width, speed, force, epsilon_inner, epsilon_outer)`,
-  `readOnce` (`width`, `max_width`), `stop`.
+  `readOnce` (`width`, `max_width`), `stop`; its members' thread safety, and `readOnce` throwing when another
+  `readOnce` runs (9.3).
 - The exception classes of 5.6 and `IncompatibleVersionException`.
 
 Any difference changes only `LibfrankaArm` or `FrankaHandGripper` (and this file), never the rest.

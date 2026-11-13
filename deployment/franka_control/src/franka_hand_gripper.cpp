@@ -27,6 +27,7 @@ void FrankaHandGripper::prepare() {
 
 double FrankaHandGripper::widthM() {
   try {
+    std::lock_guard<std::mutex> lock(read_mutex_);
     return gripper_->readOnce().width + cfg_.width_offset_m;
   } catch (const franka::Exception& e) {
     throw GripperError(std::string("Franka Hand: ") + e.what());
@@ -35,7 +36,10 @@ double FrankaHandGripper::widthM() {
 
 void FrankaHandGripper::moveTo(double width_m) {
   try {
-    const franka::GripperState s = gripper_->readOnce();
+    const franka::GripperState s = [this] {
+      std::lock_guard<std::mutex> lock(read_mutex_);   // released before the blocking grasp/move below
+      return gripper_->readOnce();
+    }();
     const double hand = std::clamp(width_m - cfg_.width_offset_m, 0.0, std::min(width_max_m_, s.max_width));
     if (hand < s.width - cfg_.deadband_m) {
       // closing: hold with grasp_force wherever an object stops the fingers

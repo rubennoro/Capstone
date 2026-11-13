@@ -54,6 +54,8 @@ void FakeArm::injectFault(const std::string& text) {
 
 void FakeArm::stallHoming(bool on) { stall_homing_.store(on); }
 
+void FakeArm::ignoreFinish(bool on) { ignore_finish_.store(on); }
+
 void FakeArm::waitNextCycle(int64_t& next_ns) {
   next_ns += kCycleNs;
   if (clock_() - next_ns > kCatchUpNs) next_ns = clock_();
@@ -96,7 +98,7 @@ void FakeArm::runTorqueControl(const TorqueStep& step) {
     const TorqueCommand c = step(reading());
     integrate(c.tau, kCycleS);
     tau_last_ = c.tau;
-    if (c.finished) return;
+    if (c.finished && !ignore_finish_.load()) return;
   }
 }
 

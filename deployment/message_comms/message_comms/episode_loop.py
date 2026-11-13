@@ -51,6 +51,7 @@ class LoopProgress:               # what ScriptedOperator may wait on
     episode_id: int               # 0 before the first episode
     steps_sent: int               # waypoint sets sent in this episode
     now_ns: int
+    worker_busy: bool = False     # a policy step (or reset) still on the worker: c and h are refused meanwhile
 
 
 class _Finished(Exception):
@@ -137,7 +138,7 @@ class EpisodeLoop:
         return self._interrupt.is_set() or self._terminate.is_set()
 
     def progress(self) -> LoopProgress:
-        return LoopProgress(self._phase, self._episode_id, self._steps_sent, self._clock())
+        return LoopProgress(self._phase, self._episode_id, self._steps_sent, self._clock(), self._worker.busy())
 
     def startup(self, ready_file: Path | None) -> None:
         """Section 5.1. On failure sets the verdict and phase DONE."""
@@ -317,7 +318,7 @@ class EpisodeLoop:
         elif key is Key.START:
             if phase is Phase.IDLE:
                 if self._worker.busy():
-                    self._hint("c: waiting for the last policy step to finish")
+                    self._refuse(key, "c: waiting for the last policy step to finish")
                     return
                 prompt = (self._s.task_name, self._s.prompt_index) if self._uses_prompt else None
                 self._worker.submit_reset(prompt)
@@ -325,21 +326,21 @@ class EpisodeLoop:
                 self._phase = Phase.RESETTING
                 self._log.log_event("reset", "policy reset" + (" + prompt" if prompt else ""))
             elif phase is Phase.RUNNING:
-                self._hint("c: an episode is running (y success, n fail, s stop)")
+                self._refuse(key, "c: an episode is running (y success, n fail, s stop)")
             else:
-                self._hint("c: the episode is already starting (s cancels)")
+                self._refuse(key, "c: the episode is already starting (s cancels)")
         elif key in (Key.SUCCESS, Key.FAIL):
             if phase is Phase.RUNNING:
                 self._end_episode(Outcome.SUCCESS if key is Key.SUCCESS else Outcome.FAIL, "operator")
             elif phase is Phase.RESETTING:
-                self._hint(f"{key.value}: the episode is still starting (s cancels)")
+                self._refuse(key, f"{key.value}: the episode is still starting (s cancels)")
             else:
-                self._hint(f"{key.value}: no episode running (c start, h home, q quit)")
+                self._refuse(key, f"{key.value}: no episode running (c start, h home, q quit)")
         elif key is Key.HOME:
             if phase is not Phase.IDLE:
-                self._hint("h: end the episode first (y / n / s)")
+                self._refuse(key, "h: end the episode first (y / n / s)")
             elif self._worker.busy():
-                self._hint("h: waiting for the last policy step to finish")
+                self._refuse(key, "h: waiting for the last policy step to finish")
             else:
                 self._home()
 
@@ -359,6 +360,11 @@ class EpisodeLoop:
 
     def _hint(self, text: str) -> None:
         self._operator.show_message(text)
+
+    def _refuse(self, key: Key, text: str) -> None:
+        """The key doesn't fit now and is ignored: the hint, and the operator is told (a script retries it)."""
+        self._hint(text)
+        self._operator.key_refused(key, text)
 
     # ---- episodes ------------------------------------------------------------------------------------------------
 

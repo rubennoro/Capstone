@@ -9,7 +9,7 @@ from typing import TextIO
 import yaml
 
 from message_comms.episode_loop import LoopProgress, Phase
-from message_comms.errors import ScriptError
+from message_comms.errors import ScriptError, ScriptTimeout
 from message_comms.operator import Key, Operator
 
 KINDS = ("key", "wait_phase", "wait_steps", "wait_s")
@@ -24,45 +24,84 @@ class ScriptEntry:
 
 
 class ScriptedOperator(Operator):
-    def __init__(self, entries: Sequence[ScriptEntry], stdout: TextIO, clock: Callable[[], int]) -> None:
+    """Runs the entries in order. `wait_phase`, `wait_steps` and a key that EpisodeLoop refuses each have the time
+    limit `wait_limit_s` (message_comms.operator_script_wait_s, by the injected clock); past it, poll_key raises
+    ScriptTimeout naming the entry, and EpisodeLoop concludes (exit 1, FATAL line). A refused key is retried as soon
+    as anything the refusal depends on (phase, episode, steps sent, worker busy) has changed."""
+
+    def __init__(self, entries: Sequence[ScriptEntry], stdout: TextIO, clock: Callable[[], int],
+                 wait_limit_s: float, name: str = "script") -> None:
         super().__init__(stdout)
         self._entries = list(entries)
         self._clock = clock
+        self._limit_s = float(wait_limit_s)
+        self._limit_ns = int(round(wait_limit_s * NS_PER_S))
+        self._name = name
         self._index = 0
-        self._wait_since: int | None = None
+        self._since: int | None = None             # when the current entry began (wait_s and the time limit)
+        self._returned: tuple[int, int, tuple] | None = None   # the key just returned: (index, since, state)
+        self._refused: tuple | None = None         # the state the current key was refused in
+        self._hint = ""                            # the refusal's hint, for the timeout message
 
     @classmethod
-    def load(cls, path: Path, stdout: TextIO, clock: Callable[[], int]) -> ScriptedOperator:
+    def load(cls, path: Path, stdout: TextIO, clock: Callable[[], int], wait_limit_s: float) -> ScriptedOperator:
         """Raises ScriptError naming the line."""
         try:
             text = Path(path).read_text()
         except OSError as exc:
             raise ScriptError(f"{path}: cannot read: {exc}") from exc
-        return cls(parse_script(text, str(path)), stdout, clock)
+        return cls(parse_script(text, str(path)), stdout, clock, wait_limit_s, str(path))
 
     def done(self) -> bool:
         return self._index >= len(self._entries)
 
+    def key_refused(self, key: Key, hint: str) -> None:
+        """Go back to the key just returned: it is retried (section 4.9)."""
+        if self._returned is None or self._entries[self._returned[0]].value is not key:
+            return
+        self._index, self._since, self._refused = self._returned
+        self._returned = None
+        self._hint = hint
+
     def poll_key(self, progress: LoopProgress) -> Key | None:
+        """Raises ScriptTimeout when the current entry is past its time limit."""
+        self._returned = None
+        now = self._clock()
+        state = (progress.phase, progress.episode_id, progress.steps_sent, progress.worker_busy)
         while self._index < len(self._entries):
             entry = self._entries[self._index]
+            if self._since is None:
+                self._since = now
             if entry.kind == "key":
+                if self._refused is not None:                              # refused before
+                    self._check_limit(entry, now, f"key {entry.value.value}: still refused ({self._hint})")
+                    if state == self._refused:                             # nothing changed: no retry yet
+                        return None
+                self._returned = (self._index, self._since, state)
+                self._refused = None
                 self._index += 1
+                self._since = None
                 return entry.value
             if entry.kind == "wait_phase":
                 if progress.phase.value != entry.value:
+                    self._check_limit(entry, now, f"wait_phase {entry.value}: not reached "
+                                                  f"(phase {progress.phase.value})")
                     return None
             elif entry.kind == "wait_steps":
                 if progress.phase is not Phase.RUNNING or progress.steps_sent < entry.value:
+                    self._check_limit(entry, now, f"wait_steps {entry.value}: not reached "
+                                                  f"(phase {progress.phase.value}, {progress.steps_sent} sent)")
                     return None
-            else:                                           # wait_s, by the injected clock
-                if self._wait_since is None:
-                    self._wait_since = self._clock()
-                if self._clock() - self._wait_since < entry.value * NS_PER_S:
-                    return None
-                self._wait_since = None
+            elif now - self._since < entry.value * NS_PER_S:              # wait_s, by the injected clock
+                return None
             self._index += 1
+            self._since = None
         return None
+
+    def _check_limit(self, entry: ScriptEntry, now: int, what: str) -> None:
+        if now - self._since >= self._limit_ns:
+            raise ScriptTimeout(f"{self._name}:{entry.line}: {what} after {self._limit_s:.1f} s "
+                                "(message_comms.operator_script_wait_s)")
 
 
 def parse_script(text: str, name: str) -> list[ScriptEntry]:

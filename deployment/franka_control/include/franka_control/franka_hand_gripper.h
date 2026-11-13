@@ -1,7 +1,11 @@
 // The Franka Hand with our printed fingers, through franka::Gripper (STRUCTURE.md 9.3). Only built with libfranka.
+// One connection, used by two threads: the gripper thread (moveTo, stop) and the gripper-reader thread (widthM).
+// franka::Gripper's members are thread-safe (its header), except that readOnce throws if another readOnce is
+// running, so read_mutex_ lets only one readOnce run at a time. It is never held during grasp, move or stop.
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "franka_control/config.h"
@@ -27,6 +31,7 @@ class FrankaHandGripper : public Gripper {
   GripperConfig cfg_;
   double width_max_m_;
   std::unique_ptr<franka::Gripper> gripper_;
+  std::mutex read_mutex_;                          // around every gripper_->readOnce()
 };
 
 }  // namespace franka_control

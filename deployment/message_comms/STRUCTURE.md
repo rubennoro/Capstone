@@ -82,7 +82,7 @@ message_comms/
   message_comms/
     __init__.py
     __main__.py                `python -m message_comms`: arguments, wiring, signals, FATAL line, exit code (section 10)
-    errors.py                  SettingsError, Refused, RequestCancelled, ScriptError                                       new
+    errors.py                  SettingsError, Refused, RequestCancelled, ScriptError, ScriptTimeout      new
     settings.py                Settings, Timeouts, Endpoints, load_settings()                            new
     frames_client.py           FramesClient (C1)                                                         new
     policy_client.py           PolicyClient (C4)                                                         new
@@ -451,6 +451,8 @@ failed, what to check). "A new failure rule is one entry in `FailureMonitor`" (P
 - **`ContractError`:**
   - on `c4.chunk/v1` → `INVALID_CHUNK`;
   - any other → `CONTRACT_VIOLATION`.
+- **`ScriptError`** (in a run only its subclass `ScriptTimeout`, raised by `ScriptedOperator.poll_key`) →
+  `OPERATOR_SCRIPT`.
 - **Anything else** → `INTERNAL_ERROR`.
 
 **Not a problem:** a cancelled `home` (`RequestCancelled`, raised by `FrankaClient.home` when `contracts`'
@@ -486,6 +488,7 @@ class LoopProgress:               # what ScriptedOperator may wait on
     episode_id: int               # 0 before the first episode
     steps_sent: int               # waypoint sets sent in this episode
     now_ns: int
+    worker_busy: bool = False     # a policy step (or reset) still on the worker: c and h are refused meanwhile
 
 class EpisodeLoop:
     def __init__(self, settings: Settings, franka: FrankaClient, health: FramesClient, worker: StepWorker,
@@ -530,7 +533,8 @@ class Operator(ABC):
     def start(self) -> None                                # e.g. terminal into single-key mode
     def close(self) -> None                                # always restores the terminal
     @abstractmethod
-    def poll_key(self, progress: LoopProgress) -> Key | None     # never blocks
+    def poll_key(self, progress: LoopProgress) -> Key | None     # never blocks; ScriptedOperator may raise ScriptTimeout
+    def key_refused(self, key: Key, hint: str) -> None     # the last key was ignored; default: nothing
     def show_status(self, line: str) -> None               # rewrites the one status line in place
     def show_message(self, text: str) -> None              # prints a full line above the status line (also logged)
 
@@ -538,9 +542,12 @@ class KeyboardOperator(Operator):
     def __init__(self, stdin: TextIO, stdout: TextIO) -> None
 
 class ScriptedOperator(Operator):
-    def __init__(self, entries: Sequence[ScriptEntry], stdout: TextIO, clock: Callable[[], int]) -> None
+    def __init__(self, entries: Sequence[ScriptEntry], stdout: TextIO, clock: Callable[[], int],
+                 wait_limit_s: float, name: str = "script") -> None    # name: the file, in messages
     @classmethod
-    def load(cls, path: Path, stdout: TextIO, clock: Callable[[], int]) -> "ScriptedOperator"   # raises ScriptError
+    def load(cls, path: Path, stdout: TextIO, clock: Callable[[], int],
+             wait_limit_s: float) -> "ScriptedOperator"              # raises ScriptError
+    def done(self) -> bool
 ```
 
 **Keys** (one letter, no Enter):
@@ -554,8 +561,10 @@ class ScriptedOperator(Operator):
 | `h` | `IDLE` | home the arm (section 5.7) |
 | `q` | any time (not acted on during `HOMING`, section 5.7) | quit: send `stop`, record the episode (if any) as `stopped`, end the run (exit 0). Ctrl-C does the same |
 
-A key that doesn't fit the phase is ignored with a one-line hint, e.g. `h: end the episode first (y / n / s)`. Any
-other key shows the key list.
+A key that doesn't fit the phase is ignored with a one-line hint, e.g. `h: end the episode first (y / n / s)`, and
+`EpisodeLoop` then calls `operator.key_refused(key, hint)`: the keyboard does nothing more (the operator reads the
+hint), a script retries the key (below). `s` in `IDLE` is not a refusal: it sends `stop`, and its hint only says no
+episode was running. Any other key shows the key list.
 
 **An episode and a run** (PLAN rule 1). An episode runs from `c` until `y`, `n` or `s`. A run is one `deploy run`,
 from start-up until `q`, Ctrl-C or an unrecoverable failure. So `y`, `n` and `s` end only the episode, and the run
@@ -593,6 +602,26 @@ with outcome `stopped`:
 
   The entry kinds are `key`, `wait_phase`, `wait_steps` and `wait_s`. `load` refuses an unknown entry, an unknown
   key, or a script whose last entry is not `{key: q}` (so a script always ends the run; `s` only ends an episode).
+
+  **A script never hangs.** Two rules, both timed by the injected clock with the limit `operator_script_wait_s`
+  (section 8, 30 s by default):
+  - **Every wait has a time limit.** A `wait_phase` or `wait_steps` entry is timed from the first `poll_key` that
+    reaches it. `wait_s` is a timed wait already and has no other limit.
+  - **A refused key is retried, not consumed.** After `key_refused`, the script goes back to that key entry. It
+    tries the key again as soon as anything a refusal depends on has changed: the phase, the episode, the steps sent
+    or `worker_busy` (all in `LoopProgress`). So `c` in `IDLE` while the last policy step is still on the worker
+    (`c: waiting for the last policy step to finish`) is sent again in the cycle the step's result is handled, and
+    a key refused in a state that never changes is not retried at all (no hint every cycle). The limit counts from
+    the key's first try.
+
+  Past the limit, `poll_key` raises `ScriptTimeout` naming the entry and what it waited for, e.g.
+  `keys.yaml:5: key h: still refused (h: end the episode first (y / n / s)) after 30.0 s
+  (message_comms.operator_script_wait_s)`. The exception reaches `EpisodeLoop`'s guard like any other main-thread
+  error, and `from_exception` maps it to `OPERATOR_SCRIPT`: a conclude (section 5.9), so `stop` is sent, an open
+  episode is recorded `aborted`, and the run ends with exit 1 and the FATAL line
+  `FATAL message_comms: operator script: <that text>: check the script (message_comms.operator_script) or raise
+  operator_script_wait_s`. With a policy that uses a prompt, the limit must be above `timeouts.prompt_s`, since a
+  `wait_steps` after `c` waits through the whole `RESETTING` phase.
 
 ```
 @dataclass(frozen=True)
@@ -1062,6 +1091,7 @@ exit 1. Rows marked "PLAN" are PLAN §5's table; the others are this design's ad
 | `CONTRACT_VIOLATION` | PLAN: a message fails its contract (schema version, shape, type) | `ContractError` on any C1/C2/C3 message, or a non-chunk C4 reply; client extra checks (4.2); `seq`/`t_ns` not increasing (4.3); policy config values (5.1) | conclude | `<message>: field '<f>': <detail>: check that all processes are from the same commit` |
 | `HOMING_FAILED` | homing ends without reaching home | `Refused` on `home`, or `TransportTimeout` on `c3.home/v1` (no reply within `home_s`) | conclude | `franka_control: homing failed: <reason>: check the arm's path to the home pose` |
 | `STARTUP` | PLAN: not ready at start-up | section 5.1 not complete within `startup_s` | conclude | e.g. `startup: no camera ok within 20 s (main stale): check process_frames` |
+| `OPERATOR_SCRIPT` | a `ScriptedOperator` wait, or a key `EpisodeLoop` keeps refusing, not done within `operator_script_wait_s` | `ScriptTimeout` from `poll_key` (section 4.9) | conclude | `operator script: <file>:<line>: <what it waited for> after <t> s (message_comms.operator_script_wait_s): check the script (message_comms.operator_script) or raise operator_script_wait_s` |
 | `INTERNAL_ERROR` | a bug in this process | an unexpected exception, the worker or listener thread died | conclude | `internal error: <exception>: see the message_comms log` |
 | (episode end) | PLAN: operator presses `s` | key `s` | normal (episode ends) | `stop` (the arm holds), record `stopped`, back to `IDLE`; the run continues (section 4.9) |
 | `OPERATOR_STOP` | PLAN: operator presses `q` or Ctrl-C | key `q` (any phase), SIGINT | stop | `stop`, record the open episode as `stopped`, exit 0, no FATAL line; the run ends (during homing: section 5.7) |
@@ -1103,6 +1133,7 @@ Every setting, with its default. `station.yaml`'s `message_comms:` section may o
 | `task_name` | str \| null | `null` | for `prompt`; required only if the policy says `uses_prompt` |
 | `prompt_index` | int, ≥ 0 | `0` | for `prompt` |
 | `operator_script` | path \| null | `null` | `null`: the keyboard. A path: a `ScriptedOperator` script (section 4.9). Relative paths as in deploy §6.2 |
+| `operator_script_wait_s` | float, > 0 | `30.0` | with a script: the longest a `wait_phase` / `wait_steps` entry, or a key that keeps being refused, may take before the run concludes (`OPERATOR_SCRIPT`, section 4.9) |
 | `skip_warn_s` | float, > 0 | `1.0` | steps skipped for longer than this without a break → the status line switches to `SKIPPING <s>: <reason>` (never a conclude) |
 | `log_steps` | bool | `true` | write `steps.jsonl` |
 | `save_tap` | bool | `false` | save each sent step's observation, chunk and waypoints to `tap/` (section 4.10); for the first real-arm runs |
@@ -1171,15 +1202,29 @@ The common arguments of deploy §4.2, and only those. `main(argv: Sequence[str] 
 2. `load_settings(station, session, mock)`. `--mock` is accepted and logged and changes nothing (deploy §8).
 3. Build in this order: `SessionLog`, `StateHistory`, `StateListener`, `FrankaClient`, the health `FramesClient`, and
    the worker's `FramesClient` + `PolicyClient` + `PoseConverter` + `PolicyStep` + `StepWorker`, `FailureMonitor`,
-   the `Operator` (`ScriptedOperator.load(...)` when `operator_script` is set, else `KeyboardOperator(sys.stdin,
-   sys.stdout)`), `EpisodeLoop`.
+   the `Operator` (`ScriptedOperator.load(..., operator_script_wait_s)` when `operator_script` is set, else
+   `KeyboardOperator(sys.stdin, sys.stdout)`), `EpisodeLoop`.
 4. Install the signal handlers: SIGINT calls `loop.interrupt()` (operator quit), SIGTERM calls `loop.terminate()`
    (deploy stop, section 5.8). Both only set a flag.
 5. `loop.startup(ready_file)`, then `code = loop.run()`.
 6. In a `finally`: close the operator (terminal restored), stop the threads, close the sockets.
 7. If `code == 1`: write `FATAL message_comms: <what failed>: <what to check>` as the last stderr line. Return `code`.
 
-Exit codes: `0` for the operator's quit, a SIGINT or a SIGTERM; `1` for a conclude (FATAL line).
+**Every failure exit has a FATAL line**, also when nothing was built yet:
+- a settings problem: `FATAL message_comms: config: <problems>: check station.yaml message_comms: and
+  message_comms/config.yaml`;
+- a broken script: `FATAL message_comms: operator script: <file>:<line>: <problem>: check message_comms.operator_script`;
+- a session folder `SessionLog` cannot write in: `FATAL message_comms: session folder <dir>: cannot write: <error>:
+  check that the session folder (--session, or station.yaml session_root) is writable`;
+- **any other exception** (building the clients, a bug): steps 2–6 run inside `_run(args)`, and `main` catches every
+  `Exception` that leaves it, after `_run`'s `finally` has cleaned up. It logs the traceback (`log.exception`, so it
+  is in `logs/message_comms.log`), then writes `FATAL message_comms: internal error: <type>: <message>: see the
+  traceback in the message_comms log` and returns 1. So `deploy run` never reports "no FATAL line" for this process
+  unless it was killed.
+
+Exit codes: `0` for the operator's quit, a SIGINT or a SIGTERM; `1` for every failure (a conclude or a start-up
+failure), always with a FATAL line. Like the other processes (deploy §7.6 asks only for a non-zero code), this
+process never uses `2`: that is `deploy`'s own "not started" code.
 
 **Running it alone** (PLAN rule 2) needs the other three already running on the station's endpoints, each started
 alone in its own terminal (e.g. `python -m process_frames --station station.yaml --mock`, `python -m policy --station
@@ -1217,9 +1262,9 @@ does not need `robot-utils`.
 | `test_clients.py` | each client against a `contracts.RpcServer` with fake handlers on a free port: good replies come back as their classes; **every client rejects a reply that breaks its contract** (wrong schema version, wrong shape, wrong reply type, C1 images while a camera is `down`, an `ErrorReply` → `RemoteError`); `Ack(ok=false)` → `Refused` (except `start`, which returns it); `set_waypoints` refuses a wrong `chunk_id` echo and counts that don't add up; a server that doesn't answer → `TransportTimeout` after the configured timeout, sent once |
 | `test_policy_step.py` | with fake clients and a filled `StateHistory`: a normal step gives the expected `SetWaypoints`; camera `stale` → `StepSkipped(CAMERA_STALE)`; `down` → `StepSkipped(CAMERA_DOWN)`; same anchor time as last → `NoNewFrame`; old image → `IMAGE_OLD`; old state → `STATE_OLD`; seq gap → `STATE_GAP`; target/measured > 2 cm → measured used, `anchor_dev_m` reported; **odd chunk** (step 0 at 2.5 cm, or 6°) → `StepSkipped(ODD_CHUNK)`, while 1.9 cm / 4.9° passes; policy timeout / error / broken chunk propagate as exceptions |
 | `test_step_worker.py` | one job at a time (a second `submit` while busy raises); results come back in order with timing; an exception in a job comes back as `error`; `reset` then `prompt` when a prompt is given, `reset` only otherwise |
-| `test_episode_loop.py` | with fakes, `FakeClock`, `ManualWorker` and `ScriptedOperator`, driving `cycle()`. **The next chunk is asked while the current one runs:** the next step is submitted in the same cycle the waypoints are sent, before their last time. **Waypoints replace correctly:** chunk ids increase, each set is sent once, a result from an ended episode is dropped. **Heartbeats during slow steps:** a step held back for 2 s still gives one heartbeat per cycle. `s` or `q` while a step runs sends `stop` in that same cycle. `home` pauses heartbeats and they resume after. `prompt` is sent only when `uses_prompt`, after `reset`, before `start`. A refused `start` returns to idle with no episode. Ctrl-C → `stop`, then exit 0. SIGTERM → `stop`, episode `aborted` with `stopped by deploy: another process exited`, exit 0. Ctrl-C during homing (fake `home` that never answers) → exits within one slice, socket closed. A `stopped` C2 message older than the `start` acknowledgement does not conclude; one after it does. A fault together with a broken C2 message is reported as `ARM_FAULT`. **The `s` key:** in `RUNNING` it sends `stop`, records `stopped` and returns to `IDLE` with the run still going; then `h` homes and `c` starts episode 2 (the episode counter goes up, `reset` is sent again); in `RESETTING` it cancels the start without recording an episode; in `IDLE` it only sends `stop`. `q` and Ctrl-C end the run with exit 0. Long skipping never concludes. `home` shows the homing status line. Gate and `loop_late` deltas are taken from the episode start. With `save_tap` the tap is written after the next step is submitted, without it never. Startup: the ready file is written only after state, config and cameras are ok; a config mismatch concludes. Episode records are written with the right outcome |
+| `test_episode_loop.py` | with fakes, `FakeClock`, `ManualWorker` and `ScriptedOperator`, driving `cycle()`. **The next chunk is asked while the current one runs:** the next step is submitted in the same cycle the waypoints are sent, before their last time. **Waypoints replace correctly:** chunk ids increase, each set is sent once, a result from an ended episode is dropped. **Heartbeats during slow steps:** a step held back for 2 s still gives one heartbeat per cycle. `s` or `q` while a step runs sends `stop` in that same cycle. `home` pauses heartbeats and they resume after. `prompt` is sent only when `uses_prompt`, after `reset`, before `start`. A refused `start` returns to idle with no episode. Ctrl-C → `stop`, then exit 0. SIGTERM → `stop`, episode `aborted` with `stopped by deploy: another process exited`, exit 0. Ctrl-C during homing (fake `home` that never answers) → exits within one slice, socket closed. A `stopped` C2 message older than the `start` acknowledgement does not conclude; one after it does. A fault together with a broken C2 message is reported as `ARM_FAULT`. **The `s` key:** in `RUNNING` it sends `stop`, records `stopped` and returns to `IDLE` with the run still going; then `h` homes and `c` starts episode 2 (the episode counter goes up, `reset` is sent again); in `RESETTING` it cancels the start without recording an episode; in `IDLE` it only sends `stop`. `q` and Ctrl-C end the run with exit 0. Long skipping never concludes. `home` shows the homing status line. Gate and `loop_late` deltas are taken from the episode start. With `save_tap` the tap is written after the next step is submitted, without it never. Startup: the ready file is written only after state, config and cameras are ok; a config mismatch concludes. Episode records are written with the right outcome. **`run()` with a script:** `c, wait_steps 5, s, h` with a step still in flight at `s`: `h` gets its hint, is retried and homes once, then episode 2 runs; a `wait_steps` that never ends concludes with `OPERATOR_SCRIPT` (exit 1, `stop` sent, the episode `aborted`) |
 | `test_failure_monitor.py` | **every row of section 7 (and so of PLAN §5)** gives its stated kind and message (one parametrized case per row: the detection input → `Problem` → `Verdict`); `from_exception` maps each exception type and request as in 4.7; `check_state` for `fault`, self-`stopped` in `RUNNING` (and not after our own `stop`, nor from messages before the `start` acknowledgement), `homing` only in `HOMING`, state lost; the normal-operation rows (`SHORTENED`, `PULLED_BACK`, `WIDTH_CLIPPED`, `LOOP_LATE`) never stop anything; `width_clipped` is summed per episode and reset at the next start; counts and their per-episode reset |
-| `test_operator.py` | `ScriptedOperator` runs whole episodes (c → wait_steps → y → q) against `LoopProgress` values; `wait_s` with `FakeClock`; a script with two episodes (c → y, c → s, h, c → n, q) runs to the end; a bad script (unknown entry or key, or a last entry other than `q`, e.g. ending on `s`) is refused with the line; `KeyboardOperator` key mapping from a pipe (no terminal); a hint for a key that doesn't fit the phase |
+| `test_operator.py` | `ScriptedOperator` runs whole episodes (c → wait_steps → y → q) against `LoopProgress` values; `wait_s` with `FakeClock`; a script with two episodes (c → y, c → s, h, c → n, q) runs to the end; a bad script (unknown entry or key, or a last entry other than `q`, e.g. ending on `s`) is refused with the line; **time limits:** a `wait_phase` / `wait_steps` that never ends raises `ScriptTimeout` naming the line and what it waited for exactly at the limit; `wait_s` has no limit; **refused keys:** retried once the state changes and not before, timed out when refused for too long (the limit counting from the first try), a `key_refused` for another key ignored; `KeyboardOperator` key mapping from a pipe (no terminal); a hint for a key that doesn't fit the phase |
 | `test_status_line.py` | idle, running, waiting, `SKIPPING` and homing lines as in 4.9; `short`, `pulled`, `clip`, `odd` and `late loops` shown; never longer than 120 characters; negative margin shown |
 | `test_session_log.py` | the four files appear in the session folder; each episode outcome and its fields; every line is flushed at once; an open episode is closed on exit; the tap: no `tap/` folder when `save_tap` is false; with it, one `.npz` per sent step holding the listed arrays, images only every `tap_images_every` steps |
 | `test_settings.py` | `config.yaml` loads; a station override merges (maps key by key); an unknown key is refused with its path; every range check; no `--session` makes the `_alone` folder |
@@ -1228,5 +1273,5 @@ does not need `robot-utils`.
 - **Operator keys:** `s`, then `h`, then `c` (episode 1 `stopped`, home, episode 2 runs); `q` (exit 0, `stop` sent first).
 - **Concludes** (each giving exit 1 and the expected FATAL line, with `stop` sent first): camera `down`; policy hangs (with `policy_hang_s` set short in the test settings); a policy `ErrorReply`; a broken chunk; arm `fault`; gate rejection; a process that stops answering (the fake `process_frames` stops replying); a schema-version mismatch; a broken C2 message.
 - **Not here:** the shutdown order of the other processes is `deploy/`'s `test_launcher.py`. |
-| `test_main.py` | arguments: the four common ones, `--station` required, `--mock` accepted; the FATAL line is the last stderr line on exit 1 and absent on exit 0 |
+| `test_main.py` | arguments: the four common ones, `--station` required, `--mock` accepted; the FATAL line is the last stderr line on exit 1 and absent on exit 0; a script key refused for longer than `operator_script_wait_s` gives exit 1 and the `operator script:` FATAL line, `stop` sent last; an unwritable session folder gives exit 1 and the `session folder` FATAL line; any other exception while building gives exit 1, the traceback in the log and the `internal error` FATAL line |
 | `test_launch.py` | (deploy §9) `program()`; `USES_TERMINAL` is true; `checks()` fails for a missing `operator_script`, no terminal without a script, `exec_h` 0 or 17, a heartbeat gap ≥ `franka_control`'s `watchdog.limit_s` (from a test `franka_control/config.yaml`), `home_s ≤ homing.timeout_s`; mock checks need no other process |

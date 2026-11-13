@@ -14,6 +14,11 @@ namespace franka_control {
 
 class FakeArm;
 
+// At shutdown, if the control thread is still running after shutdown.timeout_s, the main thread calls
+// arm.requestStop() and waits at most this long more. shutdown.timeout_s (3 s) + this stays below the launcher's
+// stop_timeout_s (5 s), after which it would SIGKILL (STRUCTURE.md 7.4).
+inline constexpr double kShutdownStopWaitS = 1.5;
+
 // A start-up or run failure: what() is "<what failed>: <what to check>", printed as the FATAL line.
 struct FatalError : std::runtime_error {
   using std::runtime_error::runtime_error;

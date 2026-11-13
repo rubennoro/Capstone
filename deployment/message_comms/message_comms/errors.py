@@ -33,3 +33,7 @@ class RequestCancelled(RuntimeError):
 
 class ScriptError(ValueError):
     """A broken operator script."""
+
+
+class ScriptTimeout(ScriptError):
+    """A scripted wait, or a key EpisodeLoop keeps refusing, not done within operator_script_wait_s."""

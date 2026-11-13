@@ -36,7 +36,11 @@ class Operator(ABC):
 
     @abstractmethod
     def poll_key(self, progress: LoopProgress) -> Key | None:
-        """Never blocks."""
+        """Never blocks. May raise ScriptError (a ScriptedOperator whose wait ran out): EpisodeLoop concludes."""
+
+    def key_refused(self, key: Key, hint: str) -> None:
+        """EpisodeLoop ignored the last key returned by poll_key (the hint was shown). The keyboard does nothing (the
+        operator reads the hint); a ScriptedOperator retries the key."""
 
     def show_status(self, line: str) -> None:
         """Rewrites the one status line in place."""

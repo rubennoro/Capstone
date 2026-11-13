@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -196,7 +197,14 @@ int App::run() {
     if (!ended) {
       Log::warning("control thread still running after shutdown.timeout_s: stopping the arm");
       arm->requestStop();
-      waitFor([&] { return loop.done(); }, budget, poll_ns);
+      if (!waitFor([&] { return loop.done(); }, secondsToNs(kShutdownStopWaitS), poll_ns)) {
+        char text[192];
+        std::snprintf(text, sizeof(text),
+                      "control thread still running %.1f s after arm.requestStop(): waiting for it (the launcher "
+                      "kills the process after its stop_timeout_s)",
+                      kShutdownStopWaitS);
+        Log::error(text);
+      }
     }
     control.join();
   };
@@ -298,6 +306,13 @@ int App::run() {
         recordFailure(std::string("gripper thread: ") + e.what());
       }
     });
+    std::thread gripper_reader([&] {
+      try {
+        worker.runReader();
+      } catch (const std::exception& e) {
+        recordFailure(std::string("gripper-reader thread: ") + e.what());
+      }
+    });
 
     // wait for SIGINT/SIGTERM (or a thread failure, or requestStop() in tests)
     timespec wait{};
@@ -311,11 +326,12 @@ int App::run() {
       }
     }
 
-    // 7.4 shutdown: the loop settles and ends while C2 keeps reporting; then messaging, then the gripper
+    // 7.4 shutdown: the loop settles and ends while C2 keeps reporting; then messaging, then the gripper threads
     stopControl();
     messaging_stop.store(true);
     messaging.join();
     gripper_thread.join();
+    gripper_reader.join();
     server.reset();
     publisher.reset();
   }

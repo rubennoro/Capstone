@@ -413,7 +413,7 @@ Two hand-written files sit at the top of `deployment/` (PLAN rule 4):
 | `station_version` | int | required, must be `1` | `Station` |
 | `session_root` | path | **required** | `Session`; each process when started alone |
 | `python.light` | path | the Python running `deploy` | `process_frames`, `message_comms` launch.py, `policy` launch.py under `--mock` (and `franka_control` checks) |
-| `python.policy` | path | **required**, except with `--mock` | `policy` launch.py |
+| `python.policy` | path | **required**, except with `--mock` | `policy` launch.py; used only for `kind: diffusion` (it must exist then) |
 | `endpoints.pi_frames` | `tcp://host:port` | **required**, except with `--mock` | C0 frames: the Pi binds PUB; `process_frames` connects |
 | `endpoints.pi_time_sync` | `tcp://host:port` | **required**, except with `--mock` | C0 clock sync: the Pi binds REP; `process_frames` connects |
 | `endpoints.mock_pi_frames` | `tcp://host:port` | **required** | `--mock`: the fake Pi binds; `process_frames` connects |
@@ -814,7 +814,7 @@ it to its own stand-in. The launcher does nothing else differently.
 |---|---|---|---|
 | `franka_control` | `LibfrankaArm` + `FrankaHandGripper` at `robot_ip` (default `172.16.0.2`) | `FakeArm` + `FakeGripper` | skips the arm IP check and the RT-kernel check |
 | `process_frames` | `PiStreamSource` on `endpoints.pi_*` | `FakePiSender` sending the frames of `mock_episode`, run as a thread inside `process_frames`, bound to `endpoints.mock_pi_*` and sending real C0 messages; `PiStreamSource` connects to it over that local port exactly as to the Pi | skips the Pi checks; checks `mock_episode` exists |
-| `policy` | `policy.kind`, run with `python.policy` | always `HoldStillPolicy` ("stay at the anchor"), run with **`python.light`, without torch** | skips the checkpoint, GPU and policy-environment checks |
+| `policy` | `policy.kind`, run with `python.policy` for `kind: diffusion` and with `python.light` for `kind: hold_still` (no torch needed) | always `HoldStillPolicy` ("stay at the anchor"), run with **`python.light`, without torch** | skips the checkpoint, GPU and policy-environment checks |
 | `message_comms` | the real one | the real one (it is the thing under test); `operator_script` chooses scripted keys | none skipped |
 
 PLAN §9's "Arm" and "Camera source" backups are exactly the `--mock` choices; the other backups are station settings

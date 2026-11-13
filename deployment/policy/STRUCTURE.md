@@ -608,8 +608,13 @@ need mapping.
 
 | Run | Python | Policy | Needs |
 |---|---|---|---|
-| `deploy run` (real) | `python.policy` (the `behavior_prompting` conda env) | `kind` from the station (`diffusion` or `hold_still`) | torch + `behavior_prompting` for `diffusion`; a GPU unless `device: cpu` |
+| `deploy run`, `kind: diffusion` | `python.policy` (the `behavior_prompting` conda env) | `DiffusionPolicy` | torch + `behavior_prompting`; a GPU unless `device: cpu` |
+| `deploy run`, `kind: hold_still` | `python.light` | `HoldStillPolicy` | no torch, no checkpoint, no GPU; `python.policy` is not used and need not exist yet |
 | `deploy run --mock` | `python.light` | always `hold_still` | no torch, no checkpoint, no GPU |
+
+The interpreter follows the policy that runs, not `--mock`: only `diffusion` needs torch, so only `diffusion` uses
+`python.policy`. A station can therefore run the first real-arm sessions with `kind: hold_still` before the
+`behavior_prompting` environment is installed.
 
 With `--mock` the `kind` setting is not used (and may be unset). There is one stand-in, so there is no setting to
 choose it.
@@ -669,9 +674,16 @@ class PolicyProcess(ManagedProcess):
 PROCESS_CLASS = PolicyProcess
 ```
 
-- `program()`: `[self.station.python("light"), "-m", "policy"]` with `--mock`; otherwise
-  `[self.station.python("policy"), "-m", "policy"]` (deploy §8). The base class appends `--station`, `--session`,
-  `--ready-file` and `--mock`.
+- `program()`: `[<python>, "-m", "policy"]`, the interpreter chosen by the policy that runs (section 6):
+  - `kind: diffusion` without `--mock` → `station.python("policy")`, which must exist and be executable. If it is
+    not, `program()` raises `LaunchError`, so `deploy check` shows the `program` row as `fail`: `cannot build the
+    command: python.policy not found or not executable: <path> (policy.kind: diffusion runs in the behavior_prompting
+    environment with torch; set python.policy in station.yaml)`, and `deploy run` does not start;
+  - everything else → `station.python("light")`: `kind: hold_still` with or without `--mock`, any kind with `--mock`,
+    and an unset or unknown `kind` (the `kind` and `settings` checks report those, and they need no torch).
+
+  The base class appends `--station`, `--session`, `--ready-file` and `--mock`, and runs the command with cwd
+  `deployment/policy/`, never `deployment/` (there `deployment/contracts/` would shadow the installed package).
 - `extra_env()`: not overridden. `is_ready()`: the default (the ready file, written after warm-up and bind, section
   3.1).
 - Imports: standard library, `yaml`, `deploy`, `contracts` only (deploy §4).
@@ -684,10 +696,13 @@ rest to the package, run in the right environment:
 1. `kind` is set (unless `--mock`): from `self.config["kind"]`. Unset → `fail`: `policy.kind is not set: choose
    diffusion or hold_still in station.yaml`; the self-check is then skipped.
 2. `port_free("policy", station.endpoint("policy"))`.
-3. **Self-check:** runs `[program()[0], "-m", "policy.self_check", "--station", <station file>]` (+ `--mock`) with
-   `self_check_timeout_s`, and turns each line it prints into a `CheckResult`. If it times out, crashes, or prints
-   something that isn't a check line → one `fail` with the last lines of its stderr (e.g. the policy Python missing the
-   package: `pip install -e policy` in that environment).
+3. **Self-check:** runs `[<python>, "-m", "policy.self_check", "--station", <station file>]` (+ `--mock`) with
+   `self_check_timeout_s` and cwd `deployment/policy/`, where `<python>` is the interpreter `program()` uses, and
+   turns each line it prints into a `CheckResult`. So `hold_still` is self-checked in the light environment, and only
+   `diffusion` in `python.policy`. If it times out, crashes, or prints something that isn't a check line → one `fail`
+   with the last lines of its stderr (e.g. that Python missing the package: `pip install -e policy` in that
+   environment). When `python.policy` is missing for `diffusion`, the self-check is not run and shows one `info` row
+   (`not run: ...`); the `program` row is the `fail`.
 
 `python -m policy.self_check` (`self_check.py`) prints one JSON object per line, `{"name", "status", "detail"}`
 (`status` as in `CheckResult`), and exits 0 unless it crashes. It never loads the checkpoint (2.5 GB, too slow) and
@@ -699,8 +714,9 @@ never binds a socket:
 | `diffusion` | `checkpoint`: set, exists, is a readable file ending in `.ckpt` (info: size, modification time); `imports`: `torch`, `dill`, `hydra`, `timm`, `diffusers` and `behavior_prompting` importable (info: torch version); `device`: `cuda` → `torch.cuda.is_available()` (info: GPU name and memory; fail with the CPU-backup hint), `cpu` → info `device: cpu (PLAN §9 backup)`; `diffusion_steps`: info when set (`diffusion steps: 8, PLAN §9 backup`) |
 | `hold_still` | none beyond `settings` |
 
-With `--mock` the self-check runs in the light environment for `hold_still`, so there are no checkpoint, GPU or
-policy-environment checks (deploy §8).
+`hold_still` (always the case with `--mock`) is self-checked in the light environment, so there are no checkpoint,
+GPU or policy-environment checks. deploy §8 describes the real run as "run with `python.policy`"; for this process
+that holds for `kind: diffusion` only.
 
 ## 9. `__main__` and running it alone
 
@@ -761,7 +777,7 @@ and fixtures in `conftest.py`); none are stored as files.
 | `test_app.py` | no | `python -m policy --mock` as a subprocess (light env, `hold_still`): the ready file appears only after the port answers; `startup.json` written; `config` answered; SIGINT → exit 0, no FATAL line; a broken station section → exit 1 with one `FATAL policy: ...` last line; no `--session` → the `_policy_alone` folder |
 | `test_warm_up.py` | no | the warm-up calls `infer` `warmup_inferences` times, records each time, then calls `reset`; a fake policy whose warm-up chunk fails a C4 value check (non-unit rot6d, NaN) is fatal; so is one with a wrong shape and one that raises another exception |
 | `test_self_check.py` | no | JSON-line format; `hold_still` all pass; `diffusion` with torch blocked → `fail` with the "policy environment" hint; missing checkpoint → `fail` |
-| `test_launch.py` | no | `program()` uses `python.light` with `--mock` and `python.policy` otherwise; unset `kind` → `fail` and no self-check run; busy port → `fail`; self-check lines become `CheckResult`s; a self-check that crashes or times out → one `fail` with its stderr; `--mock` checks need no checkpoint, GPU or policy Python |
+| `test_launch.py` | no | `program()` uses `python.policy` only for `kind: diffusion` without `--mock`, `python.light` otherwise; `hold_still` without `--mock` and a missing `python.policy` passes the `program` row and its real self-check; `diffusion` with a missing `python.policy` fails the `program` row naming the path and `diffusion`, and the self-check is one `info` (not run); unset `kind` → `fail` and no self-check run; busy port → `fail`; self-check lines become `CheckResult`s; a self-check that crashes or times out → one `fail` with its stderr; `--mock` checks need no checkpoint, GPU or policy Python |
 | `test_probe.py` | no | against a `hold_still` `PolicyServer` in the same test: all steps pass; against `RaisingPolicy`: the `ErrorReply` is printed |
 | `test_diffusion_policy.py` | **yes** | `DiffusionPolicy(ModelRunner(TinyDiffusionModel, ...))` on the CPU with a hand-written plain-diffusion `shape_meta`: **chunk shapes (16, 3) / (16, 6) / (16, 1), dtype float32, C-contiguous, and it passes the C4 validator**; the model receives exactly the used keys under the model's names, float32, shapes (1, 2, 3, 224, 224) and (1, 2, D); a known pixel `(y, x, c)` in the uint8 image arrives at `[0, t, c, y, x]` with value `v / 255` (bit-identical to the numpy reference); horizon 20 → the first 16 rows are kept; horizon 12 → refused at construction; an out-of-range model width is clipped and counted; `reset` calls the model's `reset` and takes < 0.5 s; `ModelRunner` rejects a `shape_meta` with 112×112 images (no resize) |
 | `test_checkpoint_loader.py` | **yes** (+ `behavior_prompting`) | the load checks on hand-made `cfg`/`shape_meta` objects without a real checkpoint: prompting refused by `DiffusionPolicy`, absolute pose representation refused, timing mismatch refused, `diffusion_steps` above `num_train_timesteps` or with a non-DDIM scheduler refused, a valid override sets `num_inference_steps`; the colour-normalisation check on both encoder types; missing file and wrong suffix; `device: cuda` with CUDA reported unavailable (monkeypatched) → the stated error. **Optional, skipped by default:** with `POLICY_TEST_CHECKPOINT=<path>` set to `run_001`'s slim checkpoint, load it on the CPU through `CheckpointLoader` only (not `DiffusionPolicy`, which refuses a prompting checkpoint) and check the strict load report, the colour-normalisation check and that no simulation modules were imported. A full inference test on a real checkpoint waits for a rig-trained plain-diffusion model. |

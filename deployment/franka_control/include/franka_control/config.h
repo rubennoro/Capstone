@@ -78,6 +78,7 @@ struct GripperConfig {
   double grasp_force_n = 20.0;
   double deadband_m = 0.005;
   double poll_period_s = 0.02;
+  double read_rate_hz = 50.0;
   double width_offset_m = 0.0;
   bool homing_on_start = true;
 };

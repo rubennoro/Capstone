@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from conftest import write_station
@@ -71,3 +73,55 @@ def test_missing_process_fails_startup_naming_it(tmp_path, capsys):
     finally:
         frames.close()
         policy.close()
+
+
+def test_a_script_that_waits_forever_gives_the_fatal_line(tmp_path, capsys):
+    frames, policy, franka = FakeProcessFrames(), FakePolicy(), FakeFrankaControl()
+    try:
+        script = tmp_path / "script.yaml"
+        script.write_text("- {wait_phase: idle}\n- {key: y}\n- {key: q}\n")     # y in idle: refused, forever
+        station = write_station(tmp_path, {"operator_script": "script.yaml", "operator_script_wait_s": 0.5},
+                                {"frames": frames.endpoint, "state": franka.state_endpoint,
+                                 "commands": franka.commands_endpoint, "policy": policy.endpoint})
+        assert main(["--station", str(station), "--session", str(tmp_path / "s")]) == 1
+        err = capsys.readouterr().err.splitlines()
+        assert err[-1] == (f"FATAL message_comms: operator script: {script}:2: key y: still refused "
+                           "(y: no episode running (c start, h home, q quit)) after 0.5 s "
+                           "(message_comms.operator_script_wait_s): check the script (message_comms.operator_script) "
+                           "or raise operator_script_wait_s")
+        assert franka.names()[-1] == "stop"
+    finally:
+        for fake in (frames, policy, franka):
+            fake.close()
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root can write anywhere")
+def test_unwritable_session_folder_gives_the_fatal_line(tmp_path, capsys):
+    (tmp_path / "script.yaml").write_text("- {key: q}\n")
+    station = write_station(tmp_path, {"operator_script": "script.yaml"})
+    folder = tmp_path / "s" / "message_comms"
+    folder.mkdir(parents=True)
+    folder.chmod(0o555)
+    try:
+        assert main(["--station", str(station), "--session", str(tmp_path / "s")]) == 1
+    finally:
+        folder.chmod(0o755)
+    err = capsys.readouterr().err.splitlines()
+    assert err[-1].startswith(f"FATAL message_comms: session folder {folder.resolve()}: cannot write: ")
+    assert err[-1].endswith(": check that the session folder (--session, or station.yaml session_root) is writable")
+
+
+def test_any_unexpected_start_up_error_gives_the_fatal_line(tmp_path, capsys, caplog, monkeypatch):
+    import message_comms.__main__ as entry
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(entry, "StateHistory", broken)
+    (tmp_path / "script.yaml").write_text("- {key: q}\n")
+    station = write_station(tmp_path, {"operator_script": "script.yaml"})
+    assert main(["--station", str(station), "--session", str(tmp_path / "s")]) == 1
+    err = capsys.readouterr().err.splitlines()
+    assert err[-1] == ("FATAL message_comms: internal error: RuntimeError: boom: "
+                       "see the traceback in the message_comms log")
+    assert any(r.exc_info for r in caplog.records)          # the traceback is in the log

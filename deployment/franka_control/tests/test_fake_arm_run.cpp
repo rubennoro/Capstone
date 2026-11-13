@@ -172,5 +172,49 @@ TEST(FakeArmRunThreads, AShortMockRunOfTheWholeApp) {
   EXPECT_EQ(code.load(), 0) << fatal;
 }
 
+// 7.4: a torque session that never ends by itself (no settle, no settle timeout) is stopped with arm.requestStop()
+// after shutdown.timeout_s, and the whole shutdown stays below the launcher's stop_timeout_s (5 s).
+TEST(FakeArmRunThreads, ShutdownStaysWithinTheLaunchersStopBudget) {
+  const auto dir = test::tmpDir("run_shutdown");
+  std::filesystem::create_directories(dir / "ready");
+  CommandLine cl;
+  cl.station = test::writeStation(dir);
+  cl.session = dir / "session";
+  cl.ready_file = dir / "ready" / "franka_control.ready";
+  cl.mock = true;
+  const double timeout_s = test::testConfig().shutdown.timeout_s;
+  App app(cl);
+  std::atomic<int> code{-1};
+  std::string fatal;
+  std::thread runner([&] {
+    try {
+      code.store(app.run());
+    } catch (const std::exception& e) {
+      fatal = e.what();
+      code.store(1);
+    }
+  });
+  struct Joiner {
+    App& app;
+    std::thread& t;
+    ~Joiner() {
+      app.requestStop();
+      if (t.joinable()) t.join();
+    }
+  } joiner{app, runner};
+
+  ASSERT_TRUE(test::waitUntil([&] { return std::filesystem::exists(*cl.ready_file) || code.load() >= 0; }, 30.0));
+  ASSERT_TRUE(std::filesystem::exists(*cl.ready_file)) << fatal;
+  app.fakeArm()->ignoreFinish(true);
+  const int64_t t0 = monotonicNowNs();
+  app.requestStop();
+  runner.join();
+  const double elapsed = nsToSeconds(monotonicNowNs() - t0);
+  EXPECT_EQ(code.load(), 0) << fatal;            // a stop requested at shutdown is not a fault
+  EXPECT_GE(elapsed, timeout_s);                 // the session did not end by itself: the requestStop path ran
+  EXPECT_LT(elapsed, timeout_s + kShutdownStopWaitS);
+  EXPECT_LT(elapsed, 5.0);                       // deploy's launcher.stop_timeout_s
+}
+
 }  // namespace
 }  // namespace franka_control

@@ -295,9 +295,9 @@ messages, so slowness elsewhere can only make it hold.
 | Clock sync with the Pi lost for > 10 s | conclude | frames stop being used, so the cameras go stale, then `down`; same as above |
 | Policy hung (no reply for > hang limit, proposed 5 s), returns an error, or a broken chunk (fails the contract validator) | conclude | stop, abort, shut down |
 | An odd chunk: step 0 more than 2 cm / 5° from the anchor | slow | skip that step, count it, show it on the status line |
-| `franka_control` reports `fault`: a libfranka reflex, a lost connection to the arm, or a waypoint the gate rejects (outside the box or cone by more than the margin, width outside [0, max opening], non-finite) | conclude | the arm is stopped by `franka_control` itself; shut down. A fault is never cleared automatically. |
+| `franka_control` reports `fault`: a libfranka reflex, a lost connection to the arm, or a waypoint the gate rejects (outside the box or cone by more than the margin, width outside [0, max opening]) | conclude | the arm is stopped by `franka_control` itself; shut down. A fault is never cleared automatically. |
 | Any process exits or stops answering | conclude | shut down. If `message_comms` itself dies, the heartbeat stops and `franka_control` stops the arm. |
-| A message that fails its contract (wrong schema version, shape or type) | conclude | shut down, naming the message and field |
+| A message that fails its contract (wrong schema version, shape or type; for C3 also non-finite values) | conclude | shut down, naming the message and field. A C3 request that fails its contract never reaches the gate: `franka_control` answers it with an error reply (not a fault), keeps its current plan and holds, and `message_comms` concludes on that reply (`stop`, abort, shut down). |
 | Operator presses `s` (stop) | episode ends (normal) | `stop` to `franka_control` (the arm holds), the episode is recorded as `stopped`, and everything keeps running. `h` homes the arm, `c` starts the next episode. |
 | Operator presses `q` (quit) or Ctrl-C | conclude (normal) | `stop`, then shut down in reverse order; the run ends |
 | At start-up: anything `deploy check` finds wrong | conclude | `deploy run` refuses to start, and says what is wrong |

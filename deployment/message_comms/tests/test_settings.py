@@ -11,6 +11,7 @@ from message_comms.settings import CONFIG_FILE, load_settings
 def test_config_yaml_loads_with_defaults(settings):
     assert settings.exec_h == 8 and settings.pose_source == "target" and settings.lookahead_ms == 0
     assert settings.timeouts.home_s == 90.0 and settings.operator_script is None
+    assert settings.operator_script_wait_s == 30.0
     assert settings.endpoints.commands.startswith("tcp://")
     assert settings.session_dir.name == "message_comms" and settings.session_dir.is_dir()
     keys = set(yaml.safe_load(CONFIG_FILE.read_text()))
@@ -51,6 +52,7 @@ def test_unknown_key_refused_with_its_path(tmp_path):
     ({"state_recv_hwm": 0}, "state_recv_hwm: must be > 0"),
     ({"prompt_index": -1}, "prompt_index: must be >= 0"),
     ({"skip_warn_s": 0}, "skip_warn_s: must be > 0"),
+    ({"operator_script_wait_s": 0}, "operator_script_wait_s: must be > 0"),
     ({"log_steps": "yes"}, "log_steps: expected bool"),
     ({"save_tap": 1}, "save_tap: expected bool"),
     ({"tap_images_every": 0}, "tap_images_every: must be >= 1"),

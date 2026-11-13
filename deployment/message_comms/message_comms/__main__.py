@@ -71,6 +71,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not root.handlers:
         logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, stream=sys.stderr)
     try:
+        return _run(args)
+    except Exception as exc:                 # anything unexpected (after _run's cleanup): traceback, then FATAL
+        log.exception("unexpected error: %s", exc)
+        fatal(f"internal error: {type(exc).__name__}: {exc}", "see the traceback in the message_comms log")
+        return 1
+
+
+def _run(args: argparse.Namespace) -> int:
+    try:
         settings = load_settings(args.station, args.session, args.mock)
     except SettingsError as exc:
         fatal(f"config: {exc}", "check station.yaml message_comms: and message_comms/config.yaml")
@@ -84,12 +93,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     previous_signals: dict = {}
     try:
         try:
-            operator = (ScriptedOperator.load(settings.operator_script, sys.stdout, clock)
+            operator = (ScriptedOperator.load(settings.operator_script, sys.stdout, clock,
+                                              settings.operator_script_wait_s)
                         if settings.operator_script is not None else KeyboardOperator(sys.stdin, sys.stdout))
         except ScriptError as exc:
             fatal(f"operator script: {exc}", "check message_comms.operator_script")
             return 1
-        session_log = SessionLog(settings.session_dir, datetime.now, clock)
+        try:
+            session_log = SessionLog(settings.session_dir, datetime.now, clock)
+        except OSError as exc:
+            log.exception("session log: %s", exc)
+            fatal(f"session folder {settings.session_dir}: cannot write: {exc}",
+                  "check that the session folder (--session, or station.yaml session_root) is writable")
+            return 1
         closers.append(session_log.close)
         history = StateHistory(settings.history_s)
         poll_s = settings.loop_ms / 1000

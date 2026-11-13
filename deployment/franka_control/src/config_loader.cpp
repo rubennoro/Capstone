@@ -469,6 +469,7 @@ Config ConfigLoader::load(const std::filesystem::path& station_file, bool mock,
   rd.positive("gripper.grasp_force_n", c.gripper.grasp_force_n);
   rd.positive("gripper.deadband_m", c.gripper.deadband_m);
   rd.positive("gripper.poll_period_s", c.gripper.poll_period_s);
+  rd.positive("gripper.read_rate_hz", c.gripper.read_rate_hz);
   rd.number("gripper.width_offset_m", c.gripper.width_offset_m);
   rd.boolean("gripper.homing_on_start", c.gripper.homing_on_start);
 

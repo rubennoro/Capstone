@@ -63,6 +63,7 @@ class Settings:
     task_name: str | None
     prompt_index: int
     operator_script: Path | None
+    operator_script_wait_s: float
     skip_warn_s: float
     log_steps: bool
     save_tap: bool
@@ -105,6 +106,7 @@ _RULES: dict[str, tuple[str, str]] = {
     "task_name": ("str", "optional"),
     "prompt_index": ("int", "nonneg"),
     "operator_script": ("path", "optional"),
+    "operator_script_wait_s": ("float", "pos"),
     "skip_warn_s": ("float", "pos"),
     "log_steps": ("bool", ""),
     "save_tap": ("bool", ""),
@@ -227,7 +229,7 @@ def load_settings(station_file: Path, session: Path | None, mock: bool) -> Setti
 
     values = {key: merged[key] for key in _RULES}
     for key in ("odd_chunk_max_pos_m", "odd_chunk_max_rot_deg", "anchor_fallback_m", "history_s",
-                "state_lost_s", "skip_warn_s"):
+                "state_lost_s", "skip_warn_s", "operator_script_wait_s"):
         values[key] = float(values[key])
     values["operator_script"] = script
     return Settings(
