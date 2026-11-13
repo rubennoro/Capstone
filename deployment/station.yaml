@@ -8,8 +8,8 @@ python:
   policy: ~/miniconda3/envs/behavior_prompting/bin/python   # TODO: your path (the behavior_prompting conda env with torch)
 
 endpoints:
-  pi_frames: tcp://192.168.1.50:5600               # TODO: the Pi's address on the Wi-Fi (C0 frames; the Pi binds)
-  pi_time_sync: tcp://192.168.1.50:5601            # TODO: same Pi address (C0 clock sync)
+  pi_frames: tcp://10.42.0.78:5555                 # the Pi on the Jetson hotspot (CapstoneGripper); DHCP, may change. The Pi binds (process_frames/DIRECTIONS.md)
+  pi_time_sync: tcp://10.42.0.78:5601              # same Pi address (C0 clock sync)
   mock_pi_frames: tcp://127.0.0.1:5600             # --mock: the fake Pi inside process_frames
   mock_pi_time_sync: tcp://127.0.0.1:5601
   frames: tcp://127.0.0.1:5610                     # C1: process_frames <-> message_comms
