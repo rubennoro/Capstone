@@ -141,6 +141,11 @@ Conventions for all messages:
 
 ### C0: Pi 5 → `process_frames` (paired packets over Wi-Fi, plus clock sync)
 
+> **2026-11-13: the Pi sends `pi_stream/v1` instead** (PI_PAYLOAD.md §0). That's one 3-part ZeroMQ message per main
+> frame: a JSON header, a main JPEG and an ultrawide JPEG, both cameras 640×480 at 30 FPS, port 5555, no time sync.
+> `process_frames` (`stream: pi_v1`, the default) converts it to the C0 packets below and takes the clock from
+> `t_send_ns`. The rest of this section is the original design; it's still the internal packet form and `stream: c0`.
+
 **The exact contract is [contracts/PI_PAYLOAD.md](contracts/PI_PAYLOAD.md).** It's written for whoever implements the
 Pi sender. In short:
 

@@ -148,6 +148,10 @@ broke its contract, the request type is unknown to this server, or the handler r
 
 ### 4.2 C0: Pi 5 → `process_frames` (`c0_frames.py`)
 
+> **2026-11-13: the Pi sends `pi_stream/v1` instead** (PI_PAYLOAD.md §0, `pi_stream.py`: `PiStreamPacket`,
+> `PiStreamHeader`, `PiFrameStamp`, `jpeg_size`). `process_frames` converts each message to the `Packet` below, which
+> stays the internal form. What follows is the original design (`stream: c0`).
+
 The exact contract is [PI_PAYLOAD.md](PI_PAYLOAD.md), written for whoever implements the Pi sender; this section is
 its Python form. The Pi sends **one packet per main (IMX519) frame**: one ZeroMQ **multipart** message on a PUB socket
 the Pi binds. A multipart message arrives whole or not at all, so a packet is never half-received.

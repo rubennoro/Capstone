@@ -5,6 +5,11 @@ rule) and §9 (backups), following `contracts/PI_PAYLOAD.md` (the exact C0 contr
 conventions of `deploy/STRUCTURE.md` §7. PLAN.md is
 the source of truth: where this file and PLAN.md disagree, PLAN.md wins and this file is fixed.
 
+> **2026-11-13: the Pi sends `pi_stream/v1`, not the C0 packets described below.** The default is now
+> `stream: pi_v1`: 3-part JSON + JPEG messages, both cameras at 640×480, and no time sync (PI_PAYLOAD.md §0).
+> §5.4a and §5.6a describe the two pieces that differ, the packet source and the one-way clock. Everything after
+> the source (receiver, buffer, frame picking, C1) is unchanged. The C0 path below stays available as `stream: c0`.
+
 ## 1. Role
 
 A process that receives the live camera packets from the Pi 5 and turns them into the policy's 224×224 images.
@@ -317,10 +322,25 @@ class RecordingPacketSource(PacketSource):                      # recording_pack
     exhausted: bool
 ```
 
-`PiPacketSource` is the only source `FramesApp` ever uses: on the real Pi, and under `--mock` on `FakePiSender` (it
-connects to the mock endpoints over `127.0.0.1` exactly as to the Pi). `RecordingPacketSource` is a stand-in for the
+`PiPacketSource` is the source `FramesApp` uses with `stream: c0`: on the real Pi, and under `--mock` on
+`FakePiSender` (it connects to the mock endpoints over `127.0.0.1` exactly as to the Pi). With `stream: pi_v1` it uses
+`PiStreamPacketSource` instead (§5.4a). `RecordingPacketSource` is a stand-in for the
 Pi in unit tests only (the receiver's logic without sockets); it is never selectable from config or `station.yaml`. A
 change to C0 stays inside `PacketSource`, `PacketPairer` and the contract (PLAN §6.1).
+
+### 5.4a `PiStreamPacketSource` (`pi_stream_source.py`, `stream: pi_v1`)
+
+- **What it does:** a SUB socket on `endpoints.pi_frames`. Each 3-part message is checked by
+  `contracts.PiStreamPacket` (a `ContractError` means `FATAL`), then converted by `PiStreamConverter` into a C0
+  `Packet`, so the receiver doesn't change.
+- **The ultrawide frame:** passed on only when its `frame_no` differs from the last one passed on. A repeat
+  (`uw_reused`) gets an empty ultrawide list, with `pair_seq` naming the earlier frame, which is still in the
+  `UltrawideStore`.
+- **The clock:** each message's `t_send_ns` and its arrival time go to `OneWayClockMap.add_one_way` (§5.6a).
+  `FramesApp` starts no `ClockSync` thread.
+- **The fake Pi:** under `--mock`, `FakePiSender(stream="pi_v1")` sends the same messages. Each packet carries its
+  main frame's pair, re-sent with `uw_reused` when repeated. There's no time-sync socket. `PiRecording.load(sizes=...)`
+  delivers the recording at the rig file's sizes.
 
 ### 5.5 `FrameDecoder` (interface, `frame_decoder.py`) and its implementations
 
@@ -400,6 +420,19 @@ class ClockMap:
     def to_pc_ns(self, t_pi_ns: int, at_pc_ns: int) -> int    # t_pi_ns - offset_ns(at_pc_ns)
     def stats(self, now_ns: int) -> ClockStats
 ```
+
+### 5.6a `OneWayClockMap` (`clock_map.py`, `stream: pi_v1`)
+
+A `ClockMap` fed with one-way stamps (`add_one_way(t_pi_send_ns, t_pc_arrival_ns)`), stored as samples where the
+send and receive PC times are both the arrival time.
+
+- **Each stamp gives** `offset − latency`. In each 1 s slice of the window, the best_fraction with the largest value
+  (the least delayed) are fitted with the same line as `ClockMap`.
+- **Result:** the offset is the true offset minus the minimum one-way latency, so PC times are late by a few ms on
+  the Wi-Fi.
+- **Cost:** it refits at most every 0.25 s; a full 60 s window costs about 2 ms.
+- **Fresh** while packets arrive within `clock.max_sync_age_s`. `stats().rtt_min_ms` is `None`, and the stats line
+  says "one-way".
 
 ### 5.7 `ClockSync` (`clock_sync.py`), thread "clock-sync"
 

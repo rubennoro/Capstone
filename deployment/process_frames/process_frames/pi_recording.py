@@ -157,9 +157,11 @@ def encode_jpeg(images: list[np.ndarray], quality: int) -> list[tuple[bytes, boo
     return [enc.encode(rgb) for rgb in images]
 
 
-def _reencode_video(path: Path, keep: int, size: tuple[int, int], encoder) -> list[tuple[bytes, bool]]:
+def _reencode_video(path: Path, keep: int, size: tuple[int, int], encoder,
+                    out_size: tuple[int, int] | None = None) -> list[tuple[bytes, bool]]:
     """Decode the first ``keep`` frames as dataproc's read_video_frames does, and encode each one as it comes (so
-    no more than one decoded image is held). The video must have at least ``keep`` frames."""
+    no more than one decoded image is held). The video must have at least ``keep`` frames. ``out_size`` (width,
+    height): resize each frame first (INTER_AREA), as a Pi streaming at that size would deliver it."""
     out: list[tuple[bytes, bool]] = []
     try:
         with av.open(str(path)) as c:
@@ -170,6 +172,8 @@ def _reencode_video(path: Path, keep: int, size: tuple[int, int], encoder) -> li
                 if rgb.shape[:2] != (size[1], size[0]):
                     raise PiRecordingError(f"{path}: frames are {rgb.shape[1]}x{rgb.shape[0]}, meta.json says "
                                            f"{size[0]}x{size[1]}")
+                if out_size is not None and tuple(out_size) != tuple(size):
+                    rgb = cv2.resize(rgb, tuple(out_size), interpolation=cv2.INTER_AREA)
                 out.append(encoder.encode(rgb))
                 if len(out) == keep:
                     break
@@ -189,7 +193,9 @@ class PiRecording:
 
     @classmethod
     def load(cls, path: Path, encoding: str, max_seconds: float, keyframe_interval: int,
-             jpeg_quality: int) -> "PiRecording":
+             jpeg_quality: int, sizes: Mapping[str, tuple[int, int]] | None = None) -> "PiRecording":
+        """``sizes``: per camera role, the (width, height) to deliver frames at (the rig file's), if not the
+        recorded size. The aspect ratio must match; the H.264 bit rate scales with the pixel count."""
         path = Path(path)
         if encoding not in ENCODINGS:
             raise ValueError(f"encoding must be one of {ENCODINGS}, got {encoding!r}")
@@ -200,18 +206,22 @@ class PiRecording:
         for role in CAMERAS:
             c, (t_ns, exp) = found[role], times[role]
             keep = max(1, sum(1 for t in t_ns if t < limit))
-            w, h = c["size"]
+            w0, h0 = c["size"]
+            w, h = (sizes or {}).get(role, (w0, h0))
+            if w * h0 != h * w0:
+                raise PiRecordingError(f"{path}: {role} is {w0}x{h0}, cannot deliver it at {w}x{h} (aspect ratio)")
+            bitrate = int(round(c["bitrate"] * (w * h) / (w0 * h0)))
             if encoding == "h264":
-                encoder = H264Encoder(w, h, c["fps"], keyframe_interval, c["bitrate"])
+                encoder = H264Encoder(w, h, c["fps"], keyframe_interval, bitrate)
             else:
                 encoder = JpegEncoder(jpeg_quality)
-            encoded = _reencode_video(path / f"{c['stem']}.mp4", keep, c["size"], encoder)
+            encoded = _reencode_video(path / f"{c['stem']}.mp4", keep, c["size"], encoder, (w, h))
             frames = tuple(
                 EncodedFrame(FrameInfo(sensor=c["model"], frame_seq=i, t_pi_ns=t_ns[i], exposure_ns=exp[i], width=w,
                                        height=h, encoding=encoding, keyframe=key), data)
                 for i, (data, key) in enumerate(encoded))
             recorded[role] = RecordedCamera(camera=role, sensor=c["model"], width=w, height=h, fps=c["fps"],
-                                            bitrate=c["bitrate"], frames=frames)
+                                            bitrate=bitrate, frames=frames)
         start = min(cam.frames[0].info.t_pi_ns for cam in recorded.values())
         end = max(cam.frames[-1].info.t_pi_ns + cam.period_ns for cam in recorded.values())
         return cls(path=path, cameras=recorded, duration_ns=end - start)

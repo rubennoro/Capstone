@@ -1,7 +1,9 @@
 # process_frames defaults (STRUCTURE.md section 10). station.yaml's process_frames: section may override any key here,
 # and nothing else. Durations in seconds unless the name says _ms or _ns. Relative paths: from this folder.
-rig_file: rigs/rig_pi_v2.yaml            # the real rig file (main 1600x1200 @ 30, ultrawide 1280x960 @ 30)
-decoder: h264                            # h264 | jpeg (PLAN §9 backup); also what FakePiSender sends under --mock
+rig_file: rigs/rig_pi_v2_640.yaml        # the rig as the Pi streams it: both cameras 640x480 @ 30 (rig_pi_v2 scaled)
+stream: pi_v1                            # pi_v1: the Pi's 3-part JSON + JPEG stream, clock from t_send_ns (PI_PAYLOAD.md
+                                         # §0); c0: msgpack C0 packets + time_sync (§1-8). --mock's fake Pi speaks it too
+decoder: jpeg                            # h264 | jpeg; pi_v1 needs jpeg. Also what FakePiSender sends under --mock
 mock_episode: null                       # a recorded Pi episode folder, played back by FakePiSender; --mock only
 default_exposure_ns: 5000000             # used when C0's exposure_ns is 0, capped at half the rig frame period
 
@@ -22,7 +24,7 @@ health:
   down_s: 2.0                            # age above which a camera is down
   fps_window_s: 1.0                      # window for the measured fps
 
-clock:
+clock:                                   # stream c0: time_sync; pi_v1: window_s .. max_sync_age_s only
   interval_s: 1.0                        # one time_sync exchange this often
   timeout_s: 0.5                         # wait for one time_sync reply
   startup_exchanges: 10                  # back to back at start-up

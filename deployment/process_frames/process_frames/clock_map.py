@@ -1,10 +1,14 @@
 # adapted from rnoro/main-sim:controlSW/franka_deploy/franka_deploy/peripherals/clock_map.py @ 935c0b3
 # kept: the sender_stamp_ping idea (shortest-round-trip exchanges of a window, max-drift fallback); differs: plain
 # least-squares line (not Theil-Sen), integer ns, one Pi stamp per reply, minimum span before drift, freshness, lock
-"""ClockMap: Pi time -> PC time from the time_sync samples (STRUCTURE.md §5.6, §7). Pure arithmetic plus a lock."""
+"""ClockMap: Pi time -> PC time from the time_sync samples (STRUCTURE.md §5.6, §7). Pure arithmetic plus a lock.
+
+OneWayClockMap: the same from one-way stamps (stream pi_v1: the Pi's t_send_ns against the PC arrival time), for a
+Pi that answers no time_sync requests (STRUCTURE.md §5.6a)."""
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -79,9 +83,13 @@ class ClockMap:
             self._fit = self._compute(list(self._samples))
         return True
 
+    def _best(self, samples: list[ClockSample], n_best: int) -> list[ClockSample]:
+        """The samples the fit uses: the shortest round trips."""
+        return sorted(samples, key=lambda x: x.rtt_ns)[:n_best]
+
     def _compute(self, samples: list[ClockSample]) -> _Fit:
         n_best = max(1, int(len(samples) * self._best_fraction))
-        best = sorted(samples, key=lambda x: x.rtt_ns)[:n_best]
+        best = self._best(samples, n_best)
         mids = np.array([b.mid_ns for b in best], dtype=np.int64)
         offs = np.array([b.offset_ns for b in best], dtype=np.int64)
         ref_pc = int(mids[0])
@@ -125,3 +133,44 @@ class ClockMap:
         return ClockStats(synced=self.is_fresh(now_ns), samples=n, used=fit.used, offset_ns=self.offset_ns(now_ns),
                           drift_ppm=fit.slope * 1e6, rtt_min_ms=fit.rtt_min_ns / 1e6,
                           last_sync_age_s=(now_ns - newest) / 1e9)
+
+
+class OneWayClockMap(ClockMap):
+    """Pi -> PC from one-way stamps: ``add_one_way(t_pi_send_ns, t_pc_arrival_ns)`` per received packet.
+
+    Each stamp gives ``t_pi_send - t_pc_arrival = offset - latency`` (latency >= 0, unknown). The least-delayed
+    stamps (the largest values: the best_fraction of each 1 s slice of the window, so that they span the window and
+    drift is still fitted) are fitted as ClockMap fits the shortest round trips, so the offset is ``true offset -
+    minimum latency``: PC times come out late by the minimum one-way latency (a few ms on the Wi-Fi). Fresh while
+    packets keep arriving (max_sync_age_s).
+    """
+
+    SLICE_NS = 1_000_000_000
+    REFIT_NS = 250_000_000        # refit at most this often (a fit of a full window costs ~2 ms on the Jetson)
+
+    def add_one_way(self, t_pi_send_ns: int, t_pc_arrival_ns: int) -> bool:
+        s = ClockSample(t_send_ns=int(t_pc_arrival_ns), t_pi_ns=int(t_pi_send_ns), t_recv_ns=int(t_pc_arrival_ns))
+        with self._lock:
+            self._samples.append(s)
+            while self._samples and self._samples[0].t_recv_ns < s.t_recv_ns - self._window_ns:
+                self._samples.popleft()
+            last = getattr(self, "_last_fit_ns", None)
+            if self._fit is None or last is None or s.t_recv_ns - last >= self.REFIT_NS:
+                self._fit = self._compute(list(self._samples))
+                self._last_fit_ns = s.t_recv_ns
+        return True
+
+    def _best(self, samples: list[ClockSample], n_best: int) -> list[ClockSample]:
+        """The least-delayed stamps of each 1 s slice: the largest (t_pi_send - t_pc_arrival), oldest slice first."""
+        slices: dict[int, list[ClockSample]] = {}
+        for x in samples:
+            slices.setdefault(x.t_recv_ns // self.SLICE_NS, []).append(x)
+        best: list[ClockSample] = []
+        for key in sorted(slices):
+            group = sorted(slices[key], key=lambda x: -x.offset_ns)
+            best += group[:max(1, int(len(group) * self._best_fraction))]
+        return best
+
+    def stats(self, now_ns: int) -> ClockStats:
+        st = super().stats(now_ns)
+        return dataclasses.replace(st, rtt_min_ms=None)          # no round trips here

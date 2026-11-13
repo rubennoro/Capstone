@@ -253,7 +253,7 @@ def write_station(path: Path, *, process_frames: dict | None = None, endpoints: 
 
 def fast_overrides(**more) -> dict:
     """Short limits so socket tests run fast (STRUCTURE.md §13)."""
-    o = {"rig_file": str(SMALL_RIG),
+    o = {"rig_file": str(SMALL_RIG), "stream": "c0", "decoder": "h264",      # the C0 path; pi_v1 tests override
          "health": {"stale_s": 0.2, "down_s": 0.5, "fps_window_s": 1.0},
          "clock": {"interval_s": 0.1, "timeout_s": 0.2, "startup_exchanges": 3, "max_sync_age_s": 1.0},
          "server": {"poll_s": 0.01, "join_timeout_s": 2.0},

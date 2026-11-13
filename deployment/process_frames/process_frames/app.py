@@ -15,7 +15,7 @@ from contracts import OBS_STEPS
 from process_frames._dataproc.config import ConfigError
 from process_frames._dataproc.imageprep import ImagePrep
 from process_frames.camera_health import OK, CameraHealth
-from process_frames.clock_map import ClockMap
+from process_frames.clock_map import ClockMap, OneWayClockMap
 from process_frames.clock_sync import ClockSync
 from process_frames.errors import FatalError
 from process_frames.fake_pi_sender import FakePiSender
@@ -25,8 +25,9 @@ from process_frames.packet_buffer import PacketBuffer
 from process_frames.packet_selector import PacketSelector
 from process_frames.pi_packet_source import PiPacketSource
 from process_frames.pi_recording import PiRecording, PiRecordingError
+from process_frames.pi_stream_source import PiStreamPacketSource
 from process_frames.receiver import CAMERAS, Receiver
-from process_frames.rig_file import load_live_rig, rig_summary
+from process_frames.rig_file import camera_sizes, load_live_rig, rig_summary
 from process_frames.settings import Settings
 
 log = logging.getLogger("process_frames")
@@ -127,12 +128,14 @@ class FramesApp:
             m = s.mock_settings
             try:
                 recording = PiRecording.load(s.mock_episode, encoding=s.decoder, max_seconds=m.max_seconds,
-                                             keyframe_interval=m.keyframe_interval, jpeg_quality=m.jpeg_quality)
+                                             keyframe_interval=m.keyframe_interval, jpeg_quality=m.jpeg_quality,
+                                             sizes=camera_sizes(rig))
             except PiRecordingError as e:
                 raise FatalError(f"mock episode unusable: {e}", "check process_frames.mock_episode") from e
             self.fake_pi = FakePiSender(recording, s.pi_frames, s.pi_time_sync,
                                         pi_clock_offset_ns=int(round(m.pi_clock_offset_s * 1e9)),
-                                        drift_ppm=m.drift_ppm, send_hwm=m.send_hwm, clock=self._clock)
+                                        drift_ppm=m.drift_ppm, send_hwm=m.send_hwm, clock=self._clock,
+                                        stream=s.stream)
             try:
                 self.fake_pi.start()
             except Exception as e:
@@ -142,14 +145,24 @@ class FramesApp:
             log.info("FakePiSender (stand-in Pi) playing %s", s.mock_episode)
 
         c = s.clock
-        self.clock_map = ClockMap(c.window_s, c.best_fraction, c.drift_min_span_s, c.max_drift_ppm, c.max_sync_age_s)
+        clock_args = (c.window_s, c.best_fraction, c.drift_min_span_s, c.max_drift_ppm, c.max_sync_age_s)
         decoders = {cam: make_decoder(s.decoder, cam, s.h264) for cam in CAMERAS}
-        self.clock_sync = ClockSync(pi_time_sync, self.clock_map, c, self._clock)
-        self.receiver = Receiver(PiPacketSource(pi_frames, s.receive.recv_hwm), decoders, rig, self.clock_map,
-                                 self.buffer, self.health, s.default_exposure_ns, s.buffer.keep_s, self._clock)
-        log.info("decoder %s; C1 on %s; Pi frames %s, time_sync %s", s.decoder, self.server.endpoint, pi_frames,
-                 pi_time_sync)
-        self._thread("clock-sync", lambda: self.clock_sync.run(self._stop))
+        if s.stream == "pi_v1":                         # the Pi's 3-part stream; clock from its t_send_ns
+            self.clock_map = OneWayClockMap(*clock_args)
+            source = PiStreamPacketSource(pi_frames, s.receive.recv_hwm, self.clock_map, self._clock)
+            self.clock_sync = None
+            timing = "clock from t_send_ns (one-way)"
+        else:                                           # C0 packets plus time_sync
+            self.clock_map = ClockMap(*clock_args)
+            source = PiPacketSource(pi_frames, s.receive.recv_hwm)
+            self.clock_sync = ClockSync(pi_time_sync, self.clock_map, c, self._clock)
+            timing = f"time_sync {pi_time_sync}"
+        self.receiver = Receiver(source, decoders, rig, self.clock_map, self.buffer, self.health,
+                                 s.default_exposure_ns, s.buffer.keep_s, self._clock)
+        log.info("stream %s, decoder %s; C1 on %s; Pi frames %s, %s", s.stream, s.decoder, self.server.endpoint,
+                 pi_frames, timing)
+        if self.clock_sync is not None:
+            self._thread("clock-sync", lambda: self.clock_sync.run(self._stop))
         self._thread("receiver", lambda: self.receiver.run(self._stop, s.receive.timeout_s))
 
     def _main_loop(self) -> None:
@@ -165,8 +178,11 @@ class FramesApp:
             if not synced_logged and self.clock_map.is_fresh(now):
                 synced_logged = True
                 st = self.clock_map.stats(now)
-                log.info("clock synced: offset %.6f s, rtt min %.1f ms (%d exchanges)", st.offset_ns / 1e9,
-                         st.rtt_min_ms, self.clock_sync.exchanges)
+                if self.clock_sync is not None:
+                    log.info("clock synced: offset %.6f s, rtt min %.1f ms (%d exchanges)", st.offset_ns / 1e9,
+                             st.rtt_min_ms, self.clock_sync.exchanges)
+                else:
+                    log.info("clock synced: offset %.6f s (one-way, from t_send_ns)", st.offset_ns / 1e9)
             if not self.ready.is_set():
                 if all(self.health[cam].status(now) == OK for cam in CAMERAS):
                     self._write_ready()
@@ -186,7 +202,10 @@ class FramesApp:
 
     def _waiting_for(self, now: int) -> str:
         why = []
-        if self.clock_sync.exchanges == 0:
+        if self.clock_sync is None:
+            if self.receiver.packets.received and not self.clock_map.is_fresh(now):
+                why.append(f"no packet for {self.settings.clock.max_sync_age_s:g} s (clock)")
+        elif self.clock_sync.exchanges == 0:
             why.append("no time_sync reply yet")
         elif not self.clock_map.is_fresh(now):
             why.append(f"no time_sync reply for {self.settings.clock.max_sync_age_s:g} s")
@@ -219,7 +238,8 @@ class FramesApp:
         st = self.clock_map.stats(now)
         out["clock"] = {"synced": st.synced, "offset_ns": st.offset_ns, "drift_ppm": st.drift_ppm,
                         "rtt_min_ms": st.rtt_min_ms, "last_sync_age_s": st.last_sync_age_s, "samples": st.samples,
-                        "exchanges": self.clock_sync.exchanges, "timeouts": self.clock_sync.timeouts}
+                        "exchanges": self.clock_sync.exchanges if self.clock_sync else None,
+                        "timeouts": self.clock_sync.timeouts if self.clock_sync else None}
         out["served"], out["misses"] = self.server.served, self.server.misses
         return out
 
@@ -244,8 +264,9 @@ class FramesApp:
         if k["offset_ns"] is None:
             parts.append("clock not synced")
         else:
+            rtt = "one-way" if k["rtt_min_ms"] is None else f"rtt {k['rtt_min_ms']:.1f}ms"
             parts.append(f"clock offset {k['offset_ns'] / 1e9:.6f}s drift {k['drift_ppm']:.1f}ppm "
-                         f"rtt {k['rtt_min_ms']:.1f}ms sync {k['last_sync_age_s']:.1f}s ago")
+                         f"{rtt} sync {k['last_sync_age_s']:.1f}s ago")
         parts.append(f"served {rec['served']} misses {rec['misses']}")
         return "stats " + " | ".join(parts)
 

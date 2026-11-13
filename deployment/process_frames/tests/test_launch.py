@@ -45,13 +45,13 @@ def test_name_and_program(process_class, tmp_path):
     assert "--mock" in make(process_class, tmp_path, mock=True).command()
 
 
-def test_checks_with_the_default_v2_rig(process_class, tmp_path):
+def test_checks_with_the_default_640_rig(process_class, tmp_path):
     r = by_name(make(process_class, tmp_path, mock=False).checks())
     assert r["rig file"].status == "pass"
-    assert r["rig file"].detail == "rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30"
+    assert r["rig file"].detail == "rig_pi_v2_640: main imx519 640x480@30, ultrawide imx219 640x480@30"
     assert "rig stand-in" not in r
     assert r["imports"].status == "pass"
-    assert r["decoder"].status == "info" and r["decoder"].detail == "h264 (default)"
+    assert r["decoder"].status == "info" and r["decoder"].detail.startswith("jpeg (stream pi_v1")
     assert r["Pi reachable"].status == "fail" and "is the Pi on" in r["Pi reachable"].detail
     assert r["camera source"].detail == "Pi at 127.0.0.1"
 
@@ -68,10 +68,10 @@ def test_pi_reachable_passes_against_a_listening_port(process_class, tmp_path):
         srv.listen()
         port = srv.getsockname()[1]
         p = make(process_class, tmp_path, mock=False, endpoints={"pi_frames": f"tcp://127.0.0.1:{port}"},
-                 process_frames={"rig_file": str(SMALL_RIG), "decoder": "jpeg"})
+                 process_frames={"rig_file": str(SMALL_RIG), "stream": "c0", "decoder": "jpeg"})
         r = by_name(p.checks())
     assert r["Pi reachable"].status == "pass"
-    assert r["decoder"].detail == "jpeg (backup, PLAN §9)"
+    assert r["decoder"].detail == "jpeg (stream c0, backup, PLAN §9)"
 
 
 def test_broken_station_section_and_missing_rig_file(process_class, tmp_path):

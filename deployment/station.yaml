@@ -9,7 +9,7 @@ python:
 
 endpoints:
   pi_frames: tcp://10.42.0.78:5555                 # the Pi on the Jetson hotspot (CapstoneGripper); DHCP, may change. The Pi binds (process_frames/DIRECTIONS.md)
-  pi_time_sync: tcp://10.42.0.78:5601              # same Pi address (C0 clock sync)
+  pi_time_sync: tcp://10.42.0.78:5601              # same Pi address; used only with process_frames.stream c0 (the Pi has none)
   mock_pi_frames: tcp://127.0.0.1:5600             # --mock: the fake Pi inside process_frames
   mock_pi_time_sync: tcp://127.0.0.1:5601
   frames: tcp://127.0.0.1:5610                     # C1: process_frames <-> message_comms
@@ -21,8 +21,9 @@ franka_control:
   realtime: ignore                                 # TODO: set to enforce once the PC has a PREEMPT_RT kernel (PLAN §9)
 
 process_frames:
-  rig_file: process_frames/rigs/rig_pi_v2.yaml     # the real rig file (v2: main 1600x1200 @ 30, ultrawide 1280x960 @ 30)
-  mock_episode: ~/Downloads/episode_000045         # a real Pi recording (both cameras 30 FPS, main 1600x1200), used only by --mock
+  rig_file: process_frames/rigs/rig_pi_v2_640.yaml # as the Pi streams: both cameras 640x480 @ 30 (rig_pi_v2 scaled)
+  mock_episode: ~/Downloads/episode_000045         # a real Pi recording (both cameras 30 FPS, main 1600x1200), used only by --mock;
+                                                   # the fake Pi delivers it at the rig file's sizes, in the Pi's stream (pi_v1)
 
 policy:
   kind: hold_still                                 # hold_still until a rig-trained diffusion checkpoint exists (PLAN §6.2)

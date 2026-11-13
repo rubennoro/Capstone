@@ -142,6 +142,7 @@ def _path_or_null(v: Any) -> str | None:
 #: Every key of config.yaml and its check (STRUCTURE.md §10).
 SCHEMA: dict[str, Callable[[Any], str | None]] = {
     "rig_file": _path,
+    "stream": _choice("pi_v1", "c0"),
     "decoder": _choice("h264", "jpeg"),
     "mock_episode": _path_or_null,
     "default_exposure_ns": _int_min(0),
@@ -228,6 +229,7 @@ def _endpoint(endpoints: Any, key: str, problems: list[str]) -> str:
 @dataclass(frozen=True)
 class Settings:
     rig_file: Path
+    stream: str                 # pi_v1: the Pi's 3-part JSON + JPEG stream; c0: msgpack C0 + time_sync
     decoder: str
     mock: bool
     mock_episode: Path | None
@@ -278,6 +280,9 @@ class Settings:
             msg = check(flat[key])
             if msg:
                 problems.append(f"{NAME}.{key}: {msg}")
+        if not problems and flat["stream"] == "pi_v1" and flat["decoder"] != "jpeg":
+            problems.append(f"{NAME}.decoder: stream pi_v1 carries JPEG frames, so the decoder must be jpeg, "
+                            f"got {flat['decoder']!r}")
         if not problems and flat["health.down_s"] <= flat["health.stale_s"]:
             problems.append(f"{NAME}.health.down_s: must be > health.stale_s ({flat['health.stale_s']}), "
                             f"got {flat['health.down_s']}")
@@ -318,7 +323,7 @@ class Settings:
 
         f = flat
         return cls(
-            rig_file=rig_file.absolute(), decoder=f["decoder"], mock=mock,
+            rig_file=rig_file.absolute(), stream=f["stream"], decoder=f["decoder"], mock=mock,
             mock_episode=mock_episode.absolute() if mock_episode is not None else None,
             pi_frames=pi_frames, pi_time_sync=pi_time_sync, frames=frames, session_root=session_root,
             default_exposure_ns=f["default_exposure_ns"],

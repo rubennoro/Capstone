@@ -14,7 +14,7 @@ from process_frames.settings import SCHEMA, Settings
 
 # Every key of STRUCTURE.md §10 with its default.
 DEFAULTS = {
-    "rig_file": "rigs/rig_pi_v2.yaml", "decoder": "h264", "mock_episode": None,
+    "rig_file": "rigs/rig_pi_v2_640.yaml", "stream": "pi_v1", "decoder": "jpeg", "mock_episode": None,
     "default_exposure_ns": 5000000, "receive.timeout_s": 0.1, "receive.recv_hwm": 60, "buffer.keep_s": 1.0,
     "select.main_spacing_ms": 50, "select.ultrawide_spacing_ms": 100, "select.tolerance_frames": 2.0,
     "health.stale_s": 0.35, "health.down_s": 2.0, "health.fps_window_s": 1.0, "clock.interval_s": 1.0,
@@ -45,17 +45,18 @@ def test_config_yaml_has_every_key_with_its_default():
 
 def test_defaults_load(tmp_path):
     s = Settings.load(write_station(tmp_path / "station.yaml"), mock=False)
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2.yaml"
-    assert s.decoder == "h264" and s.mock is False and s.mock_episode is None
+    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2_640.yaml"
+    assert s.stream == "pi_v1" and s.decoder == "jpeg" and s.mock is False and s.mock_episode is None
     assert s.clock.startup_exchanges == 10 and isinstance(s.clock.interval_s, float)
     assert s.select.tolerance_frames == 2.0 and s.h264.thread_type == "SLICE"
     assert s.frames == "tcp://127.0.0.1:*" and s.session_root == tmp_path / "sessions"
 
 
 def test_override_merges_key_by_key(tmp_path):
-    st = write_station(tmp_path / "station.yaml", process_frames={"clock": {"interval_s": 2.5}, "decoder": "jpeg"})
+    st = write_station(tmp_path / "station.yaml", process_frames={"clock": {"interval_s": 2.5}, "stream": "c0",
+                                                                   "decoder": "h264"})
     s = Settings.load(st, mock=False)
-    assert s.clock.interval_s == 2.5 and s.clock.timeout_s == 0.5 and s.decoder == "jpeg"
+    assert s.clock.interval_s == 2.5 and s.clock.timeout_s == 0.5 and s.stream == "c0" and s.decoder == "h264"
 
 
 def test_unknown_override_key_is_refused_with_its_path(tmp_path):
@@ -67,6 +68,7 @@ def test_unknown_override_key_is_refused_with_its_path(tmp_path):
 
 @pytest.mark.parametrize("override,key", [
     ({"decoder": "vp9"}, "decoder"), ({"clock": {"best_fraction": 1.5}}, "clock.best_fraction"),
+    ({"stream": "c1"}, "stream"), ({"decoder": "h264"}, "decoder"),                  # pi_v1 needs jpeg
     ({"receive": {"recv_hwm": "many"}}, "receive.recv_hwm"), ({"mock": {"jpeg_quality": 0}}, "mock.jpeg_quality"),
     ({"health": {"stale_s": True}}, "health.stale_s"), ({"health": {"down_s": 0.1}}, "health.down_s"),
     ({"h264": {"thread_type": "FRAME"}}, "h264.thread_type"), ({"clock": 3}, "clock"),
@@ -83,7 +85,7 @@ def test_relative_paths_resolve_from_the_right_folder(tmp_path):
     st = write_station(tmp_path / "station.yaml", process_frames={"mock_episode": "eps/ep1"})
     s = Settings.load(st, mock=True)
     assert s.mock_episode == tmp_path / "eps" / "ep1"                      # station value: station's folder
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2.yaml"                # default: process_frames/
+    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2_640.yaml"            # default: process_frames/
     st = write_station(tmp_path / "station.yaml", process_frames={"rig_file": "my_rigs/r.yaml"})
     assert Settings.load(st, mock=False).rig_file == tmp_path / "my_rigs" / "r.yaml"
 

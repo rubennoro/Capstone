@@ -10,7 +10,14 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17)
+## Current state (2026-10-17; deployment note 2026-11-13)
+
+- **Deployment (`deployment/`, branch `rnoro/deployment`):** `process_frames` now reads what the Pi actually sends,
+  `stream: pi_v1`. That's 3-part ZeroMQ messages (JSON header, main JPEG, ultrawide JPEG), both cameras 640×480 at
+  30 FPS, from the Pi's PUB on port 5555, with no time sync. The contract is `deployment/contracts/PI_PAYLOAD.md` §0.
+  - The clock is one-way, from `t_send_ns`. The rig file is `rig_pi_v2_640.yaml`. `--mock` speaks the same format.
+  - How to run: `deployment/process_frames/DIRECTIONS.md`. Env on the Jetson: `~/envs/deploy` (Python 3.10 via uv).
+  - Verified live with `pi_collect` (30 pkt/s, 0 gaps). Not yet run with `process_frames` against the live Pi.
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -58,6 +65,9 @@ Running status between working sessions. Update it at the end of each conversati
 - Plots: the user is happy with them as they are. Don't change `scripts/wandb_offline_to_csv.py` unless asked.
 
 ## Next time
+
+- Deployment: with the Pi streaming, run `python -m process_frames` and `probe` against it (DIRECTIONS.md §5), then
+  `deploy run` on the PC that has `franka_control` built.
 
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz

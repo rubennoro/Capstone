@@ -33,9 +33,12 @@ class ProcessFramesProcess(ManagedProcess):
         if imports.status == "fail" and "av (" in imports.detail:
             imports = self._fail("imports", imports.detail + "; PyAV missing: pip install av==17.1.0")
         out.append(imports)
-        decoder = self.config["decoder"]
-        out.append(check_helpers.info(self.NAME, "decoder",
-                                      "h264 (default)" if decoder == "h264" else f"{decoder} (backup, PLAN §9)"))
+        decoder, stream = self.config["decoder"], self.config["stream"]
+        if stream == "pi_v1":
+            detail = f"{decoder} (stream pi_v1: the Pi's JSON header + JPEG frames, clock from t_send_ns)"
+        else:
+            detail = f"{decoder} (stream c0)" if decoder == "h264" else f"{decoder} (stream c0, backup, PLAN §9)"
+        out.append(check_helpers.info(self.NAME, "decoder", detail))
         out.append(check_helpers.port_free(self.NAME, self.station.endpoint("frames")))
         if self.mock:
             out.extend(self._mock_checks())

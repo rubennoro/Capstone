@@ -1,8 +1,116 @@
 # C0: the Pi payload contract
 
-What the Raspberry Pi 5 sends to the PC during deployment, exactly. This file is written for whoever implements the Pi
-sender, and is the reference for `contracts/` (the C0 message classes and validators) and `process_frames/` (the
-receiver). PLAN.md §4 C0 points here. Version: `c0.packet/v1`, `c0.time_sync_request/v1`, `c0.time_sync_reply/v1`.
+What the Raspberry Pi 5 sends to the PC during deployment, and what the PC expects of it. The Pi sender is fixed; the
+PC adapts to it. Format: **`pi_stream/v1`**, read by `process_frames` with `stream: pi_v1` (the default).
+Code: `contracts/pi_stream.py` (parse and check) and `process_frames/pi_stream_source.py` (convert). PLAN.md §4 C0
+points here.
+
+Sections 1–8 further down are an **appendix**: the original C0 design (msgpack packets plus a time-sync socket). The
+Pi doesn't send it. It's kept because `process_frames` still uses that packet form internally, and `stream: c0`
+still reads it.
+
+## 0. `pi_stream/v1`
+
+### 0.1 Transport
+
+| | |
+|---|---|
+| Library | ZeroMQ |
+| Socket | The Pi **binds a PUB** socket on port **5555**. `process_frames` connects a SUB, subscribed to everything, at `endpoints.pi_frames` (`station.yaml`, e.g. `tcp://10.42.0.78:5555`). |
+| Direction | Pi → PC only. Nothing is sent back, and there is no time-sync socket. |
+| Message | One ZeroMQ **multipart** message per main frame, delivered whole or not at all. |
+| Frames | Both cameras **640×480 (4:3) at 30 FPS**, JPEG. Rig file: `process_frames/rigs/rig_pi_v2_640.yaml`. |
+
+### 0.2 Parts
+
+| Part | Content |
+|---|---|
+| 0 | the header, a JSON object (0.3) |
+| 1 | the main frame (IMX519), one JPEG |
+| 2 | the ultrawide frame (IMX219), one JPEG |
+
+Exactly 3 parts, neither JPEG empty.
+
+### 0.3 Header
+
+All keys are required, with no others. Integers are JSON integers, never booleans or floats.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `version` | int | `1` |
+| `packet_no` | int ≥ 0 | Counts packets since the sender started. Equal to `main.frame_no` in practice. |
+| `t_send_ns` | int | The Pi clock (the same clock as `t_sensor_ns`), read just before sending |
+| `clock_offset_ns` | int | Sent by the Pi; not used by the PC |
+| `main` | object | The main frame of part 1 (frame object below) |
+| `ultrawide` | object | The ultrawide frame of part 2 (frame object below) |
+| `skew_ns` | int | `main.t_mid_ns − ultrawide.t_mid_ns`; not used by the PC |
+| `uw_reused` | bool | Part 2 repeats an earlier packet's ultrawide frame, with the same `frame_no` |
+
+**Frame object** (`main` and `ultrawide`):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `frame_no` | int ≥ 0 | Counts this camera's frames since the sender started |
+| `t_sensor_ns` | int | libcamera `SensorTimestamp`: the end of the first row's exposure, on the Pi clock, in ns |
+| `exposure_us` | int ≥ 0 | libcamera `ExposureTime`, in µs |
+| `t_mid_ns` | int | Mid-exposure: `t_sensor_ns − exposure_us·1000/2` |
+
+### 0.4 What the PC relies on
+
+1. **`packet_no` goes up by 1 per packet.** A gap means lost packets (`packets lost` in the stats). Going backwards
+   means the sender restarted: `process_frames` marks both cameras down and ignores the rest, so restart it (or
+   `deploy run`) after restarting the Pi sender.
+2. **Each camera's `frame_no` and `t_sensor_ns` only go up.** The exception is a repeated ultrawide frame
+   (`uw_reused`), which carries the earlier frame's numbers. A skipped ultrawide `frame_no` shows up as a `drop`
+   count, which is harmless with JPEG.
+3. **The JPEGs are exactly the rig file's size** (640×480). Any other size is `FATAL`, naming the camera.
+4. **`t_send_ns` is on the same clock as `t_sensor_ns`.** The PC maps Pi times to its own clock with it (0.5).
+5. **Pairing is the Pi's choice:** the ultrawide frame in each packet is that packet's pair. The PC checks only that
+   it exists. The gap shows in the stats as `pair gap`. On the live Pi, `skew_ns` was about 16 ms.
+6. **Packets keep coming.** No new frame for 0.35 s makes a camera stale, and 2 s makes it down. No packet for 10 s
+   makes the clock stale.
+
+### 0.5 What the PC does with it
+
+1. **Check** each message: parts, keys, types, `version`. Any violation is a contract violation and `process_frames`
+   exits `FATAL`.
+2. **Convert** it to the internal C0 packet (appendix §3–4):
+   - `packet_seq` ← `packet_no`.
+   - Frame map: `frame_seq` ← `frame_no`, `t_pi_ns` ← `t_sensor_ns`, `exposure_ns` ← `exposure_us`·1000. Width and
+     height come from the JPEG header. `encoding` jpeg, `keyframe` true.
+   - `pair_seq` ← the ultrawide `frame_no`.
+   - The ultrawide frame is passed on, and decoded, only when its `frame_no` is new. A repeat is not decoded again,
+     but stays the pair.
+3. **Clock, one-way:** each packet's `t_send_ns` against its PC arrival time. In each second, the least-delayed
+   packets are fitted for offset and drift (`OneWayClockMap`). PC times come out late by the minimum Wi-Fi latency,
+   a few ms.
+4. **From here on it's the same as appendix §7:** packet time is the main frame's mid-exposure. Then the 1 s buffer,
+   frame picking (main images at T − 50 ms and T, ultrawide at T − 100 ms and T), and the C1 224×224 images.
+
+### 0.6 Example
+
+A packet as the live Pi sent it on 2026-11-12:
+
+```
+part 0: {"version": 1, "packet_no": 800, "t_send_ns": 1269437832529, "clock_offset_ns": 1794539164607668815,
+         "main":      {"frame_no": 800, "t_sensor_ns": 1269392013000, "exposure_us": 25640, "t_mid_ns": 1269379193000},
+         "ultrawide": {"frame_no": 799, "t_sensor_ns": 1269412129000, "exposure_us": 33287, "t_mid_ns": 1269395485500},
+         "skew_ns": 16292500, "uw_reused": false}
+part 1: <main JPEG, 640x480, ~48 kB>
+part 2: <ultrawide JPEG, 640x480, ~75 kB>
+```
+
+- **Pair:** ultrawide frame 799 is the pair of main frame 800; their mid-exposures are 16.3 ms apart.
+- **Timing:** the packet left the Pi 45.8 ms after the main frame's `t_sensor_ns`.
+
+---
+
+# Appendix: the original C0 design (`stream: c0`, not sent by the Pi)
+
+Kept as the definition of the internal packet form (`contracts.c0_frames`, used by `process_frames` for both streams),
+and as the format `stream: c0` reads. Code and docs cite these section numbers, for example "§5 rule 3" for the pairing
+rule. Versions: `c0.packet/v1`, `c0.time_sync_request/v1`, `c0.time_sync_reply/v1`. Sizes below are the original
+full-resolution ones (`rig_pi_v2.yaml`).
 
 ## 1. The idea
 
@@ -69,7 +177,7 @@ The number of parts is exactly `2 + len(header.ultrawide)`. Any other count is a
 | `encoding` | str | `"h264"` (default) or `"jpeg"` (backup, PLAN §9). The same for every frame of a camera during a run. |
 | `keyframe` | bool | H.264: true for a frame that decodes on its own (an IDR frame). JPEG: always true. |
 
-## 5. Rules for the Pi sender
+## 5. Rules for a C0 sender
 
 1. **One packet per main frame**, sent as soon as that main frame is encoded. The packet's main frame is part 1.
 2. **Every encoded ultrawide frame is sent exactly once**: in the first packet sent after it was encoded, in capture

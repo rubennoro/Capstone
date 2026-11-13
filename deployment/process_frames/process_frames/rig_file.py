@@ -39,6 +39,11 @@ def camera_summary(rig: RigConfig) -> dict[str, dict]:
     return out
 
 
+def camera_sizes(rig: RigConfig) -> dict[str, tuple[int, int]]:
+    """(width, height) per camera role: the size frames arrive at (and FakePiSender delivers)."""
+    return {role: (int(rig.cameras[role].resolution[0]), int(rig.cameras[role].resolution[1])) for role in ROLES}
+
+
 def rig_summary(rig: RigConfig) -> str:
     """e.g. ``rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30``."""
     parts = [f"{role} {c['sensor']} {c['width']}x{c['height']}@{c['fps']:g}" for role, c in camera_summary(rig).items()]
