@@ -116,17 +116,17 @@ target_compile_definitions(franka_control_core PUBLIC
   FRANKA_CONTROL_LIBFRANKA_VERSION="${_libfranka_version_text}"
   FRANKA_CONTROL_GIT_HASH="${FRANKA_CONTROL_GIT_HASH}")
 
+# The two libfranka classes go into the core library itself: app.cpp (in core) picks the real arm under
+# FRANKA_CONTROL_HAS_LIBFRANKA, so the define must be on core, not on a library that only links core.
+if(FRANKA_CONTROL_HAS_LIBFRANKA)
+  target_sources(franka_control_core PRIVATE src/libfranka_arm.cpp src/franka_hand_gripper.cpp)
+  target_link_libraries(franka_control_core PUBLIC Franka::Franka)
+  target_compile_definitions(franka_control_core PUBLIC FRANKA_CONTROL_HAS_LIBFRANKA=1)
+endif()
+
 add_executable(franka_control src/main.cpp)
 target_compile_options(franka_control PRIVATE ${_warnings})
-if(FRANKA_CONTROL_HAS_LIBFRANKA)
-  add_library(franka_control_libfranka STATIC src/libfranka_arm.cpp src/franka_hand_gripper.cpp)
-  target_link_libraries(franka_control_libfranka PUBLIC franka_control_core Franka::Franka)
-  target_compile_options(franka_control_libfranka PRIVATE ${_warnings})
-  target_compile_definitions(franka_control_libfranka PUBLIC FRANKA_CONTROL_HAS_LIBFRANKA=1)
-  target_link_libraries(franka_control PRIVATE franka_control_libfranka)
-else()
-  target_link_libraries(franka_control PRIVATE franka_control_core)
-endif()
+target_link_libraries(franka_control PRIVATE franka_control_core)
 
 # ---- tests ----
 if(FRANKA_CONTROL_BUILD_TESTS)
