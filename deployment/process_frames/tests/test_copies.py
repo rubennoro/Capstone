@@ -1,9 +1,10 @@
 """Each COPIED file equals its source on rnoro/data-work, apart from the provenance header and the listed changes,
-and the real rig file rig_pi_v2.yaml equals the user's file as given apart from its one stated change (STRUCTURE.md
-§3). Skipped when git or the source is not available."""
+and the rig file rig_pi_v2.yaml equals the user's file as given apart from its two stated changes (STRUCTURE.md §3).
+Skipped when git or the source is not available."""
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,7 +25,7 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", "-C", str(REPO), *args], check=True, capture_output=True, text=True).stdout
 
 
-#: The commit that added rig_pi_v2.yaml exactly as the user gave it, and the one change made to it since.
+#: The commit that added rig_pi_v2.yaml exactly as the user gave it, and the two changes made to it since.
 V2_SOURCE_COMMIT = "196eae4"
 V2_PATH = "deployment/process_frames/rigs/rig_pi_v2.yaml"
 _PAD = " " * 54
@@ -33,6 +34,25 @@ V2_CHANGE = (
     "  max_opening_m: 0.080" + " " * 32 + "# max_width - min_width of the fit (tag-to-tag x, metres). 0.080, not\n"
     + _PAD + "# 0.110: limited to the Franka Hand's 80 mm stroke (2026-11-12), so\n"
     + _PAD + "# every demonstrated width is one the robot can reproduce.\n")
+#: The tcp block as given (nominal CAD); the file now holds the one `python -m deploy.geometry` wrote instead.
+V2_GIVEN_TCP = (
+    "tcp:" + " " * 50 + "# T_cam_tcp is in the PHYSICAL ultrawide optical frame\n"
+    "  T_cam_tcp:" + " " * 42 + "# nominal CAD, as rig_v1\n"
+    "    rotation: {euler_xyz_deg: [15.0, 0.0, 0.0]}\n"
+    "    translation_m: [0.0, 0.060, 0.200]\n")
+V2_TCP_LINES = (r"# T_cam_tcp COMPUTED by `python -m deploy\.geometry` on \d{4}-\d{2}-\d{2} from \S+/gripper\.yaml",
+                r"# and franka_control tcp\.F_T_TCP\. Do not edit by hand: change gripper\.yaml and rerun the tool\.",
+                r"tcp:",
+                r"  T_cam_tcp:",
+                r"    matrix: \[.*\]   # 4x4, row-major")
+#: What deploy.geometry computes from deployment/gripper.yaml (ultrawide at (55, 0, 10) mm on the hand's +x side,
+#: tilted 15 deg) and franka_control's F_T_TCP (-45 deg about the flange z, fingertips 150 mm out). deploy's
+#: test_geometry checks that these files reproduce the rig file's matrix.
+_C, _S = np.cos(np.radians(15.0)), np.sin(np.radians(15.0))
+V2_T_CAM_TCP = np.array([[0.0, 1.0, 0.0, 0.0],
+                         [-_C, 0.0, -_S, 0.016891254131545838],
+                         [-_S, 0.0, _C, 0.1494646631611082],
+                         [0.0, 0.0, 0.0, 1.0]])
 
 
 def _available(ref: str) -> bool:
@@ -107,50 +127,26 @@ def test_paths_keeps_only_name_re():
     for ln in kept:
         assert ln in source_lines, f"not a line of the source: {ln!r}"
     from process_frames._dataproc.paths import NAME_RE
-    assert NAME_RE.fullmatch("rig_pi_v1_standin") and not NAME_RE.fullmatch("a b")
-
-
-def _plain(rig) -> dict:
-    """The parsed rig as comparable plain values (arrays as lists)."""
-    def conv(v):
-        if isinstance(v, np.ndarray):
-            return np.round(v, 12).tolist()
-        if isinstance(v, dict):
-            return {k: conv(x) for k, x in v.items()}
-        if hasattr(v, "__dataclass_fields__"):
-            return {k: conv(getattr(v, k)) for k in v.__dataclass_fields__}
-        if isinstance(v, (list, tuple)):
-            return [conv(x) for x in v]
-        return v
-    return conv(rig)
-
-
-@needs_branch
-def test_standin_rig_equals_rig_pi_v1_except_the_stated_changes():
-    """Four changes: header comments, rig_id, main fps 60 -> 30, the tcp block (T_cam_tcp from deploy.geometry)."""
-    src = "configs/rigs/rig_pi_v1.yaml"
-    source = parse_rig(yaml.safe_load(_git("show", f"{BRANCH}:{SRC}/{src}")), "rig_pi_v1.yaml")
-    standin_path = FOLDER / "rigs" / "rig_pi_v1_standin.yaml"
-    standin = parse_rig(yaml.safe_load(standin_path.read_text()), "rig_pi_v1_standin.yaml")
-    a, b = _plain(source), _plain(standin)
-    assert a["rig_id"] == "rig_pi_v1" and b["rig_id"] == "rig_pi_v1_standin"
-    assert a["cameras"]["main"]["fps"] == 60.0 and b["cameras"]["main"]["fps"] == 30.0
-    for d in (a, b):
-        for key in ("rig_id", "source_path", "T_cam_tcp"):
-            d.pop(key)
-        d["cameras"]["main"].pop("fps")
-    assert a == b
-    assert standin_path.read_text().splitlines()[1].startswith(f"# Copied from {BRANCH}:{SRC}/{src} @ ")
+    assert NAME_RE.fullmatch("rig_pi_v2") and not NAME_RE.fullmatch("a b")
 
 
 @needs_v2_source
-def test_v2_rig_is_the_users_file_except_max_opening():
-    """rig_pi_v2.yaml is verbatim the user's file, except gripper.max_opening_m 0.110 -> 0.080 with its comment."""
+def test_v2_rig_is_the_users_file_except_max_opening_and_tcp():
+    """rig_pi_v2.yaml is verbatim the user's file, except (1) gripper.max_opening_m 0.110 -> 0.080 with its comment and
+    (2) the tcp block, which holds the T_cam_tcp matrix deploy.geometry computes (with its COMPUTED header)."""
     given = _git("show", f"{V2_SOURCE_COMMIT}:{V2_PATH}")
     old, new = V2_CHANGE
-    assert given.count(old) == 1, "the stated change no longer applies"
+    assert given.count(old) == 1 and given.count(V2_GIVEN_TCP) == 1, "a stated change no longer applies"
     here = (FOLDER / "rigs" / "rig_pi_v2.yaml").read_text()
-    assert here == given.replace(old, new)
+    lines = here.splitlines(keepends=True)
+    start = next(i for i, line in enumerate(lines) if line.startswith("# T_cam_tcp COMPUTED"))
+    tcp_lines = lines[start:start + len(V2_TCP_LINES)]
+    for line, pattern in zip(tcp_lines, V2_TCP_LINES, strict=True):
+        assert re.fullmatch(pattern, line.rstrip("\n")), line
+    rest = "".join(lines[:start] + [V2_GIVEN_TCP] + lines[start + len(V2_TCP_LINES):])
+    assert rest == given.replace(old, new)
     v2 = parse_rig(yaml.safe_load(here), "rig_pi_v2.yaml")
+    assert np.allclose(v2.T_cam_tcp, V2_T_CAM_TCP, atol=1e-9, rtol=0.0)
     assert v2.cameras["main"].resolution == (1600, 1200) and v2.cameras["ultrawide"].resolution == (1280, 960)
     assert v2.cameras["main"].fps == 30.0 and v2.cameras["ultrawide"].fps == 30.0
+    assert v2.gripper.max_opening_m == 0.080

@@ -1,4 +1,4 @@
-"""Live image prep at the real rig file's sizes (and the stand-in's): bit-identical to iPhUMI's cv_util
+"""Live image prep at the real rig file's sizes (and others): bit-identical to iPhUMI's cv_util
 (STRUCTURE.md §13.2)."""
 
 from __future__ import annotations
@@ -20,10 +20,9 @@ def prep(v2_rig):
     return ImagePrep(v2_rig)
 
 
-def test_v2_imageprep_builds(prep, standin_rig):
+def test_v2_imageprep_builds(prep):
     assert prep.main.in_res == (1600, 1200)
     assert prep.ultrawide.in_res == (1280, 960) and prep.ultrawide.virtual_res == (640, 480)
-    assert ImagePrep(standin_rig).main.in_res == (1600, 900)
 
 
 def test_main_224_identical_to_cv_util_at_1600x1200(prep):

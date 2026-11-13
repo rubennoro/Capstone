@@ -32,9 +32,8 @@ It has two sides, running at the same time:
     ultrawide images from the packets nearest T − 100 ms and T, T being the newest packet's time;
   - shrinking them to 224×224 with the exact image-prep code that made the training images.
 - **The rig file** (camera sensors, resolutions, frame rates, lens models): `rigs/rig_pi_v2.yaml`, the real one (main
-  1600×1200 @ 30, ultrawide 1280×960 @ 30), kept verbatim apart from one stated change (§3). The old stand-in
-  `rigs/rig_pi_v1_standin.yaml` stays in the folder because `deploy`'s geometry test reads it; `process_frames` no
-  longer uses it by default.
+  1600×1200 @ 30, ultrawide 1280×960 @ 30), the only rig file in the folder. It is kept verbatim apart from two
+  stated changes (§3); its `tcp:` block is written by `deploy`'s geometry tool, never by hand.
 - **The Pi's pairing rule** as code (`PacketPairer`), so the fake Pi and the tests follow exactly the rule the Pi
   must.
 - **The fake Pi** (`FakePiSender`), a stand-in for the Pi used only by the unit tests and `--mock`: a thread inside
@@ -83,15 +82,14 @@ process_frames/
   config.yaml                  every setting, with its default (section 10)
   pyproject.toml               package "process_frames"; pinned dependencies (section 15)
   rigs/
-    rig_pi_v2.yaml             the real rig file, the user's file verbatim with one stated change (section 3)
-    rig_pi_v1_standin.yaml     COPIED from rig_pi_v1.yaml, 4 stated changes (section 3); kept for deploy's geometry test
+    rig_pi_v2.yaml             the rig file, the user's file verbatim with two stated changes (section 3)
   process_frames/              the Python package
     __init__.py                FOLDER (the process_frames/ folder, for config.yaml and rigs/), NAME = "process_frames"
     __main__.py                `python -m process_frames`: common arguments, logging, FATAL line, exit code (section 12)
     app.py                     FramesApp: builds everything, runs the threads, ready file, stats, shutdown
     settings.py                Settings: config.yaml + the station's process_frames section + endpoints
     errors.py                  FatalError, DecodeError, SettingsError
-    rig_file.py                load_live_rig(), is_standin(); `python -m process_frames.rig_file FILE --json`
+    rig_file.py                load_live_rig(), rig_summary(); `python -m process_frames.rig_file FILE --json`
     packet_source.py           PacketSource (interface)
     pi_packet_source.py        PiPacketSource: C0 packet subscriber (the real Pi, or the fake Pi)
     recording_packet_source.py RecordingPacketSource: test stand-in for the Pi: C0 packets from memory, no network
@@ -157,15 +155,21 @@ below are today's, and the executor re-runs the command.
 | `_dataproc/geometry/camera_model.py` | `dataproc/geometry/camera_model.py` | `3fb0ead` | none |
 | `_dataproc/geometry/transforms.py` | `dataproc/geometry/transforms.py` | `3fb0ead` | none |
 | `_dataproc/_vendor/cv_util.py` | `dataproc/_vendor/cv_util.py` | `ce9ba42` | none |
-| `rigs/rig_pi_v1_standin.yaml` | `configs/rigs/rig_pi_v1.yaml` | `5330902` | four changes: (1) the header comments, whose first line is `# STAND-IN rig file. TODO: replace with the v2 rig file (PLAN §6.1). ...`; (2) `rig_id: rig_pi_v1_standin` (the loader requires `rig_id` = file name); (3) `cameras.main.fps: 60` → `30`; (4) the `tcp:` block: `T_cam_tcp` computed by `deploy.geometry` from `gripper.yaml` and `F_T_TCP`, written as a matrix. Everything else (resolutions, lens models) stays nominal, as in the source. This file is not edited by `process_frames`. |
 | `tests/data/rig_v1.yaml` | `configs/rigs/rig_v1.yaml` | `5330902` | none |
 | `tests/test_imageprep.py` | `tests/test_imageprep.py` | `2f6d3b1` | imports `dataproc.*` → `process_frames._dataproc.*`; `RIG_PATH` → `tests/data/rig_v1.yaml`; the iPhUMI path is `parents[3]`; the vendored-file comparison skips 3 header lines instead of 1 |
 | `tests/test_vendored_camera_model.py` | `tests/test_vendored_camera_model.py` | `3fb0ead` | imports `dataproc.geometry.*` → `process_frames._dataproc.geometry.*` |
 
-**The real rig file** `rigs/rig_pi_v2.yaml` is the user's file exactly as given (added in commit `196eae4`, "verbatim"),
-with one stated change: `gripper.max_opening_m: 0.110` → `0.080`, with a comment saying why (the Franka Hand's 80 mm
-stroke, PLAN §1). It has no provenance header (the user's header comments are kept as they are). `test_copies.py`
-checks the file against `196eae4` with exactly that change.
+**The rig file** `rigs/rig_pi_v2.yaml` is the user's file exactly as given (added in commit `196eae4`, "verbatim"),
+with two stated changes:
+
+1. `gripper.max_opening_m: 0.110` → `0.080`, with a comment saying why (the Franka Hand's 80 mm stroke, PLAN §1);
+2. the `tcp:` block. The given nominal CAD value (15° about x, `[0, 0.060, 0.200]` m, from the iPhone era) is replaced
+   by the `T_cam_tcp` that `python -m deploy.geometry` computes from `deployment/gripper.yaml` and franka_control's
+   `tcp.F_T_TCP` (deploy/STRUCTURE.md §6.6): a 4×4 matrix, translation `[0, 0.016891, 0.149465]` m, under the tool's
+   two-line `COMPUTED` header comment. It changes only when `gripper.yaml` or `F_T_TCP` changes and the tool is rerun.
+
+It has no provenance header (the user's header comments are kept as they are). `test_copies.py` checks the file against
+`196eae4` with exactly those changes, the matrix numerically (within 1e-9) against the computed value.
 
 **Copied from this branch** (`rnoro/deployment`), as the reference for a test:
 
@@ -275,15 +279,13 @@ file name, an ultrawide that isn't a fisheye, and a principal point outside the 
 use needs, without touching the copy:
 
 ```
-STANDIN_MARKER = "TODO: replace with the v2 rig file"
-
 def load_live_rig(path: Path) -> RigConfig      # load_rig(path), then: both cameras' sensor is one C0 allows
                                                 #   (imx519 / imx219). Raises ConfigError naming the file and key.
-def is_standin(path: Path) -> bool              # True if a comment line before `schema:` contains STANDIN_MARKER
+def rig_summary(rig: RigConfig) -> str          # "rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30"
 def main(argv: Sequence[str] | None = None) -> int
     # python -m process_frames.rig_file FILE [--json]
     # prints the rig summary (or, with --json, one line:
-    #   {"ok": true, "rig_id": ..., "standin": false,
+    #   {"ok": true, "rig_id": ...,
     #    "cameras": {"main": {"sensor": "imx519", "width": 1600, "height": 1200, "fps": 30.0}, "ultrawide": {...}}}
     #   or {"ok": false, "error": "<ConfigError text>"}); exit 0 if valid, else 1
 ```
@@ -690,7 +692,7 @@ class FramesApp:
 `run()`, in order:
 
 1. `load_live_rig(settings.rig_file)`; a `ConfigError` becomes `FatalError("rig file invalid: <error>", "check
-   process_frames.rig_file")`. Log the rig summary, with `STAND-IN` if `is_standin`.
+   process_frames.rig_file")`. Log the rig summary.
 2. `ImagePrep(rig)` (builds the remap table).
 3. Two `CameraHealth`s, one `PacketBuffer`, a `PacketSelector` (the rig's fps, the `select.*` spacings and
    tolerance, `OBS_STEPS`), then `FramesServer(settings.frames, ...)`: binds C1. A bind error is FATAL ("is another
@@ -917,7 +919,7 @@ Every key, with its default. The station's `process_frames:` section may overrid
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `rig_file` | path | `rigs/rig_pi_v2.yaml` | the rig file (relative to `process_frames/`); `deploy check` warns if it is the stand-in |
+| `rig_file` | path | `rigs/rig_pi_v2.yaml` | the rig file (relative to `process_frames/`) |
 | `decoder` | `h264` \| `jpeg` | `h264` | PLAN §9 frame-encoding backup; also what `FakePiSender` sends under `--mock` |
 | `mock_episode` | path \| null | `null` | a recorded Pi episode folder whose clip `FakePiSender` plays back as fake C0 traffic; used and required only with `--mock` |
 | `default_exposure_ns` | int ≥ 0 | `5000000` | exposure used when C0's `exposure_ns` is 0, capped at half the rig frame period (dataproc `pi_adapter`'s rule and value) |
@@ -983,7 +985,6 @@ least once (so the clock is synced and both streams decode and match the rig fil
 | Name | How | Result |
 |---|---|---|
 | `rig file` | `file_exists`, then a subprocess `python.light -m process_frames.rig_file <rig_file> --json` | pass: `rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30`; fail: the loader's error |
-| `rig stand-in` | the JSON's `standin` | pass with the v2 rig file; **warn** if the stand-in is configured: "rig file is the stand-in copy of rig_pi_v1 (TODO: replace with the v2 rig file); resolutions, lens models and TCP are nominal" |
 | `imports` | `python_imports(python.light, ["process_frames", "av", "cv2", "scipy", "zmq"])` | fail names the missing module (PyAV missing → "pip install av==17.1.0") |
 | `decoder` | config | **info**: `h264 (default)`, or `jpeg (backup, PLAN §9)` |
 | `C1 port` | `port_free(endpoints.frames)` | fail: busy |
@@ -1055,8 +1056,7 @@ present (read only) and is skipped otherwise.
   hand) and `raw_packets(main_t, uw_t, ...)` (packets as the Pi sends them from capture times, paired by
   `PacketPairer`, with chosen keyframes and frames the Pi drops).
 - `fake_clock`: a settable ns clock.
-- `standin_rig`, `small_rig`, `v2_rig`: loaded rig files (`rigs/rig_pi_v1_standin.yaml`, `tests/data/rig_small.yaml`,
-  `rigs/rig_pi_v2.yaml`).
+- `small_rig`, `v2_rig`: loaded rig files (`tests/data/rig_small.yaml`, `rigs/rig_pi_v2.yaml`).
 - `pi_episode(tmp_path, ...)`: writes a tiny Pi-format episode (`meta.json` with per-camera `bitrate`, `cam0.mp4` =
   imx219 and `cam1.mp4` = imx519 encoded with PyAV's libx264, `cam*_frames.csv` with or without `exposure_ns`, and
   with the real Pi's `in_episode` column if asked) at the small rig's sizes, with a moving pattern so every frame
@@ -1071,9 +1071,9 @@ present (read only) and is skipped otherwise.
 |---|---|
 | `test_imageprep.py` | COPIED (§3): letterbox bit-identical to iPhUMI's `cv_util` on 9 sizes; the vendored `cv_util` equals the iPhUMI source; main prep; **the remap puts a known world point at the expected virtual and 224 pixel** (0° and 12° `R_phys_virt`); prep composition and input validation |
 | `test_vendored_camera_model.py` | COPIED (§3): camera models against OpenCV, round trips, remap tables |
-| `test_imageprep_live.py` | **224 images identical to `cv_util` at the v2 rig's sizes** (main 1600×1200; ultrawide: the remap output 640×480 letterboxed) and at other sizes (the stand-in's 1600×900 among them); `ImagePrep(v2_rig)` builds; the remap puts a known point at the expected pixel for the v2 rig's lens |
-| `test_copies.py` | each COPIED file equals its source (`git show <branch>:<path>`) apart from the provenance header and the listed changes; the stand-in rig parses to the same values as `rig_pi_v1.yaml` except `rig_id`, the main fps and the `tcp` block (header comments are not compared); **`rig_pi_v2.yaml` equals the user's file at `196eae4` except `gripper.max_opening_m: 0.080` with its comment**. Each check is skipped when git or its source is not available |
-| `test_rig_file.py` | the stand-in loads with both cameras at 30 FPS and is detected as stand-in; `rig_v1.yaml` is not; **broken rig files are refused** with the key named: invalid YAML, missing key, unknown key, wrong `schema`, `rig_id` ≠ file name, non-positive size, principal point outside the image, ultrawide not a fisheye, a sensor C0 doesn't allow; `python -m process_frames.rig_file --json` prints the expected JSON and exit codes |
+| `test_imageprep_live.py` | **224 images identical to `cv_util` at the v2 rig's sizes** (main 1600×1200; ultrawide: the remap output 640×480 letterboxed) and at other sizes (1600×900 among them); `ImagePrep(v2_rig)` builds; the remap puts a known point at the expected pixel for the v2 rig's lens |
+| `test_copies.py` | each COPIED file equals its source (`git show <branch>:<path>`) apart from the provenance header and the listed changes; **`rig_pi_v2.yaml` equals the user's file at `196eae4` except `gripper.max_opening_m: 0.080` with its comment and the `tcp:` block**, which has the geometry tool's `COMPUTED` header and a matrix equal to the computed `T_cam_tcp` within 1e-9 (the expected value is written in the test, so `deploy` is not imported); v2 parses at 1600×1200 / 1280×960 @ 30. Each check is skipped when git or its source is not available |
+| `test_rig_file.py` | the v2 rig file loads with main 1600×1200 and ultrawide 1280×960, both at 30 FPS, sensors imx519 / imx219; **broken rig files are refused** with the key named: invalid YAML, missing key, unknown key, wrong `schema`, `rig_id` ≠ file name, non-positive size, principal point outside the image, ultrawide not a fisheye, a sensor C0 doesn't allow; `python -m process_frames.rig_file --json` prints the expected JSON and exit codes |
 | `test_settings.py` | `config.yaml` loads and every key in §10 exists with its type (the default rig file is v2); an override merges; **an unknown override key is refused with its path**; a wrong type or range is refused; relative paths resolve from the right folder; `--mock` swaps in the mock endpoints and requires `mock_episode`; every problem is listed at once |
 | `test_frame_times.py` | **mid-exposure times match the formula**: `t_pi_ns − exposure_ns // 2 + time_offset_ns`; `exposure_ns = 0` uses `min(default, period // 2)`; a `start_of_exposure` rig gives `+`; the buffered packet time = the main frame's formula − the clock offset, and the pair's own capture time is kept |
 | `test_clock_map.py` | pure, seeded, no sockets: **offset with uneven Wi-Fi round trips** (each direction 1 ms + exponential jitter, uneven between directions): after 60 s at 1 Hz the mapping error is below half the minimum RTT + 0.5 ms; **drift recovery**: a true drift of ±50 ppm is found within a few ppm once 10 s of best samples exist, and the mapping error stays within the same bound; drift is 0 before `drift_min_span_s`; **outlier rejection by round trip**: 5 % of exchanges (and a burst of several in a row) delayed 50–300 ms one way are never among the best samples and don't move offset or drift; a fitted drift above `max_drift_ppm` gives 0 and the mean offset; old samples leave the window; an impossible sample is ignored; `NotSynced` before the first sample; `is_fresh` turns false after `max_sync_age_s`; thread safety (one thread adds, one maps) |
@@ -1090,7 +1090,7 @@ present (read only) and is skipped otherwise.
 | `test_pipeline.py` | the whole process inside the test (`FramesApp` with `--mock` settings on `127.0.0.1:*`, the real `H264Decoder`) and a C1 `RpcClient`: becomes ready; replies valid; times within 2 ms of the fake Pi's true capture times (the offset and drift removed); **a served image is bit-identical to the offline prep of the same recorded frame** (live path = training path); served pairs 0–33 ms apart (+5 ms); **at the v2 sizes (1600×1200, 1280×960): valid 224×224 replies, and every ultrawide frame sent is decoded exactly once, none lost**; **a dropped main frame, and a dropped packet: no image from after the drop is served until the next keyframe, then serving resumes**; **health ok → stale → ok** by `pause`/`resume` of the ultrawide (packets without a pair, no images meanwhile), and **ok → down** by `stop()` (the Pi lost); the same with `decoder: jpeg`; the stats line and `probe`; a rig file with the sensors the wrong way round → `run()` raises FATAL |
 | `test_real_episode.py` | on the real recording `~/Downloads/episode_000045` (skipped when absent; read only): **the whole recording paired by the Pi's rule** (one packet per main frame, every ultrawide frame once and in order, pairs −5…38 ms apart, unpaired packets only where one camera runs alone, 0–2 ultrawide frames per packet; prints the packet count, the pair gaps' min/median/max and the frames-per-packet histogram); **`FakePiSender` → receiver → C1 with it at the v2 sizes**: valid, bit-exact 224×224 images with true times, every ultrawide frame decoded exactly once, none lost |
 | `test_main.py` | `python -m process_frames --station <tmp> --mock` as a subprocess: writes the ready file; SIGINT → exit 0, no FATAL line; SIGTERM → exit 0, no FATAL line; a broken rig file → exit 1, last line `FATAL process_frames: rig file invalid: ...`; an unknown station key → exit 1 naming it; alone without `--session` it writes into `<session_root>/<ts>_process_frames_alone/process_frames/` |
-| `test_launch.py` | (deploy/STRUCTURE.md §9) `program()`; `checks()` with the default v2 rig, with a broken station section and with a missing rig file (fail lines); the stand-in warning when the stand-in is configured; `--mock` skips the Pi check and checks `mock_episode`; `Pi reachable` passes against a listening local port and fails against a closed one |
+| `test_launch.py` | (deploy/STRUCTURE.md §9) `program()`; `checks()` with the default v2 rig, with a broken station section and with a missing rig file (fail lines); another rig file's summary in the `rig file` row; `--mock` skips the Pi check and checks `mock_episode`; `Pi reachable` passes against a listening local port and fails against a closed one |
 
 The contract tests PLAN §7 asks of each process are the C0 and C1 rows above (`test_fake_pi_sender.py`,
 `test_pi_recording.py`, `test_receiver.py`, `test_frames_server.py`, `test_pipeline.py`); their examples are generated

@@ -632,7 +632,7 @@ length lives only in `F_T_TCP`, so no number is written twice):
 
 With our numbers, `T_cam_tcp`'s rotation is the 15° tilt combined with a 90° swap of axes (the TCP uses the Franka
 Hand's axes, the camera OpenCV's). Its position puts the fingertips 149.5 mm in front of the lens and 16.9 mm below
-it (150.4 mm away, 6.4° below the image centre). The stand-in rig file carries this value.
+it (150.4 mm away, 6.4° below the image centre). `rig_pi_v2.yaml`'s `tcp:` block carries this value.
 
 There is no CAD import.
 
@@ -654,17 +654,15 @@ Its unit tests are the worked check made during planning (`deploy/tests/tcp_chec
 `T_cam_tcp`. It **fails** if they disagree by more than 2 mm / 0.5°, for example after someone edits one file but
 not the others.
 
-**The stand-in rig file's `T_cam_tcp` must be replaced.** The value in data-work's `rig_pi_v1.yaml` (15°,
-(0, 6 cm, 20 cm)) describes the **iPhone gripper**: fingertips 20 cm in front of the phone's camera and 6 cm below it.
-iPhUMI's deployment worked because the robot carried the same phone mount and the same long printed fingers, so the
-triangle held there. It doesn't describe our rig: with stock-length Franka fingertips (`finger_extra_m` = 0) it would
-put the camera about 7.4 cm behind the plate. It would only fit if our fingers stuck out about 7.4 cm or more beyond
-the stock ones. Our camera, mount, tilt and fingers are our own, so `T_cam_tcp` comes from our own `gripper.yaml`
-and `F_T_TCP`. The stand-in rig file (`process_frames/rigs/rig_pi_v1_standin.yaml`) already carries a computed
-value from the placeholder `gripper.yaml`. The geometry tool overwrites it once `gripper.yaml` has our numbers.
-**Training data must be processed with the same `T_cam_tcp`,**
-so the same rig file (or at least the same `T_cam_tcp`) goes to `dataproc`. The handheld rig and the robot rig must
-have identical camera-to-finger geometry.
+**The rig file's `tcp:` block is computed, never hand-written.** The `rig_pi_v2.yaml` we were given still carried
+the old `T_cam_tcp` (15°, (0, 6 cm, 20 cm)). That value describes the **iPhone gripper**: fingertips 20 cm in front
+of the phone's camera and 6 cm below it. iPhUMI's deployment worked because the robot carried the same phone mount
+and fingers, so the triangle held there. Against our `gripper.yaml` and `F_T_TCP` it was 66.4 mm and 90° off. On
+2026-11-12, `python -m deploy.geometry` replaced **only** v2's `tcp:` block with the value computed from our mount.
+Everything else in v2 is as given. The old stand-in rig file is gone: v2 is the only rig file.
+**Training data must be processed with this same `rig_pi_v2.yaml`** (with its computed `T_cam_tcp`), on the Jetson
+and `rnoro/data-work` too. Otherwise training poses describe the old placeholder point while the robot moves our real
+fingertips. The handheld rig and the robot rig must have identical camera-to-finger geometry.
 
 **Hand-eye calibration (optional, phase 4).** It's a check that our typed-in `F_T_cam` matches the real, printed
 mount:

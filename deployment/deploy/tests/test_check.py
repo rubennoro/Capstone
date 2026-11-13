@@ -19,7 +19,7 @@ def station(fake_root) -> Station:
 
 
 def test_every_failure_reported_grouped_by_process(fake_root, station, capsys):
-    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v2.yaml"
     RigTcp.write(rig, np.eye(4), fake_root / "gripper.yaml")          # a rig file that disagrees
 
     class Crashes(make_process("process_frames", "serve")):

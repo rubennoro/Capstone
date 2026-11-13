@@ -1,4 +1,4 @@
-"""The rig file for live use: stand-in detection, broken files refused with the key named, the CLI."""
+"""The rig file for live use: the v2 rig file loads, broken files are refused with the key named, the CLI."""
 
 from __future__ import annotations
 
@@ -10,28 +10,18 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import SMALL_RIG, STANDIN_RIG, TESTS, write_rig
+from conftest import SMALL_RIG, V2_RIG, write_rig
 from process_frames import FOLDER
 from process_frames._dataproc.config import ConfigError
-from process_frames.rig_file import is_standin, load_live_rig, main
+from process_frames.rig_file import load_live_rig, main
 
 
-def test_standin_loads_at_30_fps_and_is_detected():
-    rig = load_live_rig(STANDIN_RIG)
-    assert rig.rig_id == "rig_pi_v1_standin"
+def test_v2_loads_at_its_resolutions_and_30_fps():
+    rig = load_live_rig(V2_RIG)
+    assert rig.rig_id == "rig_pi_v2"
+    assert rig.cameras["main"].resolution == (1600, 1200) and rig.cameras["ultrawide"].resolution == (1280, 960)
     assert rig.cameras["main"].fps == 30.0 and rig.cameras["ultrawide"].fps == 30.0
     assert rig.cameras["main"].sensor == "imx519" and rig.cameras["ultrawide"].sensor == "imx219"
-    assert is_standin(STANDIN_RIG)
-
-
-def test_other_rigs_are_not_standin(tmp_path):
-    assert not is_standin(TESTS / "data" / "rig_v1.yaml")
-    assert not is_standin(SMALL_RIG)
-    # the marker after `schema:` does not count
-    p = tmp_path / "rig_small.yaml"
-    marker_after_schema = "rig_id: rig_small\n# TODO: replace with the v2 rig file"
-    p.write_text(SMALL_RIG.read_text().replace("rig_id: rig_small", marker_after_schema))
-    assert not is_standin(p)
 
 
 def _set(path_keys, value):
@@ -85,24 +75,24 @@ def test_invalid_yaml_and_rig_id_mismatch(tmp_path):
 
 
 def test_main_json(capsys, tmp_path):
-    assert main([str(STANDIN_RIG), "--json"]) == 0
+    assert main([str(V2_RIG), "--json"]) == 0
     out = json.loads(capsys.readouterr().out.strip())
-    assert out == {"ok": True, "rig_id": "rig_pi_v1_standin", "standin": True,
-                   "cameras": {"main": {"sensor": "imx519", "width": 1600, "height": 900, "fps": 30.0},
+    assert out == {"ok": True, "rig_id": "rig_pi_v2",
+                   "cameras": {"main": {"sensor": "imx519", "width": 1600, "height": 1200, "fps": 30.0},
                                "ultrawide": {"sensor": "imx219", "width": 1280, "height": 960, "fps": 30.0}}}
     broken = write_rig(tmp_path, "rig_broken", _set(["cameras", "main", "sensor"], "imx477"))
     assert main([str(broken), "--json"]) == 1
     out = json.loads(capsys.readouterr().out.strip())
     assert out["ok"] is False and "cameras.main.sensor" in out["error"]
-    assert main([str(STANDIN_RIG)]) == 0
-    assert "rig_pi_v1_standin: main imx519 1600x900@30, ultrawide imx219 1280x960@30" in capsys.readouterr().out
+    assert main([str(V2_RIG)]) == 0
+    assert capsys.readouterr().out.strip() == "rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30"
 
 
 def test_module_runs_as_subprocess(tmp_path):
     done = subprocess.run([sys.executable, "-m", "process_frames.rig_file", str(SMALL_RIG), "--json"],
                           capture_output=True, text=True, cwd=FOLDER, timeout=60)
     assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["standin"] is False
+    assert json.loads(done.stdout)["rig_id"] == "rig_small"
     done = subprocess.run([sys.executable, "-m", "process_frames.rig_file", str(tmp_path / "nope.yaml"), "--json"],
                           capture_output=True, text=True, cwd=FOLDER, timeout=60)
     assert done.returncode == 1 and json.loads(done.stdout)["ok"] is False

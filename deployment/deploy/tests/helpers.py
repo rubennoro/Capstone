@@ -10,7 +10,7 @@ import deploy
 
 REAL_ROOT = deploy.DEPLOYMENT_ROOT                     # the real deployment/ folder, captured before any patch
 REAL_GRIPPER = REAL_ROOT / "gripper.yaml"
-REAL_RIG = REAL_ROOT / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+REAL_RIG = REAL_ROOT / "process_frames" / "rigs" / "rig_pi_v2.yaml"
 
 # F_T_TCP as franka_control/config.yaml holds it (PLAN §6.6): -45 deg about flange z, fingertips 150 mm out.
 _C = 0.7071067811865476
@@ -35,7 +35,7 @@ STATION = {
 CONFIGS = {
     "franka_control": {"binary": "build/franka_control", "robot_ip": "172.16.0.2", "realtime": "enforce",
                        "tcp": {"F_T_TCP": F_T_TCP_LIST}, "watchdog": {"limit_s": 0.2, "enabled": True}},
-    "process_frames": {"rig_file": "rigs/rig_pi_v1_standin.yaml", "decoder": "h264", "mock_episode": None},
+    "process_frames": {"rig_file": "rigs/rig_pi_v2.yaml", "decoder": "h264", "mock_episode": None},
     "policy": {"kind": None, "checkpoint": None, "device": "cuda", "diffusion_steps": None},
     "message_comms": {"exec_h": 8, "operator_script": None},
 }

@@ -73,14 +73,7 @@ class ProcessFramesProcess(ManagedProcess):
             return [self._fail("rig file", str(result.get("error")))]
         cams = ", ".join(f"{role} {c['sensor']} {c['width']}x{c['height']}@{c['fps']:g}"
                          for role, c in result["cameras"].items())
-        out = [CheckResult(self.NAME, "rig file", "pass", f"{result['rig_id']}: {cams}")]
-        if result.get("standin"):
-            out.append(check_helpers.warn(self.NAME, "rig stand-in",
-                                          "rig file is the stand-in copy of rig_pi_v1 (TODO: replace with the v2 rig "
-                                          "file); resolutions, lens models and TCP are nominal"))
-        else:
-            out.append(CheckResult(self.NAME, "rig stand-in", "pass", "not the stand-in"))
-        return out
+        return [CheckResult(self.NAME, "rig file", "pass", f"{result['rig_id']}: {cams}")]
 
     def _mock_checks(self) -> list[CheckResult]:
         out = []

@@ -8,7 +8,7 @@ from deploy import Station
 from deploy.geometry import RigTcp, TcpTriangle, triangle_check
 from helpers import REAL_ROOT, station_data, write_yaml
 
-RIG = "process_frames/rigs/rig_pi_v1_standin.yaml"
+RIG = "process_frames/rigs/rig_pi_v2.yaml"
 
 
 def offset(mm: float = 0.0, deg: float = 0.0) -> np.ndarray:
@@ -28,7 +28,7 @@ def write_rig(fake_root, T: np.ndarray) -> None:
 
 
 @pytest.mark.parametrize("mock", [False, True])
-def test_standin_rig_passes_with_real_gripper_and_F_T_TCP(fake_root, station, mock):
+def test_v2_rig_passes_with_real_gripper_and_F_T_TCP(fake_root, station, mock):
     result = TcpTriangle(station, fake_root / "gripper.yaml").check(mock)
     assert (result.process, result.name, result.status) == ("geometry", "tcp triangle", "pass")
 
@@ -110,7 +110,7 @@ def test_station_overrides_are_the_ones_used(fake_root, tmp_path):
 
 
 def test_real_files_agree():
-    """The real gripper.yaml, franka_control/config.yaml and stand-in rig file (once those configs exist)."""
+    """The real gripper.yaml, franka_control/config.yaml and rig file (once those configs exist)."""
     for name in ("franka_control", "process_frames"):
         if not (REAL_ROOT / name / "config.yaml").exists():
             pytest.skip(f"{name}/config.yaml does not exist yet")

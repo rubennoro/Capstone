@@ -64,4 +64,4 @@ def test_host_reachable():
 
 def test_info_and_warn():
     assert check_helpers.info("policy", "device", "cpu (backup)").status == "info"
-    assert check_helpers.warn("process_frames", "rig stand-in", "stand-in").status == "warn"
+    assert check_helpers.warn("process_frames", "decoder", "jpeg (backup)").status == "warn"

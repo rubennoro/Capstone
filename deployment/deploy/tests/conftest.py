@@ -24,12 +24,12 @@ def make_station(tmp_path):
 @pytest.fixture
 def fake_root(tmp_path, monkeypatch) -> Path:
     """A temporary deployment/ root (deploy.DEPLOYMENT_ROOT patched to it) with a config.yaml per process, copies of
-    the real gripper.yaml and stand-in rig file, and station.yaml."""
+    the real gripper.yaml and rig file (rig_pi_v2.yaml), and station.yaml."""
     root = tmp_path / "deployment"
     for name, config in CONFIGS.items():
         write_yaml(root / name / "config.yaml", config)
     (root / "process_frames" / "rigs").mkdir(parents=True)
-    shutil.copyfile(REAL_RIG, root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml")
+    shutil.copyfile(REAL_RIG, root / "process_frames" / "rigs" / "rig_pi_v2.yaml")
     shutil.copyfile(REAL_GRIPPER, root / "gripper.yaml")
     write_yaml(root / "station.yaml", station_data(launcher={"poll_s": 0.02}))
     monkeypatch.setattr(deploy, "DEPLOYMENT_ROOT", root)

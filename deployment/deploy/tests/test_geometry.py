@@ -158,7 +158,7 @@ def test_pose_error():
 
 # --- the real numbers ---
 
-def test_real_numbers_reproduce_the_standin_rig_file(real_F_T_cam):
+def test_real_numbers_reproduce_the_v2_rig_file(real_F_T_cam):
     F_T_TCP = np.array(F_T_TCP_LIST)
     T_cam_tcp = invert(real_F_T_cam) @ F_T_TCP
     np.testing.assert_allclose(T_cam_tcp, RigTcp.read(REAL_RIG), atol=1e-6)
@@ -172,8 +172,10 @@ def test_real_numbers_reproduce_the_standin_rig_file(real_F_T_cam):
 
 def test_write_keeps_every_other_line_and_adds_header(tmp_path):
     rig = tmp_path / "rig.yaml"
-    rig.write_text(REAL_RIG.read_text())
-    before = REAL_RIG.read_text().splitlines()
+    # the real rig file without the header of the tool's earlier run
+    before = [line for line in REAL_RIG.read_text().splitlines()
+              if not line.startswith(("# T_cam_tcp COMPUTED", "# and franka_control tcp.F_T_TCP."))]
+    rig.write_text("\n".join(before) + "\n")
     RigTcp.write(rig, np.eye(4), REAL_GRIPPER)
     after = rig.read_text().splitlines()
     start = next(i for i, line in enumerate(before) if line.startswith("tcp:"))
@@ -212,7 +214,7 @@ def test_write_refuses_a_file_without_tcp_block(tmp_path):
 # --- the tool's command line ---
 
 def test_tool_writes_the_rig_file(fake_root, capsys):
-    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v2.yaml"
     RigTcp.write(rig, np.eye(4), fake_root / "gripper.yaml")
     assert geometry_main([]) == 0
     np.testing.assert_allclose(RigTcp.read(rig), RigTcp.read(REAL_RIG), atol=1e-9)
@@ -222,7 +224,7 @@ def test_tool_writes_the_rig_file(fake_root, capsys):
 
 
 def test_tool_dry_run_writes_nothing(fake_root, capsys):
-    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v2.yaml"
     RigTcp.write(rig, np.eye(4), fake_root / "gripper.yaml")
     before = rig.read_bytes()
     assert geometry_main(["--station", str(fake_root / "station.yaml"), "--gripper", str(fake_root / "gripper.yaml"),
@@ -234,7 +236,7 @@ def test_tool_dry_run_writes_nothing(fake_root, capsys):
 def test_tool_refuses_when_fingertips_behind_or_above(fake_root, capsys):
     gripper = fake_root / "gripper.yaml"
     gripper.write_text(gripper.read_text().replace("up_side: +x", "up_side: -x"))
-    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+    rig = fake_root / "process_frames" / "rigs" / "rig_pi_v2.yaml"
     before = rig.read_bytes()
     assert geometry_main([]) == 1
     assert rig.read_bytes() == before

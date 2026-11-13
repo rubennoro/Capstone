@@ -1,0 +1,21 @@
+# The example of deploy/STRUCTURE.md section 6.4.
+station_version: 1
+session_root: ~/deploy_sessions
+python:
+  light: ~/envs/deploy/bin/python                               # your path
+  policy: ~/miniconda3/envs/behavior_prompting/bin/python       # your path: the behavior_prompting conda env
+endpoints:
+  pi_frames: tcp://192.168.1.50:5600          # the Pi's address on the Wi-Fi
+  pi_time_sync: tcp://192.168.1.50:5601
+  mock_pi_frames: tcp://127.0.0.1:5600        # --mock: the fake Pi inside process_frames
+  mock_pi_time_sync: tcp://127.0.0.1:5601
+  frames: tcp://127.0.0.1:5610                # C1
+  state: tcp://127.0.0.1:5620                 # C2
+  commands: tcp://127.0.0.1:5630              # C3
+  policy: tcp://127.0.0.1:5640                # C4
+franka_control:
+  realtime: ignore            # no PREEMPT_RT kernel yet (PLAN §9)
+process_frames:
+  mock_episode: ~/rig_episodes/ep_0003
+policy:
+  kind: hold_still            # until a rig-trained diffusion checkpoint exists (PLAN §6.2)

@@ -14,8 +14,6 @@ from typing import Sequence
 
 from process_frames._dataproc.config import ConfigError, RigConfig, load_rig
 
-#: A comment line before ``schema:`` containing this marks the stand-in rig file.
-STANDIN_MARKER = "TODO: replace with the v2 rig file"
 #: The sensors contract C0 allows (contracts' FrameInfo.sensor).
 C0_SENSORS = ("imx519", "imx219")
 ROLES = ("main", "ultrawide")
@@ -32,17 +30,6 @@ def load_live_rig(path: Path) -> RigConfig:
     return rig
 
 
-def is_standin(path: Path) -> bool:
-    """True if a comment line before ``schema:`` contains STANDIN_MARKER."""
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        s = line.strip()
-        if s.startswith("schema:"):
-            return False
-        if s.startswith("#") and STANDIN_MARKER in s:
-            return True
-    return False
-
-
 def camera_summary(rig: RigConfig) -> dict[str, dict]:
     out = {}
     for role in ROLES:
@@ -53,7 +40,7 @@ def camera_summary(rig: RigConfig) -> dict[str, dict]:
 
 
 def rig_summary(rig: RigConfig) -> str:
-    """e.g. ``rig_pi_v1_standin: main imx519 1600x900@30, ultrawide imx219 1280x960@30``."""
+    """e.g. ``rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30``."""
     parts = [f"{role} {c['sensor']} {c['width']}x{c['height']}@{c['fps']:g}" for role, c in camera_summary(rig).items()]
     return f"{rig.rig_id}: {', '.join(parts)}"
 
@@ -65,7 +52,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         rig = load_live_rig(args.file)
-        standin = is_standin(args.file)
     except (ConfigError, OSError) as e:
         if args.json:
             print(json.dumps({"ok": False, "error": str(e)}))
@@ -73,9 +59,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"rig file invalid: {e}")
         return 1
     if args.json:
-        print(json.dumps({"ok": True, "rig_id": rig.rig_id, "standin": standin, "cameras": camera_summary(rig)}))
+        print(json.dumps({"ok": True, "rig_id": rig.rig_id, "cameras": camera_summary(rig)}))
     else:
-        print(rig_summary(rig) + (" (STAND-IN: TODO replace with the v2 rig file)" if standin else ""))
+        print(rig_summary(rig))
     return 0
 
 

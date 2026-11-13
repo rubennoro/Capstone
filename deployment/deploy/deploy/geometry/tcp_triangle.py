@@ -69,7 +69,7 @@ def triangle_check(station: Station, gripper_file: Path, mock: bool) -> CheckRes
 
 
 def _show(path: Path) -> str:
-    """The path relative to deployment/ when it is inside it, e.g. process_frames/rigs/rig_pi_v1_standin.yaml."""
+    """The path relative to deployment/ when it is inside it, e.g. process_frames/rigs/rig_pi_v2.yaml."""
     try:
         return str(Path(path).relative_to(deploy.DEPLOYMENT_ROOT))
     except ValueError:

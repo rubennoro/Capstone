@@ -123,7 +123,7 @@ def print_table(results: Sequence[CheckResult], out: TextIO) -> None
 def exit_code(results: Sequence[CheckResult]) -> int        # 2 if any fail, else 0
 ```
 
-`warn` does not stop `deploy run` (e.g. "rig file is the stand-in"). `fail` does. `info` reports a fact, e.g. which
+`warn` does not stop `deploy run` (e.g. "TCP triangle off by …" under `--mock`). `fail` does. `info` reports a fact, e.g. which
 backups are active (PLAN §9: "`deploy check` reports which ones are active").
 
 ### 3.4 `ManagedProcess` (`managed_process.py`)
@@ -448,7 +448,7 @@ the process planners should use these unless they have a reason not to.
 | `franka_control.binary` | path | `build/franka_control` (relative to the folder) | the built C++ program |
 | `franka_control.robot_ip` | str | `172.16.0.2` (the Panda's usual FCI address) | the arm's FCI address; not used with `--mock` |
 | `franka_control.realtime` | `enforce` \| `ignore` | `enforce` | PLAN §9 real-time backup |
-| `process_frames.rig_file` | path | `rigs/rig_pi_v1_standin.yaml` (in the folder) | the rig file; `deploy check` warns while it is the stand-in |
+| `process_frames.rig_file` | path | `rigs/rig_pi_v2.yaml` (in the folder) | the rig file (the only one: main 1600×1200 @ 30, ultrawide 1280×960 @ 30); its `tcp:` block is written by `python -m deploy.geometry` (§6.6) |
 | `process_frames.decoder` | `h264` \| `jpeg` | `h264` | PLAN §9 frame-encoding backup |
 | `process_frames.mock_episode` | path | required with `--mock` | the recorded Pi episode whose frames `FakePiSender` sends as C0 |
 | `policy.kind` | `diffusion` \| `hold_still` | **required, no default** (`null` in `config.yaml`; `deploy check` fails while it is unset, except with `--mock`) | which policy runs (PLAN §6.2: one line) |
@@ -626,14 +626,16 @@ def triangle_check(station: Station, gripper_file: Path, mock: bool) -> CheckRes
 ```
 
 `RigTcp.read` accepts the Euler form too (`rotation: {euler_xyz_deg}` + `translation_m`, as in older rig files); it
-uses scipy `from_euler("xyz", …)`, as `dataproc` does. The stand-in rig file already holds the computed matrix.
+uses scipy `from_euler("xyz", …)`, as `dataproc` does. The rig file `process_frames/rigs/rig_pi_v2.yaml` holds the
+matrix this tool computed from the real `gripper.yaml` and `F_T_TCP` (translation `[0, 0.016891, 0.149465]` m), in
+place of the nominal iPhone-era value it was given with.
 
 **`deploy check`** (`TcpTriangle.check`, process name `geometry`) recomputes the triangle from the three files,
 `gripper.yaml`, `franka_control/config.yaml` (with the station's overrides) and the rig file: it compares
 `F_T_cam × T_cam_tcp(rig file)` with `F_T_TCP` using `pose_error`, and **fails** if they differ by more than
 `launcher.tcp_check_max_mm` (2 mm) or `launcher.tcp_check_max_deg` (0.5°), e.g. after someone edits one file but not the
 others. The detail names all three files, e.g. `TCP triangle off by 12.3 mm / 4.0°: gripper.yaml, franka_control/
-config.yaml (tcp.F_T_TCP) and process_frames/rigs/rig_pi_v1_standin.yaml disagree; run python -m deploy.geometry`. A
+config.yaml (tcp.F_T_TCP) and process_frames/rigs/rig_pi_v2.yaml disagree; run python -m deploy.geometry`. A
 missing or broken `gripper.yaml` also fails, naming it. With `--mock` the same result is a `warn` instead of a `fail`:
 the fake arm and fake Pi don't depend on the TCP, so a mock run works before `gripper.yaml` has real numbers.
 
@@ -840,17 +842,19 @@ then wait for SIGTERM", "exit 1 with a FATAL line", "ignore SIGTERM"), wrapped b
 | `test_geometry.py` | **the worked check from planning** (`deploy/tests/tcp_check_reference.py`, copied by the executor into this file, with its example numbers as fixtures): the triangle closes, `F_T_cam × T_cam_tcp = F_T_TCP`; the rig-file form round-trips (`RigTcp.write` then `RigTcp.read`, matrix form; an Euler-form rig file reads the same as scipy `from_euler("xyz")`); the fingertips are in front of and below the camera (`T_cam_tcp` z > 0, y > 0); for 1,000 random arm poses `O_T_F`, the training side `(O_T_F × F_T_cam) × T_cam_tcp` and the robot side `O_T_F × F_T_TCP` give the identical point and axes; a policy motion `dT` applied to the TCP moves the fingertips identically on both sides. Plus: `camera_pose` is tested **in the hand frame `H`** (a right-handed orthonormal frame for each `up_side`; with
 `tilt_deg = 0` it looks straight along hand z; image y points away from `up_side`); `F_T_cam = F_T_H × H_T_cam` with
 `F_T_H = Rz(−45°)`; **the real numbers**: the real `deployment/gripper.yaml` (`[55, 0, 10]` mm, `+x`, 15°) with
-`F_T_TCP` = (−45° about z, `[0, 0, 0.150]`) reproduces the stand-in rig file's `T_cam_tcp` within 1e-6 (a 15° tilt
+`F_T_TCP` = (−45° about z, `[0, 0, 0.150]`) reproduces the v2 rig file's `T_cam_tcp` within 1e-6 (a 15° tilt
 toward the fingers, translation `[0, 0.016891, 0.149465]` m); `RigTcp.write` keeps every other line of a rig file unchanged and adds the COMPUTED header naming `gripper.yaml`; the tool refuses to write when the fingertips would be behind the camera; `--dry-run` writes nothing |
-| `test_tcp_triangle.py` | `check` passes on consistent files; fails beyond 2 mm, and beyond 0.5°, with a detail naming all three files; the stand-in rig file passes with the real `gripper.yaml` and `F_T_TCP`; a rig file with the old iPhone-era value (15° about x, `[0, 0.06, 0.20]` m) fails; a missing `gripper.yaml` fails naming it; with `mock=True` each of these is a `warn`; a station override of `process_frames.rig_file` or `franka_control.tcp.F_T_TCP` is the one used |
+| `test_tcp_triangle.py` | `check` passes on consistent files; fails beyond 2 mm, and beyond 0.5°, with a detail naming all three files; the v2 rig file passes with the real `gripper.yaml` and `F_T_TCP`; a rig file with the old iPhone-era value (15° about x, `[0, 0.06, 0.20]` m) fails; a missing `gripper.yaml` fails naming it; with `mock=True` each of these is a `warn`; a station override of `process_frames.rig_file` or `franka_control.tcp.F_T_TCP` is the one used |
 | `test_cli.py` | `check` and `run` parse; only `--station` and `--mock` exist; `--station` defaults to `deployment/station.yaml`; a `StationError` exits 2 with its list |
 
 Each process folder also has a `tests/test_launch.py` (its own planner lists it): its `program()`, its `checks()` with a
 broken station section, and its mock choice.
 
 The end-to-end test of PLAN §7 (milestone 3) is owned by `deploy/`: `tests/test_end_to_end_mock.py` runs
-`python -m deploy run --mock` as a subprocess, with a temporary station file (free local ports, a temporary
-`session_root`, and `message_comms.operator_script` set to a scripted-keys file: `c`, wait for steps, `y`, then `q`),
+`python -m deploy run --mock` as a subprocess, with a temporary copy of the real station file (free local ports, a
+temporary `session_root`, `message_comms.operator_script` set to a scripted-keys file: `c`, wait for steps, `y`, then
+`q`, and every path the copy would resolve from its new folder made absolute: the `python` entries,
+`process_frames.mock_episode` and `process_frames.rig_file`, which points at the real `process_frames/rigs/rig_pi_v2.yaml`),
 and checks exit code 0, `deploy: done`, and the episode recorded as `success` in `<session>/message_comms/episodes.jsonl`.
 It needs all four processes, so it is **skipped until the four `launch.py` files exist** (and while the
 `franka_control` binary is not built or `process_frames.mock_episode` doesn't exist). It belongs to phase 3 (PLAN §8).

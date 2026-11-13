@@ -1,4 +1,4 @@
-"""launch.py (deploy/STRUCTURE.md §9): program(), checks(), the stand-in warning, the mock choice."""
+"""launch.py (deploy/STRUCTURE.md §9): program(), checks(), the mock choice."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 deploy = pytest.importorskip("deploy")
 
-from conftest import SMALL_RIG, STANDIN_RIG, write_station  # noqa: E402
+from conftest import SMALL_RIG, write_station  # noqa: E402
 from process_frames import FOLDER  # noqa: E402
 
 
@@ -49,17 +49,17 @@ def test_checks_with_the_default_v2_rig(process_class, tmp_path):
     r = by_name(make(process_class, tmp_path, mock=False).checks())
     assert r["rig file"].status == "pass"
     assert r["rig file"].detail == "rig_pi_v2: main imx519 1600x1200@30, ultrawide imx219 1280x960@30"
-    assert r["rig stand-in"].status == "pass"
+    assert "rig stand-in" not in r
     assert r["imports"].status == "pass"
     assert r["decoder"].status == "info" and r["decoder"].detail == "h264 (default)"
     assert r["Pi reachable"].status == "fail" and "is the Pi on" in r["Pi reachable"].detail
     assert r["camera source"].detail == "Pi at 127.0.0.1"
 
 
-def test_the_standin_is_warned_about(process_class, tmp_path):
-    r = by_name(make(process_class, tmp_path, mock=False, process_frames={"rig_file": str(STANDIN_RIG)}).checks())
-    assert r["rig file"].detail == "rig_pi_v1_standin: main imx519 1600x900@30, ultrawide imx219 1280x960@30"
-    assert r["rig stand-in"].status == "warn" and "TODO: replace with the v2 rig file" in r["rig stand-in"].detail
+def test_another_rig_file_is_summarised(process_class, tmp_path):
+    r = by_name(make(process_class, tmp_path, mock=False, process_frames={"rig_file": str(SMALL_RIG)}).checks())
+    assert r["rig file"].status == "pass"
+    assert r["rig file"].detail == "rig_small: main imx519 160x90@30, ultrawide imx219 128x96@30"
 
 
 def test_pi_reachable_passes_against_a_listening_port(process_class, tmp_path):
@@ -71,7 +71,7 @@ def test_pi_reachable_passes_against_a_listening_port(process_class, tmp_path):
                  process_frames={"rig_file": str(SMALL_RIG), "decoder": "jpeg"})
         r = by_name(p.checks())
     assert r["Pi reachable"].status == "pass"
-    assert r["rig stand-in"].status == "pass" and r["decoder"].detail == "jpeg (backup, PLAN §9)"
+    assert r["decoder"].detail == "jpeg (backup, PLAN §9)"
 
 
 def test_broken_station_section_and_missing_rig_file(process_class, tmp_path):

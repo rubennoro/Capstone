@@ -60,7 +60,7 @@ def test_resolve_path_by_where_the_value_came_from(fake_root, make_station):
     assert resolve_path(station, "policy", config, "checkpoint") == station.path.parent / "ckpts/best.ckpt"
     frames = load_process_config(fake_root / "process_frames", {})
     assert resolve_path(station, "process_frames", frames, "rig_file") == \
-        fake_root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+        fake_root / "process_frames" / "rigs" / "rig_pi_v2.yaml"
 
 
 def test_resolve_path_unset_value(fake_root, make_station):

@@ -21,7 +21,6 @@ from process_frames.packet_pairer import PAIR_AHEAD_NS, PacketPairer
 from process_frames.rig_file import load_live_rig
 
 TESTS = Path(__file__).resolve().parent
-STANDIN_RIG = FOLDER / "rigs" / "rig_pi_v1_standin.yaml"
 V2_RIG = FOLDER / "rigs" / "rig_pi_v2.yaml"
 SMALL_RIG = TESTS / "data" / "rig_small.yaml"
 MAIN_SIZE = (160, 90)          # the small rig, (width, height)
@@ -136,11 +135,6 @@ def waiter():
 
 
 # ------------------------------------------------------------------------------------------------ rigs
-
-@pytest.fixture(scope="session")
-def standin_rig():
-    return load_live_rig(STANDIN_RIG)
-
 
 @pytest.fixture(scope="session")
 def small_rig():

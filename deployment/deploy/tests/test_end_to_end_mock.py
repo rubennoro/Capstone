@@ -34,8 +34,8 @@ def free_ports(n: int) -> list[int]:
             s.close()
 
 
-def prerequisites() -> tuple[Station, Path]:
-    """The real station (mock) and the absolute mock episode; skips the test when something is missing."""
+def prerequisites() -> tuple[Station, Path, Path]:
+    """The real station (mock), the absolute mock episode and rig file; skips the test when something is missing."""
     missing = [name for name in FOLDERS if not (REAL_ROOT / name / "launch.py").exists()]
     if missing:
         pytest.skip(f"launch.py does not exist yet in: {', '.join(missing)}")
@@ -45,17 +45,18 @@ def prerequisites() -> tuple[Station, Path]:
         binary = resolve_path(station, "franka_control", franka, "binary")
         frames = load_process_config(REAL_ROOT / "process_frames", station.section("process_frames"))
         episode = resolve_path(station, "process_frames", frames, "mock_episode")
+        rig_file = resolve_path(station, "process_frames", frames, "rig_file")
     except StationError as exc:
         pytest.skip(f"not set up for an end-to-end run: {exc}")
     if not binary.exists():
         pytest.skip(f"franka_control is not built: {binary}")
     if not episode.exists():
         pytest.skip(f"process_frames.mock_episode does not exist: {episode}")
-    return station, episode
+    return station, episode, rig_file
 
 
 def test_deploy_run_mock_with_scripted_keys(tmp_path):
-    station, episode = prerequisites()
+    station, episode, rig_file = prerequisites()
     data = yaml.safe_load(station.path.read_text())
     data["session_root"] = str(tmp_path / "sessions")
     # The copy lives elsewhere, so its relative paths are made absolute (the real station uses ~ paths otherwise).
@@ -63,6 +64,7 @@ def test_deploy_run_mock_with_scripted_keys(tmp_path):
     data["endpoints"].update({name: f"tcp://127.0.0.1:{port}"
                               for name, port in zip(LOCAL_ENDPOINTS, free_ports(len(LOCAL_ENDPOINTS)))})
     data.setdefault("process_frames", {})["mock_episode"] = str(episode)
+    data["process_frames"]["rig_file"] = str(rig_file)       # the real process_frames/rigs/rig_pi_v2.yaml
     data.setdefault("message_comms", {})["operator_script"] = str(write_yaml(tmp_path / "keys.yaml", SCRIPT))
     station_file = write_yaml(tmp_path / "station.yaml", data)
 

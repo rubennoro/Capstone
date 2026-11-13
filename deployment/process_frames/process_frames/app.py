@@ -26,7 +26,7 @@ from process_frames.packet_selector import PacketSelector
 from process_frames.pi_packet_source import PiPacketSource
 from process_frames.pi_recording import PiRecording, PiRecordingError
 from process_frames.receiver import CAMERAS, Receiver
-from process_frames.rig_file import is_standin, load_live_rig, rig_summary
+from process_frames.rig_file import load_live_rig, rig_summary
 from process_frames.settings import Settings
 
 log = logging.getLogger("process_frames")
@@ -107,8 +107,7 @@ class FramesApp:
         except ConfigError as e:
             raise FatalError(f"rig file invalid: {e}", "check process_frames.rig_file") from e
         self.rig = rig
-        standin = is_standin(s.rig_file)
-        log.info("rig %s%s", rig_summary(rig), " (STAND-IN: TODO replace with the v2 rig file)" if standin else "")
+        log.info("rig %s", rig_summary(rig))
         prep = ImagePrep(rig)
 
         self.health = {cam: CameraHealth(cam, s.health.stale_s, s.health.down_s, s.health.fps_window_s, self._clock)

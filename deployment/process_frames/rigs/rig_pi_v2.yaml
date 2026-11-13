@@ -45,10 +45,11 @@ virtual_ultrawide:                                    # the iPhone 16 Pro ultraw
   resolution: [640, 480]
   intrinsics: [246.64919, 246.64919, 320.16495, 239.53679]
   rotation: {euler_xyz_deg: [0.0, 0.0, 0.0]}
-tcp:                                                  # T_cam_tcp is in the PHYSICAL ultrawide optical frame
-  T_cam_tcp:                                          # nominal CAD, as rig_v1
-    rotation: {euler_xyz_deg: [15.0, 0.0, 0.0]}
-    translation_m: [0.0, 0.060, 0.200]
+# T_cam_tcp COMPUTED by `python -m deploy.geometry` on 2026-11-12 from /home/ruben/Capstone-deployment/deployment/gripper.yaml
+# and franka_control tcp.F_T_TCP. Do not edit by hand: change gripper.yaml and rerun the tool.
+tcp:
+  T_cam_tcp:
+    matrix: [[0.000000000, 1.000000000, 0.000000000, 0.000000000], [-0.965925826, 0.000000000, -0.258819045, 0.016891254], [-0.258819045, 0.000000000, 0.965925826, 0.149464663], [0.000000000, 0.000000000, 0.000000000, 1.000000000]]   # 4x4, row-major
   provenance: nominal
 imu:
   sensor: lsm6dsox

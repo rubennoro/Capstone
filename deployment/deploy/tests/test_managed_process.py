@@ -187,7 +187,7 @@ def test_is_ready_raising_fails_at_once(station, session, running):
 def test_config_path_by_where_the_value_came_from(fake_root, make_station):
     cls = make_process("process_frames", "serve")
     default = cls(Station.load(make_station(), False), False, None)
-    assert default.config_path("rig_file") == fake_root / "process_frames" / "rigs" / "rig_pi_v1_standin.yaml"
+    assert default.config_path("rig_file") == fake_root / "process_frames" / "rigs" / "rig_pi_v2.yaml"
     station = Station.load(make_station(process_frames={"rig_file": "my_rigs/r.yaml"}), False)
     assert cls(station, False, None).config_path("rig_file") == station.path.parent / "my_rigs" / "r.yaml"
 
