@@ -36,7 +36,7 @@ Milestones:
 2. All code written, with unit tests, including contract tests run by both machines' code.
 3. Each machine runs alone with stand-ins: the laptop with a fake Pi and a fake PC (`policy_deploy run --mock`), the
    PC with the fake arm (`control_deploy run --mock`).
-4. Each folder's `DIRECTIONS.md` followed once from scratch on its machine.
+4. Each folder's `DIRECTIONS.md` (section 11.1) followed once from scratch on its machine.
 5. Hardware bring-up (section 12): the PC alone, the laptop alone, then both with hold still over Wi-Fi, then over
    wired, then the trained policy.
 
@@ -482,6 +482,27 @@ Following the agent-team method: one subagent writes each `STRUCTURE.md` from it
 `control_deploy/`, then `policy_deploy/`), one reviewer checks them together, every open question is settled with the
 user before code. Then one executor per folder (`contracts/` first), one reviewer over all of it, all tests green,
 a local commit per wave, nothing pushed without asking.
+
+**Final step: the two `DIRECTIONS.md` files**, written after the code works, then followed once from scratch.
+
+### 11.1 The `DIRECTIONS.md` files
+
+One per machine: `policy_deploy/DIRECTIONS.md` (the laptop: run the policy) and `control_deploy/DIRECTIONS.md` (the
+PC: run the arm). Each takes a fresh machine to a running system for someone who has **never read the code**: only
+commands to copy, in order.
+
+- **Every step has the same four parts:** one plain sentence saying what the step does and why; the exact command(s)
+  to copy; what you should see when it worked; what to do if you don't.
+- **Every command the folder has gets its own short section:** `check`, `run`, `run --mock`, and on the PC `console`
+  and `firewall`; on the laptop the link probe and the policy timing. Each says when to use it, the command, the keys
+  it takes, and what a good result looks like.
+- **From scratch, in order:** clone and checkout, environments, build (PC), the one-time network setup (ASUS_5g
+  addresses, `link.yaml`, the firewall), a first `--mock` run, the real run, stopping and restarting.
+- **The daily routine** at the top, once set up: on the PC, Desk (unlock, FCI, release the stop) then
+  `control_deploy run`; on the laptop `policy_deploy check` then `policy_deploy run`; the keys; how to stop.
+- **A "when something fails" table:** the message you see → what to do.
+- Plain words, short steps, no design explanation (that stays in PLAN.md and the STRUCTURE.md files). Kept up to date
+  with the code; the final review checks every command in them by running it.
 
 ## 12. Hardware bring-up order
 
