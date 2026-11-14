@@ -501,6 +501,10 @@ commands to copy, in order.
 - **The daily routine** at the top, once set up: on the PC, Desk (unlock, FCI, release the stop) then
   `control_deploy run`; on the laptop `policy_deploy check` then `policy_deploy run`; the keys; how to stop.
 - **A "when something fails" table:** the message you see → what to do.
+- **The PC runs Ubuntu 20.04.** `control_deploy/DIRECTIONS.md` says what that adds, in plain steps: Python 3.10
+  installed with `uv` (20.04 ships 3.8; no `sudo` needed), the same build packages as the old franka_control build
+  that worked on this PC, internet during the first build (msgpack is downloaded), and starting with
+  `build.sh --test`, since the PC build is the first full compile of the libfranka parts.
 - Plain words, short steps, no design explanation (that stays in PLAN.md and the STRUCTURE.md files). Kept up to date
   with the code; the final review checks every command in them by running it.
 
