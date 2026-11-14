@@ -82,7 +82,7 @@ endif()
 
 # ---- dependencies ----
 find_package(Eigen3 3.4 REQUIRED NO_MODULE)
-find_package(yaml-cpp REQUIRED)            # 0.7.0 on Ubuntu 22.04 (system package, decision 13)
+find_package(yaml-cpp REQUIRED)            # system package (0.6.x on Ubuntu 20.04, 0.7.0 on 22.04; decision 13)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZMQ REQUIRED IMPORTED_TARGET libzmq>=4.3)
 find_path(CPPZMQ_INCLUDE_DIR zmq.hpp REQUIRED)  # cppzmq: header-only, system copy

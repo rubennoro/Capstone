@@ -101,5 +101,5 @@ if [ "$TEST" -eq 1 ]; then
   say "5. tests (ASan + UBSan) in $HERE/build-test"
   run cmake -S "$HERE" -B "$HERE/build-test" -DFRANKA_CONTROL_SANITIZE=ON -DCMAKE_PREFIX_PATH="$PREFIX"
   run cmake --build "$HERE/build-test" -j "$JOBS"
-  run ctest --test-dir "$HERE/build-test" --output-on-failure
+  run bash -c "cd \"$HERE/build-test\" && ctest --output-on-failure"   # no --test-dir: CMake 3.16 (Ubuntu 20.04) lacks it
 fi

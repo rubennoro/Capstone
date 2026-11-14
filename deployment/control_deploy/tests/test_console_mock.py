@@ -79,8 +79,8 @@ def test_a_closed_log_pipe_does_not_kill_franka_control(tmp_path):
 def test_run_mock_with_a_scripted_console(tmp_path):
     if free_port_pair_in_use():
         pytest.skip("127.0.0.1:5620/5630 are in use (another franka_control or fake PC)")
-    # The console's rotation is gentler than the shipped station (5 deg in 1 s): the impedance law's lag
-    # (2 zeta / sqrt(K) = 0.32 s at 40 Nm/rad) puts that at ~2.9 deg of tracking, over the 1 deg pass mark.
+    # The console's rotation is set explicitly (2 deg over 2 s, as the shipped station): the impedance law's lag
+    # (2 zeta / sqrt(K) = 0.32 s at 40 Nm/rad) puts 5 deg in 1 s at ~2.9 deg of tracking, over the 1 deg pass mark.
     station = write_station(tmp_path, franka_control={"binary": built_binary(), "realtime": "ignore"},
                             console={"rotate_deg": 2.0, "segment_s": 2.0})
     env = env_without("PYTHONPATH")

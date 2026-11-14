@@ -774,7 +774,7 @@ plus the contract files' rules (3.1).
 
 | What | How |
 |---|---|
-| Ubuntu 22.04, sudo, internet for the first build | the first configure downloads msgpack-cxx 6.1.1 (FetchContent, old:franka_control/CMakeLists.txt:68-78) |
+| Ubuntu 20.04 (the PC), sudo, internet for the first build | the first configure downloads msgpack-cxx 6.1.1 (FetchContent, old:franka_control/CMakeLists.txt:68-78) |
 | apt build packages | installed by `build.sh` (old line 60): `build-essential cmake git pkg-config libpoco-dev libeigen3-dev libzmq3-dev libyaml-cpp-dev googletest` (system yaml-cpp, cppzmq header and GoogleTest sources, as the 91b178b build used) |
 | libfranka 0.9.2 | built by `build.sh` into `~/franka/libfranka-0.9.2` (sources in `~/franka/src`); **already there on the PC**, so the step is skipped |
 | Python 3.10 env | `uv venv --python 3.10 ~/envs/control_deploy`; `uv pip install --python ~/envs/control_deploy -e deployment/contracts[test] -e deployment/control_deploy[test]` |
@@ -829,7 +829,7 @@ its DIRECTIONS point here).
 
 | What | How |
 |---|---|
-| apt packages | `build-essential cmake git pkg-config libeigen3-dev libzmq3-dev libyaml-cpp-dev googletest` (the PC's list minus `libpoco-dev`, which only libfranka needs). Eigen ≥ 3.4 (Ubuntu 22.04's 3.4.0) |
+| apt packages | `build-essential cmake git pkg-config libeigen3-dev libzmq3-dev libyaml-cpp-dev googletest` (the PC's list minus `libpoco-dev`, which only libfranka needs). Eigen ≥ 3.4 (as the old build that worked on the PC; Ubuntu 20.04's own package is 3.3.7, see DIRECTIONS.md) |
 | internet once | the first configure downloads msgpack-cxx 6.1.1 (FetchContent, header-only) |
 | configure, build | `cmake -S deployment/control_deploy/franka_control -B deployment/control_deploy/franka_control/build-nolibfranka -DCMAKE_BUILD_TYPE=Release -DFRANKA_CONTROL_WITH_LIBFRANKA=OFF -DFRANKA_CONTROL_BUILD_TESTS=OFF` then `cmake --build deployment/control_deploy/franka_control/build-nolibfranka -j` |
 | check | `build-nolibfranka/franka_control --version` ends in `libfranka=none` |
@@ -914,7 +914,7 @@ problem and schema as Python.
 
 ## 10. DIRECTIONS.md outline (the file is written later)
 
-1. **What you need:** the PC (Ubuntu 22.04, two network connections: a cable to the Franka, Wi-Fi on ASUS_5g),
+1. **What you need:** the PC (Ubuntu 20.04, two network connections: a cable to the Franka, Wi-Fi on ASUS_5g),
    sudo, internet once, Desk access in a browser.
 2. **Get the code:** clone, `git checkout rnoro/final-deployment`, the same commit as the laptop. Where to clone
    (any folder; moving it later means a rebuild).
