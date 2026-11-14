@@ -1,5 +1,6 @@
 // from rnoro/deployment:deployment/franka_control/src/franka_hand_gripper.cpp @ 91b178b
-// changes: + home(); stop() sets stop_requested_ first (control_deploy/STRUCTURE.md 3.3). prepare(), widthM() and
+// changes: + home(); stop() sets stop_requested_ first (control_deploy/STRUCTURE.md 3.3); fix wave: home() no longer
+// resets the flag (a stop that came first skips the homing), clearStop() does (4.4). prepare(), widthM() and
 // moveTo() unchanged. NOT COMPILED on the laptop (no libfranka): reviewed against libfranka 0.9.2's
 // include/franka/gripper.h (bool homing() const; bool stop() const; "The members of this class are threadsafe").
 // Whether stop() interrupts homing() is checked at bring-up (control_deploy/STRUCTURE.md 11.1); if it does not, the
@@ -61,7 +62,7 @@ void FrankaHandGripper::moveTo(double width_m) {
 }
 
 bool FrankaHandGripper::home() {
-  stop_requested_.store(false);
+  if (stop_requested_.load()) return false;   // stopped before homing() was sent: the fingers do not move
   try {
     if (gripper_->homing()) return true;
     if (stop_requested_.load()) return false;   // ended by stop(): aborted, not a failure
@@ -71,6 +72,8 @@ bool FrankaHandGripper::home() {
     throw GripperError(std::string("Franka Hand homing failed: ") + e.what() + ": check the hand in Desk");
   }
 }
+
+void FrankaHandGripper::clearStop() { stop_requested_.store(false); }
 
 void FrankaHandGripper::stop() {
   stop_requested_.store(true);

@@ -10,6 +10,10 @@ The binary comes from FRANKA_CONTROL_BIN (absolute path); skipped when it is uns
 3. `python -m policy_deploy run --mock` with launcher.fake_pc: false (frames with the fake Pi, policy hold_still, the
    manager on 127.0.0.1 with the link.yaml ports) and the script c, wait_steps 20, y, h, q;
 4. SIGTERM the binary, expect exit 0.
+
+Also (fix wave, S2): a set_waypoints whose failing waypoint is not the first, sent with the laptop's PcClient to the
+real binary; the laptop's gate_rejection_detail must name that waypoint and its real reason (the binary lists the other
+waypoints with the contract's "not checked: ..." text). Needs no episode.
 """
 from __future__ import annotations
 
@@ -19,22 +23,28 @@ import subprocess
 import time
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
+from deploy_contracts import LinkSettings, SetWaypoints
 from integration_helpers import jsonl, need_episode, need_pc_ports_free, run_policy_deploy, session_dir, write_run_station
+
+from policy_deploy.fake_pc.fake_gate import NOT_CHECKED
+from policy_deploy.manager.episode_loop import gate_rejection_detail
+from policy_deploy.manager.pc_client import PcClient
 
 SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "h"}, {"key": "q"}]
 
 
-@pytest.fixture
-def franka_control(tmp_path):
+def _franka_control(tmp_path, with_episode: bool):
     binary = os.environ.get("FRANKA_CONTROL_BIN")
     if not binary:
         pytest.skip("FRANKA_CONTROL_BIN is not set (the libfranka-less franka_control build)")
     binary = Path(binary).expanduser()
     if not (binary.is_file() and os.access(binary, os.X_OK)):
         pytest.fail(f"FRANKA_CONTROL_BIN={binary} is not an executable file")
-    need_episode()
+    if with_episode:
+        need_episode()
     need_pc_ports_free()
     fc_dir = tmp_path / "fc"
     fc_dir.mkdir()
@@ -64,6 +74,16 @@ def franka_control(tmp_path):
             proc.kill()
             proc.wait()
     log.close()
+
+
+@pytest.fixture
+def franka_control(tmp_path):
+    yield from _franka_control(tmp_path, with_episode=True)
+
+
+@pytest.fixture
+def franka_control_alone(tmp_path):
+    yield from _franka_control(tmp_path, with_episode=False)
 
 
 def test_laptop_against_the_real_franka_control(tmp_path, franka_control):
@@ -100,3 +120,30 @@ def test_laptop_against_the_real_franka_control(tmp_path, franka_control):
     # the binary stops cleanly on SIGTERM
     proc.send_signal(signal.SIGTERM)
     assert proc.wait(timeout=10) == 0
+
+
+def test_a_rejection_names_the_failing_waypoint_not_the_first(franka_control_alone):
+    proc, fc_dir = franka_control_alone
+    link = LinkSettings.load()
+    pc = PcClient(link.commands_endpoint(local=True), link.c3_timeout_s, 40.0, link.heartbeat_period_s)
+    try:
+        assert pc.start().ok
+        state = pc.get_state()
+        T = np.asarray(state.O_T_TCP_target, dtype=np.float64)
+        _, sample = pc.hello()
+        n = 5
+        poses = np.repeat(T[None], n, axis=0)
+        poses[3, 2, 3] -= 0.5                                    # waypoint 3 half a metre down: outside the box
+        msg = SetWaypoints(chunk_id=1, t_ns=np.array([sample.t_pc_ns + (200 + 100 * i) * 1_000_000 for i in range(n)],
+                                                     dtype=np.int64),
+                           O_T_TCP=poses, gripper_width_m=np.full(n, float(state.gripper_width_m)))
+        reply = pc.set_waypoints(msg)
+        assert reply.accepted == 0 and reply.skipped == 0 and [i.index for i in reply.rejected] == list(range(n))
+        assert [i.reason for i in reply.rejected if i.index != 3] == [NOT_CHECKED] * (n - 1)   # the contract text
+        detail = gate_rejection_detail(reply)
+        assert detail.startswith("3: outside workspace box by ") and " on z " in detail, detail
+        assert pc.get_state().mode == "fault"
+    finally:
+        pc.close()
+    proc.send_signal(signal.SIGTERM)
+    assert proc.wait(timeout=10) == 0, (fc_dir / "franka_control.log").read_text()[-3000:]

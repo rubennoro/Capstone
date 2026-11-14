@@ -6,6 +6,11 @@ Replies per mode exactly as TOP 3.7.2. Every request that reaches a handler feed
 A C3 home blocks the REP socket until the move ends (as the PC). The test hooks (inject_fault, restart, stall, ...)
 and the PC keyboard (keyboard_home, keyboard_hand_home, keyboard_stop) are methods.
 
+As the real franka_control (fix wave): a set whose waypoints are all skipped freezes the arm at the current target and
+goes `holding`; C2 t_ns freezes only when the 1 kHz loop has ended (inject_fault, start_mode fault), not after a gate
+rejection, where the real loop keeps running; refusals carry the real texts (StateMachine::check: "refused: mode is
+<mode>[: <why>]", the fault detail, a stopped mode's cause; "set_waypoints refused: ...").
+
 Not modelled (10.2): libfranka, dynamics, the workspace box and tilt cone, speed shortening (only counters via hooks),
 joints, gripper physics beyond a width ramp, a real-time loop, the keyboard itself, bind addresses and firewall.
 """
@@ -74,6 +79,8 @@ class FakePc:
         self.ready = threading.Event()               # the first C2 is out
         self._mode = settings.start_mode
         self._error = "" if settings.start_mode != "fault" else "fake fault (start_mode)"
+        self._loop_ended = settings.start_mode == "fault"   # C2 t_ns frozen (the real loop ended)
+        self._stopped_detail = "stop"                # why the mode is stopped (the real PC's refusal names it)
         self._homing: _Homing | None = None
         if settings.start_mode == "homing":
             now = laptop_clock()
@@ -220,9 +227,9 @@ class FakePc:
                 self.ready.set()
 
     def _now_pc(self, now_laptop: int) -> int:
-        """The PC time for a C2 reading: frozen in fault and during repeat_t_ns."""
+        """The PC time for a C2 reading: frozen once the loop has ended and during repeat_t_ns."""
         t = self.clock.at(now_laptop)
-        if self._mode == "fault" or now_laptop < self._frozen_until_ns:
+        if self._loop_ended or now_laptop < self._frozen_until_ns:
             if self._last_t_pc is not None:
                 return self._last_t_pc
         return t
@@ -275,6 +282,7 @@ class FakePc:
                 log.warning("watchdog: no C3 request for %.2f s: stopped", (now - self._last_request_ns) / 1e9)
                 self._follower.hold()
                 self._mode = "stopped"
+                self._stopped_detail = f"watchdog: no request for {(now - self._last_request_ns) / 1e9:.3f} s"
         else:
             self._follower.move_width(self._follower.commanded_width_m, dt)
 
@@ -290,8 +298,9 @@ class FakePc:
         self._homing = None
         self._mode = "idle"
 
-    def _abort_homing(self) -> None:
-        """A stop during homing: hold where the ramp is, mode stopped (the hand: the width where it is)."""
+    def _abort_homing(self, source: str) -> None:
+        """A stop during homing: hold where the ramp is, mode stopped (the hand: the width where it is). source: "C3"
+        or "PC keyboard"."""
         h = self._homing
         if h is None:
             return
@@ -300,6 +309,29 @@ class FakePc:
         h.outcome = "stopped"
         self._homing = None
         self._mode = "stopped"
+        self._stopped_detail = f"stop during {'hand ' if h.kind == 'hand' else ''}homing ({source})"
+
+    def _stop_now(self) -> None:
+        """idle/holding/running -> stopped, holding the current target."""
+        self._follower.hold()
+        self._mode = "stopped"
+        self._stopped_detail = "stop"
+
+    def _refused(self, why: str) -> str:
+        """The real StateMachine::check refusal: "refused: mode is <mode>", then ": <fault detail>" in fault, or
+        " (<cause>)" when stopped by something other than a stop request, then ": <why>" (not in fault)."""
+        r = f"refused: mode is {self._mode}"
+        if self._mode == "fault":
+            r += ": " + (self._error or "fault")
+        elif self._mode == "stopped" and self._stopped_detail not in ("", "stop"):
+            r += f" ({self._stopped_detail})"
+        if why and self._mode != "fault":
+            r += ": " + why
+        return r
+
+    def _home_refusal(self) -> str:
+        return self._refused({"holding": "send stop first", "running": "send stop first",
+                              "homing": "homing in progress"}.get(self._mode, ""))
 
     # ---------------------------------------------------------------------------------------------- C3 handlers
 
@@ -356,7 +388,8 @@ class FakePc:
                 self._follower.hold()
                 self._mode = "holding"
                 return Ack(ok=True, reason="")
-            return Ack(ok=False, reason=f"refused: mode is {self._mode}")
+            return Ack(ok=False, reason=self._refused({"holding": "already started", "running": "already started",
+                                                       "homing": "homing in progress"}.get(self._mode, "")))
 
     def _on_stop(self, msg: Stop) -> Ack:
         with self._lock:
@@ -366,16 +399,15 @@ class FakePc:
                 if h is not None and now >= h.end_ns:
                     self._finish_homing(now)                  # the move finished first: the normal end wins
                 else:
-                    self._abort_homing()
+                    self._abort_homing("C3")
             elif self._mode in ("idle", "holding", "running"):
-                self._follower.hold()
-                self._mode = "stopped"
+                self._stop_now()
             return Ack(ok=True, reason="")
 
     def _on_home(self, msg: Home) -> Ack:
         with self._lock:
             if self._mode not in ("idle", "stopped"):
-                return Ack(ok=False, reason=f"refused: mode is {self._mode}")
+                return Ack(ok=False, reason=self._home_refusal())
             now = self._laptop()
             h = _Homing("c3", now, now + int(self.s.home_duration_s * 1e9), self._follower.target.copy(),
                         self.s.home_pose.copy())
@@ -397,13 +429,14 @@ class FakePc:
     def _on_set_waypoints(self, msg: SetWaypoints) -> Message:
         with self._lock:
             if self._mode not in ("holding", "running"):
-                return ErrorReply(request=SetWaypoints.SCHEMA,
-                                  error=f"{SetWaypoints.SCHEMA}: refused: mode is {self._mode}", field="")
+                why = {"idle": "send start first", "stopped": "send start first",
+                       "homing": "homing in progress"}.get(self._mode, "")
+                return ErrorReply(request=SetWaypoints.SCHEMA, error=f"set_waypoints {self._refused(why)}", field="")
             now_pc = self.clock()
             result = self._gate.check(msg, now_pc)
             if result.rejected:
                 self._counters["rejected"] += sum(1 for i in result.rejected)
-                self._mode = "fault"
+                self._mode = "fault"                          # the loop keeps holding: C2 t_ns keeps advancing
                 self._error = result.fault or "gate rejected a waypoint"
                 self._follower.hold()
             elif result.accepted:
@@ -411,6 +444,10 @@ class FakePc:
                 self._follower.replace(now_pc, [(int(msg.t_ns[i]), msg.O_T_TCP[i], float(msg.gripper_width_m[i]))
                                                 for i in result.accepted])
                 self._mode = "running"
+            else:                                             # all skipped: freeze at the current target, holding
+                self._follower.step(now_pc, 0.0)              # the target at now (the real PC: plan.at(now))
+                self._follower.hold()
+                self._mode = "holding"
             return SetWaypointsReply(chunk_id=int(msg.chunk_id), accepted=len(result.accepted), shortened=0,
                                      skipped=int(result.skipped), rejected=result.rejected)
 
@@ -437,9 +474,11 @@ class FakePc:
     # ---------------------------------------------------------------------------------------------- test hooks
 
     def inject_fault(self, text: str) -> None:
+        """A fault that ends the 1 kHz loop (a reflex, a libfranka exception): C2 t_ns freezes from here on."""
         with self._lock:
             self._mode = "fault"
             self._error = text
+            self._loop_ended = True
             self._follower.hold()
 
     def restart(self) -> None:
@@ -482,6 +521,7 @@ class FakePc:
         with self._lock:
             self._mode = mode
             self._last_request_ns = self._laptop()
+            self._stopped_detail = "stop"
             if mode != "fault":
                 self._error = ""
 
@@ -509,7 +549,7 @@ class FakePc:
         """The PC's h: refused unless idle/stopped; else homing (the REP keeps answering), then idle."""
         with self._lock:
             if self._mode not in ("idle", "stopped"):
-                return Ack(ok=False, reason=f"refused: mode is {self._mode}")
+                return Ack(ok=False, reason=self._home_refusal())
             now = self._laptop()
             self._homing = _Homing("arm", now, now + int(self.s.home_duration_s * 1e9),
                                    self._follower.target.copy(), self.s.home_pose.copy())
@@ -521,7 +561,7 @@ class FakePc:
         """The PC's g: refused unless idle/stopped; else homing with the arm held, the width to 0 and back."""
         with self._lock:
             if self._mode not in ("idle", "stopped"):
-                return Ack(ok=False, reason=f"refused: mode is {self._mode}")
+                return Ack(ok=False, reason=self._home_refusal())
             now = self._laptop()
             back = self._follower.commanded_width_m
             duration = 2.0 * max(back, 1e-3) / self.s.width_speed_m_s + 0.1   # + a short rest at 0
@@ -535,8 +575,7 @@ class FakePc:
         """The PC's s: idle/holding/running -> stopped; no change in stopped and fault; aborts any homing."""
         with self._lock:
             if self._mode == "homing":
-                self._abort_homing()
+                self._abort_homing("PC keyboard")
             elif self._mode in ("idle", "holding", "running"):
-                self._follower.hold()
-                self._mode = "stopped"
+                self._stop_now()
             return Ack(ok=True, reason="")

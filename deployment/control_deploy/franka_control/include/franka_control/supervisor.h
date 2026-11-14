@@ -2,7 +2,9 @@
 // changes: onHome(Source), onHandHome(), onStop(Source) (aborts a homing), onKey(Key); the homing kind (arm or hand)
 // and its source (C3 or the PC keyboard); tick() sends the arm stop once the move runs and resolves the outcomes
 // (aborted, hand homing done, hand homing timeout); new last constructor parameter `Gripper* gripper = nullptr`
-// (control_deploy/STRUCTURE.md 3.3, 4.4).
+// (control_deploy/STRUCTURE.md 3.3, 4.4). Fix wave: the arm stop (abort or homing timeout) goes through
+// SharedState::stopHomingMove and is re-sent every 100 ms while that move runs and its outcome is unresolved; the
+// hand's stop goes through SharedState::stopHandHoming (never a finger move).
 // The messaging thread's decisions: owns the StateMachine, the SafetyGate, the watchdog and the current plan; turns
 // the loop's, the gripper's and the keyboard's events into state changes; builds every C3 reply and C2 message.
 #pragma once
@@ -60,6 +62,7 @@ class Supervisor {                                 // messaging thread
   void setHomeReply(bool ok, const std::string& reason);   // only for a C3-started homing
   void tickHoming(const LoopSnapshot& s, int64_t now);
   void abortHoming(Source source);
+  void stopArmMove(const LoopSnapshot& s, int64_t now);   // arm.requestStop() while this homing's move runs
   std::string keyRefusal(const std::string& reason) const;
 
   enum class HomingKind { kArm, kHand };
@@ -87,7 +90,8 @@ class Supervisor {                                 // messaging thread
   Source homing_source_ = Source::kC3;
   bool abort_pending_ = false;                     // a stop arrived during this homing
   Source abort_source_ = Source::kC3;
-  bool arm_stop_sent_ = false;                     // arm.requestStop() sent for this abort
+  std::optional<int64_t> arm_stop_sent_ns_;        // the last arm.requestStop() for this homing's move
+  bool timeout_stop_pending_ = false;              // homing timed out (fault): stop the move until it is over
   uint64_t hand_generation_ = 0;                   // the newest hand-homing request
 };
 

@@ -5,7 +5,9 @@
 # while C2 shows homing; c needs the clock map ready; home returns its Ack: ok, HOME_STOPPED (the `stopped:` prefix),
 # a refusal because the PC is homing (a hint), else HOMING_FAILED; after a home the clock map re-warms (a hello every
 # cycle); the start ack time kept as start_ack_pc_ns (mapped); last_anchor_t_ns stays laptop time; STATE_LOST by the
-# listener's arrival time; clock.jsonl / link.jsonl; conclude sends nothing on C3 before hellos started.
+# listener's arrival time; clock.jsonl / link.jsonl; conclude sends nothing on C3 before hellos started. Fix wave: the
+# GATE_REJECTED text from gate_rejection_detail(); an entirely skipped set counts toward CLOCK_MISMATCH or POLICY_LATE,
+# never both.
 """EpisodeLoop: the main thread. Rhythm, keys, every C3 request (rule H1), health polls, failure decisions, logging,
 status line (STRUCTURE.md 6.1, 6.4, 6.5, 7.4, 7.5)."""
 from __future__ import annotations
@@ -44,6 +46,14 @@ NS_PER_S = 1_000_000_000
 PC = "PC"
 STOP_CALL = (PC, "c3.stop/v1")
 LAUNCHER_STOP_REASON = "stopped by the launcher: another process exited"
+NOT_CHECKED_PREFIX = "not checked"     # the other waypoints of a rejected request (TOP 3.7.1)
+
+
+def gate_rejection_detail(reply) -> str:
+    """'<index>: <reason>' of the first rejected waypoint that failed a rule itself (the PC lists every non-skipped
+    waypoint of a rejected request; the others say 'not checked: another waypoint of this request was rejected')."""
+    issue = next((i for i in reply.rejected if not i.reason.startswith(NOT_CHECKED_PREFIX)), reply.rejected[0])
+    return f"{issue.index}: {issue.reason}"
 
 
 class Phase(Enum):
@@ -472,8 +482,7 @@ class EpisodeLoop:
         c3_rtt_ms = (self._clock() - t_send) / NS_PER_MS
         margin_ms = None if self._prev_last_wp_pc_ns is None else (self._prev_last_wp_pc_ns - send_pc) / NS_PER_MS
         if reply.rejected:
-            issue = next((i for i in reply.rejected if not i.reason.startswith("not checked")), reply.rejected[0])
-            self._conclude(Problem(C.GATE_REJECTED, PC, f"{issue.index}: {issue.reason}"))
+            self._conclude(Problem(C.GATE_REJECTED, PC, gate_rejection_detail(reply)))
         n = len(done.waypoints.t_ns)
         lead_ms = (int(done.waypoints.t_ns[-1]) - send_pc) / NS_PER_MS
         future_ms = (int(latest.t_ns) - send_pc) / NS_PER_MS if latest is not None else 0.0
@@ -492,7 +501,10 @@ class EpisodeLoop:
                 self._conclude(Problem(C.CLOCK_MISMATCH, PC, detail))
         elif reply.accepted > 0:
             self._mismatch_count = 0
-        if not skipped_ahead and (reply.skipped == n or (margin_ms is not None and margin_ms < 0)):
+        all_skipped = reply.skipped == n
+        late_margin = margin_ms is not None and margin_ms < 0
+        # one cause per set: an entirely skipped set that counted toward CLOCK_MISMATCH is not also POLICY_LATE
+        if (all_skipped and not (skipped_ahead or future_state)) or (not all_skipped and late_margin):
             late = f"margin {margin_ms:+.0f} ms" if margin_ms is not None else "every waypoint already past"
             self._monitor.classify(Problem(C.POLICY_LATE, "policy", f"policy late: {late}"))
         timing = done.timing

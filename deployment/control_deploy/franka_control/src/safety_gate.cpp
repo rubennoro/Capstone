@@ -1,5 +1,5 @@
 // from rnoro/deployment:deployment/franka_control/src/safety_gate.cpp @ 91b178b
-// changes: none.
+// changes: the other waypoints of a rejected request get kNotCheckedReason (the contract's text).
 // (`STRUCTURE.md n` below: rnoro/deployment's franka_control/STRUCTURE.md, old-S.)
 #include "franka_control/safety_gate.h"
 
@@ -155,14 +155,12 @@ GateResult SafetyGate::check(const TrajectoryPoint& start, const std::vector<Tra
   }
 
   if (!failures.empty()) {   // the whole request is refused; every non-skipped waypoint is accounted for
-    const uint64_t first = failures.front().index;
     size_t f = 0;
     for (uint64_t i : non_skipped) {
       if (f < failures.size() && failures[f].index == i) {
         res.rejected.push_back(failures[f++]);
       } else {
-        res.rejected.push_back(
-            GateIssue{i, "not used: waypoint " + std::to_string(first) + " of this request was rejected", false});
+        res.rejected.push_back(GateIssue{i, kNotCheckedReason, false});
       }
     }
     return res;

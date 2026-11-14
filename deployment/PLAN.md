@@ -186,9 +186,9 @@ Unchanged from `rnoro/deployment`. The PC binds the PUB; the laptop subscribes.
 | `gate` | counters | waypoints accepted / shortened / pulled back / rejected since start |
 | `loop_late` | uint64 | late 1 kHz cycles since start |
 
-Rate: 100 Hz. The laptop needs at least 50 Hz. `t_ns` repeats unchanged after a fault (the loop has ended), briefly
-around homing, and for up to 1 s after a stopped homing (`control.settle_timeout_s`); the laptop ignores repeated times
-for interpolation and for its clock map. Freshness is judged from the mapped `t_ns`, never from arrival time: a link
+Rate: 100 Hz. The laptop needs at least 50 Hz. `t_ns` repeats unchanged after a fault that ends the 1 kHz loop (a
+reflex, a libfranka error), briefly around homing, and for up to 1 s after a stopped homing
+(`control.settle_timeout_s`); the laptop ignores repeated times for interpolation and for its clock map. Freshness is judged from the mapped `t_ns`, never from arrival time: a link
 stall can deliver a burst of old states. Liveness ("no C2 for 2 s") is judged from arrival time, since `t_ns` can
 repeat.
 
@@ -322,7 +322,7 @@ only make the arm hold.
 | Problem | Kind | Reaction |
 |---|---|---|
 | A camera stale (no new frame for 0.35 s), a missed frame pick | slow | skip the step |
-| The ultrawide repeating an old frame (the Pi's `uw_reused`) for more than one frame | slow, then conclude | a pair is usable only if both: its capture lies within [main − 60 ms, main + 25 ms] (`pair_max_age_ms` 60, `pair_max_lead_ms` 25; the live Pi pairs the nearest frame, ultrawide 16 ms newer in the recorded packet; the lead is confirmed from `pi_collect`'s pair-gap report), and the same ultrawide frame has been the pair of at most 2 consecutive packets (`pair_max_reuse` 2: a third consecutive packet with it gets no ultrawide image, whatever the timing). Ultrawide health counts only new frames at their own capture time, so a stalled IMX219 goes stale, then down |
+| The ultrawide repeating an old frame (the Pi's `uw_reused`) for more than one frame | slow, then conclude | a pair is usable only if both: its capture lies within [main − 60 ms, main + 25 ms] (`pair_max_age_ms` 60, `pair_max_lead_ms` 25; the live Pi pairs the nearest frame, ultrawide 16 ms newer in the recorded packet; the lead is confirmed from `pi_collect`'s pair-gap report), and the same ultrawide frame has been the pair of at most 2 consecutive packets (`pair_max_reuse` 2: a third consecutive packet with it gets no ultrawide image, whatever the timing). Ultrawide health counts only new frames at their own capture time, and only once served as an accepted pair, so a stalled IMX219, or one whose pairs are always refused, goes stale, then down |
 | A camera down (2 s), the Pi stream restarted or lost | conclude | "main camera down: check the Pi and ASUS_5g" |
 | Policy slower than the waypoints it has | slow | the arm holds at the last waypoint |
 | An odd chunk | slow | skip, count |

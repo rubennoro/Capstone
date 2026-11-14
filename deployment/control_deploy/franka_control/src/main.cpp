@@ -1,7 +1,9 @@
 // from rnoro/deployment:deployment/franka_control/src/main.cpp @ 91b178b
 // changes: --version prints "franka_control commit=<40 hex|unknown> dirty=<yes|no> libfranka=<X.Y.Z|none>";
-// --check-config passes --local and the contract files (control_deploy/STRUCTURE.md 3.1).
+// --check-config passes --local and the contract files (control_deploy/STRUCTURE.md 3.1); SIGPIPE is ignored, so a
+// closed log pipe (the control_deploy run wrapper gone) fails the write instead of killing the process mid-episode.
 // franka_control: parses the command line, runs App, turns failures into the FATAL line.
+#include <csignal>
 #include <cstdio>
 #include <iostream>
 
@@ -19,6 +21,7 @@ using franka_control::FatalError;
 using franka_control::Log;
 
 int main(int argc, char** argv) {
+  std::signal(SIGPIPE, SIG_IGN);   // before any thread exists: every thread inherits it
   CommandLine cl;
   try {
     cl = CommandLine::parse(argc, argv);

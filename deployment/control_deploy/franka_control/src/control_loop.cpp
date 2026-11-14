@@ -2,7 +2,8 @@
 // changes: run() only (stop during homing, control_deploy/STRUCTURE.md 4.4): an abort seen before the move skips it;
 // a kStopRequested end of the move with the abort flag set waits for the robot to leave its move mode (at most
 // control.settle_timeout_s) and starts a new torque session holding the measured pose, or faults if the arm then
-// reports a problem; a normal finish clears the flag. step() and observeHoming() are unchanged.
+// reports a problem; a normal finish clears the flag; the move is bracketed with SharedState::begin/endHomingMove, so a
+// homing stop cannot land in the next torque session (fix wave). step() and observeHoming() are unchanged.
 #include "franka_control/control_loop.h"
 
 #include <algorithm>
@@ -279,11 +280,11 @@ void ControlLoop::run() {
     // the joint move, then a new session holding the home pose
     const HomingMotion motion(last_q_, homing_.q_home_rad, homing_.max_joint_speed_rad_per_s,
                               homing_.min_duration_s);
-    in_homing_.store(true);
+    shared_.beginHomingMove(session_);
     try {
       arm_.moveToJoints(motion, observe_fn);
     } catch (const ArmError& e) {
-      in_homing_.store(false);
+      shared_.endHomingMove();
       if (e.kind == ArmError::Kind::kStopRequested && shared_.homingAbortRequested() &&
           !shared_.shutdownRequested()) {
         // stopped during homing (a C3 stop or the PC's s): hold where the arm stopped, not a fault
@@ -301,11 +302,11 @@ void ControlLoop::run() {
       endWith(e.kind, e.what());
       return;
     } catch (const std::exception& e) {
-      in_homing_.store(false);
+      shared_.endHomingMove();
       endWith(ArmError::Kind::kOther, e.what());
       return;
     }
-    in_homing_.store(false);
+    shared_.endHomingMove();   // waits for a stop being sent under its lock: it cannot reach the next session
     shared_.clearHomingAbort();   // a stop that arrived as the move finished: the normal completion wins
     homed_generation_ = home_generation_;
     ++session_;

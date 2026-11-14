@@ -1,4 +1,4 @@
-// New (control_deploy/STRUCTURE.md 3.3, 4.3).
+// New (control_deploy/STRUCTURE.md 3.3, 4.3). Fix wave: upper case maps like lower case; IXON off.
 #include "franka_control/keyboard_reader.h"
 
 #include <poll.h>
@@ -18,6 +18,7 @@ TerminalMode::TerminalMode(int fd) : fd_(fd) {
   termios t = saved_;
   t.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO));
   t.c_lflag |= ISIG;                                // Ctrl-C stays SIGINT
+  t.c_iflag &= static_cast<tcflag_t>(~IXON);        // Ctrl-S would pause the terminal and block every log line
   t.c_cc[VMIN] = 1;
   t.c_cc[VTIME] = 0;
   t.c_cc[VSUSP] = _POSIX_VDISABLE;                  // Ctrl-Z
@@ -34,10 +35,14 @@ KeyboardReader::KeyboardReader(int fd, KeyQueue& keys, std::function<void()> on_
 
 std::optional<Key> KeyboardReader::map(char c) {
   switch (c) {
-    case 'h': return Key::kHomeArm;
-    case 'g': return Key::kHomeHand;
-    case 's': return Key::kStop;
-    case 'q': return Key::kQuit;
+    case 'h':
+    case 'H': return Key::kHomeArm;                 // upper case: caps lock must not turn s into a help line
+    case 'g':
+    case 'G': return Key::kHomeHand;
+    case 's':
+    case 'S': return Key::kStop;
+    case 'q':
+    case 'Q': return Key::kQuit;
     default: return std::nullopt;
   }
 }

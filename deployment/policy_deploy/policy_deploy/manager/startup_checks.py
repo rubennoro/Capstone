@@ -164,11 +164,14 @@ class StartupChecks:
         if pc_clock.has_fit():
             f = self.clock_agreement(pc_clock, hellos)
             best = shortest_hello(hellos)
-            ok = (f"map and the shortest-RTT hello agree within {abs(pc_clock.agreement_ms(best)):.2f} ms"
-                  if best is not None else "")
-            rows.append(CheckRow("clock agreement", "fail" if f else "pass", str(f) if f else ok))
+            ok = (f"{pc_clock.NAME} map and the shortest-RTT hello agree within "
+                  f"{abs(pc_clock.agreement_ms(best)):.2f} ms" if best is not None else "")
+            rows.append(CheckRow("clock agreement", "fail" if f else "pass",
+                                 f"{pc_clock.NAME}: {f}" if f else ok))
         else:
-            rows.append(CheckRow("clock agreement", "fail", "no clock fit: no hello answered"))
+            rows.append(CheckRow("clock agreement", "fail",
+                                 "no clock fit: no hello answered" if pc_clock.NAME == "round_trip" else
+                                 f"no {pc_clock.NAME} clock fit yet: too few C2 states"))
         warn = self.commit_warning(reply)
         rows.append(CheckRow("PC commit", "warn" if warn else "pass", warn or f"PC and laptop on {reply.commit}"))
         rows.append(CheckRow("PC mock", "info", f"the PC runs {'--mock (fake arm)' if reply.mock else 'the real arm'}"))

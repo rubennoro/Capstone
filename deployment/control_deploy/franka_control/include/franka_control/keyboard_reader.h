@@ -1,8 +1,9 @@
 // New (control_deploy/STRUCTURE.md 3.3, 4.3): the keyboard thread (only with --keyboard) and the terminal's cbreak
 // mode.
-// Keys: h home the arm, g home the hand, s stop and hold, q quit. Upper case is not accepted. Keys never feed the
-// watchdog. Ctrl-C stays SIGINT (handled by the main thread); Ctrl-Z and Ctrl-\ are disabled (a stopped process would
-// miss FCI packets and trip a reflex). EOF or a read error ends the thread ("keys disabled"); it is never `q`.
+// Keys: h home the arm, g home the hand, s stop and hold, q quit; upper case acts like lower case (caps lock). Keys
+// never feed the watchdog. Ctrl-C stays SIGINT (handled by the main thread); Ctrl-Z and Ctrl-\ are disabled (a stopped
+// process would miss FCI packets and trip a reflex); Ctrl-S/Ctrl-Q flow control is off (a paused terminal would block
+// every log line). EOF or a read error ends the thread ("keys disabled"); it is never `q`.
 #pragma once
 
 #include <termios.h>
@@ -16,7 +17,7 @@
 
 namespace franka_control {
 
-// RAII; does nothing when fd is not a TTY. cbreak: ICANON and ECHO off, ISIG kept; VSUSP and VQUIT disabled.
+// RAII; does nothing when fd is not a TTY. cbreak: ICANON and ECHO off, ISIG kept; VSUSP and VQUIT disabled; IXON off.
 class TerminalMode {
  public:
   explicit TerminalMode(int fd);
@@ -36,7 +37,7 @@ class KeyboardReader {                              // keyboard thread
   static constexpr int kPollMs = 50;                // sees shutdown within this
   KeyboardReader(int fd, KeyQueue& keys, std::function<void()> on_quit, const SharedState& shared);
   void run();                                       // until shutdown, EOF or a read error
-  static std::optional<Key> map(char c);            // the one key table: 'h', 'g', 's', 'q'
+  static std::optional<Key> map(char c);            // the one key table: 'h', 'g', 's', 'q' and their upper case
   static const char* help();                        // "keys: h home arm, g home hand, s stop, q quit"
 
  private:

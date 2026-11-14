@@ -1,7 +1,8 @@
 """The frozen-ultrawide fix (STRUCTURE.md 4.3 fixes 1-4, 12.2; PLAN 7).
 
 A pair is usable only within [main - 60 ms, main + 25 ms] (mid-exposures) and when the same ultrawide frame was the
-pair of at most 2 consecutive packets; ultrawide health counts only new frames at their own capture time; the store
+pair of at most 2 consecutive packets (by packet_seq); ultrawide health counts a frame once, when it is first served as
+an accepted pair, at its own capture time (so a pair always refused makes the ultrawide stale, then down); the store
 evicts by time on every packet; the fake Pi can repeat its last ultrawide frame.
 """
 
@@ -13,7 +14,7 @@ import numpy as np
 import pytest
 from frames_helpers import FakeClock, RawDecoder, raw_frame, raw_packet, wait_for
 
-from policy_deploy.contracts import ClockMap, ClockSample, GetFramesRequest, Packet
+from policy_deploy.contracts import ClockMap, ClockSample, GetFramesRequest, GetHealthRequest, Packet
 from policy_deploy.frames._dataproc.imageprep import ImagePrep
 from policy_deploy.frames.camera_health import CameraHealth
 from policy_deploy.frames.frames_server import FramesServer
@@ -62,9 +63,10 @@ class Rig:
         self.uw_seq = -1
         self.uw_t = None
 
-    def packet(self, uw_offset_ns: int | None, pair_seq: int | None = None) -> None:
+    def packet(self, uw_offset_ns: int | None, pair_seq: int | None = None, lost: bool = False) -> None:
         """One main frame captured now; with uw_offset_ns a new ultrawide frame captured at now + offset (its pair);
-        without, the last ultrawide frame repeats as the pair. Then the clock advances one period."""
+        without, the last ultrawide frame repeats as the pair. lost: the packet never arrives (a packet_seq gap). Then
+        the clock advances one period."""
         t_main = self.clock() + OFFSET
         uw = []
         if uw_offset_ns is not None:
@@ -72,8 +74,9 @@ class Rig:
             self.uw_t = t_main + uw_offset_ns
             uw = [raw_frame("ultrawide", self.uw_seq, self.uw_t, exposure_ns=EXP)]
         pair = self.uw_seq if pair_seq is None else pair_seq
-        self.source.queue.append(raw_packet(raw_frame("main", self.n, t_main, exposure_ns=EXP), uw, pair))
-        assert self.rx.receive_one(0.0)
+        if not lost:
+            self.source.queue.append(raw_packet(raw_frame("main", self.n, t_main, exposure_ns=EXP), uw, pair))
+            assert self.rx.receive_one(0.0)
         self.n += 1
         self.clock.advance(P)
 
@@ -114,18 +117,32 @@ def test_at_the_live_phase_the_third_packets_gap_is_inside_the_window():
     """So only the reuse rule refuses it (STRUCTURE.md 4.3 step 10)."""
     rule = PairRule(60.0, 25.0, 1000)
     main0 = 1_000 * MS
-    assert rule.check(7, main0, main0 + LIVE_LEAD_NS) == OK
-    assert rule.check(7, main0 + 2 * P, main0 + LIVE_LEAD_NS) == OK            # +50.4 ms: inside [-25, +60]
+    assert rule.check(7, 0, main0, main0 + LIVE_LEAD_NS) == OK
+    assert rule.check(7, 2, main0 + 2 * P, main0 + LIVE_LEAD_NS) == OK         # +50.4 ms: inside [-25, +60]
     strict = PairRule(60.0, 25.0, 2)
-    assert [strict.check(7, main0 + k * P, main0 + LIVE_LEAD_NS) for k in range(4)] == [OK, OK, REUSED, REUSED]
+    assert [strict.check(7, k, main0 + k * P, main0 + LIVE_LEAD_NS) for k in range(4)] == [OK, OK, REUSED, REUSED]
 
 
 def test_run_count_resets_on_a_new_pair_and_on_a_restart():
     rule = PairRule(60.0, 25.0, 2)
-    assert [rule.note(5) for _ in range(3)] == [1, 2, 3]
-    assert rule.note(6) == 1 and rule.note(6) == 2
+    assert [rule.note(5, k) for k in range(3)] == [1, 2, 3]
+    assert rule.note(6, 3) == 1 and rule.note(6, 4) == 2
     rule.reset()
-    assert rule.run == 0 and rule.note(6) == 1
+    assert rule.run == 0 and rule.note(6, 0) == 1
+
+
+def test_the_run_counts_packet_seq_so_a_lost_packet_lets_no_second_repeat_through():
+    rule = PairRule(60.0, 25.0, 2)
+    assert rule.note(5, 10) == 1
+    assert rule.note(5, 12) == 3                      # packet 11 lost: it was the first repeat
+    assert rule.note(6, 14) == 1                      # a new pair after another loss: a new run, not inflated
+
+
+def test_after_a_lost_packet_the_second_repeat_is_still_refused(rig):
+    rig.packet(-5 * MS)
+    rig.packet(None, lost=True)                       # the first repeat is lost on the way
+    rig.packet(None)                                  # the second repeat: the 3rd packet_seq with this pair
+    assert not rig.served_uw() and rig.rx.packets.pair_reused == 1 and rig.rx.packets.lost == 1
 
 
 def test_a_pi_restart_resets_the_pair_rule(rig):
@@ -144,10 +161,10 @@ def test_a_pi_restart_resets_the_pair_rule(rig):
 def test_window_edges_accepted_and_one_ns_beyond_refused():
     rule = PairRule(60.0, 25.0, 1000)
     main = 10_000 * MS
-    assert rule.check(1, main, main - 60 * MS) == OK                # +60 ms exactly (the pair older)
-    assert rule.check(2, main, main + 25 * MS) == OK                # -25 ms exactly (the pair newer)
-    assert rule.check(3, main, main - 60 * MS - 1) == TOO_OLD
-    assert rule.check(4, main, main + 25 * MS + 1) == TOO_NEW
+    assert rule.check(1, 1, main, main - 60 * MS) == OK             # +60 ms exactly (the pair older)
+    assert rule.check(2, 2, main, main + 25 * MS) == OK             # -25 ms exactly (the pair newer)
+    assert rule.check(3, 3, main, main - 60 * MS - 1) == TOO_OLD
+    assert rule.check(4, 4, main, main + 25 * MS + 1) == TOO_NEW
 
 
 @pytest.mark.parametrize("offset_ms, counter, served", [
@@ -185,6 +202,29 @@ def test_ultrawide_health_ages_from_the_frames_own_capture_time(rig):
     uw_age = rig.health["ultrawide"].report(now).last_frame_age_ms
     assert uw_age - main_age == pytest.approx(30.0, abs=1e-3)   # not the packet time
     assert rig.newest().t_ns == rig.clock() - P - EXP // 2       # the packet time: the main frame's mid-exposure
+
+
+def test_a_pair_always_refused_for_timing_makes_the_ultrawide_stale_then_down(rig):
+    """PLAN 7 "slow, then conclude": new ultrawide frames keep coming, but from some point each pairs 30 ms ahead
+    (pair_too_new). Their arrival must not keep the ultrawide ok."""
+    server = _server(rig)
+    try:
+        for _ in range(6):
+            rig.packet(-5 * MS)
+        assert rig.health["ultrawide"].status() == "ok"
+        t0 = rig.clock()
+        while rig.clock() - t0 < 400 * MS:
+            rig.packet(+30 * MS)
+        assert rig.rx.packets.pair_too_new > 0
+        assert rig.health["ultrawide"].status() == "stale" and rig.health["main"].status() == "ok"
+        assert server.get_health(GetHealthRequest()).health.ultrawide.status == "stale"
+        while rig.clock() - t0 < 2_100 * MS:
+            rig.packet(+30 * MS)
+        assert rig.health["ultrawide"].status() == "down" and rig.health["main"].status() == "ok"
+        rig.packet(0)                                     # in the window again: served and counted
+        assert rig.served_uw() and rig.health["ultrawide"].status() == "ok"
+    finally:
+        server.close()
 
 
 def test_a_repeat_records_no_ultrawide_frame(rig):

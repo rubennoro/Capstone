@@ -3,7 +3,8 @@
 // failure and hint texts name link.yaml and control_deploy; SIGHUP joins SIGINT/SIGTERM; builds the hello template
 // (encoded once as a self-check) for CommandServer and passes the gripper to Supervisor; with --keyboard the keyboard
 // thread (q = requestStop()) and the messaging loop drains KeyQueue; AppOverrides for tests
-// (control_deploy/STRUCTURE.md 3.4, 4.1, 4.2, 5.5).
+// (control_deploy/STRUCTURE.md 3.4, 4.1, 4.2, 5.5). Fix wave: the shutdown stop of a homing move is sent under
+// SharedState::stopHomingMove and re-sent every 100 ms while the move runs (4.4).
 #include "franka_control/app.h"
 
 #include <pthread.h>
@@ -227,16 +228,17 @@ int App::run() {
       Log::warning("could not pin the control thread to CPU " + std::to_string(*cfg.control_cpu));
     }
   }
-  bool arm_stop_sent = false;
   auto stopControl = [&] {
     shared->requestShutdown();
     gripper->stop();
     const int64_t budget = secondsToNs(cfg.shutdown.timeout_s);
+    int64_t arm_stop_sent_ns = -1;
     const bool ended = waitFor([&] { return loop.done(); }, budget, poll_ns, [&] {
-      if (loop.inHomingMove() && !arm_stop_sent) {   // a homing move doesn't settle: stop it
-        arm_stop_sent = true;
-        arm->requestStop();
-      }
+      // a homing move doesn't settle: stop it, again every 100 ms while it runs (a stop sent just before the move's
+      // libfranka call records its epoch is lost)
+      const int64_t now = monotonicNowNs();
+      if (arm_stop_sent_ns >= 0 && now - arm_stop_sent_ns < kHomingStopResendNs) return;
+      if (shared->stopHomingMove(SharedState::kAnySession, [&] { arm->requestStop(); })) arm_stop_sent_ns = now;
     });
     if (!ended) {
       Log::warning("control thread still running after shutdown.timeout_s: stopping the arm");

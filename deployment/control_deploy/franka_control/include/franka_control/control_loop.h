@@ -1,7 +1,8 @@
 // from rnoro/deployment:deployment/franka_control/include/franka_control/control_loop.h @ 91b178b
 // changes: run() only: a homing abort before the move skips it; a stop-requested end of the move with the abort flag
 // set waits for the robot to leave its move mode and starts a new torque session instead of ending the thread
-// (control_deploy/STRUCTURE.md 3.3, 4.4). step() and observeHoming() are unchanged.
+// (control_deploy/STRUCTURE.md 3.3, 4.4); the homing move is marked in SharedState (begin/endHomingMove) instead of
+// in_homing_ (fix wave). step() and observeHoming() are unchanged.
 // The control thread: torque sessions, the 1 kHz step, homing moves between sessions.
 // step() never blocks, allocates, locks, logs or throws on purpose; it talks to the other threads only through the
 // wait-free parts of SharedState.
@@ -30,7 +31,6 @@ class ControlLoop {
   TorqueCommand step(const ArmReading& r);         // one 1 kHz cycle (called by Arm::runTorqueControl)
   void observeHoming(const ArmReading& r);         // one cycle of a homing move (keeps the snapshot fresh)
 
-  bool inHomingMove() const { return in_homing_.load(); }
   bool done() const { return done_.load(); }       // run() has returned
   std::optional<ArmError::Kind> failureKind() const;   // why run() ended, if an ArmError ended it
 
@@ -83,7 +83,6 @@ class ControlLoop {
   bool window_started_ = false;
   LoopSnapshot cur_;                               // filled every cycle, copied into the snapshot slot
 
-  std::atomic<bool> in_homing_{false};
   std::atomic<bool> done_{false};
   std::atomic<int> failure_kind_{-1};
 };

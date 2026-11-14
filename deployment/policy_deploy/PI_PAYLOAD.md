@@ -1,5 +1,6 @@
 <!-- adapted from rnoro/deployment:deployment/contracts/PI_PAYLOAD.md @ 91b178b
-     changes: §0 unchanged apart from the one skew_ns sign note (in §0.3 and §0.6); the appendix keeps only §3-4 (the
+     changes: §0 unchanged apart from the one skew_ns sign note (in §0.3 and §0.6), §0.4 item 5 (the laptop judges the
+     pair) and the fake Pi note in §0.6; the appendix keeps only §3-4 (the
      internal packet form, c0.packet/v1, which policy_deploy.frames uses internally); the c0 msgpack sender, its
      transport and the time_sync parts (§1, §2, §5-§8) are dropped: the Pi contract is final (PLAN §8.2). Code names:
      process_frames is now policy_deploy.frames, contracts.pi_stream is policy_deploy.contracts.pi_stream,
@@ -71,8 +72,12 @@ All keys are required, with no others. Integers are JSON integers, never boolean
    count, which is harmless with JPEG.
 3. **The JPEGs are exactly the rig file's size** (640×480). Any other size is `FATAL`, naming the camera.
 4. **`t_send_ns` is on the same clock as `t_sensor_ns`.** The PC maps Pi times to its own clock with it (0.5).
-5. **Pairing is the Pi's choice:** the ultrawide frame in each packet is that packet's pair. The PC checks only that
-   it exists. The gap shows in the stats as `pair gap`. On the live Pi, `skew_ns` was about 16 ms.
+5. **Pairing is the Pi's choice, judged by the PC:** the ultrawide frame in each packet is that packet's pair. The PC
+   uses it only if its mid-exposure lies within [main − 60 ms, main + 25 ms] (`pair_max_age_ms`, `pair_max_lead_ms`)
+   and the same ultrawide frame has been the pair of at most 2 consecutive packets (`pair_max_reuse`); otherwise that
+   packet has no ultrawide image, and a camera whose pairs keep being refused goes stale, then down
+   (policy_deploy/STRUCTURE.md §4.3 steps 9-10). The gap (`main.t_mid_ns − ultrawide.t_mid_ns`, from the two
+   `t_mid_ns`) shows in the stats as `pair gap`. On the live Pi it was about −16 ms (the ultrawide newer).
 6. **Packets keep coming.** No new frame for 0.35 s makes a camera stale, and 2 s makes it down. No packet for 10 s
    makes the clock stale.
 
@@ -113,6 +118,10 @@ part 2: <ultrawide JPEG, 640x480, ~75 kB>
 **Note (sign of `skew_ns`):** in this packet `main.t_mid_ns − ultrawide.t_mid_ns` = −16 292 500 ns, but the Pi sent
 `skew_ns` = +16 292 500: the live Pi's `skew_ns` has the opposite sign to §0.3's definition. Nothing in policy_deploy
 reads `skew_ns`; `pi_collect` computes the pair gap from the two `t_mid_ns`.
+
+**The fake Pi** (`--mock`, tests) copies these live numbers: `skew_ns` with the live sign (`ultrawide.t_mid_ns −
+main.t_mid_ns`, positive when the ultrawide is newer) and each packet sent 45.8 ms after its main frame's
+`t_sensor_ns`.
 
 ---
 

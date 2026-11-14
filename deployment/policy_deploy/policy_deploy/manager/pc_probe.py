@@ -9,7 +9,8 @@ estimators fed side by side (round_trip from the hellos, one_way from C2) with t
 printed every second; the hello reply and compare_hello. It never sends start, stop, home or set_waypoints.
 
 --check runs 2 s and prints one check line per STRUCTURE.md 8.4 row and per link fact (C2 rate, RTT, clock agreement)
-for the launcher; with --json each line is {"name", "status", "detail"}. It exits 0 unless it crashes.
+for the launcher; with --json each line is {"name", "status", "detail"}. Clock agreement is judged with the map of
+link.yaml clock.estimator, as `run` judges it at start-up. It exits 0 unless it crashes.
 """
 from __future__ import annotations
 
@@ -189,7 +190,8 @@ class PcProbe:
         if self.reply is None:
             return rows
         checks = StartupChecks(self.s, mock=mock)
-        for r in checks.rows(self.reply, self.round_trip, self.round_trip.hellos()):
+        pc_clock = self.one_way if self.s.clock.estimator == "one_way" else self.round_trip   # what run will use
+        for r in checks.rows(self.reply, pc_clock, pc_clock.hellos()):
             rows.append(PcCheck(r.name, r.status, r.detail))
         return rows
 

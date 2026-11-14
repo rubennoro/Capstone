@@ -91,6 +91,17 @@ def test_check_rows_and_json_lines(probe_for):
                for p in parsed)
 
 
+@pytest.mark.parametrize("estimator, status", [("round_trip", "pass"), ("one_way", "fail")])
+def test_check_judges_clock_agreement_with_the_configured_estimator(probe_for, estimator, status):
+    """Every C2 message 50 ms late: the one_way map (fitted from C2) is 50 ms off the hellos, the round_trip map (fitted
+    from those same hellos) agrees by construction. --check must judge what `run` will use (STRUCTURE.md 8.4)."""
+    fake, probe, _ = probe_for(link=small_link(clock_estimator=estimator))
+    fake.delay_states(lambda: 0.05)
+    by = {r.name: r for r in probe.check_rows(mock=True)}
+    assert by["clock agreement"].status == status, by["clock agreement"]
+    assert by["clock agreement"].detail.startswith(estimator), by["clock agreement"]
+
+
 def test_check_with_mock_false_against_a_mock_pc_fails_equality(probe_for):
     fake, probe, _ = probe_for()
     rows = {r.name: r for r in probe.check_rows(mock=False)}

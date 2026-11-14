@@ -112,10 +112,15 @@ def test_the_pc_keyboard_stop_during_an_episode_is_pc_stopped(tmp_path, rigs):
 def test_a_stopped_c2_older_than_the_mapped_start_ack_is_ignored(tmp_path, rigs):
     rig = rigs(tmp_path, fake={"start_mode": "stopped"})
     rig.start()
-    rig.fake.delay_states(lambda: 0.08)              # stopped states still in flight after the start ack
-    rig.start_episode(5)
-    assert rig.wait(lambda: rig.loop._steps_sent >= 10, 3.0)
-    assert rig.loop.phase is Phase.RUNNING and rig.code is None
+    # stopped states still in flight after the start ack: 30 ms is far above the C3 ack round trip, and far below
+    # state_stale_s (0.1 s), so a loaded machine does not turn the steps into STATE_STALE skips
+    rig.fake.delay_states(lambda: 0.03)
+    rig.operator.press("c")
+    assert rig.wait(lambda: rig.loop._start_ack_pc_ns is not None, 10.0), rig.verdict_text()
+    rig.fake.delay_states(lambda: 0.0)               # off once the ack is mapped; 0.0, not None, keeps the order
+    assert rig.wait(lambda: rig.loop._steps_sent >= 3 or rig.code is not None, 10.0), rig.verdict_text()
+    assert rig.code is not C.PC_STOPPED, rig.verdict_text()
+    assert rig.loop.phase is Phase.RUNNING and rig.code is None, rig.verdict_text()
     assert rig.loop._start_ack_pc_ns > rig.loop._start_ack_ns + 999 * 10**9    # mapped to the fake PC's +1000 s
 
 
@@ -180,7 +185,7 @@ def test_home_refused_is_homing_failed(tmp_path, rigs):
     assert rig.wait(lambda: rig.history.latest().mode == "holding", 2.0)
     rig.operator.press("h")
     v = concluded(rig, C.HOMING_FAILED)
-    assert v.what_failed == "the PC's homing failed: refused: mode is holding"
+    assert v.what_failed == "the PC's homing failed: refused: mode is holding: send stop first"
 
 
 def test_home_timed_out_is_homing_failed(tmp_path, rigs):
@@ -218,7 +223,7 @@ def test_start_refused_by_the_pc_is_a_hint(tmp_path, rigs):
     rig.operator.press("c")
     assert rig.wait(lambda: "start_refused" in [e["kind"] for e in rig.events()], 3.0)
     assert rig.loop.phase is Phase.IDLE and rig.code is None
-    assert "c: the PC refused start: refused: mode is holding" in rig.operator.messages
+    assert "c: the PC refused start: refused: mode is holding: already started" in rig.operator.messages
 
 
 # ---------------------------------------------------------------------------------------------- refusals

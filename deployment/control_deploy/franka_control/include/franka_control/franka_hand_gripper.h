@@ -1,6 +1,7 @@
 // from rnoro/deployment:deployment/franka_control/include/franka_control/franka_hand_gripper.h @ 91b178b
 // changes: + home() (franka::Gripper::homing(); a failure or false during a requested stop is "aborted"), the
-// stop_requested_ flag set by stop() (control_deploy/STRUCTURE.md 3.3). NOT COMPILED on the laptop (no libfranka).
+// stop_requested_ flag set by stop() (control_deploy/STRUCTURE.md 3.3); fix wave: + clearStop(), home() keeps the flag
+// (4.4). NOT COMPILED on the laptop (no libfranka).
 // The Franka Hand with our printed fingers, through franka::Gripper. Only built with libfranka.
 // One connection, used by two threads: the gripper thread (moveTo, stop) and the gripper-reader thread (widthM).
 // franka::Gripper's members are thread-safe (its header), except that readOnce throws if another readOnce is
@@ -30,6 +31,7 @@ class FrankaHandGripper : public Gripper {
   void moveTo(double width_m) override;
   void stop() override;
   bool home() override;
+  void clearStop() override;
 
  private:
   std::string robot_ip_;
@@ -37,7 +39,7 @@ class FrankaHandGripper : public Gripper {
   double width_max_m_;
   std::unique_ptr<franka::Gripper> gripper_;
   std::mutex read_mutex_;                          // around every gripper_->readOnce()
-  std::atomic<bool> stop_requested_{false};        // set by stop(); reset when home() starts
+  std::atomic<bool> stop_requested_{false};        // set by stop(); reset by clearStop() (never by home())
 };
 
 }  // namespace franka_control

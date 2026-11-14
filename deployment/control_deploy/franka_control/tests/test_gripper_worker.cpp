@@ -1,6 +1,8 @@
 // from rnoro/deployment:deployment/franka_control/tests/test_gripper_worker.cpp @ 91b178b
 // changes: + the hand's homing (request served once, done / aborted / failed, the target re-sent inside the deadband;
-// the width moves during the fake homing) (control_deploy/STRUCTURE.md 9.1).
+// the width moves during the fake homing) (control_deploy/STRUCTURE.md 9.1). Fix wave: a stop before the homing began
+// skips it; an earlier stop does not; a stopped finger move throws (a gripper fault, except at shutdown); a stop during
+// a finger move that precedes a hand homing never reaches the hand.
 #include <gtest/gtest.h>
 
 #include <set>
@@ -123,6 +125,57 @@ TEST(GripperWorker, StopDuringTheHandsHomingReportsAborted) {
   EXPECT_FALSE(r.shared.gripperFault());
 }
 
+TEST(GripperWorker, AStopBeforeTheHandsHomingBeganSkipsIt) {
+  Rig r;
+  r.shared.requestHandHoming(4);
+  int stops = 0;
+  EXPECT_EQ(r.shared.stopHandHoming(4, [&] { ++stops; }), SharedState::HandStop::kBeforeStart);
+  EXPECT_EQ(stops, 0);
+  EXPECT_TRUE(r.worker->serveHandHoming());
+  EXPECT_EQ(r.shared.handHomingReport(), 4u * 4 + SharedState::kHandHomingAborted);
+  EXPECT_EQ(r.slept_ns, 0);                          // the fingers never moved
+  EXPECT_DOUBLE_EQ(r.gripper->widthM(), 0.08);
+  EXPECT_FALSE(r.shared.gripperFault());
+  EXPECT_EQ(r.shared.stopHandHoming(4, [&] { ++stops; }), SharedState::HandStop::kAfterEnd);
+}
+
+TEST(GripperWorker, AStopFromBeforeTheRequestDoesNotSkipTheHoming) {
+  Rig r;
+  r.gripper->stop();                                 // e.g. the previous homing's stop, still set in the hand
+  r.shared.requestHandHoming(5);
+  EXPECT_TRUE(r.worker->serveHandHoming());
+  EXPECT_EQ(r.shared.handHomingReport(), 5u * 4 + SharedState::kHandHomingDone);
+}
+
+TEST(GripperWorker, AStopDuringHomeReachesTheHandAndNotAfterwards) {
+  Rig r;
+  r.shared.requestHandHoming(6);
+  int stops = 0;
+  r.stop_after_steps = 10;                           // in the middle of home(): what Supervisor::abortHoming does
+  EXPECT_TRUE(r.worker->serveHandHoming());
+  EXPECT_EQ(r.shared.handHomingReport(), 6u * 4 + SharedState::kHandHomingAborted);
+  EXPECT_EQ(r.shared.stopHandHoming(6, [&] { ++stops; }), SharedState::HandStop::kAfterEnd);
+  EXPECT_EQ(stops, 0);
+}
+
+TEST(GripperWorker, AStoppedFingerMoveThrowsLikeLibfrankaAndIsAFault) {
+  Rig r;
+  r.stop_after_steps = 10;
+  r.shared.setGripperTarget(0.0);
+  EXPECT_FALSE(r.worker->stepOnce());
+  ASSERT_TRUE(r.shared.gripperFault());
+  EXPECT_NE(r.shared.gripperFault()->find("finger move aborted by stop()"), std::string::npos);
+}
+
+TEST(GripperWorker, AFingerMoveStoppedByTheShutdownIsNotAFault) {
+  Rig r;
+  r.stop_after_steps = 10;
+  r.shared.requestShutdown();
+  r.shared.setGripperTarget(0.0);
+  EXPECT_FALSE(r.worker->stepOnce());
+  EXPECT_FALSE(r.shared.gripperFault());
+}
+
 TEST(GripperWorker, AFailedHandHomingIsAGripperFault) {
   Rig r;
   r.gripper->failNextHome(true);
@@ -189,6 +242,31 @@ TEST(GripperWorkerThreads, BothLoopsEndPromptlyAtShutdownMidMove) {
   EXPECT_LT(nsToSeconds(monotonicNowNs() - t0), 0.1);   // one 5 ms fake step and one 20 ms read period
   const double stopped_at = r.gripper.widthM();
   EXPECT_GT(stopped_at, 0.0);   // the move was stopped, not finished
+  EXPECT_FALSE(r.shared.gripperFault());
+}
+
+// control_deploy/STRUCTURE.md 4.4: g, then s, while the fingers still travel to the last target (up to 1.6 s after an
+// episode). The stop must not reach the hand (libfranka would abort the move: a gripper fault); the homing is skipped.
+TEST(GripperWorkerThreads, AStopDuringTheFingerMoveBeforeAHandHomingSkipsTheHomingWithoutAFault) {
+  ThreadRig r;
+  r.shared.setGripperTarget(0.0);   // one blocking move of 0.8 s
+  ASSERT_TRUE(test::waitUntil([&] { return r.shared.gripperWidth() < 0.07; }, 5.0));   // the move is running
+  r.shared.requestHandHoming(1);                                                    // key g
+  EXPECT_EQ(r.shared.stopHandHoming(1, [&] { r.gripper.stop(); }), SharedState::HandStop::kBeforeStart);   // key s
+  ASSERT_TRUE(test::waitUntil(
+      [&] { return r.shared.handHomingReport() == 1u * 4 + SharedState::kHandHomingAborted; }, 5.0));
+  ASSERT_TRUE(test::waitUntil([&] { return r.shared.gripperWidth() == 0.0; }, 2.0));   // the move finished
+  EXPECT_FALSE(r.shared.gripperFault());
+}
+
+TEST(GripperWorkerThreads, AStopDuringTheHandHomingStopsIt) {
+  ThreadRig r;
+  r.shared.requestHandHoming(1);
+  ASSERT_TRUE(test::waitUntil([&] { return r.shared.gripperWidth() < 0.07; }, 5.0));   // home() runs
+  EXPECT_EQ(r.shared.stopHandHoming(1, [&] { r.gripper.stop(); }), SharedState::HandStop::kStopped);
+  ASSERT_TRUE(test::waitUntil(
+      [&] { return r.shared.handHomingReport() == 1u * 4 + SharedState::kHandHomingAborted; }, 2.0));
+  ASSERT_TRUE(test::waitUntil([&] { return r.shared.gripperWidth() == 0.08; }, 2.0));   // back to the target
   EXPECT_FALSE(r.shared.gripperFault());
 }
 

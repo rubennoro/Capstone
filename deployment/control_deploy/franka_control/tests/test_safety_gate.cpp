@@ -311,7 +311,7 @@ TEST(SafetyGate, AnyRejectionRefusesTheWholeRequest) {
   ASSERT_EQ(r.rejected.size(), 4u);   // every non-skipped one
   EXPECT_EQ(r.failedCount(), 2u);
   EXPECT_EQ(r.rejected[0].index, 1u);
-  EXPECT_EQ(r.rejected[0].reason, "not used: waypoint 2 of this request was rejected");
+  EXPECT_EQ(r.rejected[0].reason, "not checked: another waypoint of this request was rejected");
   EXPECT_FALSE(r.rejected[0].failed);
   EXPECT_EQ(r.rejected[1].index, 2u);
   EXPECT_NE(r.rejected[1].reason.find("on z"), std::string::npos);

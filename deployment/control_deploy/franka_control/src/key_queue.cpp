@@ -1,4 +1,4 @@
-// New (control_deploy/STRUCTURE.md 3.3, 4.3).
+// New (control_deploy/STRUCTURE.md 3.3, 4.3). Fix wave: s is never dropped.
 #include "franka_control/key_queue.h"
 
 #include <string>
@@ -20,7 +20,7 @@ const char* keyChar(Key k) {
 void KeyQueue::push(Key k) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (keys_.size() < kCapacity) {
+    if (k == Key::kStop || keys_.size() < kCapacity) {   // a stop always gets in
       keys_.push_back(k);
       return;
     }

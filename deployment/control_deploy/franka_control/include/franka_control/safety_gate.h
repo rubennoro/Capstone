@@ -1,5 +1,6 @@
 // from rnoro/deployment:deployment/franka_control/include/franka_control/safety_gate.h @ 91b178b
-// changes: none.
+// changes: kNotCheckedReason, the reason for the other waypoints of a rejected request, is the contract's text
+// (deployment/STRUCTURE.md 3.7.1; it was "not used: waypoint <i> of this request was rejected").
 // (`STRUCTURE.md n` below: rnoro/deployment's franka_control/STRUCTURE.md, old-S.)
 // The safety gate (STRUCTURE.md section 6): every waypoint of a set_waypoints is checked before anything reaches the
 // loop. Accepted, shortened (speed), pulled back (box/cone within a margin) or rejected.
@@ -17,10 +18,14 @@
 
 namespace franka_control {
 
+// The reason for every waypoint of a rejected request that did not fail a rule itself (deployment/STRUCTURE.md 3.7.1;
+// the laptop names the first reason that does not start with "not checked").
+inline constexpr const char* kNotCheckedReason = "not checked: another waypoint of this request was rejected";
+
 struct GateIssue {
   uint64_t index = 0;          // position in the request
   std::string reason;
-  bool failed = true;          // rejected list only: false for "not used: waypoint <i> of this request was rejected"
+  bool failed = true;          // rejected list only: false for kNotCheckedReason
 };
 
 struct GateResult {

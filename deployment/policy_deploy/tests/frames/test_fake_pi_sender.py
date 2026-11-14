@@ -1,7 +1,7 @@
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_fake_pi_sender.py @ 91b178b
 # changes: pi_v1 only (3-part messages read with a raw SUB and PiStreamPacket; no c0 packets, no time_sync); the pair is
-# the nearest frame; uw_reused and skew_ns (main.t_mid - ultrawide.t_mid) follow the pair; repeat_ultrawide (fix 4);
-# pause("ultrawide") repeats the last frame.
+# the nearest frame; uw_reused and skew_ns follow the pair; repeat_ultrawide (fix 4); pause("ultrawide") repeats the
+# last frame. Fix wave: skew_ns with the live Pi's sign and the live 45.8 ms send delay (PI_PAYLOAD.md 0.6).
 """FakePiSender over 127.0.0.1: its pi_stream/v1 messages pass the contract and pair the nearest frame."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import zmq
 from frames_helpers import wait_for
 
 from policy_deploy.contracts import PiStreamPacket
-from policy_deploy.frames.fake_pi_sender import FakePiSender
+from policy_deploy.frames.fake_pi_sender import SEND_DELAY_NS, FakePiSender
 from policy_deploy.frames.pi_recording import PiRecording
 
 OFFSET = 1000 * 1_000_000_000
@@ -86,10 +86,11 @@ def test_messages_pass_the_contract_and_pair_the_nearest_frame(fake, listener, r
         assert m.ultrawide_jpeg == ru.frames[h.ultrawide.frame_no % len(ru.frames)].data
         # the episode's ultrawide is captured 11 ms after the main frame: that one is the nearest
         assert h.ultrawide.t_sensor_ns - h.main.t_sensor_ns == pytest.approx(11_000_000, abs=1_000)
-        assert h.skew_ns == h.main.t_mid_ns - h.ultrawide.t_mid_ns         # the documented sign (PI_PAYLOAD 0.3)
+        assert h.skew_ns == h.ultrawide.t_mid_ns - h.main.t_mid_ns         # the live Pi's sign (PI_PAYLOAD 0.6)
         assert h.main.t_mid_ns == h.main.t_sensor_ns - h.main.exposure_us * 500
         assert h.uw_reused is False
-        assert h.t_send_ns >= h.main.t_sensor_ns + P // 2 - 1_000_000      # sent after the half-period lookahead
+        assert h.t_send_ns >= h.main.t_sensor_ns + SEND_DELAY_NS - 1_000_000   # sent ~45.8 ms after, as the live Pi
+        assert h.t_send_ns < h.main.t_sensor_ns + SEND_DELAY_NS + 30_000_000
 
 
 def test_drop_packets_makes_gaps(fake, listener):
@@ -125,7 +126,7 @@ def test_repeat_ultrawide_repeats_then_resumes(fake, listener):
     run = [m for m in listener.msgs[n:] if m.header.uw_reused]
     assert len({m.header.ultrawide.frame_no for m in run}) == 1           # always the same frame
     assert all(m.ultrawide_jpeg == run[0].ultrawide_jpeg for m in run)
-    assert all(m.header.skew_ns == m.header.main.t_mid_ns - m.header.ultrawide.t_mid_ns for m in run)
+    assert all(m.header.skew_ns == m.header.ultrawide.t_mid_ns - m.header.main.t_mid_ns for m in run)
     listener.pump(lambda l: not l.msgs[-1].header.uw_reused and len(l.msgs) > n + len(run) + 1)
     assert listener.msgs[-1].header.ultrawide.frame_no > run[0].header.ultrawide.frame_no
     assert fake.sent["reused"] >= 5

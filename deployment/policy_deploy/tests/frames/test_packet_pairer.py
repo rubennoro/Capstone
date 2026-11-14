@@ -111,8 +111,9 @@ def test_raw_packets_helper_follows_the_same_rule():
     assert [f.info.frame_seq for p in pk for f in p.ultrawide] == list(range(10))
 
 
-def test_fake_pi_messages_have_the_nearest_pair_and_the_documented_skew(pi_episode):
-    """FakePiSender pi_v1 messages: the nearest pair and skew_ns = main.t_mid - ultrawide.t_mid."""
+def test_fake_pi_messages_have_the_nearest_pair_and_the_live_skew(pi_episode):
+    """FakePiSender pi_v1 messages: the nearest pair and skew_ns = ultrawide.t_mid - main.t_mid (the live Pi's sign,
+    PI_PAYLOAD.md 0.6)."""
     import time
 
     import zmq
@@ -146,4 +147,4 @@ def test_fake_pi_messages_have_the_nearest_pair_and_the_documented_skew(pi_episo
         cands = [f.info.t_pi_ns + (h.main.frame_no // len(uw)) * rec.duration_ns for f in uw]
         nearest = min(range(len(cands)), key=lambda j: abs(cands[j] - local_main))
         assert h.ultrawide.frame_no % len(uw) == nearest
-        assert h.skew_ns == h.main.t_mid_ns - h.ultrawide.t_mid_ns
+        assert h.skew_ns == h.ultrawide.t_mid_ns - h.main.t_mid_ns

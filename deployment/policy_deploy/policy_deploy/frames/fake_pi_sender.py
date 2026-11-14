@@ -2,8 +2,10 @@
 # lines 197-240, and the control methods)
 # changes: pi_v1 only (no c0 packets, no time_sync thread); pairs through the nearest-frame PacketPairer, a main
 # frame's packet sent half an ultrawide period after its capture (PiRecording.events), so the nearest frame is known;
-# uw_reused and skew_ns (documented sign, main.t_mid - ultrawide.t_mid) follow the pair; adds repeat_ultrawide(seconds)
-# (STRUCTURE.md 4.3 fix 4); pause("ultrawide") now means the same as a repeat (the pairer keeps the last frame).
+# uw_reused and skew_ns follow the pair; adds repeat_ultrawide(seconds)
+# (STRUCTURE.md 4.3 fix 4); pause("ultrawide") now means the same as a repeat (the pairer keeps the last frame). Fix
+# wave: the live Pi's numbers (PI_PAYLOAD.md 0.6): skew_ns with the live sign (ultrawide.t_mid - main.t_mid), and each
+# packet sent SEND_DELAY_NS (45.8 ms) after its main frame's t_sensor_ns.
 """FakePiSender: the stand-in Pi for unit tests and --mock (STRUCTURE.md 4.2). Never used on the real arm.
 
 It plays back a short recorded clip only to produce realistic Pi traffic in the Pi's own format, pi_v1
@@ -11,6 +13,9 @@ It plays back a short recorded clip only to produce realistic Pi traffic in the 
 header, main JPEG, ultrawide JPEG). The ultrawide frame is the main frame's pair: the frame captured nearest it
 (PacketPairer); when the pair was already sent, it is sent again with ``uw_reused`` true. No ultrawide frame yet: no
 message (the packet number still counts). No time_sync socket: the laptop's clock map uses ``t_send_ns``.
+
+Like the live Pi (PI_PAYLOAD.md 0.6): a packet leaves SEND_DELAY_NS after its main frame's ``t_sensor_ns``, and
+``skew_ns`` is ``ultrawide.t_mid_ns - main.t_mid_ns`` (the live sign; nothing on the laptop reads it).
 
 At the recording's rhythm (30 FPS). The clip loops with every counter and the clock still counting up.
 """
@@ -33,6 +38,9 @@ log = logging.getLogger("frames.fake_pi_sender")
 
 #: How often the thread looks at its stop flag while idle.
 _POLL_S = 0.02
+#: A packet leaves this long after its main frame's t_sensor_ns (the live Pi: 45.8 ms, PI_PAYLOAD.md 0.6). Longer than
+#: the pairing lookahead (half an ultrawide period), so the nearest ultrawide frame is always known by then.
+SEND_DELAY_NS = 45_800_000
 CAMERAS = ("main", "ultrawide")
 
 
@@ -166,8 +174,9 @@ class FakePiSender:
         last_sent_uw: int | None = None
         try:
             for ev in self.recording.events():
+                due = max(ev.due_ns, ev.capture_ns + SEND_DELAY_NS) if ev.camera == "main" else ev.due_ns
                 while not self._stop.is_set():
-                    wait_ns = self._start_ns + (ev.due_ns - t0) - self._clock()
+                    wait_ns = self._start_ns + (due - t0) - self._clock()
                     if wait_ns <= 0:
                         break
                     self._stop.wait(min(wait_ns / 1e9, _POLL_S))
@@ -193,7 +202,7 @@ class FakePiSender:
                 header = PiStreamHeader(version=1, packet_no=ev.frame_seq, t_send_ns=t_send,
                                         clock_offset_ns=self.wall_offset_ns - self._offset_ns,
                                         main=main_stamp, ultrawide=uw_stamp,
-                                        skew_ns=main_stamp.t_mid_ns - uw_stamp.t_mid_ns, uw_reused=reused)
+                                        skew_ns=uw_stamp.t_mid_ns - main_stamp.t_mid_ns, uw_reused=reused)
                 pub.publish(PiStreamPacket(header, frame.data, uw.data).to_parts())
                 last_sent_uw = pair
                 self.sent["packets"] += 1

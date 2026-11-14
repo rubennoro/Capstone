@@ -1,9 +1,10 @@
 // from rnoro/deployment:deployment/franka_control/include/franka_control/fake_gripper.h @ 91b178b
 // changes: + home() (closes to 0, reopens to fake_gripper.start_width_m; stop() ends it) and the test hook
-// failNextHome (control_deploy/STRUCTURE.md 3.3).
+// failNextHome (control_deploy/STRUCTURE.md 3.3). Fix wave: like libfranka, stop() during a moveTo makes it throw
+// GripperError (an aborted command); home() no longer forgets a stop that came before it (clearStop() does).
 // Simulated fingers: the width moves toward the target at fake_gripper.speed_m_per_s, in 5 ms
 // steps (so widthM() from another thread sees it change during a move), and stops at fake_gripper.object_width_m when
-// closing past it. stop() ends a running move where the fingers are.
+// closing past it. stop() ends a running move where the fingers are, and that moveTo throws GripperError.
 #pragma once
 
 #include <atomic>
@@ -23,6 +24,7 @@ class FakeGripper : public Gripper {
   void moveTo(double width_m) override;
   void stop() override;
   bool home() override;
+  void clearStop() override;
   void failNextMove(bool on);                      // tests: the next moveTo throws GripperError
   void failNextRead(bool on);                      // tests: the next widthM throws GripperError
   void failNextHome(bool on);                      // tests: the next home throws GripperError

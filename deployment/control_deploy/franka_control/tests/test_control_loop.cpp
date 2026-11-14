@@ -418,6 +418,30 @@ TEST(ControlLoopRun, StopRequestedWithoutTheAbortFlagIsAFaultAsBefore) {
   EXPECT_EQ(r.loop->failureKind(), ArmError::Kind::kStopRequested);
 }
 
+TEST(ControlLoopRun, TheHomingMoveIsMarkedOnlyWhileItRuns) {   // a homing stop cannot reach the next session
+  RunRig r;
+  int stops_during_move = 0;
+  EXPECT_FALSE(r.shared->stopHomingMove(0, [&] { ++stops_during_move; }));   // before: nothing runs
+  r.arm.on_move = [&](const Arm::Observer&) {
+    EXPECT_TRUE(r.shared->inHomingMove());
+    EXPECT_FALSE(r.shared->stopHomingMove(1, [&] { ++stops_during_move; }));   // another homing's session
+    EXPECT_TRUE(r.shared->stopHomingMove(0, [&] { ++stops_during_move; }));    // this move (session 0)
+  };
+  r.loop->run();
+  EXPECT_EQ(stops_during_move, 1);
+  EXPECT_EQ(r.arm.sessions, 2);
+  EXPECT_FALSE(r.shared->inHomingMove());
+  EXPECT_FALSE(r.shared->stopHomingMove(SharedState::kAnySession, [&] { ++stops_during_move; }));
+  EXPECT_EQ(stops_during_move, 1);
+}
+
+TEST(ControlLoopRun, AStoppedMoveIsUnmarkedToo) {
+  RunRig r;
+  r.stopTheMove(true);
+  r.loop->run();
+  EXPECT_FALSE(r.shared->inHomingMove());
+}
+
 TEST(ControlLoopRun, ANormalFinishWithTheFlagSetIsHomedAndClearsIt) {
   RunRig r;
   r.arm.on_move = [&](const Arm::Observer&) { r.shared->requestHomingAbort(); };   // too late: the move finished

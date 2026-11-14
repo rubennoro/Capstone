@@ -2,7 +2,9 @@
 // changes: onHome(Source), onHandHome(), onStop(Source) aborting a homing, onKey(Key); tick() resolves the homing
 // outcomes per kind (arm: done, box check, aborted, timeout; hand: done, aborted, timeout) and sends the arm stop once
 // the aborted move runs; a C3 home reply only for a C3-started homing; the gripper as the last constructor parameter
-// (control_deploy/STRUCTURE.md 3.3, 4.4, 5.2).
+// (control_deploy/STRUCTURE.md 3.3, 4.4, 5.2). Fix wave: the arm stop (abort, homing timeout) is sent under
+// SharedState::stopHomingMove, re-sent every 100 ms while that move runs and the outcome is unresolved (also after a
+// timeout fault); the hand's stop under SharedState::stopHandHoming, so it never aborts a finger move.
 #include "franka_control/supervisor.h"
 
 #include <cmath>
@@ -110,6 +112,14 @@ void Supervisor::tick() {
 
   tickHoming(s, now);
 
+  if (timeout_stop_pending_) {   // after a homing timeout (fault): stop the move until it is over
+    if (s.phase == LoopSnapshot::Phase::kEnded || s.session > home_session_) {
+      timeout_stop_pending_ = false;
+    } else {
+      stopArmMove(s, now);
+    }
+  }
+
   if (now >= next_stats_ns_) {
     next_stats_ns_ = now + secondsToNs(cfg_.messaging.stats_period_s);
     logStats(s);
@@ -142,7 +152,7 @@ void Supervisor::tickHoming(const LoopSnapshot& s, int64_t now) {
     }
     if (now - home_start_ns_ >= secondsToNs(cfg_.homing.timeout_s)) {
       const std::string text = "hand homing: not finished after " + fmt(cfg_.homing.timeout_s, 1) + " s";
-      if (gripper_) gripper_->stop();
+      if (gripper_) shared_.stopHandHoming(hand_generation_, [this] { gripper_->stop(); });
       toFault(Event::kHomingFailed, text);
       shared_.markAlive(now);
     }
@@ -150,11 +160,7 @@ void Supervisor::tickHoming(const LoopSnapshot& s, int64_t now) {
   }
 
   // the arm: the stop is sent once the move runs (before it, the control thread skips the move itself)
-  if (abort_pending_ && !arm_stop_sent_ && s.phase == LoopSnapshot::Phase::kHoming &&
-      shared_.homingAbortRequested()) {
-    arm_stop_sent_ = true;
-    arm_.requestStop();
-  }
+  if (abort_pending_ && shared_.homingAbortRequested()) stopArmMove(s, now);
   const bool new_session = s.session > home_session_ && s.phase == LoopSnapshot::Phase::kTorque;
   if (s.homed_generation == home_generation_ && new_session) {   // the normal completion wins
     shared_.clearHomingAbort();
@@ -186,11 +192,20 @@ void Supervisor::tickHoming(const LoopSnapshot& s, int64_t now) {
     Log::info("stopped: " + detail + ": the arm holds where it stopped");
   } else if (now - home_start_ns_ >= secondsToNs(cfg_.homing.timeout_s)) {
     const std::string text = "homing: not finished after " + fmt(cfg_.homing.timeout_s, 1) + " s";
-    arm_.requestStop();
+    timeout_stop_pending_ = true;   // tick() keeps stopping the move until it is over
+    stopArmMove(s, now);
     toFault(Event::kHomingFailed, text);
     shared_.markAlive(now);
     setHomeReply(false, text);
   }
+}
+
+void Supervisor::stopArmMove(const LoopSnapshot& s, int64_t now) {
+  // phase kHoming of this homing's session: published only from inside the move, so its stop epoch is recorded
+  if (s.phase != LoopSnapshot::Phase::kHoming || s.session != home_session_) return;
+  if (arm_stop_sent_ns_ && now - *arm_stop_sent_ns_ < kHomingStopResendNs) return;
+  // under the move's lock: if the control thread has already ended the move, nothing is sent
+  if (shared_.stopHomingMove(home_session_, [this] { arm_.requestStop(); })) arm_stop_sent_ns_ = now;
 }
 
 void Supervisor::abortHoming(Source source) {
@@ -200,11 +215,14 @@ void Supervisor::abortHoming(Source source) {
   const char* who = source == Source::kKeyboard ? "PC keyboard" : "C3";
   if (homing_kind_ == HomingKind::kArm) {
     shared_.requestHomingAbort();   // the control thread skips the move, or tick() stops it once it runs
-    arm_stop_sent_ = false;
     Log::info(std::string("stop during homing (") + who + "): stopping the arm's move");
-  } else {
-    if (gripper_) gripper_->stop();
-    Log::info(std::string("stop during hand homing (") + who + "): stopping the Franka Hand");
+  } else if (gripper_) {
+    // never a finger move: the hand is stopped only while its homing runs; before that, the homing is skipped
+    const SharedState::HandStop r = shared_.stopHandHoming(hand_generation_, [this] { gripper_->stop(); });
+    const std::string what = r == SharedState::HandStop::kStopped       ? "stopping the Franka Hand"
+                             : r == SharedState::HandStop::kBeforeStart ? "the hand's homing will not start"
+                                                                        : "the hand's homing has already finished";
+    Log::info(std::string("stop during hand homing (") + who + "): " + what);
   }
 }
 
@@ -306,7 +324,7 @@ std::optional<msg::Ack> Supervisor::onHandHome() {
   homing_kind_ = HomingKind::kHand;
   homing_source_ = Source::kKeyboard;
   abort_pending_ = false;
-  arm_stop_sent_ = false;
+  arm_stop_sent_ns_.reset();
   home_reply_.reset();
   home_start_ns_ = clock_();
   ++hand_generation_;
@@ -327,7 +345,8 @@ std::optional<msg::Ack> Supervisor::onHome(Source source) {
   homing_kind_ = HomingKind::kArm;
   homing_source_ = source;
   abort_pending_ = false;
-  arm_stop_sent_ = false;
+  arm_stop_sent_ns_.reset();
+  timeout_stop_pending_ = false;
   shared_.clearHomingAbort();   // no homing runs now: nothing stale may skip this one
   home_generation_ = post(LoopCommand::Kind::kHome);
   home_session_ = snap_.session;

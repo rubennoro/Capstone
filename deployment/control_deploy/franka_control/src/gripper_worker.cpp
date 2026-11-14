@@ -1,6 +1,8 @@
 // from rnoro/deployment:deployment/franka_control/src/gripper_worker.cpp @ 91b178b
 // changes: run() serves a hand-homing request before each stepOnce(); stepOnce() also sends when resend_ is set (a
-// NaN "last sent" would not work: NaN comparisons are false) (control_deploy/STRUCTURE.md 3.3).
+// NaN "last sent" would not work: NaN comparisons are false) (control_deploy/STRUCTURE.md 3.3). Fix wave: the homing
+// is bracketed with SharedState::begin/endHandHoming (skipped if a stop came first); a finger move ended by the
+// shutdown's stop is not a gripper fault (4.4).
 #include "franka_control/gripper_worker.h"
 
 #include <cmath>
@@ -44,6 +46,10 @@ bool GripperWorker::stepOnce() {
     }
     return true;
   } catch (const GripperError& e) {
+    if (shared_.shutdownRequested()) {   // App's shutdown stop() aborted the move (libfranka throws): not a fault
+      Log::info(std::string("gripper: finger move ended by the shutdown (") + e.what() + ")");
+      return false;
+    }
     return fail(e);
   }
 }
@@ -61,14 +67,22 @@ bool GripperWorker::serveHandHoming() {
   const uint64_t generation = shared_.handHomingRequested();
   if (generation == 0 || generation == served_hand_generation_) return true;
   served_hand_generation_ = generation;
-  try {
-    const bool done = gripper_.home();   // blocks; the reader thread keeps C2's width current
-    shared_.reportHandHoming(generation, done ? SharedState::kHandHomingDone : SharedState::kHandHomingAborted);
-    resend_ = true;                      // the fingers return to the commanded width
+  gripper_.clearStop();                  // a stop for this request can only come after beginHandHoming
+  if (!shared_.beginHandHoming(generation)) {   // stopped before it began: the fingers never moved
+    shared_.reportHandHoming(generation, SharedState::kHandHomingAborted);
     return true;
+  }
+  bool done = false;
+  try {
+    done = gripper_.home();              // blocks; the reader thread keeps C2's width current
   } catch (const GripperError& e) {
+    shared_.endHandHoming(generation);
     return fail(e);
   }
+  shared_.endHandHoming(generation);     // from here no stop reaches the hand: the next finger move is safe
+  shared_.reportHandHoming(generation, done ? SharedState::kHandHomingDone : SharedState::kHandHomingAborted);
+  resend_ = true;                        // the fingers return to the commanded width
+  return true;
 }
 
 void GripperWorker::run() {

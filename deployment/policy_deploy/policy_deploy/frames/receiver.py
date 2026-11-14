@@ -2,7 +2,9 @@
 # changes: steps 6-11 of STRUCTURE.md 4.3: fix 3 (the ultrawide store evicts by time on every packet), fix 2
 # (ultrawide health from new frames at their own mapped capture time), fix 1 (PairRule: the pair window around the
 # main frame and the reuse limit); counters add uw_reused, pair_too_old, pair_too_new, pair_reused; times on the
-# laptop clock (t_ns); the clock map is a OneWayClockMap (any policy_deploy.contracts.ClockMap works).
+# laptop clock (t_ns); the clock map is a OneWayClockMap (any policy_deploy.contracts.ClockMap works). Fix wave: the
+# ultrawide health counts a frame only once it is served as an accepted pair (as the old receiver did), so a pair that
+# is always refused makes the ultrawide stale, then down; the reuse run counts packet_seq.
 """Receiver: the receiving side, thread "receiver" (STRUCTURE.md 4.1, 4.3). One C0 packet at a time."""
 
 from __future__ import annotations
@@ -92,6 +94,7 @@ class Receiver:
         self._store = UltrawideStore(keep_s)
         self.pair_rule = pair_rule if pair_rule is not None else PairRule(60.0, 25.0, 2)
         self._last_packet_seq: int | None = None
+        self._uw_recorded_seq = -1                      # the newest ultrawide frame_seq counted into its health
         self._last: dict[str, _Last] = {}
         self._restarted = False
         self._default_exposure = {cam: min(int(default_exposure_ns), round(1e9 / rig.cameras[cam].fps) // 2)
@@ -125,6 +128,7 @@ class Receiver:
         restart = self._restart_reason(packet)                         # 4. counters going back
         if restart:
             self._restarted = True
+            self._uw_recorded_seq = -1
             self.pair_rule.reset()
             for cam in CAMERAS:
                 self._health[cam].mark_down(f"Pi stream restarted: {restart}")
@@ -132,12 +136,10 @@ class Receiver:
             return True
         self._count_packet_gap(packet.header.packet_seq)
         main_rgb = self._take_frame("main", packet.main)               # 5. decode, in order
-        new_uw: list[DecodedUltrawide] = []
         for f in packet.ultrawide:
             rgb = self._take_frame("ultrawide", f)
-            d = DecodedUltrawide(int(f.info.frame_seq), int(f.info.t_pi_ns), int(f.info.exposure_ns), rgb)
-            self._store.add(d)
-            new_uw.append(d)
+            self._store.add(DecodedUltrawide(int(f.info.frame_seq), int(f.info.t_pi_ns), int(f.info.exposure_ns),
+                                             rgb))
         main = packet.header.main
         pair_seq = int(packet.header.pair_seq)
         if not packet.ultrawide and pair_seq >= 0:
@@ -148,12 +150,7 @@ class Receiver:
             return True
         t_pi_mid = self._mid_pi("main", main.t_pi_ns, main.exposure_ns)
         t_ns = self._clock_map.to_local_ns(t_pi_mid, at_local_ns=arrival_ns)   # 8. packet time (laptop)
-        for d in new_uw:                                               # 9. fix 2: ultrawide health, own time
-            if d.rgb is not None:
-                t_uw = self._clock_map.to_local_ns(self._mid_pi("ultrawide", d.t_pi_ns, d.exposure_ns),
-                                                   at_local_ns=arrival_ns)
-                self._health["ultrawide"].record_frame(t_uw)
-        pair, pair_mid = self._judge_pair(pair_seq, t_pi_mid)          # 10. fix 1: the pair rule
+        pair, pair_mid = self._judge_pair(pair_seq, int(packet.header.packet_seq), t_pi_mid)   # 10. fix 1
         newest = self._buffer.newest()                                 # 11. order, buffer, main health
         if newest is not None and t_ns <= newest.t_ns:
             pc.out_of_order += 1
@@ -176,11 +173,15 @@ class Receiver:
             self.counters["main"].usable += 1
         if uw_rgb is not None:
             self.counters["ultrawide"].usable += 1
+            if pair.frame_seq > self._uw_recorded_seq:                # 9. fix 2: once per frame, at its own time
+                self._uw_recorded_seq = pair.frame_seq
+                self._health["ultrawide"].record_frame(self._clock_map.to_local_ns(pair_mid, at_local_ns=arrival_ns))
         return True
 
     # ---------------------------------------------------------------------------------------------- steps
 
-    def _judge_pair(self, pair_seq: int, main_mid_pi: int) -> tuple[DecodedUltrawide | None, int | None]:
+    def _judge_pair(self, pair_seq: int, packet_seq: int,
+                    main_mid_pi: int) -> tuple[DecodedUltrawide | None, int | None]:
         """The packet's pair if found and accepted by the PairRule, with its mid-exposure (Pi clock); else None."""
         c, pc = self.counters["ultrawide"], self.packets
         if pair_seq < 0:
@@ -188,7 +189,7 @@ class Receiver:
             return None, None
         pair = self._store.get(pair_seq)
         pair_mid = self._mid_pi("ultrawide", pair.t_pi_ns, pair.exposure_ns) if pair is not None else None
-        verdict = self.pair_rule.check(pair_seq, main_mid_pi, pair_mid)
+        verdict = self.pair_rule.check(pair_seq, packet_seq, main_mid_pi, pair_mid)
         if verdict == REUSED:
             pc.pair_reused += 1
             return None, None

@@ -1,4 +1,5 @@
-// New (control_deploy/STRUCTURE.md 9.1): KeyboardReader over a pipe, TerminalMode on a pty, KeyQueue.
+// New (control_deploy/STRUCTURE.md 9.1): KeyboardReader over a pipe, TerminalMode on a pty, KeyQueue. Fix wave: upper
+// case keys, IXON off, s never dropped.
 #include <gtest/gtest.h>
 
 #include <pty.h>
@@ -41,7 +42,11 @@ TEST(KeyboardReader, TheKeyTable) {
   EXPECT_EQ(KeyboardReader::map('g'), Key::kHomeHand);
   EXPECT_EQ(KeyboardReader::map('s'), Key::kStop);
   EXPECT_EQ(KeyboardReader::map('q'), Key::kQuit);
-  for (char c : {'H', 'G', 'S', 'Q', 'x', ' ', '\x1b', '\n'}) EXPECT_FALSE(KeyboardReader::map(c)) << c;
+  EXPECT_EQ(KeyboardReader::map('H'), Key::kHomeArm);   // caps lock: upper case acts like lower case
+  EXPECT_EQ(KeyboardReader::map('G'), Key::kHomeHand);
+  EXPECT_EQ(KeyboardReader::map('S'), Key::kStop);
+  EXPECT_EQ(KeyboardReader::map('Q'), Key::kQuit);
+  for (char c : {'x', 'X', ' ', '\x1b', '\n'}) EXPECT_FALSE(KeyboardReader::map(c)) << c;
 }
 
 TEST(KeyboardReader, KeysAreQueuedInOrderQuitCallsBackEofEnds) {
@@ -57,8 +62,9 @@ TEST(KeyboardReader, KeysAreQueuedInOrderQuitCallsBackEofEnds) {
     reader.run();
     return testing::internal::GetCapturedStderr();
   }();
-  EXPECT_EQ(drain(q), (std::vector<Key>{Key::kHomeArm, Key::kHomeHand, Key::kStop}));   // q is never queued
-  EXPECT_EQ(quits, 1);                                                                  // EOF is not q
+  EXPECT_EQ(drain(q), (std::vector<Key>{Key::kHomeArm, Key::kHomeHand, Key::kStop, Key::kHomeArm, Key::kHomeHand,
+                                       Key::kStop}));   // q and Q are never queued
+  EXPECT_EQ(quits, 2);                                  // Q and q; EOF is not q
   EXPECT_NE(log.find("keys: h home arm, g home hand, s stop, q quit"), std::string::npos) << log;
   EXPECT_NE(log.find("keyboard: stdin closed: keys disabled"), std::string::npos) << log;
 }
@@ -106,12 +112,28 @@ TEST(KeyQueue, The17thWaitingKeyIsDropped) {
   for (Key k : keys) EXPECT_EQ(k, Key::kStop);
 }
 
+TEST(KeyQueue, AStopIsNeverDropped) {
+  KeyQueue q;
+  for (int i = 0; i < 16; ++i) q.push(Key::kHomeHand);
+  testing::internal::CaptureStderr();
+  q.push(Key::kStop);
+  q.push(Key::kHomeArm);   // still dropped
+  const std::string log = testing::internal::GetCapturedStderr();
+  EXPECT_EQ(log.find("key s dropped"), std::string::npos) << log;
+  EXPECT_NE(log.find("key h dropped"), std::string::npos) << log;
+  const auto keys = drain(q);
+  ASSERT_EQ(keys.size(), 17u);
+  EXPECT_EQ(keys.back(), Key::kStop);   // after the keys typed before it
+}
+
 TEST(TerminalMode, OnAPtyItSetsCbreakAndRestores) {
   int master = -1, slave = -1;
   ASSERT_EQ(openpty(&master, &slave, nullptr, nullptr, nullptr), 0);
   termios before{};
   ASSERT_EQ(tcgetattr(slave, &before), 0);
   ASSERT_TRUE(before.c_lflag & ICANON);
+  before.c_iflag |= IXON;   // a terminal with flow control on, as a normal login terminal has
+  ASSERT_EQ(tcsetattr(slave, TCSANOW, &before), 0);
   {
     const TerminalMode mode(slave);
     EXPECT_TRUE(mode.active());
@@ -123,10 +145,12 @@ TEST(TerminalMode, OnAPtyItSetsCbreakAndRestores) {
     EXPECT_EQ(now.c_cc[VSUSP], static_cast<cc_t>(_POSIX_VDISABLE));
     EXPECT_EQ(now.c_cc[VQUIT], static_cast<cc_t>(_POSIX_VDISABLE));
     EXPECT_EQ(now.c_cc[VINTR], before.c_cc[VINTR]);
+    EXPECT_FALSE(now.c_iflag & IXON);   // Ctrl-S cannot pause the terminal
   }
   termios after{};
   ASSERT_EQ(tcgetattr(slave, &after), 0);
   EXPECT_EQ(after.c_lflag, before.c_lflag);
+  EXPECT_EQ(after.c_iflag, before.c_iflag);
   EXPECT_EQ(after.c_cc[VSUSP], before.c_cc[VSUSP]);
   EXPECT_EQ(after.c_cc[VQUIT], before.c_cc[VQUIT]);
   close(slave);

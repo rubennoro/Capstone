@@ -1,5 +1,6 @@
 // from rnoro/deployment:deployment/franka_control/src/shared_state.cpp @ 91b178b
-// changes: + the homing-abort flag and the hand-homing request and report (control_deploy/STRUCTURE.md 4.1).
+// changes: + the homing-abort flag and the hand-homing request and report (control_deploy/STRUCTURE.md 4.1); + the
+// hand-homing and homing-move locks for the stops (4.4).
 #include "franka_control/shared_state.h"
 
 namespace franka_control {
@@ -56,5 +57,55 @@ void SharedState::reportHandHoming(uint64_t generation, uint64_t result) {
   hand_homing_report_.store(generation * 4 + result, std::memory_order_release);
 }
 uint64_t SharedState::handHomingReport() const { return hand_homing_report_.load(std::memory_order_acquire); }
+
+bool SharedState::beginHandHoming(uint64_t generation) {
+  std::lock_guard<std::mutex> lock(hand_homing_mutex_);
+  if (hand_abort_generation_ == generation) {
+    hand_ended_generation_ = generation;
+    return false;
+  }
+  hand_running_generation_ = generation;
+  return true;
+}
+
+void SharedState::endHandHoming(uint64_t generation) {
+  std::lock_guard<std::mutex> lock(hand_homing_mutex_);
+  hand_running_generation_ = 0;
+  hand_ended_generation_ = generation;
+}
+
+SharedState::HandStop SharedState::stopHandHoming(uint64_t generation, const std::function<void()>& stop) {
+  std::lock_guard<std::mutex> lock(hand_homing_mutex_);
+  if (hand_ended_generation_ == generation) return HandStop::kAfterEnd;
+  if (hand_running_generation_ == generation) {
+    stop();
+    return HandStop::kStopped;
+  }
+  hand_abort_generation_ = generation;
+  return HandStop::kBeforeStart;
+}
+
+void SharedState::beginHomingMove(uint64_t session) {
+  std::lock_guard<std::mutex> lock(homing_move_mutex_);
+  homing_move_running_ = true;
+  homing_move_session_ = session;
+}
+
+void SharedState::endHomingMove() {
+  std::lock_guard<std::mutex> lock(homing_move_mutex_);
+  homing_move_running_ = false;
+}
+
+bool SharedState::inHomingMove() const {
+  std::lock_guard<std::mutex> lock(homing_move_mutex_);
+  return homing_move_running_;
+}
+
+bool SharedState::stopHomingMove(uint64_t session, const std::function<void()>& stop) {
+  std::lock_guard<std::mutex> lock(homing_move_mutex_);
+  if (!homing_move_running_ || (session != kAnySession && session != homing_move_session_)) return false;
+  stop();
+  return true;
+}
 
 }  // namespace franka_control

@@ -1,5 +1,6 @@
 // from rnoro/deployment:deployment/franka_control/src/fake_gripper.cpp @ 91b178b
-// changes: + home() and failNextHome (control_deploy/STRUCTURE.md 3.3); moveTo unchanged.
+// changes: + home() and failNextHome (control_deploy/STRUCTURE.md 3.3). Fix wave: a stopped moveTo throws (libfranka:
+// CommandException on an aborted command); home() keeps a stop that came before it; + clearStop().
 #include "franka_control/fake_gripper.h"
 
 #include <algorithm>
@@ -29,7 +30,8 @@ void FakeGripper::moveTo(double width_m) {
   }
   const int64_t total_ns = secondsToNs(std::abs(to - from) / cfg_.speed_m_per_s);
   for (int64_t done_ns = 0; done_ns < total_ns;) {
-    if (stop_.load()) return;   // stopped: the fingers stay where they are
+    // stopped: the fingers stay where they are, and libfranka throws for the aborted grasp/move
+    if (stop_.load()) throw GripperError("FakeGripper: finger move aborted by stop()");
     const int64_t step = std::min(kStepNs, total_ns - done_ns);
     sleep_ns_(step);
     done_ns += step;
@@ -40,9 +42,11 @@ void FakeGripper::moveTo(double width_m) {
 
 void FakeGripper::stop() { stop_.store(true); }
 
+void FakeGripper::clearStop() { stop_.store(false); }
+
 bool FakeGripper::home() {
   if (fail_next_home_.exchange(false)) throw GripperError("FakeGripper: injected homing error");
-  stop_.store(false);   // like the hand: stop() ends a running homing only
+  if (stop_.load()) return false;   // stopped before it began: the fingers do not move
   const double legs[2][2] = {{width_m_.load(), 0.0}, {0.0, cfg_.start_width_m}};   // close fully, then reopen
   for (const auto& leg : legs) {
     const double from = leg[0];

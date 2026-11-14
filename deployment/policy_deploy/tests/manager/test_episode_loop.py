@@ -704,3 +704,29 @@ def test_conclude_before_hellos_sends_nothing(make_settings):
     harness.mode_override = "fault"
     harness.start()
     assert harness.loop.verdict.problem.code is C.ARM_FAULT and harness.calls == []
+
+
+def test_an_entirely_skipped_set_counted_toward_clock_mismatch_is_not_also_policy_late(settings, monkeypatch):
+    """Fix wave (one cause per set): a C2 from the future makes each set count toward CLOCK_MISMATCH; the PC skipping
+    every waypoint of those sets (lead below mismatch_min_lead_ms here) must not also count them as POLICY_LATE."""
+    import dataclasses
+    s = dataclasses.replace(settings, clock=dataclasses.replace(settings.clock, mismatch_min_lead_ms=1e6,
+                                                                mismatch_sets=1000))
+    h = LoopHarness(s)
+    h.start()
+    h.start_episode()
+    h.tick(3)
+    h.franka.offset_ns += 100_000_000                    # C2 now 100 ms ahead of the (held) map
+    monkeypatch.setattr(h.pc_clock, "add_hello", lambda sample: None)
+    from deploy_contracts import SetWaypointsReply
+    original = h.franka.set_waypoints
+
+    def all_skipped(msg):
+        original(msg)
+        return SetWaypointsReply(chunk_id=msg.chunk_id, accepted=0, shortened=0, skipped=len(msg.t_ns), rejected=())
+    h.franka.set_waypoints = all_skipped
+    h.tick(10)
+    assert h.loop._mismatch_count >= 3 and h.loop.verdict is None
+    h.operator.press("y")
+    h.tick()
+    assert episodes(s)[0]["late"] == 0

@@ -1,5 +1,6 @@
 """FakePc (STRUCTURE.md 10.1, 12.2): modes and replies exactly as TOP 3.7.2, the PC keyboard hooks, hello on the
-drifting clock, the watchdog, C2 seq/t_ns, the follower and the gate."""
+drifting clock, the watchdog, C2 seq/t_ns, the follower and the gate. Fix wave: the real franka_control's refusal
+texts, an all-skipped set freezes and goes holding, t_ns freezes only when the loop ends."""
 from __future__ import annotations
 
 import json
@@ -92,6 +93,15 @@ REQUESTS = {
                       "stopped": ("ok", "idle"), "homing": ("refused", "homing"), "fault": ("refused", "fault")}),
 }
 CELLS = [(req, mode) for req, (_, table) in REQUESTS.items() for mode in table]
+# the real franka_control's refusal texts (StateMachine::check); the fault detail is enter()'s "reflex"
+REFUSALS = {("start", "holding"): "refused: mode is holding: already started",
+            ("start", "running"): "refused: mode is running: already started",
+            ("start", "homing"): "refused: mode is homing: homing in progress",
+            ("start", "fault"): "refused: mode is fault: reflex",
+            ("home", "holding"): "refused: mode is holding: send stop first",
+            ("home", "running"): "refused: mode is running: send stop first",
+            ("home", "homing"): "refused: mode is homing: homing in progress",
+            ("home", "fault"): "refused: mode is fault: reflex"}
 
 
 @pytest.mark.parametrize("request_name,mode", CELLS, ids=[f"{r}-{m}" for r, m in CELLS])
@@ -119,7 +129,7 @@ def test_replies_per_mode(tmp_path, request_name, mode):
     elif want == "ok":
         assert isinstance(reply, Ack) and reply.ok and reply.reason == ""
     else:
-        assert isinstance(reply, Ack) and not reply.ok and reply.reason == f"refused: mode is {mode}"
+        assert isinstance(reply, Ack) and not reply.ok and reply.reason == REFUSALS[(request_name, mode)]
     assert fake.mode == after
 
 
@@ -131,8 +141,23 @@ def test_set_waypoints_per_mode(tmp_path, clock, mode):
     if mode in ("holding", "running"):
         assert isinstance(reply, SetWaypointsReply) and reply.accepted == 2 and fake.mode == "running"
     else:
-        assert isinstance(reply, ErrorReply) and reply.field == "" and f"mode is {mode}" in reply.error
+        assert isinstance(reply, ErrorReply) and reply.field == ""
+        assert reply.error == {"idle": "set_waypoints refused: mode is idle: send start first",
+                               "stopped": "set_waypoints refused: mode is stopped: send start first",
+                               "homing": "set_waypoints refused: mode is homing: homing in progress",
+                               "fault": "set_waypoints refused: mode is fault: reflex"}[mode]
         assert fake.mode == mode
+
+
+def test_a_stopped_mode_names_its_cause_in_refusals(tmp_path, clock):
+    fake = manual(tmp_path, clock, home_duration_s=1.0)
+    assert fake.keyboard_home().ok
+    fake.keyboard_stop()                                     # the PC's s during homing
+    reply = fake.handle(waypoints(fake, [100]))
+    assert reply.error == "set_waypoints refused: mode is stopped (stop during homing (PC keyboard)): send start first"
+    assert fake.handle(Start()).ok
+    fake.handle(Stop())
+    assert fake.handle(waypoints(fake, [100])).error == "set_waypoints refused: mode is stopped: send start first"
 
 
 # ---------------------------------------------------------------------------------------------- hello
@@ -193,11 +218,11 @@ def test_c3_stop_after_a_finished_ramp_ends_idle(tmp_path, clock):
 def test_keyboard_home_ramps_to_home_and_rep_keeps_answering(tmp_path, clock):
     fake = manual(tmp_path, clock, home_duration_s=1.0)
     fake.set_mode("holding")
-    assert fake.keyboard_home().reason == "refused: mode is holding"
+    assert fake.keyboard_home().reason == "refused: mode is holding: send stop first"
     fake.set_mode("idle")
     assert fake.keyboard_home().ok
-    assert fake.handle(Start()).reason == "refused: mode is homing"
-    assert fake.handle(Home()).reason == "refused: mode is homing"
+    assert fake.handle(Start()).reason == "refused: mode is homing: homing in progress"
+    assert fake.handle(Home()).reason == "refused: mode is homing: homing in progress"
     assert fake.handle(Heartbeat()).ok
     run(fake, clock, 1.1)
     assert fake.mode == "idle" and np.allclose(fake.target, fake.s.home_pose)
@@ -227,7 +252,7 @@ def test_keyboard_stop(tmp_path, clock):
     fake.inject_fault("x")
     fake.keyboard_stop()
     assert fake.mode == "fault"
-    assert fake.keyboard_home().reason == "refused: mode is fault"
+    assert fake.keyboard_home().reason == "refused: mode is fault: x"
 
 
 def test_keyboard_stop_during_a_pending_c3_home_replies_stopped(tmp_path):
@@ -329,6 +354,16 @@ def test_t_ns_on_the_drifting_clock_frozen_in_fault(tmp_path, clock):
     assert s[-1].mode == "fault" and s[-1].error == "reflex: joint 4"
 
 
+def test_t_ns_keeps_advancing_after_a_gate_rejection(tmp_path, clock):
+    """The real loop keeps holding after a gate fault: only a loop end (inject_fault) freezes t_ns."""
+    fake = manual(tmp_path, clock)
+    fake.handle(Start())
+    fake.handle(waypoints(fake, [100, 1600]))                # beyond max_lead_s: rejected, fault
+    run(fake, clock, 0.05)
+    s = fake._pub.states
+    assert s[-1].mode == "fault" and s[-1].t_ns > s[-2].t_ns
+
+
 def test_repeat_t_ns_keeps_c2_coming(tmp_path, clock):
     fake = manual(tmp_path, clock)
     run(fake, clock, 0.02)
@@ -378,6 +413,21 @@ def test_past_waypoints_skipped(tmp_path, clock):
     fake.handle(Start())
     reply = fake.handle(waypoints(fake, [-100, -50, 100]))
     assert (reply.accepted, reply.skipped) == (1, 2)
+
+
+def test_an_all_skipped_set_freezes_at_the_current_target_and_holds(tmp_path, clock):
+    """As the real PC: the plan becomes [the target now], mode holding (not the rest of the previous plan)."""
+    fake = manual(tmp_path, clock)
+    fake.handle(Start())
+    assert fake.handle(waypoints(fake, [500], dx=0.1)).accepted == 1 and fake.mode == "running"
+    run(fake, clock, 0.2)                                    # partway along the 0.5 s move
+    reply = fake.handle(waypoints(fake, [-50, -10]))
+    assert (reply.accepted, reply.skipped, len(reply.rejected)) == (0, 2, 0)
+    assert fake.mode == "holding"
+    frozen = fake.target
+    assert 0.01 < frozen[0, 3] - fake.s.start_pose[0, 3] < 0.09   # where the target was at that moment
+    run(fake, clock, 0.5)
+    assert np.allclose(fake.target, frozen) and fake.mode == "holding"
 
 
 def test_beyond_max_lead_rejected_with_fault(tmp_path, clock):

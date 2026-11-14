@@ -1,13 +1,15 @@
 // from rnoro/deployment:deployment/franka_control/include/franka_control/shared_state.h @ 91b178b
 // changes: + LoopSnapshot::homing_aborted_generation; + the homing-abort flag (messaging -> control), the hand-homing
 // request (messaging -> gripper) and its report (gripper -> messaging); none is touched by ControlLoop::step
-// (control_deploy/STRUCTURE.md 4.1).
+// (control_deploy/STRUCTURE.md 4.1). Fix wave: the arm's homing move and the hand's homing each have a small lock, so
+// a stop reaches only the move it is meant for (STRUCTURE.md 4.4).
 // Where the threads meet. The 1 kHz loop uses only the wait-free parts.
 #pragma once
 
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -86,6 +88,24 @@ class SharedState {
   void reportHandHoming(uint64_t generation, uint64_t result);   // gripper: one atomic, generation * 4 + result
   uint64_t handHomingReport() const;                 // messaging: 0, or generation * 4 + result
 
+  // A stop must never reach a finger move (libfranka aborts it with an exception: a gripper fault), so it reaches the
+  // hand only while home() runs for that request. The gripper thread brackets home() with begin/end; the messaging
+  // thread's stop runs under the same lock, so home() cannot end and a finger move start in between.
+  enum class HandStop { kBeforeStart, kStopped, kAfterEnd };
+  bool beginHandHoming(uint64_t generation);         // gripper: false if a stop for it came first (skip home())
+  void endHandHoming(uint64_t generation);           // gripper: home() returned or threw
+  // messaging: kStopped (stop() ran, home() is running), kBeforeStart (home() will be skipped) or kAfterEnd (nothing).
+  HandStop stopHandHoming(uint64_t generation, const std::function<void()>& stop);
+
+  // The arm's homing move: the control thread marks it running around moveToJoints (outside the 1 kHz callbacks).
+  // stop() (arm.requestStop()) runs under the same lock, so it cannot land in the torque session that follows the
+  // move. kAnySession: whatever homing move runs (the shutdown).
+  static constexpr uint64_t kAnySession = ~uint64_t{0};
+  void beginHomingMove(uint64_t session);            // control: just before moveToJoints
+  void endHomingMove();                              // control: moveToJoints returned or threw
+  bool inHomingMove() const;                         // any
+  bool stopHomingMove(uint64_t session, const std::function<void()>& stop);   // messaging, main: true if stop() ran
+
  private:
   static_assert(std::atomic<double>::is_always_lock_free, "atomic<double> must not hide a lock");
   static_assert(std::atomic<int64_t>::is_always_lock_free, "atomic<int64_t> must not hide a lock");
@@ -103,6 +123,17 @@ class SharedState {
   std::atomic<bool> homing_abort_{false};
   std::atomic<uint64_t> hand_homing_request_{0};
   std::atomic<uint64_t> hand_homing_report_{0};
+  std::mutex hand_homing_mutex_;                     // gripper <-> messaging only; never the loop
+  uint64_t hand_abort_generation_ = 0;               // a stop came before home() began
+  uint64_t hand_running_generation_ = 0;             // home() runs for this request (0: none)
+  uint64_t hand_ended_generation_ = 0;
+  mutable std::mutex homing_move_mutex_;             // control (outside step/observeHoming) <-> messaging, main
+  bool homing_move_running_ = false;
+  uint64_t homing_move_session_ = 0;
 };
+
+// A homing stop is re-sent this often while its move runs and its outcome is unresolved (control_deploy/STRUCTURE.md
+// 4.4): a stop sent just before libfranka's move call records its stop epoch would be lost.
+constexpr int64_t kHomingStopResendNs = 100000000;
 
 }  // namespace franka_control

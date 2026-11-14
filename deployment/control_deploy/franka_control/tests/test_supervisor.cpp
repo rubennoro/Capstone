@@ -1,6 +1,8 @@
 // from rnoro/deployment:deployment/franka_control/tests/test_supervisor.cpp @ 91b178b
 // changes: Rig takes an optional test gripper; the watchdog case uses link.yaml's 1.0 s; + the keys, the hand's homing
-// and stop during homing (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged.
+// and stop during homing (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged. Fix wave: the test also
+// plays the control thread's begin/endHomingMove and the gripper thread's begin/endHandHoming; stops re-sent every
+// 100 ms while the move runs; no stop once a move or a hand homing has ended, none before a hand homing began.
 // Supervisor with a FakeClock, a SharedState and a test Arm; no threads. The test plays the control thread: it
 // publishes snapshots and takes the posted commands.
 #include <gtest/gtest.h>
@@ -32,6 +34,7 @@ class CountingGripper : public Gripper {
   void moveTo(double) override {}
   void stop() override { ++stops; }
   bool home() override { return true; }
+  void clearStop() override {}
   int stops = 0;
 };
 
@@ -281,6 +284,8 @@ TEST(Supervisor, HomingPausesTheWatchdogAndRepliesWhenTheNewSessionHolds) {
 TEST(Supervisor, HomingTimeoutStopsTheArmAndFaults) {
   Rig r;
   r.sup->onHome();
+  r.shared->beginHomingMove(0);                                                    // the control thread: the move runs
+  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });
   r.clock.advanceS(29.9);
   r.sup->tick();
   EXPECT_EQ(r.arm.stops, 0);
@@ -292,6 +297,49 @@ TEST(Supervisor, HomingTimeoutStopsTheArmAndFaults) {
   ASSERT_TRUE(reply);
   EXPECT_FALSE(reply->ok);
   EXPECT_EQ(reply->reason, "homing: not finished after 30.0 s");
+}
+
+TEST(Supervisor, AHomingTimeoutStopIsReSentEvery100MsUntilTheMoveIsOver) {
+  Rig r;
+  r.sup->onHome();
+  r.clock.advanceS(30.1);   // timed out while the kHome session still settled: no stop yet (it would hit the session)
+  r.sup->tick();
+  EXPECT_EQ(r.sup->mode(), Mode::kFault);
+  EXPECT_EQ(r.arm.stops, 0);
+  r.shared->beginHomingMove(0);   // the move's libfranka call starts: the stop goes out once its snapshot shows it
+  r.clock.advance(10 * kMs);
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 0);
+  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 1);
+  for (int i = 0; i < 9; ++i) {   // 90 ms: not again yet
+    r.clock.advance(10 * kMs);
+    r.sup->tick();
+  }
+  EXPECT_EQ(r.arm.stops, 1);
+  r.clock.advance(10 * kMs);      // 100 ms after the first: the stop may have been lost, send it again
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 2);
+  r.shared->endHomingMove();      // the move is over (the snapshot still says kHoming): nothing more reaches the arm
+  for (int i = 0; i < 30; ++i) {
+    r.clock.advance(10 * kMs);
+    r.sup->tick();
+  }
+  EXPECT_EQ(r.arm.stops, 2);
+  r.publish([](LoopSnapshot& s) {   // a new session: resolved
+    s.phase = LoopSnapshot::Phase::kTorque;
+    s.session = 1;
+  });
+  r.sup->tick();
+  r.shared->beginHomingMove(0);     // (were the stop still pending, this would draw one)
+  r.publish([](LoopSnapshot& s) {
+    s.phase = LoopSnapshot::Phase::kHoming;
+    s.session = 0;
+  });
+  r.clock.advance(200 * kMs);
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 2);
 }
 
 TEST(Supervisor, ATooLongHomeMoveIsRefusedAtOnce) {
@@ -441,6 +489,7 @@ TEST(Supervisor, AHandHomingTimeoutStopsTheHandAndFaults) {
   CountingGripper g;
   Rig r({0.45, 0.0, 0.45}, &g);
   ASSERT_FALSE(r.sup->onHandHome());
+  ASSERT_TRUE(r.shared->beginHandHoming(r.shared->handHomingRequested()));   // the gripper thread: home() runs
   r.clock.advanceS(29.9);
   r.sup->tick();
   EXPECT_EQ(g.stops, 0);
@@ -475,14 +524,16 @@ TEST(Supervisor, StopDuringAnArmHomingAbortsItAndTheC3HomeRepliesStopped) {
     r.sup->tick();
   }
   EXPECT_EQ(r.arm.stops, 0);
-  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });   // the move runs
+  r.shared->beginHomingMove(0);                // the control thread: the move runs
+  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });
   for (int i = 0; i < 5; ++i) {
     r.clock.advance(5 * kMs);
     r.sup->tick();
   }
-  EXPECT_EQ(r.arm.stops, 1);                   // exactly once
+  EXPECT_EQ(r.arm.stops, 1);                   // once (again only after 100 ms)
   EXPECT_FALSE(r.sup->pollHome());
   r.clock.advance(5 * kMs);
+  r.shared->endHomingMove();
   r.shared->clearHomingAbort();                // the control thread: stopped, a new session holds where it stopped
   r.publish([&](LoopSnapshot& s) {
     s.phase = LoopSnapshot::Phase::kTorque;
@@ -504,6 +555,37 @@ TEST(Supervisor, StopDuringAnArmHomingAbortsItAndTheC3HomeRepliesStopped) {
             "stopped: homing stopped by the PC keyboard before the home pose was reached: the arm holds where it "
             "stopped");
   EXPECT_TRUE(r.sup->onStart().ok);            // the laptop can start from there
+}
+
+TEST(Supervisor, AnAbortStopIsReSentWhileTheMoveRunsAndNeverAfterItEnded) {
+  Rig r;
+  ASSERT_FALSE(r.sup->onHome().has_value());
+  const uint64_t gen = r.take()->generation;
+  r.sup->onStop();
+  r.shared->beginHomingMove(0);
+  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 1);
+  r.clock.advance(100 * kMs);
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 2);   // the move still runs: sent again
+  // The move finished normally just now (the control thread ended it, the abort flag is still set and the newest
+  // snapshot still says kHoming): a stop now would preempt the next torque session and fault it.
+  r.shared->endHomingMove();
+  for (int i = 0; i < 5; ++i) {
+    r.clock.advance(100 * kMs);
+    r.sup->tick();
+  }
+  EXPECT_EQ(r.arm.stops, 2);
+  r.shared->clearHomingAbort();
+  r.publish([&](LoopSnapshot& s) {
+    s.phase = LoopSnapshot::Phase::kTorque;
+    s.session = 1;
+    s.homed_generation = gen;
+  });
+  r.sup->tick();
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);   // the normal completion wins
+  EXPECT_EQ(r.arm.stops, 2);
 }
 
 TEST(Supervisor, AC3StopDuringAKeyboardHomingIsAcknowledgedAndAborts) {
@@ -611,6 +693,7 @@ TEST(Supervisor, StopDuringTheHandsHomingStopsTheHand) {
   Rig r({0.45, 0.0, 0.45}, &g);
   r.sup->onKey(Key::kHomeHand);
   const uint64_t gen = r.shared->handHomingRequested();
+  ASSERT_TRUE(r.shared->beginHandHoming(gen));      // the gripper thread: home() runs
   r.sup->onKey(Key::kStop);
   EXPECT_EQ(g.stops, 1);
   EXPECT_EQ(r.sup->mode(), Mode::kHoming);
@@ -623,6 +706,37 @@ TEST(Supervisor, StopDuringTheHandsHomingStopsTheHand) {
   EXPECT_EQ(r.sup->mode(), Mode::kStopped);
   EXPECT_EQ(r.shared->lastAliveNs(), r.clock.now());
   EXPECT_EQ(r.arm.stops, 0);
+}
+
+TEST(Supervisor, AStopBeforeTheHandsHomingBeganSkipsItWithoutStoppingTheHand) {
+  CountingGripper g;   // the gripper thread may be in a finger move: a hand stop would abort it (a gripper fault)
+  Rig r({0.45, 0.0, 0.45}, &g);
+  r.sup->onKey(Key::kHomeHand);
+  const uint64_t gen = r.shared->handHomingRequested();
+  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStop); });
+  EXPECT_NE(log.find("stop during hand homing (PC keyboard): the hand's homing will not start"), std::string::npos)
+      << log;
+  EXPECT_EQ(g.stops, 0);
+  EXPECT_FALSE(r.shared->beginHandHoming(gen));     // the gripper thread skips home()
+  r.shared->reportHandHoming(gen, SharedState::kHandHomingAborted);
+  r.sup->tick();
+  EXPECT_EQ(r.sup->mode(), Mode::kStopped);
+  EXPECT_EQ(g.stops, 0);
+}
+
+TEST(Supervisor, AStopAfterTheHandsHomingEndedStopsNothing) {
+  CountingGripper g;
+  Rig r({0.45, 0.0, 0.45}, &g);
+  r.sup->onKey(Key::kHomeHand);
+  const uint64_t gen = r.shared->handHomingRequested();
+  ASSERT_TRUE(r.shared->beginHandHoming(gen));
+  r.shared->endHandHoming(gen);                     // home() returned; the re-sent finger move may start now
+  r.sup->onKey(Key::kStop);
+  EXPECT_EQ(g.stops, 0);
+  r.shared->reportHandHoming(gen, SharedState::kHandHomingDone);
+  const std::string log = stderrOf([&] { r.sup->tick(); });
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+  EXPECT_NE(log.find("stop arrived after the hand's homing had finished"), std::string::npos) << log;
 }
 
 TEST(Supervisor, KeySStopsInIdleAndChangesNothingInFault) {
