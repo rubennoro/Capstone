@@ -1,0 +1,11 @@
+# launcher: policy_deploy check | run (policy_deploy/STRUCTURE.md 9). Overridable in station.yaml's `launcher:` section.
+stop_timeout_s: 5.0           # SIGTERM, then SIGKILL after this long
+poll_s: 0.1                   # how often the launcher looks at its processes
+fake_pc: true                 # --mock: the launcher starts the fake PC. false only for the cross test, where a real
+                              # franka_control --mock --local already listens on 127.0.0.1 (no effect without --mock)
+ready_timeout_s:
+  fake_pc: 10.0               # C2 and C3 bound on 127.0.0.1, first C2 published
+  frames: 30.0                # C1 answers, both cameras ok once
+  policy: 300.0               # model loaded, warmed up, C4 answers
+  manager: 130.0              # start-up done; above the longest legal start-up, startup_s 20 + pc_homing_wait_s 60 +
+                              # homing_timeout_s 30 + 5 = 115 s, so the manager's own FATAL line always comes first
