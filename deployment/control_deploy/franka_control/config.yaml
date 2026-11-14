@@ -1,0 +1,100 @@
+# from rnoro/deployment:deployment/franka_control/config.yaml @ 91b178b
+# changes: tcp: removed (F_T_TCP is contracts/frames.yaml); watchdog.limit_s removed (contracts/link.yaml
+# timing.watchdog_limit_s); safety.max_lead_s 5.0 -> 1.5; comments name control_deploy (control_deploy/STRUCTURE.md 7).
+# franka_control: every setting, with its default (control_deploy/STRUCTURE.md section 7).
+# control_deploy/station.yaml's `franka_control:` section may override any key except libfranka_version: maps merge
+# key by key, other values are replaced, an unknown key is an error. F_T_TCP is in contracts/frames.yaml, the
+# watchdog limit, addresses and ports in contracts/link.yaml. Lines marked TODO need values measured on the hardware.
+
+binary: build/franka_control          # the built program (used by control_deploy); relative to this folder
+robot_ip: 172.16.0.2                  # the arm's FCI address (also the hand's) on the direct Ethernet link
+realtime: enforce                     # enforce | ignore (station.yaml sets ignore until PREEMPT_RT, PLAN §13)
+libfranka_version: "0.9.2"            # THE build setting for libfranka (build.sh and CMake read it); not for station.yaml
+control_cpu: null                     # pin the control thread to this CPU core (optional)
+
+control:                              # the 1 kHz loop (old-S §5)
+  stiffness_translational_n_per_m: [800.0, 800.0, 800.0]    # TODO: tune 600-1000 on the arm
+  stiffness_rotational_nm_per_rad: [40.0, 40.0, 40.0]       # TODO: tune 30-50 on the arm
+  damping_ratio: 1.0
+  nullspace_stiffness: 0.5
+  jacobian_pinv_damping: 0.2
+  max_position_error_m: 0.03
+  max_rotation_error_rad: 0.2
+  torque_max_nm: [87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0]
+  torque_rate_max_nm_per_s: 1000.0
+  libfranka_limit_rate: true
+  libfranka_cutoff_frequency_hz: 100.0
+  collision_torque_thresholds_nm: [20.0, 20.0, 18.0, 18.0, 16.0, 14.0, 12.0]   # TODO: check on the arm (no reflexes)
+  collision_force_thresholds_n: [20.0, 20.0, 20.0, 25.0, 25.0, 25.0]
+  joint_impedance: [3000.0, 3000.0, 3000.0, 2500.0, 2500.0, 2000.0, 2000.0]
+  settle_speed_rad_per_s: 0.02
+  settle_timeout_s: 1.0               # also the longest wait for the robot after a stopped homing (4.4)
+
+load:                                 # payload beyond the hand configured in Desk (printed fingers, Pi 5, cameras)
+  mass_kg: 0.0                        # TODO: weigh the rig (0 = no setLoad call; control_deploy check warns)
+  com_m: [0.0, 0.0, 0.0]              # TODO: centre of mass in the flange frame (from CAD)
+  inertia_kg_m2:                      # about the centre of mass
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+
+safety:                               # the gate (old-S §6); defaults from main-sim bridge.yaml
+  workspace_min_m: [0.25, -0.40, 0.05]      # TODO: measure around the table
+  workspace_max_m: [0.80, 0.40, 0.70]       # TODO: measure around the table
+  cone_axis: [0.0, 0.0, -1.0]               # the hand's approach axis at home (normalised by the loader)
+  cone_max_deg: 60.0                        # TODO: check around the table
+  box_margin_m: 0.01
+  cone_margin_deg: 2.0
+  v_max_m_per_s: 0.25                       # raise to 0.5 only after tuning on the arm
+  w_max_rad_per_s: 1.0
+  slack_s: 0.010
+  max_lead_s: 1.5                           # a waypoint further ahead is rejected (PLAN §5.4; reported in hello)
+
+watchdog:                             # the limit itself is contracts/link.yaml timing.watchdog_limit_s (1.0 s)
+  backstop_extra_s: 0.1               # the 1 kHz loop's own check fires at the limit + this
+
+homing:
+  q_home_rad: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 1.5707963, 0.7853982]   # TODO: check the home TCP is in the box with the rig
+  max_joint_speed_rad_per_s: 0.3
+  min_duration_s: 2.0
+  timeout_s: 30.0                     # arm and hand homing; reported in hello (the laptop's home timeout must exceed it)
+
+gripper:                              # max opening: gripper_width_max_m in contracts/limits.yaml
+  speed_m_per_s: 0.05
+  grasp_force_n: 20.0
+  deadband_m: 0.005
+  poll_period_s: 0.02
+  read_rate_hz: 50.0                  # the width read into C2, also during a finger move or the hand's homing
+  width_offset_m: 0.0                 # TODO: measure with the printed fingers (fingertip opening - hand reading)
+  homing_on_start: true               # the Franka Hand homes once at start-up (PLAN §8.1)
+
+messaging:
+  publish_rate_hz: 100.0
+  state_send_hwm: 100
+  poll_max_s: 0.005                   # also the longest delay before a key is acted on
+  stats_period_s: 1.0
+
+startup:
+  hold_before_ready_s: 0.2
+  loop_start_timeout_s: 10.0
+
+shutdown:
+  timeout_s: 3.0                      # + 1.5 s after requestStop, below control_deploy run's 5 s before SIGKILL
+
+loop_warning:
+  success_rate_min: 0.95
+  late_period_ms: 1.5
+
+fake_arm:                             # only with --mock and in tests
+  home_O_T_TCP:                       # TCP z pointing down
+    - [1.0, 0.0, 0.0, 0.45]
+    - [0.0, -1.0, 0.0, 0.0]
+    - [0.0, 0.0, -1.0, 0.45]
+    - [0.0, 0.0, 0.0, 1.0]
+  mass_kg: 1.0
+  inertia_kg_m2: 1.0
+
+fake_gripper:
+  start_width_m: 0.08                 # also where the fake's home() ends
+  speed_m_per_s: 0.1
+  object_width_m: null                # fingers stop here when closing (null: no object)

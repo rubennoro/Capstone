@@ -484,9 +484,9 @@ franka_control:                             # overrides of franka_control/config
 console:                                    # the bring-up console's step sizes (6.5)
   hold_s: 3.0
   move_m: 0.015
-  rotate_deg: 5.0
+  rotate_deg: 2.0
   gripper_delta_m: 0.02
-  segment_s: 1.0
+  segment_s: 2.0
   out_of_box_m: 0.03
 ```
 

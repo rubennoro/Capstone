@@ -1,0 +1,12 @@
+# This PC's settings (PLAN rule 1). Ports and addresses are in deployment/contracts/link.yaml, never here.
+station_version: 1
+session_root: ~/control_deploy_sessions     # one folder per run and per console session
+franka_control:                             # overrides of franka_control/config.yaml keys (not libfranka_version)
+  realtime: ignore                          # TODO: enforce once the PC runs a PREEMPT_RT kernel (PLAN §13)
+console:                                    # the bring-up console's step sizes (6.5)
+  hold_s: 3.0
+  move_m: 0.015
+  rotate_deg: 2.0
+  gripper_delta_m: 0.02
+  segment_s: 2.0
+  out_of_box_m: 0.03

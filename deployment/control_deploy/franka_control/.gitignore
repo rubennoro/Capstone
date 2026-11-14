@@ -1,0 +1,5 @@
+build/
+build-test/
+build-tsan/
+build-libfranka-check/
+build-nolibfranka/

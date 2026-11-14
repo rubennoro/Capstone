@@ -1,0 +1,53 @@
+// New (control_deploy/STRUCTURE.md 3.3, 4.3): the keyboard thread (only with --keyboard) and the terminal's cbreak
+// mode.
+// Keys: h home the arm, g home the hand, s stop and hold, q quit. Upper case is not accepted. Keys never feed the
+// watchdog. Ctrl-C stays SIGINT (handled by the main thread); Ctrl-Z and Ctrl-\ are disabled (a stopped process would
+// miss FCI packets and trip a reflex). EOF or a read error ends the thread ("keys disabled"); it is never `q`.
+#pragma once
+
+#include <termios.h>
+
+#include <cstdint>
+#include <functional>
+#include <optional>
+
+#include "franka_control/key_queue.h"
+#include "franka_control/shared_state.h"
+
+namespace franka_control {
+
+// RAII; does nothing when fd is not a TTY. cbreak: ICANON and ECHO off, ISIG kept; VSUSP and VQUIT disabled.
+class TerminalMode {
+ public:
+  explicit TerminalMode(int fd);
+  ~TerminalMode();                                  // restores the saved termios
+  TerminalMode(const TerminalMode&) = delete;
+  TerminalMode& operator=(const TerminalMode&) = delete;
+  bool active() const { return active_; }
+
+ private:
+  int fd_;
+  bool active_ = false;
+  termios saved_{};
+};
+
+class KeyboardReader {                              // keyboard thread
+ public:
+  static constexpr int kPollMs = 50;                // sees shutdown within this
+  KeyboardReader(int fd, KeyQueue& keys, std::function<void()> on_quit, const SharedState& shared);
+  void run();                                       // until shutdown, EOF or a read error
+  static std::optional<Key> map(char c);            // the one key table: 'h', 'g', 's', 'q'
+  static const char* help();                        // "keys: h home arm, g home hand, s stop, q quit"
+
+ private:
+  void handle(char c);
+
+  int fd_;
+  KeyQueue& keys_;
+  std::function<void()> on_quit_;
+  const SharedState& shared_;
+  int64_t last_help_ns_ = 0;
+  bool help_logged_ = false;
+};
+
+}  // namespace franka_control
