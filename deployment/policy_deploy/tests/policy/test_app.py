@@ -1,7 +1,9 @@
 # adapted from rnoro/deployment:deployment/policy/tests/test_app.py @ 91b178b
 # changes: python -m policy_deploy.policy; the new station (endpoint from ports.policy); the FATAL lines of the new
-# settings path; startup.json adds precision, memory and gpu; the config reply carries kind.
-"""`python -m policy_deploy.policy --mock` as a subprocess (light environment, hold_still)."""
+# settings path; startup.json adds precision, memory and gpu; the config reply carries kind; + PolicyApp in-process
+# with a PromptablePolicy (the warm-up prompt and startup.json warmup_prompt).
+"""`python -m policy_deploy.policy --mock` as a subprocess (light environment, hold_still); PolicyApp in-process with
+build_policy patched."""
 
 from __future__ import annotations
 
@@ -13,9 +15,11 @@ import time
 from pathlib import Path
 
 from deploy_contracts import RpcClient
-from policy_fakes import endpoint_of
+from policy_fakes import FakePromptablePolicy, _TestPolicy, endpoint_of
 
 from policy_deploy.contracts import PolicyConfig, PolicyConfigRequest
+from policy_deploy.contracts.process_args import ProcessArgs
+from policy_deploy.policy import app as app_module
 
 START_TIMEOUT_S = 30.0
 
@@ -121,3 +125,31 @@ def test_without_session_writes_the_policy_alone_folder(policy_station, tmp_path
     folders = list((tmp_path / "sessions").iterdir())
     assert len(folders) == 1 and folders[0].name.endswith("_policy_alone")
     assert (folders[0] / "policy" / "startup.json").exists()
+
+
+def _run_in_process(monkeypatch, policy_station, tmp_path, policy) -> dict:
+    """PolicyApp._run with build_policy returning `policy`; serving stops at once. Returns startup.json."""
+    monkeypatch.setattr(app_module, "build_policy", lambda settings: policy)
+    monkeypatch.setattr(app_module.PolicyApp, "_install_signal_handlers", lambda self: None)
+    session = tmp_path / "session"
+    app = app_module.PolicyApp(ProcessArgs(name="policy", station=policy_station(None), session=session,
+                                           ready_file=None, mock=True))
+    app._stop.set()                                     # serve() returns before answering anything
+    assert app._run() == 0
+    return json.loads((session / "policy" / "startup.json").read_text())
+
+
+def test_promptable_policy_warm_up_prompt_comes_first_and_is_in_startup(monkeypatch, policy_station, tmp_path):
+    policy = FakePromptablePolicy()
+    startup = _run_in_process(monkeypatch, policy_station, tmp_path, policy)
+    assert policy.calls == [("prompt", "longest_task", 7), ("infer",), ("infer",), ("reset",)]
+    warm = startup["warmup_prompt"]
+    assert warm["task_name"] == "longest_task" and warm["prompt_index"] == 7 and warm["prompt_s"] >= 0
+    assert len(startup["warmup_s"]) == 2
+
+
+def test_plain_policy_has_no_warm_up_prompt(monkeypatch, policy_station, tmp_path):
+    policy = _TestPolicy()
+    startup = _run_in_process(monkeypatch, policy_station, tmp_path, policy)
+    assert "warmup_prompt" not in startup
+    assert policy.infers == 2 and policy.resets == 1

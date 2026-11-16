@@ -1,6 +1,6 @@
 # new (STRUCTURE.md 11.1); the model building follows light_workspace.py (no backbone download) and the timing
 # follows probe.py (mean / p50 / p95 / max); --prompt-dataset prompts a prompting checkpoint with its longest demo
-# (PromptSource, as PromptableDiffusionPolicy's warm-up) and then times it
+# (PromptSource, as PromptableDiffusionPolicy's warm-up) and then times it; refused with a plain checkpoint
 """`python -m policy_deploy.policy.bench`: time predict_action on this laptop without a socket (STRUCTURE.md 11.1).
 
     python -m policy_deploy.policy.bench [--config umi_policy_dunet | --checkpoint PATH [--prompt-dataset ZIP
@@ -309,6 +309,10 @@ def run(a: argparse.Namespace, out=sys.stdout) -> int:
         load["max_memory_reserved_mb"] = round(torch.cuda.max_memory_reserved() / 2**20, 1)
     load.update(nvidia_smi_now())
     emit(load)
+    if plain and a.prompt_dataset is not None:            # refused, as the policy refuses policy.prompt_dataset
+        out.write("FAIL: --prompt-dataset is set but the checkpoint does not use prompting "
+                  "(shape_meta.use_prompting: false): remove --prompt-dataset\n")
+        return 1
     if not plain and a.prompt_dataset is not None:
         emit(prompt_longest(loaded, a.prompt_dataset, a.prompt_split, a.device))
         plain = True                                      # prompted: timed like a plain one

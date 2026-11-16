@@ -146,3 +146,21 @@ def test_prompting_checkpoint_prompted_with_the_longest_demo_then_timed(monkeypa
     assert [r["what"] for r in records] == ["load", "prompt", "infer"]
     assert records[1]["task_name"] == "other" and records[1]["steps"] == 300 and records[1]["split"] == "all"
     assert model.events == ["prompt", "predict", "predict"]
+
+
+def test_prompt_dataset_with_a_plain_checkpoint_refused(monkeypatch, tmp_path):
+    pytest.importorskip("torch", reason="torch tests run in the torch environment")
+    from policy_fakes import plain_diffusion_shape_meta
+    from policy_fakes_torch import TinyDiffusionModel
+
+    from policy_deploy.policy.checkpoint_loader import CheckpointLoader, LoadedModel
+    loaded = LoadedModel(model=TinyDiffusionModel({}), shape_meta=plain_diffusion_shape_meta(), uses_prompting=False,
+                         info={})
+    monkeypatch.setattr(CheckpointLoader, "load", lambda self, path, device, steps: loaded)
+    out = io.StringIO()
+    a = bench.parse_args(["--checkpoint", "b.ckpt", "--prompt-dataset", str(tmp_path / "d.zarr.zip"), "--device",
+                          "cpu", "--out", str(tmp_path)])
+    assert bench.run(a, out) == 1
+    assert out.getvalue().splitlines()[-1] == ("FAIL: --prompt-dataset is set but the checkpoint does not use "
+                                               "prompting (shape_meta.use_prompting: false): remove --prompt-dataset")
+    assert not (tmp_path / "bench.jsonl").exists()

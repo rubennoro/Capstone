@@ -90,8 +90,14 @@ class FakePromptDataset:
 
     last_kwargs: dict[str, Any] = {}
 
-    def __init__(self, tasks: Mapping[str, list[int]] | None = None, **kwargs: Any) -> None:
+    def __init__(self, tasks: Mapping[str, list[int]] | None = None, missing_key: str | None = None,
+                 empty_val: bool = False, **kwargs: Any) -> None:
+        """missing_key: raise KeyError(missing_key) (as zarr does for a missing group); empty_val:
+        get_validation_dataset() asserts, as the sampler does for a model trained with val_ratio 0."""
         FakePromptDataset.last_kwargs = dict(kwargs)
+        if missing_key is not None:
+            raise KeyError(missing_key)
+        self.empty_val = empty_val
         tasks = dict(tasks) if tasks is not None else {"block_raise": [100, 250, 180], "other": [300]}
         split = kwargs.get("training_split_info")
         self._names: list[str] = []
@@ -115,6 +121,7 @@ class FakePromptDataset:
         return out
 
     def get_validation_dataset(self) -> "FakePromptDataset":
+        assert not self.empty_val, "No non-error-correction demonstrations found in the prompt-only dataset split."
         val = FakePromptDataset.__new__(FakePromptDataset)
         val.__dict__.update(self.__dict__)
         val._names = self._names[:1]

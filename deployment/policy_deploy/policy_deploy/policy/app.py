@@ -58,7 +58,8 @@ def run_warm_up(policy: Policy, obs: Observation, count: int,
 
 def run_warm_up_prompt(policy: PromptablePolicy, clock: Callable[[], int] = time.monotonic_ns) -> dict[str, Any]:
     """Prompt with policy.warm_up_prompt() (before run_warm_up, whose reset clears it): {"task_name",
-    "prompt_index", "prompt_s"}. Every failure is fatal: raises PolicyFatal."""
+    "prompt_index", "prompt_s"}. A torch policy's prompt() returns after a CUDA synchronize, so prompt_s is the real
+    time (this module stays torch-free). Every failure is fatal: raises PolicyFatal."""
     try:
         task_name, prompt_index = policy.warm_up_prompt()
         t0 = clock()

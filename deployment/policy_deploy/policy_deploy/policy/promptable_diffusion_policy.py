@@ -60,12 +60,15 @@ class PromptableDiffusionPolicy(DiffusionPolicy, PromptablePolicy):
         super().reset()                                      # model.reset(): clears the prompt
 
     def prompt(self, task_name: str, prompt_index: int) -> None:
-        """Raises BadRequest for an unknown task or an index out of range (from PromptSource)."""
+        """Raises BadRequest for an unknown task or an index out of range (from PromptSource). Returns once the
+        prompt has finished on the device (CUDA synchronised), so callers' timings are real."""
         demo = self._source.demo(task_name, prompt_index)
         t0 = time.monotonic()
         prompt = self._source.get(task_name, prompt_index)
         with torch.inference_mode():
             self._model.prompt(prompt)
+        if self._runner.device.type == "cuda":
+            torch.cuda.synchronize(self._runner.device)       # the prompt has finished on the GPU (prompt_s)
         demo["prompt_s"] = round(time.monotonic() - t0, 3)
         self.last_prompt = demo
         log.info("prompt applied: task %r, index %d (%s steps, episode %s) in %.3f s", task_name, prompt_index,

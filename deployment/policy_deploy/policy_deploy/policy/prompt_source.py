@@ -84,17 +84,22 @@ class PromptSource:
                 cfg, only_prompt=True, dataset_path=str(path), allow_zip_file=True,
                 training_split_info=None if split == "all" else {str(k): bool(v)            # np.bool_ -> bool
                                                                  for k, v in training_split_info.items()})
-            if split == "val":
-                dataset = dataset.get_validation_dataset()
         except Exception as e:
             cause = e if isinstance(e, KeyError) else e.__cause__          # hydra wraps the target's exception
-            if split != "all" and isinstance(cause, KeyError):
+            key = _missing_key(cause)
+            if split != "all" and key is not None and ":" in key:           # "<episode name>:<task name>"
                 raise PolicyLoadError(f"prompt dataset {path} has a demo the model's training split info does not "
-                                      f"know ({cause})", "is it the dataset the model trained on? For any other "
+                                      f"know ({key})", "is it the dataset the model trained on? For any other "
                                       "dataset set policy.prompt_split: all") from e
             raise PolicyLoadError(f"prompt dataset failed to load: {path}: {type(e).__name__}: {e}",
                                   "is it the processed .zarr.zip of this task's demos (the training dataset)? "
                                   + DATASET_HINT) from e
+        if split == "val":
+            try:
+                dataset = dataset.get_validation_dataset()
+            except AssertionError as e:          # the sampler asserts on an empty split (trained with val_ratio 0)
+                raise PolicyLoadError(f"no demos in the val split of {path} ({e})",
+                                      "set policy.prompt_split: train or all") from e
         return cls(dataset, device, path, split)
 
     def tasks(self) -> dict[str, int]:
@@ -141,6 +146,16 @@ class PromptSource:
     def describe(self) -> dict[str, Any]:
         return {"prompt_dataset": None if self.path is None else str(self.path), "prompt_split": self.split,
                 "prompt_tasks": self.tasks()}
+
+
+def _missing_key(e: BaseException | None) -> str | None:
+    """The missing key of a KeyError (OmegaConf's ConfigKeyError keeps it in .key), else None."""
+    if not isinstance(e, KeyError):
+        return None
+    key = getattr(e, "key", None)
+    if key is None and e.args:
+        key = e.args[0]
+    return key if isinstance(key, str) else None
 
 
 def _apply(x: Mapping[str, Any], fn) -> dict[str, Any]:

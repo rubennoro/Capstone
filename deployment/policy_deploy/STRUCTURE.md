@@ -437,14 +437,15 @@ FATAL after the `ErrorReply` (old §3.5).
 | Class (file) | From | Changes |
 |---|---|---|
 | `Policy` (`base_policy.py`), `make_chunk` (width clip to the largest float32 ≤ `gripper_width_max_m`) | old:policy/policy/base_policy.py | `config()` fills `kind = KIND` |
-| `PromptablePolicy`, `HoldStillPolicy`, `KeyMap`, `neutral_observation`, `PolicyServer`, `build_policy`, errors | copied | imports only |
+| `PromptablePolicy` (`promptable_policy.py`) | old:policy/policy/promptable_policy.py | adds the abstract `warm_up_prompt()` → `(task_name, prompt_index)`, the prompt given before the warm-up inferences |
+| `HoldStillPolicy`, `KeyMap`, `neutral_observation`, `PolicyServer`, `build_policy`, errors | copied | imports only |
 | `DiffusionPolicy` (`diffusion_policy.py`) | copied | passes `precision` to the runner; `from_settings`: a prompting checkpoint → `PromptableDiffusionPolicy` (needs `prompt_dataset`), `prompt_dataset` with a plain one refused |
 | `PromptableDiffusionPolicy` (`promptable_diffusion_policy.py`, torch) | detached_inference.py `policy_prompt`/`policy_reset` | a `PromptablePolicy` over `DiffusionPolicy` (same `ModelRunner`): `prompt()` → `model.prompt()` under `inference_mode`, fp32 (also with `bf16`); `reset()` clears it; warm-up prompt = the longest demo |
 | `PromptSource` (`prompt_source.py`, torch) | detached_inference.py:164-192, 376-395 | the checkpoint's `task.dataset` with `only_prompt`, `dataset_path` = `prompt_dataset`, `val_ratio` 0, `cache_dir` None (zip read in place), split `prompt_split`; unknown task / index → `BadRequest`; longest demo from the replay buffer's `task_lengths` |
 | `ModelRunner` (`model_runner.py`) | old:policy/policy/model_runner.py:43-77 | `precision: bf16` wraps `predict_action` in `torch.autocast("cuda", dtype=torch.bfloat16)` (training's `mixed_precision: bf16`); weights stay fp32; output `.float()` as before |
 | `CheckpointLoader`, `LoadedModel` (`checkpoint_loader.py`) | old:policy/policy/checkpoint_loader.py:31-179 | `LoadedModel.dataset_cfg` (the resolved `cfg.task.dataset`, for `PromptSource`) |
 | `light_workspace.py` | copied | none |
-| `Settings` (`settings.py`) | old:policy/policy/settings.py | station schema of §2.4; adds `precision`, `mock_kind`; endpoint from `ports.policy` |
+| `Settings` (`settings.py`) | old:policy/policy/settings.py | station schema of §2.4; adds `precision`, `mock_kind`, `prompt_dataset` (a path, resolved like `checkpoint`), `prompt_split`; endpoint from `ports.policy` |
 | `PolicyApp` (`app.py`) | old:policy/policy/app.py:65-140 | `startup.json` adds `torch.cuda.max_memory_allocated/reserved` after warm-up, `nvidia-smi` used/total memory, GPU name, power limit, `precision`; a `PromptablePolicy` is prompted with its `warm_up_prompt()` before the warm-up inferences (`warmup_prompt`) |
 | `self_check.py` | old:policy/policy/self_check.py | adds rows: free GPU memory and other GPU processes (`nvidia-smi --query-compute-apps`), `precision`, `prompt dataset` (when set; zarr, numcodecs, imagecodecs in imports), `exec_h` is the manager's and not shown here |
 | `probe.py` | old:policy/policy/probe.py:29-115 | prints `kind`; `--infers N` reports mean/p50/p95/max |
@@ -471,8 +472,9 @@ The interpreter follows the kind that runs: `diffusion` → `python.torch`, ever
 
 ### 5.4 Start-up, ready, shutdown
 
-As old §3.1: settings, session folder, `build_policy` (load + checks), warm-up (`warmup_inferences` infers on
-`neutral_observation`, each timed, then `reset`), bind C4, `startup.json`, ready file, serve. Ready means the model is
+As old §3.1: settings, session folder, `build_policy` (load + checks), for a `PromptablePolicy` the warm-up prompt
+(`warm_up_prompt()`: the longest demo; `startup.json` `warmup_prompt`), warm-up (`warmup_inferences` infers on
+`neutral_observation`, each timed, then `reset`, which also clears the warm-up prompt), bind C4, `startup.json`, ready file, serve. Ready means the model is
 on the device, warmed up, and C4 answers. The launcher allows 300 s. SIGINT/SIGTERM: exit 0. Outputs:
 `<session>/policy/startup.json`; per-episode inference stats in its log at each `reset`.
 
@@ -1176,8 +1178,8 @@ Settled by the lead on 2026-11-13, with PLAN.md and TOP updated to match. Nothin
    lead before the laptop-alone bring-up. The reuse rule catches a frozen IMX219 whatever the phase. `PacketPairer`
    and the fake Pi pair the nearest frame, like the live Pi; the fake Pi keeps its repeat mode.
 2. **Timing the policy without a plain checkpoint:** `policy.bench` on the plain `umi_policy_dunet` architecture at
-   random weights for speed and VRAM; `run_001` (a prompting checkpoint) only for load time, host RAM and the VRAM of
-   real weights (§11).
+   random weights for speed and VRAM; `run_001` (a prompting checkpoint) for load time, host RAM and the VRAM of
+   real weights, and with `--prompt-dataset` (prompted with its longest demo) for its own speed (§11).
 3. **C4 config reply v2 with `kind`** (TOP §3.12, §8.7), laptop-only, so the settled rule needs no station reading.
 4. **Waiting without C3 while C2 shows `homing` at start-up**, up to `pc_homing_wait_s` (60 s), as well as the H2
    wait (§6.3 step 3; PLAN §8.2, TOP §8.2).

@@ -225,6 +225,25 @@ def test_load_errors(demos, tmp_path):
     assert "unknown prompt split" in load(split="test").what
 
 
+def test_only_a_split_info_key_gets_the_prompt_split_all_hint(demos):
+    with pytest.raises(PolicyLoadError) as e:              # a demo the split info lacks: "<episode>:<task>"
+        PromptSource.load(demos, "train", DATASET_CFG, {"ep0:block_raise": True}, "cpu")
+    assert "training split info does not know (ep1:block_raise)" in e.value.what
+    assert "policy.prompt_split: all" in e.value.check
+    with pytest.raises(PolicyLoadError) as e:              # any other KeyError (a wrong or old dataset)
+        PromptSource.load(demos, "train", {**DATASET_CFG, "missing_key": "meta"}, SPLIT_INFO, "cpu")
+    assert e.value.what.startswith("prompt dataset failed to load") and "'meta'" in e.value.what
+    assert "prompt_split" not in e.value.check and "policy.prompt_dataset" in e.value.check
+
+
+def test_val_split_of_a_model_trained_without_one_refused(demos):
+    with pytest.raises(PolicyLoadError) as e:
+        PromptSource.load(demos, "val", {**DATASET_CFG, "empty_val": True}, SPLIT_INFO, "cpu")
+    assert e.value.what.startswith("no demos in the val split of")
+    assert e.value.check == "set policy.prompt_split: train or all"
+    assert PromptSource.load(demos, "train", {**DATASET_CFG, "empty_val": True}, SPLIT_INFO, "cpu").tasks()
+
+
 def test_empty_split_refused():
     with pytest.raises(PolicyLoadError) as e:
         PromptSource(FakePromptDataset(tasks={}), "cpu", "x.zarr.zip", "val")

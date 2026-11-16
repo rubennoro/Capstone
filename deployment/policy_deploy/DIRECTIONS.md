@@ -313,8 +313,11 @@ Only once a policy has been trained on data from this rig.
 2. **`station.yaml`:** in the `policy:` section, `kind: diffusion` and a new line `checkpoint: /path/to/the.ckpt`;
    `exec_h` from the timing.
    - A **prompting** checkpoint (without it the policy stops with `checkpoint uses prompting`) also needs, in the
-     `policy:` section, `prompt_dataset: /path/to/demos.zarr.zip` (the processed `.zarr.zip` of the demos, on the laptop) and,
-     in the `manager:` section, `task_name:` (and `prompt_index:`, default 0). Everything else is the same.
+     `policy:` section, `prompt_dataset: /path/to/demos.zarr.zip` (the processed `.zarr.zip` of the demos, on the
+     laptop) and, in the `manager:` section, `task_name:` (and `prompt_index:`, default 0). Everything else is the
+     same. On this laptop a run_001-sized prompting model keeps up only with `policy: {precision: bf16,
+     diffusion_steps: 8}` and `manager: {exec_h: 12}` (a `--mock` run: ~186 ms per inference; with the defaults
+     ~300 ms and the arm mostly holds).
 3. **On the real arm** `check` refuses it (`settled FAIL trained policy refused on the real arm`) while
    `../contracts/frames.yaml` says `settled: false`: the robot's gripper axes are still turned 90° from training's
    (PLAN §9), so every move would go in the wrong direction. Settling that comes first; until then use
