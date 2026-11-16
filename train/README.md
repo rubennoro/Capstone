@@ -97,7 +97,7 @@ than fit are lowered with a warning. 60 is the default because run_001 overfit a
 - **`Temporary failure in name resolution` for the Jetson**: use its IP (`hostname -I` on the Jetson) in
   `JETSON_HOST`, not the name in its prompt.
 - **`no exported episode` from `pull.sh --package`**: every episode in that folder failed processing. Run
-  `dataproc status <folder>` on the Jetson and see [DIRECTIONS.md](DIRECTIONS.md) (run order, step 0).
+  `dataproc status <folder>` on the Jetson and see [DIRECTIONS.md](DIRECTIONS.md) (run order, step 1).
 - **`sha256 mismatch`** after a pull: delete the zip in `data/<folder>/package/<dataset>/` and pull again.
 - **`a different ... is already on the cluster`**: that name is taken by another zip; package under a new name.
 - **upload interrupted**: run it again; it resumes in `<dataset>/.upload/` and only moves the zip into place once its

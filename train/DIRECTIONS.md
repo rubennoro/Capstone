@@ -33,7 +33,7 @@ All commands run **on the laptop, from the repo root** (`~/Capstone`), unless th
 
 **Still open:**
 - The Jetson has **no trainable episodes yet**: every episode in `eraser_pick_1` and `eraser_pick_2` failed at SLAM.
-  Start below once `dataproc status <folder>` shows exported episodes (step 0).
+  Start below once `dataproc status <folder>` shows exported episodes (step 1).
 - *(Optional, only for offline eval)* The cluster clone is at `06511cd` and needs a pull:
   `ssh noroian.r@login.explorer.northeastern.edu 'git -C CapstoneProject/Capstone pull --ff-only'`.
 
@@ -41,20 +41,32 @@ All commands run **on the laptop, from the repo root** (`~/Capstone`), unless th
 
 ## Run order: every new dataset
 
-The examples use the Jetson task folder **`eraser_pick_2`** and a new dataset name **`ep2-v1`**. A dataset name is
-used once and never reused, so pick a new one for every package.
-
-**0. See what's on the Jetson.** Get the task folder name and check that its episodes processed:
+**0. Name the task (do this first, in every new terminal).** The commands below don't contain a task name. They
+use variables you set once, so the same commands work for any task:
 
 ```bash
-ssh capstone-gripper@129.10.156.38 'ls data/tasks'
-ssh capstone-gripper@129.10.156.38 'source ~/envs/env_dataproc/bin/activate && dataproc status eraser_pick_2'
+cd ~/Capstone
+export TASK_NAME=eraser_pick_2      # the Jetson task folder (ssh capstone-gripper@129.10.156.38 'ls data/tasks')
+export DATASET_NAME=ep2-v1          # a NEW name for this package: letters, digits, - and _ only; never reuse one
+```
+
+- `export` only lasts for the terminal window you typed it in. If you open a new terminal, run both lines again.
+- **To train a different task**, set new values and repeat the steps, for example
+  `export TASK_NAME=eraser_pick_1` and `export DATASET_NAME=ep1-v1`. To work on two tasks at once, use two terminal
+  windows, one per task.
+- To see what's set: `echo $TASK_NAME $DATASET_NAME`. If a command complains about a missing argument, the
+  variables are probably empty: you're in a new terminal, so run the two `export` lines again.
+
+**1. Check the task on the Jetson** to make sure its episodes processed:
+
+```bash
+ssh capstone-gripper@129.10.156.38 "source ~/envs/env_dataproc/bin/activate && dataproc status $TASK_NAME"
 ```
 
 The first line of the status says `N episodes, M exported`. Go on only if **M is greater than 0**:
 
 - **`0 exported` and every entry under `failed/`** (for example `slam failed slam_error`): nothing can be trained
-  yet, and step 1 would stop with an error. The `reason.json` inside each `failed/<episode>/` says why. Fix the
+  yet, and step 2 would stop with an error. The `reason.json` inside each `failed/<episode>/` says why. Fix the
   processing on the Jetson first (`rnoro/data-work`, `data-processing/README.md`), then come back.
   - "orbslam3: never initialised (0 keyframes...)" means SLAM never locked on. Each clip needs about 2 s of clear
     movement at the start, in a textured scene.
@@ -65,67 +77,72 @@ The first line of the status says `N episodes, M exported`. Go on only if **M is
   a task, run `dataproc run` on the **same folder** again; new episodes are numbered after the existing ones.
   `train/` packages one folder per dataset.
 
-**1. Pull the data to the laptop.** This packages the dataset on the Jetson and copies everything into
-`data/eraser_pick_2/`. Use `--dataset ep2-v1` instead of `--package` if it is already packaged. Drop `--no-raw` to
-copy the raw recordings too (about 300 MB per episode; check your free space).
+**2. Pull the data to the laptop.** This packages the dataset on the Jetson and copies everything into
+`data/$TASK_NAME/`. If the dataset is already packaged, use `--dataset $DATASET_NAME` instead of `--package`. Drop
+`--no-raw` to copy the raw recordings too (about 300 MB per episode; check your free space).
 
 ```bash
-train/pull.sh eraser_pick_2 --package ep2-v1 --no-raw
+train/pull.sh $TASK_NAME --package $DATASET_NAME --no-raw
 ```
 
-**2. Check the dataset before using GPU time:** episode counts, failures, lengths, and the estimated training time.
+**3. Check the dataset before using GPU time:** episode counts, failures, lengths, and the estimated training time.
 
 ```bash
-python3 train/analysis/dataset_report.py eraser_pick_2 --dataset ep2-v1
+python3 train/analysis/dataset_report.py $TASK_NAME --dataset $DATASET_NAME
 ```
 
-**3. Upload it to the cluster.**
+**4. Upload it to the cluster.**
 
 ```bash
-train/upload.sh eraser_pick_2 ep2-v1
+train/upload.sh $TASK_NAME $DATASET_NAME
 ```
 
-**4. Submit training.** This runs a 3-epoch smoke run first. The full run starts only if the smoke run succeeds.
-Note the run names it prints.
+**5. Submit training.** This runs a 3-epoch smoke run first. The full run starts only if the smoke run succeeds.
 
 ```bash
-train/submit.sh eraser_pick_2 ep2-v1 --smoke-first --note "first rig data"
+train/submit.sh $TASK_NAME $DATASET_NAME --smoke-first --note "first rig data"
 ```
 
-Steps 1, 3 and 4 in one command: `train/go.sh eraser_pick_2 ep2-v1 --package --no-raw --note "first rig data"`.
+It prints two run names: the smoke run (ending in `_smoke`) and the full run. Save the full run's name for the
+next steps:
 
-**5. Watch it.** `--wait` checks every 5 minutes until the run is ok, failed or timeout. A full 60-epoch run on about
+```bash
+export RUN_NAME=run_002_2026-11-16        # copy the full run's name from the submit output
+```
+
+Steps 2, 4 and 5 in one command: `train/go.sh $TASK_NAME $DATASET_NAME --package --no-raw --note "first rig data"`.
+
+**6. Watch it.** `--wait` checks every 5 minutes until the run is ok, failed or timeout. A full 60-epoch run on about
 40 episodes takes about 2 h.
 
 ```bash
-train/status.sh eraser_pick_2 --wait
+train/status.sh $TASK_NAME $RUN_NAME --wait
 ```
 
-**6. Fetch the policy** into `data/eraser_pick_2/policy/<run>/`. The checkpoint is about 2.5 GB.
+**7. Fetch the policy** into `data/$TASK_NAME/policy/$RUN_NAME/`. The checkpoint is about 2.5 GB.
 
 ```bash
-train/fetch.sh eraser_pick_2 run_001_2026-11-14
+train/fetch.sh $TASK_NAME $RUN_NAME
+ls data/$TASK_NAME/policy/$RUN_NAME/checkpoints/      # the policy file: top1_epoch=...ckpt
 ```
 
-The policy file is `data/eraser_pick_2/policy/run_001_2026-11-14/checkpoints/top1_*.ckpt`.
-
-**7. Analyse it.**
+**8. Analyse it.**
 
 ```bash
-python3 train/analysis/run_report.py eraser_pick_2 run_001
-python3 train/analysis/compare_runs.py eraser_pick_2 --results-dir results/block_raise --no-smoke
+python3 train/analysis/run_report.py $TASK_NAME $RUN_NAME
+python3 train/analysis/compare_runs.py $TASK_NAME --results-dir results/block_raise --no-smoke
 
 # offline eval (error in mm/deg per demo): runs as a GPU job, then fetch it and report
-train/analysis/eval.sh eraser_pick_2 run_001_2026-11-14 --ckpt top1 --per-demo 8
-train/status.sh eraser_pick_2 run_001_2026-11-14        # repeat until the "top1:" line says ok
-train/fetch.sh eraser_pick_2 run_001_2026-11-14 --no-checkpoints
-python3 train/analysis/eval_report.py eraser_pick_2 run_001
+train/analysis/eval.sh $TASK_NAME $RUN_NAME --ckpt top1 --per-demo 8
+train/status.sh $TASK_NAME $RUN_NAME        # repeat until the "top1:" line says ok
+train/fetch.sh $TASK_NAME $RUN_NAME --no-checkpoints
+python3 train/analysis/eval_report.py $TASK_NAME $RUN_NAME
 ```
 
 `status.sh` prints one line per eval (for example `top1: ok`). Don't use `--wait` here: it only waits for the
 training run, which has already finished, so it returns straight away. The fetch then brings back `eval/top1/`.
 
-**8. Clean up on the cluster** once a run is fetched. Runs count against the home quota at
+**9. Clean up on the cluster** once a run is fetched. Runs count against the home quota at
 `~/CapstoneProject/policies/<label>/<run>/`.
 
 ---
