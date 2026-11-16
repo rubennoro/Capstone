@@ -1,6 +1,7 @@
 # train/: from Jetson data to a trained policy
 
-New here? Start with [DIRECTIONS.md](DIRECTIONS.md): day-0 setup (what to fill in, how to check each connection) and the order to run things.
+To train on Ruben's setup (already configured), follow [DIRECTIONS.md](DIRECTIONS.md). To set up a new laptop, Jetson or
+cluster account, use [SETUP.md](SETUP.md) first.
 
 Laptop scripts that move a processed task folder from the Jetson to the laptop, upload its dataset to the Explorer
 cluster, train there, and bring the results back. Every script takes `-h` (help) and `--dry-run` (print every
@@ -16,20 +17,10 @@ laptop  data/<folder>/policy/<run>/ ◀─ fetch.sh ─ ~/CapstoneProject/polici
 
 ## One-time setup
 
-1. **Fill `train/config.env`.** Every setting has a comment and an example. At least `JETSON_HOST` (still a `<...>`
-   placeholder; a script that needs an unfilled setting stops and names it). Personal overrides can go in
-   `train/config.local.env` (same syntax, not tracked by git, read after `config.env`).
-2. **ssh keys** so `ssh <JETSON_HOST>` and `ssh noroian.r@login.explorer.northeastern.edu` work without a password.
-   - Jetson: `ssh-copy-id <JETSON_HOST>`.
-   - Cluster: since 2026-11-06 only the key Research Computing generated for you works. Download it from Open
-     OnDemand (`~/.ssh/noroian.r-<date>`) and add an `IdentityFile` block for `login.explorer.northeastern.edu` and
-     `xfer.discovery.neu.edu` to `~/.ssh/config`. Step by step in [DIRECTIONS.md](DIRECTIONS.md) §1.3.
-   - The transfer node `xfer.discovery.neu.edu` shares the cluster home.
-   - `CLUSTER_SSH_OPTS` turns on ssh connection sharing (ControlMaster), so Duo asks once per 10 minutes, not once
-     per connection.
-3. **Cluster:** the conda env `bp` already exists. The repo clone `~/CapstoneProject/Capstone` must be on `main`, at
-   `4be9982` or newer for `eval.sh` (it needs `controlSW/franka_deploy`): `ssh <login> git -C CapstoneProject/Capstone pull --ff-only`.
-4. Try it without touching anything: `train/go.sh eraser_pick_2 ep2-v1 --package --dry-run`.
+Done on Ruben's laptop. For a new machine, follow [SETUP.md](SETUP.md): settings in `train/config.env` /
+`train/config.local.env`, ssh keys (since 2026-11-06 Explorer only accepts the key Research Computing generated for
+you), connection checks, and a dry run. `CLUSTER_SSH_OPTS` turns on ssh connection sharing (ControlMaster), so Duo
+asks once per 10 minutes instead of once per connection.
 
 ## Workflow
 
@@ -100,13 +91,13 @@ than fit are lowered with a warning. 60 is the default because run_001 overfit a
 ## Troubleshooting
 
 - **`X is not set (value: '<...>')`**: fill X in `train/config.env`.
-- **ssh asks for a password or hangs**: check `ssh <host>` by hand; set up keys (setup step 2).
+- **ssh asks for a password or hangs**: check `ssh <host>` by hand; set up keys ([SETUP.md](SETUP.md) step 3).
 - **`Permission denied (publickey)` from the cluster**: the Research Computing key is missing or not used. See
-  [DIRECTIONS.md](DIRECTIONS.md) §1.3, cluster key.
+  [SETUP.md](SETUP.md) step 3.
 - **`Temporary failure in name resolution` for the Jetson**: use its IP (`hostname -I` on the Jetson) in
   `JETSON_HOST`, not the name in its prompt.
 - **`no exported episode` from `pull.sh --package`**: every episode in that folder failed processing. Run
-  `dataproc status <folder>` on the Jetson and see [DIRECTIONS.md](DIRECTIONS.md) Part 2, step 0.
+  `dataproc status <folder>` on the Jetson and see [DIRECTIONS.md](DIRECTIONS.md) (run order, step 0).
 - **`sha256 mismatch`** after a pull: delete the zip in `data/<folder>/package/<dataset>/` and pull again.
 - **`a different ... is already on the cluster`**: that name is taken by another zip; package under a new name.
 - **upload interrupted**: run it again; it resumes in `<dataset>/.upload/` and only moves the zip into place once its

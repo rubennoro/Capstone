@@ -2,7 +2,7 @@
 
 > **Rig data (Jetson + dataproc): use [train/DIRECTIONS.md](train/DIRECTIONS.md) on branch `rnoro/training`.**
 > This file describes the original iPhone pipeline (`scripts/run_pipeline.sh`, results pushed to git). Since
-> 2026-11-06 the cluster needs your Research Computing SSH key; see train/DIRECTIONS.md §1.3.
+> 2026-11-06 the cluster needs your Research Computing SSH key; see [train/SETUP.md](train/SETUP.md) step 3.
 
 These are the steps from "we recorded new demos" to "results are in the repo". Day to day it's one command on the
 laptop plus a `git pull` later. For how the pieces fit together, see [DESIGN.md](DESIGN.md).

@@ -13,7 +13,8 @@ Running status between working sessions. Update it at the end of each conversati
 ## Current state (2026-11-15)
 
 - **Branch `rnoro/training` (this checkout) holds `train/`: the training workflow for rig data.** Local commits only,
-  not pushed. Start with [train/DIRECTIONS.md](train/DIRECTIONS.md) (day-0 setup + run order); script details in
+  not pushed. Run order for Ruben's (already configured) setup: [train/DIRECTIONS.md](train/DIRECTIONS.md); one-time setup
+  for a new machine: [train/SETUP.md](train/SETUP.md); script details in
   [train/README.md](train/README.md), analysis in [train/analysis/README.md](train/analysis/README.md).
   - Flow: `pull.sh` (Jetson task folder + `dataproc package` -> `data/<folder>/`), `upload.sh`, `submit.sh`
     (smoke-first Slurm chain), `status.sh`, `fetch.sh` (-> `data/<folder>/policy/<run>/`), `analysis/*`.
