@@ -136,7 +136,7 @@ The laptop must know the PC's address, and the PC's firewall must know the lapto
 - **Good:** `~/envs/control_deploy/bin/control_deploy check` shows `link address  PASS`.
 - **If not:** the row says which addresses this PC has; fix `link.yaml`.
 
-### 7. The firewall (once, and again after changing the laptop's address)
+### 7. OPTIONAL - The firewall (once, and again after changing the laptop's address)
 
 Only the laptop (and the PC itself) may send commands to the arm. `control_deploy firewall` prints the rule from
 `link.yaml`; these commands install it and keep it after a reboot.
