@@ -79,21 +79,7 @@ cd policy_deploy
 
 From here on you are in `~/Capstone/deployment/policy_deploy`.
 
-### 4. The recorded episode (for `--mock`)
-
-`--mock` replays a real recording from the gripper's cameras, `episode_000045`. It is not in git. Copy it from the
-Jetson (or another machine that has it):
-
-```bash
-scp -r <user>@<jetson-ip>:/data/incoming/episode_000045 ~/Downloads/
-ls ~/Downloads/episode_000045/meta.json
-```
-
-- **Good:** the `ls` prints the file.
-- **If not:** without it you can't run `--mock` (the real run doesn't need it). Somewhere else than `~/Downloads`: set
-  change the line `frames: {}` in `station.yaml` to `frames: {mock_episode: /that/folder}`.
-
-### 5. A first run without the PC or the Pi (`--mock`)
+### 4. A first run without the PC or the Pi (`--mock`)
 
 Runs the whole laptop side against a fake Pi and a fake PC on this laptop, to check the install. Use a normal terminal
 window (the keys are read from it).
@@ -108,7 +94,7 @@ Press `h`, wait for `home pose reached`, `c`, wait a few seconds, `y`, then `q`.
 - **Good:** see the `run --mock` section below. It ends with `policy_deploy: done`.
 - **If not:** "When something fails".
 
-### 6. The addresses on ASUS_5g (once)
+### 5. The addresses on ASUS_5g (once)
 
 The laptop must know the PC's and the Pi's addresses, and the PC's firewall must know the laptop's.
 
@@ -142,7 +128,7 @@ The laptop must know the PC's and the Pi's addresses, and the PC's firewall must
   with the PC running, the `manager` rows about the PC `PASS`).
 - **If not:** "When something fails".
 
-### 7. Watch the Pi stream (once)
+### 6. Watch the Pi stream (once)
 
 Checks that the Pi's frames arrive, and measures how the two cameras are paired, which sets one value
 (`pair_max_lead_ms`).
@@ -152,9 +138,9 @@ Checks that the Pi's frames arrive, and measures how the two cameras are paired,
 ```
 
 - **Good:** about `30.0 pkt/s`, `gaps 0`, `bad 0`; then read the pair-gap report as the `pi_collect` section says.
-- **If not:** nothing arrives: the Pi's sender and `pi: address` (step 6).
+- **If not:** nothing arrives: the Pi's sender and `pi: address` (step 5).
 
-### 8. Check the link to the PC (once, and when the Wi-Fi is bad)
+### 7. Check the link to the PC (once, and when the Wi-Fi is bad)
 
 With `control_deploy run` running on the PC (and no laptop run), checks the link speed and the clock match.
 
@@ -163,9 +149,9 @@ With `control_deploy run` running on the PC (and no laptop run), checks the link
 ```
 
 - **Good:** every row at the end says `PASS` (details in the `pc_probe` section).
-- **If not:** a `FAIL` row names what is wrong; no C2 at all: the PC's `run`, ASUS_5g, `link.yaml` (step 6).
+- **If not:** a `FAIL` row names what is wrong; no C2 at all: the PC's `run`, ASUS_5g, `link.yaml` (step 5).
 
-### 9. The real run (hold still)
+### 8. The real run (hold still)
 
 The first run with the real arm. The PC must already have done its bring-up (the PC's directions, step 10).
 
@@ -177,7 +163,7 @@ The first run with the real arm. The PC must already have done its bring-up (the
 - **Good:** see the `run` section. `h`, `c`: the arm stays still (hold still), the status line counts steps; `y`.
 - **If not:** "When something fails".
 
-### 10. Stopping, restarting, and after a fault
+### 9. Stopping, restarting, and after a fault
 
 - **End an episode:** `y`, `n` or `s`. The arm holds; `h` then `c` for the next one.
 - **Quit:** `q` or Ctrl-C. The PC keeps holding the arm; `policy_deploy run` again whenever you want.
@@ -375,9 +361,9 @@ Only once a policy has been trained on data from this rig.
 
 | You see | Do this |
 |---|---|
-| `manager C2 FAIL no C2 state from tcp://...:5620 within 20 s` | start `control_deploy run` on the PC first; same Wi-Fi; `link.yaml pc: address` (step 6) |
-| `laptop address FAIL none of link.yaml laptop.addresses ... is on this laptop` | step 6: the laptop's address changed or `link.yaml` is wrong (then also the PC's firewall) |
-| `Pi reachable FAIL no TCP connection to <PI>:5555` | the Pi is on, on ASUS_5g, its sender is running; `station.yaml pi: address` (step 6) |
+| `manager C2 FAIL no C2 state from tcp://...:5620 within 20 s` | start `control_deploy run` on the PC first; same Wi-Fi; `link.yaml pc: address` (step 5) |
+| `laptop address FAIL none of link.yaml laptop.addresses ... is on this laptop` | step 5: the laptop's address changed or `link.yaml` is wrong (then also the PC's firewall) |
+| `Pi reachable FAIL no TCP connection to <PI>:5555` | the Pi is on, on ASUS_5g, its sender is running; `station.yaml pi: address` (step 5) |
 | `Wi-Fi WARN not on ASUS_5g` | fine when wired; otherwise join ASUS_5g |
 | `mock episode FAIL not found` | step 4 |
 | `terminal FAIL no terminal for the keyboard` | run it in a normal terminal window, not through a pipe |
