@@ -100,6 +100,10 @@ class PromptSource:
             except AssertionError as e:          # the sampler asserts on an empty split (trained with val_ratio 0)
                 raise PolicyLoadError(f"no demos in the val split of {path} ({e})",
                                       "set policy.prompt_split: train or all") from e
+            except Exception as e:
+                raise PolicyLoadError(f"prompt dataset failed to load its val split: {path}: {type(e).__name__}: {e}",
+                                      "is it the processed .zarr.zip of this task's demos (the training dataset)? "
+                                      + DATASET_HINT) from e
         return cls(dataset, device, path, split)
 
     def tasks(self) -> dict[str, int]:

@@ -310,14 +310,59 @@ Only once a policy has been trained on data from this rig.
    ```
 
    Good: `~/envs/policy_deploy_torch/bin/python -c "import torch; print(torch.cuda.is_available())"` prints `True`.
-2. **`station.yaml`:** in the `policy:` section, `kind: diffusion` and a new line `checkpoint: /path/to/the.ckpt`;
-   `exec_h` from the timing.
-   - A **prompting** checkpoint (without it the policy stops with `checkpoint uses prompting`) also needs, in the
-     `policy:` section, `prompt_dataset: /path/to/demos.zarr.zip` (the processed `.zarr.zip` of the demos, on the
-     laptop) and, in the `manager:` section, `task_name:` (and `prompt_index:`, default 0). Everything else is the
-     same. On this laptop a run_001-sized prompting model keeps up only with `policy: {precision: bf16,
-     diffusion_steps: 8}` and `manager: {exec_h: 12}` (a `--mock` run: ~186 ms per inference; with the defaults
-     ~300 ms and the arm mostly holds).
+2. **`station.yaml`:** set the policy. What to set depends on the kind of checkpoint:
+
+   | Setting | Plain diffusion checkpoint | Prompting checkpoint |
+   |---|---|---|
+   | `policy: kind:` | `diffusion` | `diffusion` (the same) |
+   | `policy: checkpoint:` | the `.ckpt` | the `.ckpt` |
+   | `policy: prompt_dataset:` | leave it out | **the processed `.zarr.zip` of the demos it was trained on**, on the laptop |
+   | `manager: task_name:` | leave it out | **a task in that dataset**, e.g. `block_raise` |
+   | `manager: prompt_index:` | leave it out | **which demo of that task to show it** (default `0`, the first) |
+   | speed: `policy: precision:`, `policy: diffusion_steps:`, `manager: exec_h:` | from the timing (`policy.bench`) | the same |
+
+   So a prompting checkpoint needs **three more lines**; everything else is identical. A prompt is not text: it is
+   one recorded demo of the task, which the model watches before each episode.
+
+   **Which kind is it?** The training run's `run_config/config.yaml` says `use_prompting: true` for a prompting
+   checkpoint. Get it wrong and the policy stops at start-up and says so: `checkpoint uses prompting ... set
+   policy.prompt_dataset`, or `policy.prompt_dataset is set but the checkpoint does not use prompting`.
+
+   Example: `run_001` (a prompting checkpoint). These two sections **replace** the `policy:` and `manager:` lines
+   already in `station.yaml` (don't add a second copy). The two paths are wherever you put the files (`~` works):
+
+   ```yaml
+   policy:
+     kind: diffusion                      # was: hold_still
+     checkpoint: "~/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt"
+     prompt_dataset: ~/franka_data/prompt_zarr/firstreal-single.zarr.zip   # prompting only
+     precision: bf16                      # needed on a 4 GB laptop GPU to keep up
+     diffusion_steps: 8                   # same
+   manager:
+     task_name: block_raise               # prompting only
+     prompt_index: 0                      # prompting only: which demo to show it (0-42)
+     exec_h: 12                           # needed to keep up, as precision
+   ```
+
+   For a plain checkpoint, drop the three `# prompting only` lines. The speed lines are what `run_001` needs on an
+   RTX 3050 Ti laptop GPU (a `--mock` run: about 186 ms per inference; with the defaults, fp32, 16 steps and `exec_h` 8,
+   about 300 ms, and the arm mostly holds between steps). Measure each new checkpoint with `policy.bench`.
+
+   **What the laptop needs.** Measured with `run_001` on an RTX 3050 Ti laptop GPU (4 GB, 35 W power cap, a low-end
+   GPU); a plain checkpoint is smaller (no prompt encoder):
+
+   | | Needed | Measured with `run_001` |
+   |---|---|---|
+   | GPU | NVIDIA with CUDA; driver 535 or newer (tested) | |
+   | GPU memory | 4 GB at least; 6 GB or more for headroom | peak with fp32 about 2.0 GB allocated / 2.2 GB reserved; with bf16 about 2.8 GB / 2.8 GB (about 3.0 GB in `nvidia-smi`): bf16 keeps extra copies of the weights |
+   | `precision: bf16` | an RTX 30-series GPU or newer; on older GPUs keep `fp32` (bf16 runs there but emulated, so it is not faster) | |
+   | Speed | a policy step that fits `exec_h` (the table in "Policy timing") | in a `--mock` run: fp32 16 steps about 300 ms, bf16 16 steps about 226 ms, bf16 8 steps about 186 ms |
+   | RAM | 16 GB | peak about 5 GB while the checkpoint loads (about 10 s) |
+   | Disk | about 10 GB | torch environment 6.1 GB, checkpoint 2.6 GB, demos 0.85 GB |
+
+   A faster GPU (a desktop card, or a laptop GPU with a higher power limit) needs fewer of the speed settings: one
+   about twice as fast as the RTX 3050 Ti would run `run_001` at fp32 and 16 steps with `exec_h` 10–12 (an estimate from
+   the numbers above, not measured: run `policy.bench` on that machine).
 3. **On the real arm** `check` refuses it (`settled FAIL trained policy refused on the real arm`) while
    `../contracts/frames.yaml` says `settled: false`: the robot's gripper axes are still turned 90° from training's
    (PLAN §9), so every move would go in the wrong direction. Settling that comes first; until then use
