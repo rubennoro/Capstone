@@ -14,6 +14,31 @@ Jetson (records + processes)  ──pull──▶  laptop ~/Capstone/data/<folde
 
 All commands run **on the laptop, from the repo root** (`~/Capstone`), unless they start with `ssh`.
 
+## The two names in every command: `$TASK_NAME` and `$DATASET_NAME`
+
+The commands below don't contain real names. They use two shell variables that you set once per terminal (step 0),
+so the same commands work for any task.
+
+| Variable | What it is | Who picks it | Example |
+|---|---|---|---|
+| `$TASK_NAME` | The **task folder on the Jetson**: `~/data/tasks/<TASK_NAME>/`, holding the calibration and every recorded episode of one task. | It already exists: dataproc created it when you recorded. List them with `ssh capstone-gripper@129.10.156.38 'ls data/tasks'`. | `eraser_pick_2` |
+| `$DATASET_NAME` | The name of **one training package made from that folder**. `dataproc package` bundles the folder's successfully processed (exported) episodes, as they are at that moment, into one zip. That zip is what the cluster trains on. | **You make it up**, each time you package. Use letters, digits, `-` and `_` only. | `ep2-v1` |
+
+- **One task, several datasets.** If you record more episodes into the same task folder later, package again under a
+  **new** dataset name (`ep2-v2`, `ep2-v3`, ...). A dataset name is never reused: the upload refuses a different zip
+  under a name that already exists on the cluster. Old datasets stay, so you can compare runs trained on each.
+- **Where each name shows up:**
+
+  | | Jetson | Laptop | Cluster |
+  |---|---|---|---|
+  | Task | `~/data/tasks/$TASK_NAME/` | `data/$TASK_NAME/` | (not uploaded) |
+  | Dataset | `~/data/datasets/<label>/$DATASET_NAME/` | `data/$TASK_NAME/package/$DATASET_NAME/` | `~/CapstoneProject/datasets/<label>/$DATASET_NAME/` |
+
+  `<label>` is the task label given to `dataproc calibrate`. It's often the same as the folder name, but it doesn't
+  have to be (see step 1).
+- **Run names** (`run_002_2026-11-16`, ...) are a third name, but you never choose them: `submit.sh` and `all.sh`
+  create them and print them.
+
 ## Ruben's configuration (verified 2026-11-15)
 
 | What | Value |
@@ -68,8 +93,8 @@ train/all.sh $TASK_NAME $DATASET_NAME --package --no-raw --results-dir results/b
 
 ## Run order: every new dataset
 
-**0. Name the task (do this first, in every new terminal).** The commands below don't contain a task name. They
-use variables you set once, so the same commands work for any task:
+**0. Set the two names (do this first, in every new terminal).** What they mean: see
+[The two names in every command](#the-two-names-in-every-command-task_name-and-dataset_name) at the top.
 
 ```bash
 cd ~/Capstone
