@@ -19,27 +19,32 @@ laptop  data/<folder>/policy/<run>/ ◀─ fetch.sh ─ ~/CapstoneProject/polici
 1. **Fill `train/config.env`.** Every setting has a comment and an example. At least `JETSON_HOST` (still a `<...>`
    placeholder; a script that needs an unfilled setting stops and names it). Personal overrides can go in
    `train/config.local.env` (same syntax, not tracked by git, read after `config.env`).
-2. **ssh keys** so `ssh <JETSON_HOST>` and `ssh noroian.r@login.explorer.northeastern.edu` work from the laptop
-   (`ssh-copy-id <host>`). The transfer node `xfer.discovery.neu.edu` shares the cluster home. `CLUSTER_SSH_OPTS`
-   turns on ssh connection sharing (ControlMaster), so Duo asks once per 10 minutes, not once per connection.
+2. **ssh keys** so `ssh <JETSON_HOST>` and `ssh noroian.r@login.explorer.northeastern.edu` work without a password.
+   - Jetson: `ssh-copy-id <JETSON_HOST>`.
+   - Cluster: since 2026-11-06 only the key Research Computing generated for you works. Download it from Open
+     OnDemand (`~/.ssh/noroian.r-<date>`) and add an `IdentityFile` block for `login.explorer.northeastern.edu` and
+     `xfer.discovery.neu.edu` to `~/.ssh/config`. Step by step in [DIRECTIONS.md](DIRECTIONS.md) §1.3.
+   - The transfer node `xfer.discovery.neu.edu` shares the cluster home.
+   - `CLUSTER_SSH_OPTS` turns on ssh connection sharing (ControlMaster), so Duo asks once per 10 minutes, not once
+     per connection.
 3. **Cluster:** the conda env `bp` already exists. The repo clone `~/CapstoneProject/Capstone` must be on `main`, at
-   `4be9982` or newer for `eval.sh` (it needs `controlSW/franka_deploy`): `ssh <login> git -C CapstoneProject/Capstone pull`.
-4. Try it without touching anything: `train/go.sh block_raise br-nov13 --package --dry-run`.
+   `4be9982` or newer for `eval.sh` (it needs `controlSW/franka_deploy`): `ssh <login> git -C CapstoneProject/Capstone pull --ff-only`.
+4. Try it without touching anything: `train/go.sh eraser_pick_2 ep2-v1 --package --dry-run`.
 
 ## Workflow
 
-Examples use the task folder `block_raise` and a new dataset name `br-nov13`.
+Examples use the task folder `eraser_pick_2` and a new dataset name `ep2-v1`.
 
 | Step | Command |
 |---|---|
-| 1. Pull from the Jetson (optionally packaging first) | `train/pull.sh block_raise --package br-nov13 --no-raw` |
-| 2. Upload the dataset | `train/upload.sh block_raise br-nov13` |
-| 3. Submit training (smoke, then full) | `train/submit.sh block_raise br-nov13 --smoke-first --note "first rig data"` |
-| 4. Watch it | `train/status.sh block_raise run_002_2026-11-13 --wait` |
-| 5. Fetch the results | `train/fetch.sh block_raise run_002_2026-11-13` |
-| 6. Analyse | see [analysis/README.md](analysis/README.md); offline eval on the cluster: `train/analysis/eval.sh block_raise run_002_2026-11-13 --ckpt top1` |
+| 1. Pull from the Jetson (optionally packaging first) | `train/pull.sh eraser_pick_2 --package ep2-v1 --no-raw` |
+| 2. Upload the dataset | `train/upload.sh eraser_pick_2 ep2-v1` |
+| 3. Submit training (smoke, then full) | `train/submit.sh eraser_pick_2 ep2-v1 --smoke-first --note "first rig data"` |
+| 4. Watch it | `train/status.sh eraser_pick_2 run_002_2026-11-13 --wait` |
+| 5. Fetch the results | `train/fetch.sh eraser_pick_2 run_002_2026-11-13` |
+| 6. Analyse | see [analysis/README.md](analysis/README.md); offline eval on the cluster: `train/analysis/eval.sh eraser_pick_2 run_002_2026-11-13 --ckpt top1` |
 
-Steps 1–3 in one command: `train/go.sh block_raise br-nov13 --package --no-raw --note "first rig data"`
+Steps 1–3 in one command: `train/go.sh eraser_pick_2 ep2-v1 --package --no-raw --note "first rig data"`
 (`--pull` instead of `--package` for a dataset already packaged on the Jetson, `--no-smoke` to skip the smoke run).
 
 Details:
@@ -76,7 +81,7 @@ data/<folder>/analysis/               default output folder of the analysis scri
 
 ## Disk space
 
-The laptop has only ~23 GB free. A task folder with raw recordings is roughly 300 MB per episode (processed + raw);
+The laptop has only ~21 GB free (2026-11-15). A task folder with raw recordings is roughly 300 MB per episode (processed + raw);
 `--no-raw` leaves out the raw part. Each run keeps one slim checkpoint by default (~2.5 GB per run, on the cluster
 and on the laptop); `submit.sh --topk K` keeps more and `fetch.sh --top N` fetches more (~2.5 GB each).
 `pull.sh` and `fetch.sh` print the transfer size first and refuse if less than `MIN_FREE_GB` (5) would be left
@@ -96,6 +101,12 @@ than fit are lowered with a warning. 60 is the default because run_001 overfit a
 
 - **`X is not set (value: '<...>')`**: fill X in `train/config.env`.
 - **ssh asks for a password or hangs**: check `ssh <host>` by hand; set up keys (setup step 2).
+- **`Permission denied (publickey)` from the cluster**: the Research Computing key is missing or not used. See
+  [DIRECTIONS.md](DIRECTIONS.md) §1.3, cluster key.
+- **`Temporary failure in name resolution` for the Jetson**: use its IP (`hostname -I` on the Jetson) in
+  `JETSON_HOST`, not the name in its prompt.
+- **`no exported episode` from `pull.sh --package`**: every episode in that folder failed processing. Run
+  `dataproc status <folder>` on the Jetson and see [DIRECTIONS.md](DIRECTIONS.md) Part 2, step 0.
 - **`sha256 mismatch`** after a pull: delete the zip in `data/<folder>/package/<dataset>/` and pull again.
 - **`a different ... is already on the cluster`**: that name is taken by another zip; package under a new name.
 - **upload interrupted**: run it again; it resumes in `<dataset>/.upload/` and only moves the zip into place once its

@@ -19,22 +19,22 @@ also works in place of `FOLDER`.
 Runs keep one checkpoint by default (`checkpoints/top1_*.ckpt`). The kept-checkpoints table then has one row,
 `eval_report.py` reports top1, and the checkpoint comparison only appears once several `eval/<tag>/` exist.
 
-## block_raise examples
+## eraser_pick_2 examples
 
 ```bash
-# the dataset, before training (pulled with train/pull.sh block_raise --dataset br_v1)
-python3 train/analysis/dataset_report.py block_raise --dataset br_v1
+# the dataset, before training (pulled with train/pull.sh eraser_pick_2 --dataset ep2-v1)
+python3 train/analysis/dataset_report.py eraser_pick_2 --dataset ep2-v1
 
 # a fetched run
-python3 train/analysis/run_report.py block_raise run_003
+python3 train/analysis/run_report.py eraser_pick_2 run_003
 
 # every run of the folder, with the old iPhone-era runs as a baseline (results/ is only read)
-python3 train/analysis/compare_runs.py block_raise --results-dir results/block_raise --no-smoke
+python3 train/analysis/compare_runs.py eraser_pick_2 --results-dir results/block_raise --no-smoke
 
 # offline eval: make it on the cluster, fetch it, then report
-train/analysis/eval.sh block_raise run_003_2026-11-13 --ckpt top1 --per-demo 8
-train/fetch.sh block_raise run_003_2026-11-13
-python3 train/analysis/eval_report.py block_raise run_003
+train/analysis/eval.sh eraser_pick_2 run_003_2026-11-13 --ckpt top1 --per-demo 8
+train/fetch.sh eraser_pick_2 run_003_2026-11-13
+python3 train/analysis/eval_report.py eraser_pick_2 run_003
 ```
 
 ## zarr (dataset_report only)
@@ -45,7 +45,7 @@ pandas):
 ```bash
 python3 -m venv --system-site-packages ~/envs/analysis
 ~/envs/analysis/bin/pip install zarr==2.18.3 numcodecs==0.13.1 imagecodecs
-~/envs/analysis/bin/python train/analysis/dataset_report.py block_raise --dataset br_v1 --thumbs 6
+~/envs/analysis/bin/python train/analysis/dataset_report.py eraser_pick_2 --dataset ep2-v1 --thumbs 6
 ```
 
 Without zarr, `dataset_report.py` still writes everything that comes from the JSON files, and says what it skipped.
