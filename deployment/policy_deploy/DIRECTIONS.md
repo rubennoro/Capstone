@@ -79,22 +79,7 @@ cd policy_deploy
 
 From here on you are in `~/Capstone/deployment/policy_deploy`.
 
-### 4. A first run without the PC or the Pi (`--mock`)
-
-Runs the whole laptop side against a fake Pi and a fake PC on this laptop, to check the install. Use a normal terminal
-window (the keys are read from it).
-
-```bash
-~/envs/policy_deploy/bin/policy_deploy check --mock
-~/envs/policy_deploy/bin/policy_deploy run --mock
-```
-
-Press `h`, wait for `home pose reached`, `c`, wait a few seconds, `y`, then `q`.
-
-- **Good:** see the `run --mock` section below. It ends with `policy_deploy: done`.
-- **If not:** "When something fails".
-
-### 5. The addresses on ASUS_5g (once)
+### 4. The addresses on ASUS_5g (once)
 
 The laptop must know the PC's and the Pi's addresses, and the PC's firewall must know the laptop's.
 
@@ -128,7 +113,7 @@ The laptop must know the PC's and the Pi's addresses, and the PC's firewall must
   with the PC running, the `manager` rows about the PC `PASS`).
 - **If not:** "When something fails".
 
-### 6. Watch the Pi stream (once)
+### 5. Watch the Pi stream (once)
 
 Checks that the Pi's frames arrive, and measures how the two cameras are paired, which sets one value
 (`pair_max_lead_ms`).
@@ -138,9 +123,9 @@ Checks that the Pi's frames arrive, and measures how the two cameras are paired,
 ```
 
 - **Good:** about `30.0 pkt/s`, `gaps 0`, `bad 0`; then read the pair-gap report as the `pi_collect` section says.
-- **If not:** nothing arrives: the Pi's sender and `pi: address` (step 5).
+- **If not:** nothing arrives: the Pi's sender and `pi: address` (step 4).
 
-### 7. Check the link to the PC (once, and when the Wi-Fi is bad)
+### 6. Check the link to the PC (once, and when the Wi-Fi is bad)
 
 With `control_deploy run` running on the PC (and no laptop run), checks the link speed and the clock match.
 
@@ -149,9 +134,9 @@ With `control_deploy run` running on the PC (and no laptop run), checks the link
 ```
 
 - **Good:** every row at the end says `PASS` (details in the `pc_probe` section).
-- **If not:** a `FAIL` row names what is wrong; no C2 at all: the PC's `run`, ASUS_5g, `link.yaml` (step 5).
+- **If not:** a `FAIL` row names what is wrong; no C2 at all: the PC's `run`, ASUS_5g, `link.yaml` (step 4).
 
-### 8. The real run (hold still)
+### 7. The real run (hold still)
 
 The first run with the real arm. The PC must already have done its bring-up (the PC's directions, step 10).
 
@@ -163,7 +148,7 @@ The first run with the real arm. The PC must already have done its bring-up (the
 - **Good:** see the `run` section. `h`, `c`: the arm stays still (hold still), the status line counts steps; `y`.
 - **If not:** "When something fails".
 
-### 9. Stopping, restarting, and after a fault
+### 8. Stopping, restarting, and after a fault
 
 - **End an episode:** `y`, `n` or `s`. The arm holds; `h` then `c` for the next one.
 - **Quit:** `q` or Ctrl-C. The PC keeps holding the arm; `policy_deploy run` again whenever you want.
@@ -214,23 +199,6 @@ on both (and rebuild on the PC).
 
 While homing the keys are inactive; Ctrl-C quits, the arm's user stop stops it. A refused key prints why, e.g.
 `h: end the episode first (y / n / s)` or `c: the PC is homing (its h or g key): wait for idle`.
-
-### `policy_deploy run --mock`
-
-**When:** to test the laptop alone (after an install or a pull): a fake Pi plays `episode_000045`, a fake PC stands in
-for the arm. **Never** at the same time as `control_deploy run --mock` on this laptop (same ports).
-
-```bash
-~/envs/policy_deploy/bin/policy_deploy check --mock
-~/envs/policy_deploy/bin/policy_deploy run --mock
-```
-
-**Keys:** the same as `run`.
-
-**Good:** `policy_deploy check: ready (0 warning(s))`, then `policy_deploy: all 4 processes ready`, a status line with
-`arm idle (PC mock) | cams ok 30/ok 30 fps`. `h` → `home pose reached`; `c` → `episode 1 started` and the step count
-rising with a positive `margin`; `y` → `episode 1: success (operator), ...`; `n` → `fail`; `s` → `stopped (operator
-stop key)`; `q` → `policy_deploy: done`. Ctrl-C ends with `policy_deploy: stopped by Ctrl-C`.
 
 ### The link probe: `pc_probe`
 
@@ -297,7 +265,6 @@ frames process alone in one terminal, ask it once from another, then Ctrl-C the 
 
 **Good:** the first prints `ready`; the probe prints both cameras `ok` at `30.0` fps, the four image times and ages,
 and writes `main_0.png`, `main_1.png`, `ultrawide_0.png`, `ultrawide_1.png` into `~/probe_images`: open them and look.
-Add `--mock` to both lines to use the recorded episode instead of the Pi.
 
 ### Policy timing: `policy.bench`
 
@@ -345,9 +312,7 @@ Only once a policy has been trained on data from this rig.
    Good: `~/envs/policy_deploy_torch/bin/python -c "import torch; print(torch.cuda.is_available())"` prints `True`.
 2. **`station.yaml`:** in the `policy:` section, `kind: diffusion` and a new line `checkpoint: /path/to/the.ckpt`;
    `exec_h` from the timing.
-3. **Try it on the fakes first:** add `mock_kind: diffusion` to the `policy:` section, then `policy_deploy run
-   --mock`.
-4. **On the real arm** `check` refuses it (`settled FAIL trained policy refused on the real arm`) while
+3. **On the real arm** `check` refuses it (`settled FAIL trained policy refused on the real arm`) while
    `../contracts/frames.yaml` says `settled: false`: the robot's gripper axes are still turned 90° from training's
    (PLAN §9), so every move would go in the wrong direction. Settling that comes first; until then use
    `kind: hold_still`.
@@ -361,14 +326,13 @@ Only once a policy has been trained on data from this rig.
 
 | You see | Do this |
 |---|---|
-| `manager C2 FAIL no C2 state from tcp://...:5620 within 20 s` | start `control_deploy run` on the PC first; same Wi-Fi; `link.yaml pc: address` (step 5) |
-| `laptop address FAIL none of link.yaml laptop.addresses ... is on this laptop` | step 5: the laptop's address changed or `link.yaml` is wrong (then also the PC's firewall) |
-| `Pi reachable FAIL no TCP connection to <PI>:5555` | the Pi is on, on ASUS_5g, its sender is running; `station.yaml pi: address` (step 5) |
+| `manager C2 FAIL no C2 state from tcp://...:5620 within 20 s` | start `control_deploy run` on the PC first; same Wi-Fi; `link.yaml pc: address` (step 4) |
+| `laptop address FAIL none of link.yaml laptop.addresses ... is on this laptop` | step 4: the laptop's address changed or `link.yaml` is wrong (then also the PC's firewall) |
+| `Pi reachable FAIL no TCP connection to <PI>:5555` | the Pi is on, on ASUS_5g, its sender is running; `station.yaml pi: address` (step 4) |
 | `Wi-Fi WARN not on ASUS_5g` | fine when wired; otherwise join ASUS_5g |
-| `mock episode FAIL not found` | step 4 |
 | `terminal FAIL no terminal for the keyboard` | run it in a normal terminal window, not through a pipe |
-| `... cannot bind tcp://127.0.0.1:56..: is another policy_deploy run ... still running?` | another run (or a `--mock` of either machine) is still open: quit it |
-| `settled FAIL trained policy refused on the real arm` | set `kind: hold_still` in `station.yaml` ("A trained policy", item 4) |
+| `... cannot bind tcp://127.0.0.1:56..: is another policy_deploy run ... still running?` | another `policy_deploy run` (or a `control_deploy run --mock` on this laptop) is still open: quit it |
+| `settled FAIL trained policy refused on the real arm` | set `kind: hold_still` in `station.yaml` ("A trained policy", item 3) |
 | `PC not answering: ...: check franka_control on the PC and the link` | is `control_deploy run` still running? Wi-Fi; then run again |
 | `the PC stopped the arm (watchdog or the PC's 's')` | a Wi-Fi stall over 1 s, or someone pressed `s` on the PC: run again |
 | `the PC reports fault: ...` | on the PC: Ctrl-C, release the user stop if it was a reflex, `control_deploy run`; then run again |
@@ -386,7 +350,7 @@ Only once a policy has been trained on data from this rig.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy/bin/python -m pytest tests -q
 ```
 
-**Good:** `... passed, ... skipped` and no `failed` (about 2 minutes). Don't run it during a `--mock` run (same ports).
+**Good:** `... passed, ... skipped` and no `failed` (about 2 minutes). Don't run it during a `policy_deploy run` (same ports).
 
 ## The files you edit
 
