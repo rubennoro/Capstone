@@ -1,6 +1,7 @@
 # adapted from rnoro/deployment:deployment/policy/tests/test_self_check.py @ 91b178b
 # changes: module path, the new station; --json (and the readable form without it); + the gpu memory, gpu processes
-# and precision rows of kind diffusion, with nvidia-smi stubbed; the environment hint names python.torch.
+# and precision rows of kind diffusion, with nvidia-smi stubbed; the environment hint names python.torch; + the prompt
+# dataset row and the dataset libraries in the imports row.
 from __future__ import annotations
 
 import io
@@ -154,3 +155,26 @@ def test_gpu_processes_parsing():
     assert gpu_processes(lambda args: "12, a, 10\nbad line\n13, b, [N/A]\n") == [
         {"pid": 12, "name": "a", "used_mb": 10.0}, {"pid": 13, "name": "b", "used_mb": None}]
     assert gpu_processes(no_smi) is None
+
+
+def test_prompt_dataset_row_and_dataset_imports(policy_station, tmp_path):
+    demos = tmp_path / "demos.zarr.zip"
+    demos.write_bytes(b"x")
+    by_name = _diffusion_rows(policy_station, tmp_path, no_smi, prompt_dataset=str(demos), prompt_split="val")
+    assert by_name["prompt dataset"]["status"] == "pass"
+    assert by_name["prompt dataset"]["detail"].startswith(f"{demos} (val split")
+    if by_name["imports"]["status"] == "pass":
+        assert by_name["imports"]["detail"].endswith("behavior_prompting, zarr, numcodecs, imagecodecs")
+    by_name = _diffusion_rows(policy_station, tmp_path, no_smi)
+    assert "prompt dataset" not in by_name
+    if by_name["imports"]["status"] == "pass":
+        assert by_name["imports"]["detail"].endswith("diffusers, behavior_prompting")
+
+
+def test_prompt_dataset_missing_or_wrong_suffix_fails(policy_station, tmp_path):
+    by_name = _diffusion_rows(policy_station, tmp_path, no_smi, prompt_dataset=str(tmp_path / "none.zarr.zip"))
+    assert by_name["prompt dataset"]["status"] == "fail"
+    assert "prompt dataset not found" in by_name["prompt dataset"]["detail"]
+    (tmp_path / "demos.hdf5").write_bytes(b"x")
+    by_name = _diffusion_rows(policy_station, tmp_path, no_smi, prompt_dataset=str(tmp_path / "demos.hdf5"))
+    assert by_name["prompt dataset"]["status"] == "fail" and "not a .zarr.zip" in by_name["prompt dataset"]["detail"]

@@ -2,7 +2,8 @@
 # changes: started from ProcessArgs (policy_deploy.contracts.process_args): session folder <session>/policy/ (or the
 # _policy_alone folder), FATAL line through print_fatal; Settings.load(station, mock); startup.json adds precision,
 # the CUDA allocator's peaks after the warm-up (policy.memory_stats(): torch.cuda.max_memory_allocated/reserved) and,
-# for a CUDA policy, nvidia-smi's GPU name, used/total memory and power limit.
+# for a CUDA policy, nvidia-smi's GPU name, used/total memory and power limit; a PromptablePolicy is prompted with its
+# warm_up_prompt() (the longest demo) before the warm-up inferences (startup.json warmup_prompt).
 """PolicyApp: start-up order, warm-up, ready file, serving, FATAL line (STRUCTURE.md 5.4)."""
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from policy_deploy.policy.errors import PolicyFatal, PolicyLoadError, SettingsEr
 from policy_deploy.policy.neutral_observation import neutral_observation
 from policy_deploy.policy.policy_factory import build_policy
 from policy_deploy.policy.policy_server import PolicyServer
+from policy_deploy.policy.promptable_policy import PromptablePolicy
 from policy_deploy.policy.self_check import gpu_info
 from policy_deploy.policy.settings import Settings
 
@@ -52,6 +54,20 @@ def run_warm_up(policy: Policy, obs: Observation, count: int,
     except Exception as e:
         raise PolicyFatal(f"reset after warm-up failed: {type(e).__name__}: {e}", "see the log above") from e
     return times
+
+
+def run_warm_up_prompt(policy: PromptablePolicy, clock: Callable[[], int] = time.monotonic_ns) -> dict[str, Any]:
+    """Prompt with policy.warm_up_prompt() (before run_warm_up, whose reset clears it): {"task_name",
+    "prompt_index", "prompt_s"}. Every failure is fatal: raises PolicyFatal."""
+    try:
+        task_name, prompt_index = policy.warm_up_prompt()
+        t0 = clock()
+        policy.prompt(task_name, prompt_index)
+    except Exception as e:
+        log.error("warm-up prompt failed", exc_info=e)
+        raise PolicyFatal(f"warm-up prompt failed: {type(e).__name__}: {e}",
+                          "check policy.prompt_dataset (the demos of this checkpoint's task) and the GPU") from e
+    return {"task_name": task_name, "prompt_index": prompt_index, "prompt_s": (clock() - t0) / 1e9}
 
 
 def write_atomic(path: Path, text: str) -> None:
@@ -96,6 +112,11 @@ class PolicyApp:
         log.info("policy %s built in %.2f s", settings.active_kind, time.monotonic() - t0)
 
         obs = neutral_observation(settings.warmup_gripper_width_m)
+        warm_prompt = None
+        if isinstance(policy, PromptablePolicy):
+            warm_prompt = run_warm_up_prompt(policy)
+            log.info("warm-up prompt: task %r, index %d in %.3f s", warm_prompt["task_name"],
+                     warm_prompt["prompt_index"], warm_prompt["prompt_s"])
         times = run_warm_up(policy, obs, settings.warmup_inferences)
         device = str(policy.describe().get("device", "cpu"))
         log.info("warm-up " + ", ".join(f"inference {i + 1}/{len(times)}: {t:.3f} s" for i, t in enumerate(times))
@@ -113,6 +134,8 @@ class PolicyApp:
                 "memory": policy.memory_stats(), "gpu": gpu_info() if device.startswith("cuda") else None,
                 "endpoint": server.endpoint, "pid": os.getpid(),
             }
+            if warm_prompt is not None:
+                startup["warmup_prompt"] = warm_prompt
             write_atomic(out_dir / "startup.json", json.dumps(startup, indent=1, default=str))
             if self._args.ready_file is not None:
                 write_atomic(Path(self._args.ready_file), "")

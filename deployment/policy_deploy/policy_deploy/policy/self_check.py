@@ -3,7 +3,8 @@
 # it, one readable line per check); for kind diffusion adds the rows "gpu memory" (free/used/total from nvidia-smi),
 # "gpu processes" (other compute processes via nvidia-smi --query-compute-apps; warn above 300 MB) and "precision";
 # the nvidia-smi readers (gpu_info, gpu_processes) are shared with app.py's startup.json; the environment hint names
-# python.torch.
+# python.torch; with policy.prompt_dataset set, a "prompt dataset" row (exists, readable) and zarr, numcodecs and
+# imagecodecs in the imports row.
 """`python -m policy_deploy.policy.self_check [--station FILE] [--mock] [--json]`: the policy rows of
 `policy_deploy check` (STRUCTURE.md 5.2, 9.2).
 
@@ -29,6 +30,7 @@ from policy_deploy.policy.errors import SettingsError
 from policy_deploy.policy.settings import Settings
 
 MODEL_MODULES = ("torch", "dill", "hydra", "timm", "diffusers", "behavior_prompting")
+PROMPT_MODULES = ("zarr", "numcodecs", "imagecodecs")      # reading the prompt dataset (policy.prompt_dataset)
 ENV_HINT = ("run it with python.torch, the torch environment "
             "(uv pip install -e deployment/contracts -e \"deployment/policy_deploy[model,test]\" there)")
 OTHER_GPU_WARN_MB = 300.0
@@ -114,7 +116,9 @@ class SelfCheck:
         self.emit("kind", "info", f"policy kind: {settings.active_kind}" + (" (--mock)" if settings.mock else ""))
         if settings.active_kind == "diffusion":
             self._check_checkpoint(settings)
-            torch = self._check_imports()
+            if settings.prompt_dataset is not None:
+                self._check_prompt_dataset(settings)
+            torch = self._check_imports(MODEL_MODULES + (PROMPT_MODULES if settings.prompt_dataset else ()))
             if torch is not None:
                 self._check_device(settings, torch)
             if settings.device == "cuda":
@@ -145,11 +149,30 @@ class SelfCheck:
             mtime = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
             self.emit("checkpoint", "pass", f"{path} ({st.st_size / 1e9:.2f} GB, modified {mtime})")
 
-    def _check_imports(self):
+    def _check_prompt_dataset(self, settings: Settings) -> None:
+        path = settings.prompt_dataset
+        hint = "check policy.prompt_dataset in station.yaml (the processed .zarr.zip of the demos)"
+        if not path.exists():
+            self.emit("prompt dataset", "fail", f"prompt dataset not found: {path}: {hint}")
+            return
+        if not (path.name.endswith(".zarr.zip") or (path.is_dir() and path.name.endswith(".zarr"))):
+            self.emit("prompt dataset", "fail", f"not a .zarr.zip file: {path}: {hint}")
+            return
+        if path.is_file():
+            try:
+                with open(path, "rb") as f:
+                    f.read(1)
+            except OSError as e:
+                self.emit("prompt dataset", "fail", f"prompt dataset not readable: {path}: {e}")
+                return
+        size = f", {path.stat().st_size / 1e9:.2f} GB" if path.is_file() else ""
+        self.emit("prompt dataset", "pass", f"{path} ({settings.prompt_split} split{size})")
+
+    def _check_imports(self, names: tuple[str, ...] = MODEL_MODULES):
         missing: list[str] = []
         modules = {}
         with contextlib.redirect_stdout(sys.stderr):     # keep stdout for check lines only
-            for name in MODEL_MODULES:
+            for name in names:
                 try:
                     modules[name] = importlib.import_module(name)
                 except Exception as e:                  # ImportError, or a broken install
@@ -157,7 +180,7 @@ class SelfCheck:
         if missing:
             self.emit("imports", "fail", f"not importable: {', '.join(missing)}: {ENV_HINT}")
             return modules.get("torch")
-        self.emit("imports", "pass", f"torch {modules['torch'].__version__}, " + ", ".join(MODEL_MODULES[1:]))
+        self.emit("imports", "pass", f"torch {modules['torch'].__version__}, " + ", ".join(names[1:]))
         return modules["torch"]
 
     def _check_device(self, settings: Settings, torch) -> None:

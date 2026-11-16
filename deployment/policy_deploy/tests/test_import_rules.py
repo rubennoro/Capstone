@@ -5,7 +5,7 @@
   deploy_contracts, stdlib and its third-party libraries; never another process subpackage, the launcher or
   control_deploy.
 - policy_deploy.launcher: stdlib, yaml, policy_deploy.contracts, deploy_contracts; never a process subpackage.
-- torch & co only in the five torch files of policy, never at package import.
+- torch & co only in the seven torch files of policy, never at package import.
 - no module name of rnoro/deployment (contracts, deploy, process_frames, policy, message_comms) is imported.
 """
 from __future__ import annotations
@@ -20,7 +20,8 @@ PACKAGE = Path(__file__).resolve().parents[1] / "policy_deploy"
 PROCESSES = ("frames", "policy", "manager", "fake_pc")
 OLD_NAMES = ("contracts", "deploy", "process_frames", "policy", "message_comms")
 TORCH_LIBS = ("torch", "torchvision", "dill", "hydra", "omegaconf", "timm", "diffusers", "behavior_prompting")
-TORCH_FILES = ("diffusion_policy.py", "model_runner.py", "checkpoint_loader.py", "light_workspace.py", "bench.py")
+TORCH_FILES = ("diffusion_policy.py", "model_runner.py", "checkpoint_loader.py", "light_workspace.py", "bench.py",
+               "prompt_source.py", "promptable_diffusion_policy.py")
 STDLIB = set(sys.stdlib_module_names)
 THIRD_PARTY = {
     "contracts": {"numpy", "yaml", "msgpack", "zmq"},

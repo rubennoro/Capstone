@@ -84,7 +84,8 @@ deployment/policy_deploy/
     policy/                    process "policy" (§5)
       __main__.py app.py settings.py errors.py policy_server.py policy_factory.py base_policy.py
       promptable_policy.py hold_still_policy.py key_map.py neutral_observation.py self_check.py probe.py
-      diffusion_policy.py model_runner.py checkpoint_loader.py light_workspace.py bench.py      (last five: torch)
+      diffusion_policy.py model_runner.py checkpoint_loader.py light_workspace.py bench.py
+      promptable_diffusion_policy.py prompt_source.py                                     (last seven: torch)
     manager/                   process "manager" (§6, §8)
       __main__.py settings.py errors.py frames_client.py policy_client.py pc_client.py heartbeat_sender.py
       pc_listener.py state_history.py pc_clock.py link_stats.py startup_checks.py startup_sequence.py
@@ -103,7 +104,7 @@ deployment/policy_deploy/
 | `policy_deploy.contracts` | stdlib, numpy, yaml, msgpack, zmq, `deploy_contracts` | any other `policy_deploy` subpackage |
 | `policy_deploy.frames`, `.policy`, `.manager`, `.fake_pc` | stdlib, their own third-party libraries, their own subpackage, `policy_deploy.contracts`, `deploy_contracts` | another process subpackage, `policy_deploy.launcher`, `control_deploy` |
 | `policy_deploy.launcher` | stdlib, yaml, `policy_deploy.contracts`, `deploy_contracts` | any process subpackage: it runs them as subprocesses (`python -m ...`), so torch, OpenCV or PyAV never load in the launcher |
-| `policy_deploy.policy` torch rule | torch, dill, hydra, timm, diffusers, behavior_prompting only in `diffusion_policy.py`, `model_runner.py`, `checkpoint_loader.py`, `light_workspace.py`, `bench.py` | at package import (`hold_still` runs without torch) |
+| `policy_deploy.policy` torch rule | torch, dill, hydra, timm, diffusers, behavior_prompting only in `diffusion_policy.py`, `model_runner.py`, `checkpoint_loader.py`, `light_workspace.py`, `bench.py`, `promptable_diffusion_policy.py`, `prompt_source.py` | at package import (`hold_still` runs without torch) |
 
 `tests/test_import_rules.py` reads every module with `ast` (nothing is imported) and enforces the table. It also
 checks that no module name of `rnoro/deployment` (`contracts`, `deploy`, `process_frames`, `policy`, `message_comms`)
@@ -422,7 +423,8 @@ Outputs: `<session>/frames/stats.jsonl`.
 ## 5. Process: policy
 
 Copied from old:policy unchanged in behaviour (old:policy/STRUCTURE.md), plus `kind` in the config reply, a
-`precision` setting, GPU memory in `startup.json`, and the timing tool `bench`.
+`precision` setting, GPU memory in `startup.json`, the timing tool `bench`, and prompting checkpoints
+(`PromptableDiffusionPolicy`, still kind `diffusion`; the prompt parts of detached_inference).
 
 ### 5.1 Responsibilities and threads
 
@@ -436,15 +438,17 @@ FATAL after the `ErrorReply` (old §3.5).
 |---|---|---|
 | `Policy` (`base_policy.py`), `make_chunk` (width clip to the largest float32 ≤ `gripper_width_max_m`) | old:policy/policy/base_policy.py | `config()` fills `kind = KIND` |
 | `PromptablePolicy`, `HoldStillPolicy`, `KeyMap`, `neutral_observation`, `PolicyServer`, `build_policy`, errors | copied | imports only |
-| `DiffusionPolicy` (`diffusion_policy.py`) | copied | passes `precision` to the runner |
+| `DiffusionPolicy` (`diffusion_policy.py`) | copied | passes `precision` to the runner; `from_settings`: a prompting checkpoint → `PromptableDiffusionPolicy` (needs `prompt_dataset`), `prompt_dataset` with a plain one refused |
+| `PromptableDiffusionPolicy` (`promptable_diffusion_policy.py`, torch) | detached_inference.py `policy_prompt`/`policy_reset` | a `PromptablePolicy` over `DiffusionPolicy` (same `ModelRunner`): `prompt()` → `model.prompt()` under `inference_mode`, fp32 (also with `bf16`); `reset()` clears it; warm-up prompt = the longest demo |
+| `PromptSource` (`prompt_source.py`, torch) | detached_inference.py:164-192, 376-395 | the checkpoint's `task.dataset` with `only_prompt`, `dataset_path` = `prompt_dataset`, `val_ratio` 0, `cache_dir` None (zip read in place), split `prompt_split`; unknown task / index → `BadRequest`; longest demo from the replay buffer's `task_lengths` |
 | `ModelRunner` (`model_runner.py`) | old:policy/policy/model_runner.py:43-77 | `precision: bf16` wraps `predict_action` in `torch.autocast("cuda", dtype=torch.bfloat16)` (training's `mixed_precision: bf16`); weights stay fp32; output `.float()` as before |
-| `CheckpointLoader`, `LoadedModel` (`checkpoint_loader.py`) | old:policy/policy/checkpoint_loader.py:31-179 | none (prompting refused by `DiffusionPolicy`, not the loader) |
+| `CheckpointLoader`, `LoadedModel` (`checkpoint_loader.py`) | old:policy/policy/checkpoint_loader.py:31-179 | `LoadedModel.dataset_cfg` (the resolved `cfg.task.dataset`, for `PromptSource`) |
 | `light_workspace.py` | copied | none |
 | `Settings` (`settings.py`) | old:policy/policy/settings.py | station schema of §2.4; adds `precision`, `mock_kind`; endpoint from `ports.policy` |
-| `PolicyApp` (`app.py`) | old:policy/policy/app.py:65-140 | `startup.json` adds `torch.cuda.max_memory_allocated/reserved` after warm-up, `nvidia-smi` used/total memory, GPU name, power limit, `precision` |
-| `self_check.py` | old:policy/policy/self_check.py | adds rows: free GPU memory and other GPU processes (`nvidia-smi --query-compute-apps`), `precision`, `exec_h` is the manager's and not shown here |
+| `PolicyApp` (`app.py`) | old:policy/policy/app.py:65-140 | `startup.json` adds `torch.cuda.max_memory_allocated/reserved` after warm-up, `nvidia-smi` used/total memory, GPU name, power limit, `precision`; a `PromptablePolicy` is prompted with its `warm_up_prompt()` before the warm-up inferences (`warmup_prompt`) |
+| `self_check.py` | old:policy/policy/self_check.py | adds rows: free GPU memory and other GPU processes (`nvidia-smi --query-compute-apps`), `precision`, `prompt dataset` (when set; zarr, numcodecs, imagecodecs in imports), `exec_h` is the manager's and not shown here |
 | `probe.py` | old:policy/policy/probe.py:29-115 | prints `kind`; `--infers N` reports mean/p50/p95/max |
-| `bench.py` (new, torch) | new | §11: times `predict_action` without a socket or a checkpoint of the right kind |
+| `bench.py` (new, torch) | new | §11: times `predict_action` without a socket or a checkpoint of the right kind; a prompting checkpoint with `--prompt-dataset` |
 
 ### 5.3 Config (`config/policy.yaml`)
 
@@ -457,6 +461,8 @@ As old:policy/config.yaml, plus:
 | `device` | `cuda` | PLAN §13 device backup (`cpu`) |
 | `diffusion_steps` | `null` (the checkpoint's 16) | PLAN §13: third backup |
 | `precision` | `fp32` | PLAN §13: second backup `bf16` (autocast) |
+| `prompt_dataset` | `null` | a prompting checkpoint only (refused for a plain one): the processed `.zarr.zip` of the demos, resolved like `checkpoint`; `manager.task_name` / `prompt_index` pick the demo |
+| `prompt_split` | `train` | `train` (the demos the model trained on) \| `val` (held out) \| `all` (every demo: a dataset the model never trained on) |
 | `mock_kind` | `hold_still` | the kind that runs under `--mock`; `diffusion` times the real model against the fake Pi and fake PC (needs `checkpoint` and the torch env) |
 | `warmup_inferences`, `warmup_gripper_width_m`, `reset_max_s`, `poll_s`, `self_check_timeout_s`, `training_timing.*`, `key_map.*` | as old | |
 
@@ -949,7 +955,7 @@ Starts nothing that moves; prints one table; exit 2 if any `fail`.
 | policy | `kind` | config | unset (not mock) |
 | policy | `settled` | `contracts/frames.yaml settled` vs `kind` (not mock) | `kind != hold_still` and `settled: false` |
 | policy | `torch env` (diffusion) | `python.torch` exists and is executable | missing |
-| policy | self-check rows | subprocess `policy.self_check --json` in the kind's env: settings, checkpoint exists, imports (torch, behavior_prompting), CUDA, GPU name, free VRAM, other GPU processes (**warn** if > 300 MB used by others), `device`, `precision`, `diffusion_steps` | as old §8.2 |
+| policy | self-check rows | subprocess `policy.self_check --json` in the kind's env: settings, checkpoint exists, prompt dataset exists (when `prompt_dataset` is set), imports (torch, behavior_prompting), CUDA, GPU name, free VRAM, other GPU processes (**warn** if > 300 MB used by others), `device`, `precision`, `diffusion_steps` | as old §8.2 |
 | policy | `C4 port` | `port_free(5640)` | busy |
 | manager | self-check rows | subprocess `manager.self_check --json`: settings in range, operator script or a terminal, the worst-gap rule against `link.yaml watchdog_limit_s`, `exec_h` (info, PLAN §13 backup), `clock.estimator` (info) | as old |
 | manager | PC rows (not mock) | subprocess `manager.pc_probe --check --json`: C2 arriving (rate), H2 state, hello answered (RTT), every §8.4 row, PC commit vs laptop commit (**warn** on difference), `PC mock` | no C2, PC busy, hello mismatch, budget |
@@ -1035,9 +1041,9 @@ bind-address or firewall rules, no `--local`. The real behaviour is tested by `c
 ## 11. Measuring the policy on this laptop (PLAN §8.2, §12 step 2)
 
 `run_001` is a **prompting** checkpoint (`use_prompting: true`, a prompt transformer over 512 tokens,
-`results/block_raise/run_001_2026-10-05/run_config/config.yaml:89`). `DiffusionPolicy` refuses it
-(old:policy/STRUCTURE.md §5.9), and its encoder differs from the plain diffusion policy that will run (PLAN §1).
-So timing uses `policy.bench` (§14 decision 2).
+`results/block_raise/run_001_2026-10-05/run_config/config.yaml:89`). It is served by `PromptableDiffusionPolicy`
+(kind `diffusion`, with `prompt_dataset`), but its encoder differs from the plain diffusion policy that will run
+(PLAN §1). So timing uses `policy.bench` (§14 decision 2).
 
 ### 11.1 `policy.bench` (torch env)
 
@@ -1050,8 +1056,9 @@ python -m policy_deploy.policy.bench [--config umi_policy_dunet | --checkpoint P
   `TimmObsEncoder` with `vit_base_patch16_clip_224.openai`, UNet `[256, 512, 1024]`, DDIM 16 steps), with
   `pretrained: false` (no download), instantiates `cfg.policy` at random weights, `eval().to(device)`, and feeds
   `neutral_observation()` converted by `ModelRunner`'s own conversion. Timing does not depend on the weights.
-- `--checkpoint PATH`: loads through `CheckpointLoader` (prompting allowed here only, never served); reports load
-  time, host RAM peak and VRAM of the real weights; times inference only for a plain checkpoint.
+- `--checkpoint PATH`: loads through `CheckpointLoader`; reports load time, host RAM peak and VRAM of the real
+  weights; times inference for a plain checkpoint, or for a prompting one with `--prompt-dataset ZIP
+  [--prompt-split train]` (prompted once with the longest demo first, as the warm-up).
 - For each `steps × precision`: load s, warm-up times, mean/p50/p95/max over `--infers` sustained calls,
   `torch.cuda.max_memory_allocated/reserved`, `nvidia-smi` used memory, power draw, SM clock and temperature at the
   end (throttling at the 35 W cap). One line each, and `bench.jsonl` in `--out`.
@@ -1102,7 +1109,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy_torch/bin/python -m pytest
 |---|---|
 | `tests/contracts` | old:contracts/tests/test_c1.py, test_c4.py (+ `kind`), test_pi_stream.py, test_c0.py (internal packet only), the C0/C1/C4 part of test_examples.py; old:process_frames/tests/test_clock_map.py (now `clock_fit`, plus `to_remote_ns`) |
 | `tests/frames` | old:process_frames/tests/ test_imageprep.py, test_vendored_camera_model.py, test_imageprep_live.py, test_copies.py, test_rig_file.py, test_settings.py, test_frame_times.py, test_packet_pairer.py (rewritten for nearest pairing, §12.2), test_packet_buffer.py, test_packet_selector.py, test_camera_health.py, test_receiver.py (JPEG only), test_pi_recording.py (JPEG only), test_fake_pi_sender.py (`pi_v1` only), test_frames_server.py, test_pipeline.py (`pi_v1`), test_real_episode.py (skipped without `~/Downloads/episode_000045`), test_pi_v1.py, test_pi_collect.py, test_main.py, test_decoders.py (JPEG part); dropped: test_clock_sync.py, the H.264 tests, test_launch.py (moves to `tests/launcher`) |
-| `tests/policy` | every file of old:policy/tests (test_settings, test_make_chunk, test_key_map, test_hold_still_policy, test_policy_server, test_neutral_observation, test_policy_factory, test_import_without_torch, test_app, test_warm_up, test_self_check, test_probe, test_diffusion_policy, test_checkpoint_loader); test_launch.py moves to `tests/launcher` |
+| `tests/policy` | every file of old:policy/tests (test_settings, test_make_chunk, test_key_map, test_hold_still_policy, test_policy_server, test_neutral_observation, test_policy_factory, test_import_without_torch, test_app, test_warm_up, test_self_check, test_probe, test_diffusion_policy, test_checkpoint_loader); test_launch.py moves to `tests/launcher`; new test_promptable_diffusion_policy (`POLICY_TEST_CHECKPOINT` + `POLICY_TEST_PROMPT_DATASET` add the real run_001 check) |
 | `tests/manager` | old:message_comms/tests/ test_pose_math.py, test_pose_converter.py, test_state_history.py, test_state_listener.py (now `PcListener`), test_clients.py (now `PcClient` incl. hello), test_policy_step.py, test_step_worker.py, test_episode_loop.py, test_failure_monitor.py, test_operator.py, test_status_line.py, test_session_log.py, test_settings.py, test_main.py, test_flow.py (against `FakePc` instead of `FakeFrankaControl`); helpers `fakes.py`, `harness.py`, `raw_server.py`, `reference_pose_utils.py` |
 | `tests/launcher` | old:deploy/tests/ test_station.py (new schema), test_config_merge.py, test_session.py, test_check_result.py, test_check_helpers.py, test_managed_process.py, test_launcher.py (new order), test_check.py, test_mock.py, test_cli.py, and each folder's test_launch.py as process-class tests; dropped: test_geometry.py, test_gripper_file.py, test_tcp_triangle.py |
 

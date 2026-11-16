@@ -1,5 +1,6 @@
 # adapted from rnoro/deployment:deployment/policy/tests/test_checkpoint_loader.py @ 91b178b
-# changes: imports (shape_meta from policy_fakes); the new Settings.load and station
+# changes: imports (shape_meta from policy_fakes); the new Settings.load and station; a prompting checkpoint without
+# policy.prompt_dataset is refused with the prompt_dataset hint (served with it: test_promptable_diffusion_policy.py)
 """CheckpointLoader's load checks on hand-made cfg / shape_meta objects (no real checkpoint needed).
 
 Optional: POLICY_TEST_CHECKPOINT=<run_001's slim best.ckpt> also loads a real checkpoint on the CPU.
@@ -40,7 +41,7 @@ def _model_with(scheduler):
     return model
 
 
-def test_prompting_checkpoint_refused_by_diffusion_policy(monkeypatch, policy_station, tmp_path):
+def test_prompting_checkpoint_without_prompt_dataset_refused(monkeypatch, policy_station, tmp_path):
     from policy_deploy.policy.diffusion_policy import DiffusionPolicy
     from policy_deploy.policy.settings import Settings
     loaded = LoadedModel(model=TinyDiffusionModel({}), shape_meta=copy.deepcopy(RUN_001_SHAPE_META),
@@ -51,8 +52,8 @@ def test_prompting_checkpoint_refused_by_diffusion_policy(monkeypatch, policy_st
                                             python={"light": sys.executable, "torch": sys.executable}), mock=False)
     with pytest.raises(PolicyLoadError) as e:
         DiffusionPolicy.from_settings(settings)
-    assert str(e.value) == ("checkpoint uses prompting (shape_meta.use_prompting: true): kind diffusion needs a plain "
-                            "diffusion checkpoint")
+    assert str(e.value) == ("checkpoint uses prompting (shape_meta.use_prompting: true): set policy.prompt_dataset "
+                            "(the processed .zarr.zip of the demos)")
 
 
 def test_pose_representation_checks():

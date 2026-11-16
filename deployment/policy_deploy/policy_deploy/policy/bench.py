@@ -1,18 +1,20 @@
 # new (STRUCTURE.md 11.1); the model building follows light_workspace.py (no backbone download) and the timing
-# follows probe.py (mean / p50 / p95 / max)
+# follows probe.py (mean / p50 / p95 / max); --prompt-dataset prompts a prompting checkpoint with its longest demo
+# (PromptSource, as PromptableDiffusionPolicy's warm-up) and then times it
 """`python -m policy_deploy.policy.bench`: time predict_action on this laptop without a socket (STRUCTURE.md 11.1).
 
-    python -m policy_deploy.policy.bench [--config umi_policy_dunet | --checkpoint PATH] [--steps 16,8,4]
-           [--precision fp32,bf16] [--infers 500] [--warmup 3] [--device cuda] [--out DIR]
+    python -m policy_deploy.policy.bench [--config umi_policy_dunet | --checkpoint PATH [--prompt-dataset ZIP
+           [--prompt-split train]]] [--steps 16,8,4] [--precision fp32,bf16] [--infers 500] [--warmup 3]
+           [--device cuda] [--out DIR]
 
 --config NAME (default umi_policy_dunet): composes behavior_prompting's training config NAME with hydra, builds
 cfg.model (the plain diffusion policy: TimmObsEncoder on vit_base_patch16_clip_224.openai, UNet [256, 512, 1024],
 DDIM 16 steps) at random weights without downloading the backbone, and feeds neutral_observation() through
 ModelRunner's own conversion. Timing does not depend on the weights.
 
---checkpoint PATH: loads through CheckpointLoader (a prompting checkpoint is allowed here only, never served) and
-reports the load time, the host RAM peak and the VRAM of the real weights; inference is timed only for a plain
-(non-prompting) checkpoint.
+--checkpoint PATH: loads through CheckpointLoader and reports the load time, the host RAM peak and the VRAM of the
+real weights. A plain checkpoint is then timed; a prompting one only with --prompt-dataset (the processed .zarr.zip of
+its demos; --prompt-split train | val | all): prompted once with the longest demo (one "prompt" line), then timed.
 
 For each steps x precision: warm-up times, mean/p50/p95/max over --infers sustained calls,
 torch.cuda.max_memory_allocated/reserved, and nvidia-smi's used memory, power draw, SM clock and temperature at the end
@@ -39,7 +41,7 @@ import numpy as np
 
 from policy_deploy.policy.errors import PolicyLoadError
 from policy_deploy.policy.neutral_observation import neutral_observation
-from policy_deploy.policy.settings import PRECISIONS
+from policy_deploy.policy.settings import PRECISIONS, PROMPT_SPLITS
 
 CONFIG_MODULE = "behavior_prompting.train_network.config"
 DEFAULT_CONFIG = "umi_policy_dunet"
@@ -111,6 +113,10 @@ def host_ram_peak_mb() -> float:
 
 def format_line(record: Mapping[str, Any]) -> str:
     """One readable line of a bench record."""
+    if record.get("what") == "prompt":
+        return (f"prompt: task {record.get('task_name')!r}, index {record.get('prompt_index')} ({record.get('steps')} "
+                f"steps, {record.get('split')} split): {record.get('prompt_s')} s, VRAM allocated "
+                f"{record.get('max_memory_allocated_mb')} MB")
     if record.get("what") == "load":
         return (f"load: {record.get('source')}: {record.get('load_s')} s, host RAM peak {record.get('host_ram_peak_mb')}"
                 f" MB, VRAM allocated {record.get('max_memory_allocated_mb')} MB, reserved "
@@ -129,6 +135,11 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     source.add_argument("--config", default=None,
                         help=f"behavior_prompting training config at random weights (default {DEFAULT_CONFIG})")
     source.add_argument("--checkpoint", type=Path, default=None, help="a training checkpoint (.ckpt)")
+    ap.add_argument("--prompt-dataset", type=Path, default=None,
+                    help="with a prompting --checkpoint: the processed .zarr.zip of its demos (prompts with the "
+                         "longest demo, then times)")
+    ap.add_argument("--prompt-split", choices=PROMPT_SPLITS, default="train",
+                    help="the demos to prompt from (default train)")
     ap.add_argument("--steps", type=int_list, default=[16], help="diffusion steps to time, e.g. 16,8,4")
     ap.add_argument("--precision", type=precision_list, default=["fp32"], help="e.g. fp32,bf16")
     ap.add_argument("--infers", type=int, default=500, help="sustained timed calls per combination")
@@ -138,6 +149,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     a = ap.parse_args(argv)
     if a.checkpoint is None and a.config is None:
         a.config = DEFAULT_CONFIG
+    if a.prompt_dataset is not None and a.checkpoint is None:
+        ap.error("--prompt-dataset needs --checkpoint")
     if a.infers < 1 or a.warmup < 0:
         ap.error("--infers must be >= 1 and --warmup >= 0")
     return a
@@ -246,6 +259,25 @@ def time_combination(model, shape_meta: Mapping, device: str, steps: int, precis
     return record
 
 
+def prompt_longest(loaded, path: Path, split: str, device: str) -> dict[str, Any]:
+    """Prompt the loaded prompting model with the longest demo of `path` (as the policy's warm-up does)."""
+    import torch
+
+    from policy_deploy.policy.prompt_source import PromptSource
+    source = PromptSource.load(path, split, loaded.dataset_cfg, loaded.model.get_training_split_info(), device)
+    demo = source.demo(*source.longest())
+    t0 = time.perf_counter()
+    prompt = source.get(demo["task_name"], demo["prompt_index"])
+    with torch.inference_mode():
+        loaded.model.prompt(prompt)
+    if device == "cuda":
+        torch.cuda.synchronize()
+    record: dict[str, Any] = {"what": "prompt", "split": split, **demo, "prompt_s": round(time.perf_counter() - t0, 3)}
+    if device == "cuda":
+        record["max_memory_allocated_mb"] = round(torch.cuda.max_memory_allocated() / 2**20, 1)
+    return record
+
+
 def run(a: argparse.Namespace, out=sys.stdout) -> int:
     import torch
 
@@ -277,8 +309,11 @@ def run(a: argparse.Namespace, out=sys.stdout) -> int:
         load["max_memory_reserved_mb"] = round(torch.cuda.max_memory_reserved() / 2**20, 1)
     load.update(nvidia_smi_now())
     emit(load)
+    if not plain and a.prompt_dataset is not None:
+        emit(prompt_longest(loaded, a.prompt_dataset, a.prompt_split, a.device))
+        plain = True                                      # prompted: timed like a plain one
     if not plain:
-        out.write("prompting checkpoint: inference not timed (DiffusionPolicy refuses it; use --config)\n")
+        out.write("prompting checkpoint: inference not timed (give --prompt-dataset, or use --config)\n")
     else:
         for steps in a.steps:
             for precision in a.precision:

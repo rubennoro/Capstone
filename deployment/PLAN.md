@@ -23,7 +23,8 @@ The setup:
 - The **PC** is cabled directly to the Franka. It runs only the arm side: the safety gate, the 1 kHz control loop, the
   gripper, homing, and the state broadcast back to the laptop. Code: `control_deploy/`. The PC is too weak to run the
   policy, which is why the work is split.
-- The policy is a **plain diffusion policy** first (behavior prompting can be added later without changing the rest).
+- The policy is a **plain diffusion policy** first. A behavior-prompting checkpoint is served too, by
+  `PromptableDiffusionPolicy` (still kind `diffusion`; it needs `policy.prompt_dataset` and `manager.task_name`).
   Until a policy trained on rig data exists, the policy on the real arm is **hold still**.
 - The gripper is the **Franka Hand with our printed fingers**, at most **80 mm** open.
 
@@ -436,9 +437,10 @@ checks. A trained policy is refused on the real arm while `frames.yaml` says `se
 **First thing to measure on the laptop:** the policy's speed and memory on the RTX 3050 Ti (35 W cap). Estimate for
 the v1 architecture (two CLIP ViT-B/16 encoders + a 1D UNet, 16 diffusion steps): about 3.1–3.3 GB of the 4 GB, and
 150–220 ms per inference, likely over the budget at `exec_h` 8. `run_001` is a prompting checkpoint (a different,
-larger architecture, refused by the plain diffusion policy), so speed is measured with a small benchmark tool that
-builds the plain diffusion architecture with random weights; `run_001` gives only load time, host RAM and the GPU
-memory of real weights. Backups in section 13 (`precision: bf16` = autocast).
+larger architecture, served by `PromptableDiffusionPolicy`: kind `diffusion`, with `policy.prompt_dataset` and
+`manager.task_name`), so speed is measured with a small benchmark tool that
+builds the plain diffusion architecture with random weights; `run_001` gives load time, host RAM and the GPU
+memory of real weights (and its own speed with `bench --prompt-dataset`). Backups in section 13 (`precision: bf16` = autocast).
 
 ## 9. The TCP frame
 

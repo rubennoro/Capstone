@@ -2,7 +2,8 @@
 # changes: the station schema of STRUCTURE.md 2.4 (Station.load + load_config("policy", station) from
 # policy_deploy.contracts replace the local merge); the endpoint is station.policy_endpoint() (ports.policy); the
 # checkpoint path through contracts.resolve_path; adds precision (fp32 | bf16) and mock_kind (the kind that runs
-# under --mock); the session folder is the process's (ProcessArgs), not part of the settings; session_root kept.
+# under --mock); the session folder is the process's (ProcessArgs), not part of the settings; session_root kept;
+# adds prompt_dataset (a path, like checkpoint) and prompt_split (train | val | all) for a prompting checkpoint.
 """Settings: config/policy.yaml + the station's `policy:` section, validated (STRUCTURE.md 5.3)."""
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from policy_deploy.policy.policy_factory import KINDS
 
 SECTION = "policy"
 PRECISIONS = ("fp32", "bf16")
+PROMPT_SPLITS = ("train", "val", "all")         # policy.prompt_split (policy/prompt_source.py)
 
 
 def _is_int(value: Any) -> bool:
@@ -41,6 +43,8 @@ class Settings:
     device: str
     diffusion_steps: int | None
     precision: str                         # fp32 | bf16 (autocast around predict_action)
+    prompt_dataset: Path | None            # the demos a prompting checkpoint is prompted with (.zarr.zip)
+    prompt_split: str                      # train | val | all
     warmup_inferences: int
     warmup_gripper_width_m: float
     reset_max_s: float
@@ -85,6 +89,18 @@ class Settings:
             problems.append(f"{source}: {SECTION}.checkpoint: required for kind diffusion "
                             f"(the trained .ckpt file)")
 
+        prompt_dataset = cfg.get("prompt_dataset")
+        prompt_dataset_path: Path | None = None
+        if prompt_dataset is not None:
+            if isinstance(prompt_dataset, str) and prompt_dataset:
+                prompt_dataset_path = resolve_path(station, SECTION, cfg, "prompt_dataset")
+                prompt_dataset_path = prompt_dataset_path.resolve() if prompt_dataset_path is not None else None
+            else:
+                problems.append(f"{source}: {SECTION}.prompt_dataset: expected a path or null, got {prompt_dataset!r}")
+        prompt_split = cfg.get("prompt_split")
+        _check(problems, source, "prompt_split", prompt_split, prompt_split in PROMPT_SPLITS,
+               " or ".join(PROMPT_SPLITS))
+
         _check(problems, source, "device", cfg.get("device"), cfg.get("device") in ("cuda", "cpu"), "cuda or cpu")
         steps = cfg.get("diffusion_steps")
         _check(problems, source, "diffusion_steps", steps, steps is None or (_is_int(steps) and steps >= 1),
@@ -123,7 +139,8 @@ class Settings:
         return cls(
             kind=kind, mock=mock, mock_kind=mock_kind, active_kind=active_kind, endpoint=station.policy_endpoint(),
             session_root=station.session_root, station_file=station.path, checkpoint=checkpoint_path,
-            device=cfg["device"], diffusion_steps=steps, precision=precision, warmup_inferences=warmups,
+            device=cfg["device"], diffusion_steps=steps, precision=precision, prompt_dataset=prompt_dataset_path,
+            prompt_split=prompt_split, warmup_inferences=warmups,
             warmup_gripper_width_m=float(width), reset_max_s=float(cfg["reset_max_s"]), poll_s=float(cfg["poll_s"]),
             self_check_timeout_s=float(cfg["self_check_timeout_s"]), training_timing=dict(timing),
             key_map={part: dict(key_map[part]) for part in ("obs", "action")},

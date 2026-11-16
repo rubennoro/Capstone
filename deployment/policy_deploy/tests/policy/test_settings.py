@@ -1,7 +1,7 @@
 # adapted from rnoro/deployment:deployment/policy/tests/test_settings.py @ 91b178b
 # changes: the new station schema (Station.load + load_config("policy", station)), so the merge and the relative
 # paths are policy_deploy.contracts' (their own tests are in tests/contracts, tests/launcher); the endpoint is
-# ports.policy; the session folder is ProcessArgs'; + precision and mock_kind.
+# ports.policy; the session folder is ProcessArgs'; + precision and mock_kind; + prompt_dataset and prompt_split.
 from __future__ import annotations
 
 import json
@@ -30,6 +30,8 @@ def test_config_loads_with_all_defaults(policy_station):
     assert s.device == defaults["device"] == "cuda"
     assert s.diffusion_steps is None
     assert s.precision == defaults["precision"] == "fp32"
+    assert s.prompt_dataset is None and defaults["prompt_dataset"] is None
+    assert s.prompt_split == defaults["prompt_split"] == "train"
     assert s.mock_kind == defaults["mock_kind"] == "hold_still"
     assert s.warmup_inferences == defaults["warmup_inferences"] == 2
     assert s.warmup_gripper_width_m == defaults["warmup_gripper_width_m"]
@@ -105,7 +107,9 @@ def test_diffusion_needs_python_torch(policy_station):
 @pytest.mark.parametrize("key,value", [("diffusion_steps", 0), ("diffusion_steps", 2.5), ("diffusion_steps", True),
                                        ("warmup_inferences", 0), ("warmup_gripper_width_m", -0.01),
                                        ("reset_max_s", 0), ("poll_s", -1), ("self_check_timeout_s", "x"),
-                                       ("device", "tpu"), ("precision", "fp16"), ("precision", None)])
+                                       ("device", "tpu"), ("precision", "fp16"), ("precision", None),
+                                       ("prompt_split", "test"), ("prompt_split", None), ("prompt_dataset", 3),
+                                       ("prompt_dataset", "")])
 def test_ranges(policy_station, key, value):
     problems = _problems(lambda: Settings.load(policy_station({"kind": "hold_still", key: value}), mock=False))
     assert len(problems) == 1 and f"policy.{key}: expected" in problems[0]
@@ -153,3 +157,13 @@ def test_as_dict_is_json_ready(policy_station, tmp_path):
     d = json.loads(json.dumps(s.as_dict()))
     assert d["checkpoint"] == str((tmp_path / "b.ckpt").resolve()) and d["active_kind"] == "diffusion"
     assert d["precision"] == "fp32"
+
+
+def test_prompt_dataset_resolved_like_the_checkpoint(policy_station, tmp_path):
+    s = Settings.load(policy_station({"kind": "diffusion", "checkpoint": "b.ckpt", "prompt_dataset": "data/d.zarr.zip",
+                                      "prompt_split": "all"}, python={"light": sys.executable,
+                                                                      "torch": sys.executable}), mock=False)
+    assert s.prompt_dataset == (tmp_path / "data" / "d.zarr.zip").resolve() and s.prompt_split == "all"
+    assert json.loads(json.dumps(s.as_dict()))["prompt_dataset"] == str(s.prompt_dataset)
+    s = Settings.load(policy_station({"kind": "hold_still", "prompt_dataset": "~/d.zarr.zip"}), mock=False)
+    assert s.prompt_dataset == (Path.home() / "d.zarr.zip").resolve()            # not checked to exist here

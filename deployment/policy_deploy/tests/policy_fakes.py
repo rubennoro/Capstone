@@ -1,6 +1,7 @@
 # adapted from rnoro/deployment:deployment/policy/tests/fakes.py @ 91b178b (+ the shape_meta dicts of tests/conftest.py)
 # changes: imports; renamed policy_fakes (a unique module name in tests/); RUN_001_SHAPE_META and
-# plain_diffusion_shape_meta moved here from conftest.py so the torch tests import them by name.
+# plain_diffusion_shape_meta moved here from conftest.py so the torch tests import them by name;
+# FakePromptablePolicy.warm_up_prompt (PromptablePolicy's new abstract method).
 """Test-only policies, a fake clock, a serve thread, the torch import blocker (no torch here) and the shape_meta
 dicts (run_001's and a plain-diffusion one)."""
 
@@ -97,6 +98,9 @@ class FakePromptablePolicy(PromptablePolicy):
 
     def prompt(self, task_name: str, prompt_index: int) -> None:
         self.calls.append(("prompt", task_name, prompt_index))
+
+    def warm_up_prompt(self) -> tuple[str, int]:
+        return ("longest_task", 7)
 
     def infer(self, obs: Observation) -> ActionChunk:
         self.calls.append(("infer",))

@@ -1,7 +1,12 @@
 # adapted from rnoro/deployment:deployment/policy/policy/diffusion_policy.py @ 91b178b
 # changes: passes policy.precision to the runner (and reports it in describe()); memory_stats() gives the CUDA
-# allocator's peaks for startup.json; imports
-"""DiffusionPolicy: a trained plain diffusion checkpoint (torch; STRUCTURE.md 5.2)."""
+# allocator's peaks for startup.json; imports; from_settings serves a prompting checkpoint as PromptableDiffusionPolicy
+# (needs policy.prompt_dataset) and refuses prompt_dataset for a plain one (as detached_inference's --dataset-path)
+"""DiffusionPolicy: a trained diffusion checkpoint (torch; STRUCTURE.md 5.2).
+
+from_settings: a plain checkpoint -> DiffusionPolicy; a prompting one (shape_meta.use_prompting) ->
+PromptableDiffusionPolicy (promptable_diffusion_policy.py, imported only then). Both are kind diffusion.
+"""
 
 from __future__ import annotations
 
@@ -36,11 +41,18 @@ class DiffusionPolicy(Policy):
         loaded = CheckpointLoader(settings.training_timing).load(settings.checkpoint, settings.device,
                                                                  settings.diffusion_steps)
         if loaded.uses_prompting:
-            raise PolicyLoadError("checkpoint uses prompting (shape_meta.use_prompting: true)",
-                                  "kind diffusion needs a plain diffusion checkpoint")
+            if settings.prompt_dataset is None:
+                raise PolicyLoadError("checkpoint uses prompting (shape_meta.use_prompting: true)",
+                                      "set policy.prompt_dataset (the processed .zarr.zip of the demos)")
+            from policy_deploy.policy.promptable_diffusion_policy import PromptableDiffusionPolicy
+            return PromptableDiffusionPolicy.from_loaded(loaded, settings)
+        if settings.prompt_dataset is not None:
+            raise PolicyLoadError("policy.prompt_dataset is set but the checkpoint does not use prompting "
+                                  "(shape_meta.use_prompting: false)", "remove policy.prompt_dataset from station.yaml")
         runner = ModelRunner(loaded.model, loaded.shape_meta, KeyMap.from_config(settings.key_map),
                              torch.device(settings.device), precision=settings.precision)
-        return cls(runner, loaded.model.reset, ContractLimits.load().gripper_width_max_m, info=loaded.info)
+        return DiffusionPolicy(runner, loaded.model.reset, ContractLimits.load().gripper_width_max_m,
+                               info=loaded.info)
 
     def inputs(self) -> tuple[str, ...]:
         return self._runner.inputs

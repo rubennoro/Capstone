@@ -4,6 +4,7 @@
 # changes: only PolicyInferenceNodeRealEnv.__init__'s loading steps, plus main-sim inference/server.py @ 4be9982
 # build_node's start-up checks; no <ckpt>.yaml, robotmq, prompt dataset or tokenizer; adds the C4 checks and the
 # DDIM-steps override (STRUCTURE.md 4.6, 5.9)
+# + LoadedModel.dataset_cfg (the resolved cfg.task.dataset, for the prompt dataset of a prompting checkpoint)
 """CheckpointLoader, LoadedModel: checkpoint -> model on the device, with the load checks (torch)."""
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ class LoadedModel:
     shape_meta: Mapping[str, Any]          # cfg.task.shape_meta, as plain dicts
     uses_prompting: bool                   # shape_meta.use_prompting
     info: Mapping[str, Any]                # for startup.json (STRUCTURE.md 3.6)
+    dataset_cfg: Mapping[str, Any] | None = None   # cfg.task.dataset, resolved (PromptSource builds the prompts)
 
 
 class CheckpointLoader:
@@ -110,7 +112,8 @@ class CheckpointLoader:
             "colour_normalisation_checked": norm_checked,
         }
         return LoadedModel(model=model, shape_meta=shape_meta,
-                           uses_prompting=bool(shape_meta.get("use_prompting", False)), info=info)
+                           uses_prompting=bool(shape_meta.get("use_prompting", False)), info=info,
+                           dataset_cfg=cfg_dict["task"].get("dataset"))
 
     # -- the individual checks (each raises PolicyLoadError) ------------------------------------------------------
 

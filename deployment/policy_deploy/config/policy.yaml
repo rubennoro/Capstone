@@ -8,6 +8,10 @@ checkpoint: null                # the .ckpt file (opened read-only); required fo
 device: cuda                    # cuda | cpu (PLAN 13 device backup)
 diffusion_steps: null           # int >= 1, or null = the checkpoint's own number (PLAN 13: third backup)
 precision: fp32                 # fp32 | bf16 (autocast around predict_action, weights stay fp32; PLAN 13 second backup)
+prompt_dataset: null            # a prompting checkpoint only (refused for a plain one): the processed .zarr.zip of
+                                # the demos (opened read-only); the manager's task_name / prompt_index pick the demo
+prompt_split: train             # train | val | all: the demos the model trained on, the ones it held out, or every demo
+                                # (all: a dataset the model never trained on)
 mock_kind: hold_still           # the kind that runs under --mock; diffusion times the real model against the fake Pi
                                 # and fake PC (needs checkpoint and python.torch)
 
