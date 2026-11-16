@@ -33,7 +33,8 @@ python3 train/analysis/compare_runs.py eraser_pick_2 --results-dir results/block
 
 # offline eval: make it on the cluster, fetch it, then report
 train/analysis/eval.sh eraser_pick_2 run_003_2026-11-13 --ckpt top1 --per-demo 8
-train/fetch.sh eraser_pick_2 run_003_2026-11-13
+train/status.sh eraser_pick_2 run_003_2026-11-13 --eval top1 --wait
+train/fetch.sh eraser_pick_2 run_003_2026-11-13 --no-checkpoints
 python3 train/analysis/eval_report.py eraser_pick_2 run_003
 ```
 

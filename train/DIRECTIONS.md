@@ -34,8 +34,35 @@ All commands run **on the laptop, from the repo root** (`~/Capstone`), unless th
 **Still open:**
 - The Jetson has **no trainable episodes yet**: every episode in `eraser_pick_1` and `eraser_pick_2` failed at SLAM.
   Start below once `dataproc status <folder>` shows exported episodes (step 1).
-- *(Optional, only for offline eval)* The cluster clone is at `06511cd` and needs a pull:
-  `ssh noroian.r@login.explorer.northeastern.edu 'git -C CapstoneProject/Capstone pull --ff-only'`.
+
+The cluster clone is already up to date for the offline eval (checked 2026-11-15: `main` at `1e4dc64`, which
+includes `controlSW/franka_deploy`; `robotmq` is in the `bp` env).
+
+---
+
+## One command: every step
+
+When the data is good and time is short, `train/all.sh` runs steps 2 to 8 below in one go and waits for the cluster
+jobs (about 2.5 h with the eval). Do steps 0 and 1 first, then start it **inside tmux** so it survives closing the
+terminal or a dropped ssh session:
+
+```bash
+tmux new -s train                                     # later: Ctrl-b d to detach, `tmux attach -t train` to come back
+cd ~/Capstone
+export TASK_NAME=eraser_pick_2 DATASET_NAME=ep2-v1
+train/all.sh $TASK_NAME $DATASET_NAME --package --no-raw --results-dir results/block_raise --note "first rig data"
+```
+
+- Add `--dry-run` first to see every command without running anything. `--no-eval` skips the offline eval;
+  `--no-smoke` skips the smoke run.
+- **When it ends**, the last lines say `DONE: every step ok`, `DONE with N problem(s)` (the policy is on the laptop,
+  but a report or the eval failed), or `STOPPED at step '...'` with the reason and what to do next.
+- **Everything is logged** in `data/$TASK_NAME/logs/`: `all_<time>_<dataset>.log` has the full output, and
+  `all_<time>_<dataset>.steps` has one line per step with its result and reason.
+- **If it stops after submitting** (Ctrl-C, laptop asleep, a failed fetch), the cluster jobs keep running. Continue
+  with the command it printed, `train/all.sh $TASK_NAME --run <full run name>`. This starts again at the wait.
+- **The laptop must stay awake and online** while it waits: a suspended laptop pauses the checks. The jobs carry on
+  either way.
 
 ---
 
@@ -111,6 +138,7 @@ export RUN_NAME=run_002_2026-11-16        # copy the full run's name from the su
 ```
 
 Steps 2, 4 and 5 in one command: `train/go.sh $TASK_NAME $DATASET_NAME --package --no-raw --note "first rig data"`.
+Steps 2 to 8 in one command: `train/all.sh` (see "One command: every step" above).
 
 **6. Watch it.** `--wait` checks every 5 minutes until the run is ok, failed or timeout. A full 60-epoch run on about
 40 episodes takes about 2 h.
@@ -134,13 +162,13 @@ python3 train/analysis/compare_runs.py $TASK_NAME --results-dir results/block_ra
 
 # offline eval (error in mm/deg per demo): runs as a GPU job, then fetch it and report
 train/analysis/eval.sh $TASK_NAME $RUN_NAME --ckpt top1 --per-demo 8
-train/status.sh $TASK_NAME $RUN_NAME        # repeat until the "top1:" line says ok
+train/status.sh $TASK_NAME $RUN_NAME --eval top1 --wait     # until the eval job is ok, failed or timeout
 train/fetch.sh $TASK_NAME $RUN_NAME --no-checkpoints
 python3 train/analysis/eval_report.py $TASK_NAME $RUN_NAME
 ```
 
-`status.sh` prints one line per eval (for example `top1: ok`). Don't use `--wait` here: it only waits for the
-training run, which has already finished, so it returns straight away. The fetch then brings back `eval/top1/`.
+`--eval top1` follows the eval job instead of the training run. If it ends with `STATUS=failed`, the `message:` line
+and the log tail say why. The fetch then brings back `eval/top1/`, including `eval_job.json`.
 
 **9. Clean up on the cluster** once a run is fetched. Runs count against the home quota at
 `~/CapstoneProject/policies/<label>/<run>/`.

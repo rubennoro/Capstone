@@ -18,18 +18,23 @@ Running status between working sessions. Update it at the end of each conversati
   [train/README.md](train/README.md), analysis in [train/analysis/README.md](train/analysis/README.md).
   - Flow: `pull.sh` (Jetson task folder + `dataproc package` -> `data/<folder>/`), `upload.sh`, `submit.sh`
     (smoke-first Slurm chain), `status.sh`, `fetch.sh` (-> `data/<folder>/policy/<run>/`), `analysis/*`.
+  - `all.sh` (2026-11-15) chains all of it, incl. waiting and the offline eval, for good data / little time (run in
+    tmux). Logs to `data/<folder>/logs/all_<time>_<dataset>.{log,steps}`; exit 0 ok, 1 stopped (no policy), 2 policy
+    fetched but a report/eval failed; `--run <full run>` continues after a stop. Needed `submit.sh` to print
+    `SMOKE_RUN=`/`FULL_RUN=`, a cluster `submit_job.sh eval-status` (+ `eval/<ckpt>/JOB` file) and `status.sh --eval`.
   - Decisions: data lives in gitignored `~/Capstone/data/<folder>/`; one slim checkpoint per run (TOPK=1, ~2.5 GB);
     cluster runs in `~/CapstoneProject/policies/` (not the clone); tools synced to `~/CapstoneProject/train_tools/` on
     every submit, so the cluster clone stays on main; the new job does not git-push; `scripts/cluster/` untouched.
-  - Tests (all offline): `train/tests/run_tests.sh` (94), `train/tests/cluster/run_tests.sh` (168),
-    `train/analysis/tests/run.sh` (20). Regression guard passes.
+  - Tests (all offline): `train/tests/run_tests.sh` (140 with `SHELLCHECK=`; 139 without),
+    `train/tests/cluster/run_tests.sh` (177 with shellcheck on PATH; 174 without), `train/analysis/tests/run.sh` (20).
+    shellcheck is not installed system-wide (`pip install shellcheck-py` in a throwaway venv works).
 - **Connections verified 2026-11-15:**
   - Jetson `capstone-gripper@129.10.156.38` (NEU IP, may change), key login, in gitignored `train/config.local.env`.
     dataproc defaults (`~/data`, `~/envs/env_dataproc`) confirmed.
   - Explorer needs the Research Computing key since 2026-11-06 (downloaded via OOD, `~/.ssh/config` block); login and
     xfer both work, xfer accepts commands, `gpu` and `gpu-short` have H200s, `bp` has robotmq.
-  - Cluster clone at `06511cd`, clean; needs `git pull --ff-only` (>= `4be9982`) before offline eval. Not done yet
-    (asks first).
+  - Cluster clone already on `main` at `1e4dc64` (>= `4be9982`), clean, has `controlSW/franka_deploy`: offline
+    eval is ready (no pull needed).
 - **Blocker: no trainable rig data.** Jetson tasks `eraser_pick_1` (eps 61-65) and `eraser_pick_2` (117-121): calibration
   done, every episode failed at SLAM ("orbslam3: never initialised, 0 keyframes"). That is dataproc work on
   `rnoro/data-work` (`~/Capstone-data-work`), not `train/`.
@@ -41,7 +46,7 @@ Running status between working sessions. Update it at the end of each conversati
 
 1. Fix SLAM initialisation on the Jetson (read `orbslam3.log` under `~/data/tasks/<folder>/.staging/<ep>/processed/slam/work/`),
    until `dataproc status <folder>` shows exported episodes.
-2. First real run: `train/go.sh <folder> <new-dataset> --package --no-raw --note "..."`. The smoke run is the first time
-   the trainer reads a dataproc zip.
-3. Pull the cluster clone (with OK) so `train/analysis/eval.sh` works.
-4. Decide whether to push `rnoro/training`.
+2. First real run, in tmux: `train/all.sh <folder> <new-dataset> --package --no-raw --results-dir results/block_raise
+   --note "..."` (or step by step with `go.sh`). The smoke run is the first time the trainer reads a dataproc zip, and
+   the eval the first time `offline_eval` runs on a rig-trained policy.
+3. Decide whether to push `rnoro/training`.

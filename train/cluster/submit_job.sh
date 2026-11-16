@@ -7,11 +7,13 @@
 #                        [--after JOBID] [-- hydra overrides...]
 #   submit_job.sh eval   --label L --run R --dataset D --ckpt topN [--per-demo N] [--attention]
 #   submit_job.sh status --label L --run R
+#   submit_job.sh eval-status --label L --run R --ckpt topN
 #
 # Machine-readable output lines (everything else is human text):
-#   train  -> RUN=<run name>  and  JOB=<slurm job id>
-#   eval   -> JOB=<slurm job id>
-#   status -> STATUS=<queued|running|ok|failed|timeout>  and  JOB=<slurm job id>
+#   train       -> RUN=<run name>  and  JOB=<slurm job id>
+#   eval        -> JOB=<slurm job id>  (also written to <run>/eval/<topN>/JOB, which eval-status reads)
+#   status      -> STATUS=<queued|running|ok|failed|timeout>  and  JOB=<slurm job id>
+#   eval-status -> the same, for the newest eval job of that checkpoint
 #
 # --epochs defaults to DEFAULT_EPOCHS (3 for smoke); --topk to TOPK (1 if unset: one checkpoint per run).
 # train: reserves $HOME/CLUSTER_RUNS/L/run_NNN_<date>[_smoke]/ (atomic mkdir, retried on collision), writes
@@ -245,8 +247,61 @@ cmd_eval() {
   # (the job sources <eval dir>/submit_config.env, frozen here)
   snapshot_config "$final/eval/$ckpt/submit_config.env"
   job=$(run_sbatch "${SB[@]}" "$TOOLS/eval.sbatch" "$final/eval/$ckpt" "$label" "$run" "$dataset" "$ckpt" "$per_demo" "$attention")
+  echo "$job" > "$final/eval/$ckpt/JOB"  # eval-status follows this job (an older eval_job.json there is ignored)
   echo "eval of $label/$run/$ckpt: job $job -> $final/eval/$ckpt/ (per-demo $per_demo, attention $attention)"
   echo "JOB=$job"
+}
+
+# ------------------------------------------------------------------ status helpers (training runs and evals)
+# slurm_state JOB: sets QUEUE (squeue: state, elapsed, reason/node) and ACCT (first sacct line); both '' without a job
+slurm_state() {
+  QUEUE='' ACCT=''
+  [ -n "$1" ] || return 0
+  QUEUE=$(squeue -h -j "$1" -o '%T %M %R' 2>/dev/null || true)
+  ACCT=$(sacct -j "$1" -X -n -P -o State,ExitCode,Elapsed,Start,End,Partition,NodeList 2>/dev/null | head -1 || true)
+}
+
+# reconcile FILE_STATUS JOB VERB FILE_NAME: sets STATUS and REASON (call slurm_state JOB first).
+# A job writes its final status itself. If it died without doing so (cancelled, node failure, OOM kill, hard time
+# limit) or can never start (its --after job failed), the status comes from Slurm, so status.sh --wait terminates.
+# VERB names what a timed-out job failed to do ("package"), FILE_NAME the file the status was read from.
+reconcile() {
+  STATUS=$1 REASON=''
+  local job=$2 state
+  case $STATUS in
+    queued|running)
+      state=${ACCT%%|*}; state=${state%% *}
+      if [ -n "$QUEUE" ]; then
+        case $QUEUE in
+          *DependencyNeverSatisfied*)
+            STATUS=failed; REASON="the job it waits for (--after) did not succeed, so it will never start; cancel it: scancel $job" ;;
+          RUNNING*) STATUS=running ;;
+        esac
+      elif [ -n "$state" ]; then
+        case $state in
+          PENDING|RUNNING|REQUEUED|RESIZING|SUSPENDED|COMPLETING|CONFIGURING) ;;
+          TIMEOUT) STATUS=timeout; REASON="Slurm says TIMEOUT but the job did not $3 ($4: $1)" ;;
+          *) STATUS=failed; REASON="Slurm says $state but the job did not write its final status ($4: $1)" ;;
+        esac
+      fi ;;
+  esac
+}
+
+print_slurm() {  # JOB (after slurm_state)
+  echo "slurm: ${QUEUE:+queue: $QUEUE  }${ACCT:+sacct: $(echo "$ACCT" | tr '|' ' ')}"
+  [ -n "$QUEUE$ACCT" ] || echo "slurm: (no information${1:+ for job $1})"
+}
+
+print_log_tail() {  # JOB: the last lines of its Slurm log, progress bars stripped
+  echo "== Log tail (progress bars stripped)"
+  local log=''
+  [ -n "$1" ] && log=$(ls "$LOGS"/*_"$1".out 2>/dev/null | head -1 || true)
+  if [ -n "$log" ]; then
+    echo "   $log"
+    tr '\r' '\n' < "$log" | grep -v -E '[0-9]+%\|.*\||it/s\]|s/it\]' | grep -v '^\s*$' | tail -n 15 || true
+  else
+    echo "(no log yet)"
+  fi
 }
 
 # ------------------------------------------------------------------ status
@@ -268,50 +323,17 @@ cmd_status() {
   job=$(sed -n 's/^ *"job_id": *"\([0-9]*\)".*/\1/p' "$final/train_meta.json" 2>/dev/null | head -1 || true)
 
   # Ask Slurm first, then read STATUS, so a job that finishes in between is not reported as dead.
-  local queue='' acct='' reason=''
-  if [ -n "$job" ]; then
-    queue=$(squeue -h -j "$job" -o '%T %M %R' 2>/dev/null || true)
-    acct=$(sacct -j "$job" -X -n -P -o State,ExitCode,Elapsed,Start,End,Partition,NodeList 2>/dev/null | head -1 || true)
-  fi
-  local status
-  status=$(tr -d '[:space:]' < "$final/STATUS" 2>/dev/null || true)
-  [ -n "$status" ] || status=queued
-  # The job writes the final STATUS itself. If it died without doing so (cancelled, node failure, OOM kill, hard time
-  # limit) or can never start (its --after job failed), report it from Slurm so status.sh --wait terminates.
-  case $status in
-    queued|running)
-      local state=${acct%%|*}; state=${state%% *}
-      if [ -n "$queue" ]; then
-        case $queue in
-          *DependencyNeverSatisfied*)
-            status=failed; reason="the job it waits for (--after) did not succeed, so it will never start; cancel it: scancel $job" ;;
-          RUNNING*) status=running ;;
-        esac
-      elif [ -n "$state" ]; then
-        case $state in
-          PENDING|RUNNING|REQUEUED|RESIZING|SUSPENDED|COMPLETING|CONFIGURING) ;;
-          TIMEOUT) status=timeout; reason="Slurm says TIMEOUT but the job did not package (STATUS file: $status)" ;;
-          *) status=failed; reason="Slurm says $state but the job did not write a final STATUS (STATUS file: $status)" ;;
-        esac
-      fi ;;
-  esac
+  slurm_state "$job"
+  local file_status
+  file_status=$(tr -d '[:space:]' < "$final/STATUS" 2>/dev/null || true)
+  reconcile "${file_status:-queued}" "$job" "package" "STATUS file"
 
-  echo "STATUS=$status"
+  echo "STATUS=$STATUS"
   echo "JOB=$job"
-  [ -n "$reason" ] && echo "note: $reason"
+  [ -n "$REASON" ] && echo "note: $REASON"
   echo "run: $final"
-  echo "slurm: ${queue:+queue: $queue  }${acct:+sacct: $(echo "$acct" | tr '|' ' ')}"
-  [ -n "$queue$acct" ] || echo "slurm: (no information${job:+ for job $job})"
-
-  echo "== Log tail (progress bars stripped)"
-  local log=''
-  [ -n "$job" ] && log=$(ls "$LOGS"/*_"$job".out 2>/dev/null | head -1 || true)
-  if [ -n "$log" ]; then
-    echo "   $log"
-    tr '\r' '\n' < "$log" | grep -v -E '[0-9]+%\|.*\||it/s\]|s/it\]' | grep -v '^\s*$' | tail -n 15 || true
-  else
-    echo "(no log yet)"
-  fi
+  print_slurm "$job"
+  print_log_tail "$job"
 
   echo "== Checkpoints"
   local f any=0
@@ -335,11 +357,58 @@ cmd_status() {
   return 0
 }
 
+# ------------------------------------------------------------------ eval-status
+cmd_eval_status() {
+  local label='' run='' ckpt=top1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --label) label=${2?}; shift 2 ;;
+      --run) run=${2?}; shift 2 ;;
+      --ckpt) ckpt=${2?}; shift 2 ;;
+      -h|--help) usage 0 ;;
+      *) die "eval-status: unknown option $1" ;;
+    esac
+  done
+  [ -n "$label" ] && [ -n "$run" ] || die "eval-status needs --label --run"
+  safe_name label "$label"; safe_name run "$run"
+  [[ $ckpt =~ ^top[1-9][0-9]*$ ]] || die "--ckpt must be top1, top2, ..."
+  local final="$RUNS/$label/$run"
+  [ -d "$final" ] || die "run not found: $final"
+  local dir=$final/eval/$ckpt
+  [ -f "$dir/JOB" ] || die "no eval of $ckpt submitted for $label/$run ($dir/JOB missing; train/analysis/eval.sh submits one)"
+  local job file_status=queued msg='' json=$dir/eval_job.json
+  job=$(tr -d '[:space:]' < "$dir/JOB")
+  # eval_job.json is written by the job itself (running at start, then ok|failed|timeout); one left by an older eval
+  # of the same checkpoint has another job_id and is ignored
+  if [ -f "$json" ] && [ "$(sed -n 's/^ *"job_id": *"\([0-9]*\)".*/\1/p' "$json" | head -1)" = "$job" ]; then
+    file_status=$(sed -n 's/^ *"status": *"\([a-z]*\)".*/\1/p' "$json" | head -1)
+    msg=$(sed -n 's/^ *"message": *"\(.*\)" *$/\1/p' "$json" | head -1)
+  fi
+  slurm_state "$job"
+  reconcile "${file_status:-queued}" "$job" "finish" "eval_job.json"
+
+  echo "STATUS=$STATUS"
+  echo "JOB=$job"
+  [ -n "$REASON" ] && echo "note: $REASON"
+  [ -n "$msg" ] && echo "message: $msg"
+  echo "eval: $dir"
+  print_slurm "$job"
+  print_log_tail "$job"
+  echo "== Files"
+  local f any=0
+  for f in "$dir"/eval.json "$dir"/eval_job.json "$dir"/videos/*.mp4; do
+    [ -f "$f" ] && { any=1; echo "${f#"$dir"/}"; }
+  done
+  [ $any = 1 ] || echo "(none yet)"
+  return 0
+}
+
 COMMAND=${1:-}; shift || true
 case $COMMAND in
   train) cmd_train "$@" ;;
   eval) cmd_eval "$@" ;;
   status) cmd_status "$@" ;;
+  eval-status) cmd_eval_status "$@" ;;
   -h|--help) usage 0 ;;
   *) usage ;;
 esac

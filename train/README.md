@@ -38,22 +38,40 @@ Examples use the task folder `eraser_pick_2` and a new dataset name `ep2-v1`.
 Steps 1–3 in one command: `train/go.sh eraser_pick_2 ep2-v1 --package --no-raw --note "first rig data"`
 (`--pull` instead of `--package` for a dataset already packaged on the Jetson, `--no-smoke` to skip the smoke run).
 
+Every step in one command, waiting for the jobs (hours; start it in tmux):
+`train/all.sh eraser_pick_2 ep2-v1 --package --no-raw --note "first rig data"`. See **all.sh** below.
+
 Details:
 - **pull.sh** never deletes local files and skips `.staging/`. `--dataset NAME` pulls an existing package;
   `--package NAME` runs `dataproc package NAME FOLDER` on the Jetson first. The zip's sha256 is checked against its
   `package.json`.
 - **upload.sh** checks the sha256 on the cluster. A zip already there with the same sha256 is skipped; a different
   one is refused (a dataset name is never reused: package under a new name).
-- **submit.sh** prints the run names and job ids and writes `data/<folder>/policy/<run>/job.json`. Extra Hydra
+- **submit.sh** prints the run names and job ids and writes `data/<folder>/policy/<run>/job.json`; on stdout it
+  prints only `SMOKE_RUN=<run>` / `FULL_RUN=<run>` (what all.sh reads). Extra Hydra
   overrides go after `--`, e.g. `-- training.lr_scheduler=constant`. `--smoke-first` = a 3-epoch smoke run, then the
   full run, which only starts if the smoke run succeeded.
 - **status.sh** without a run name uses the newest `job.json`. `--wait` checks every 5 min until the run is `ok`,
-  `failed` or `timeout`.
+  `failed` or `timeout`. `--eval top1` shows (and with `--wait` waits for) the newest offline-eval job of that
+  checkpoint instead; a job that died without writing its result is reported from Slurm, so the wait always ends.
 - **fetch.sh** copies everything (summary, csv, plots, videos, logs, `wandb/`, `eval/`) plus the best `--top N`
   checkpoints (default `TOPK` = 1) and checks their sizes. It refuses a run that is still queued or running
   (`--force` takes what exists); the state also comes from Slurm, so a killed job counts as failed. `--all`
   fetches every run in `data/<folder>/policy/`; `--no-checkpoints` skips them
   (e.g. to pick up `eval/` results later).
+- **all.sh** runs the whole run order with the scripts above: pull (with `--pull`/`--package`), dataset report,
+  upload, submit (smoke first unless `--no-smoke`), wait, fetch, `run_report.py`, `compare_runs.py`, then the
+  offline eval (`eval.sh --ckpt top1 --per-demo 8`, wait, fetch, `eval_report.py`; `--no-eval` skips it).
+  - **Traceability:** all output also goes to `data/<folder>/logs/all_<time>_<dataset>.log`; the `.steps` file next
+    to it has one line per step start and result (`ok`, `failed`, `skipped`, `interrupted`, with the reason). When it
+    stops, the end of the output says at which step, why, where the Slurm log is, and what to do next.
+  - **What stops it (exit 1):** pull, upload, submit, training or fetch failing; a failed smoke run (its logs are
+    fetched, the full job is named for `scancel`). A full run that hits its time limit is not fatal: the best
+    checkpoint it packaged is used.
+  - **What does not (exit 2):** a failed report or eval. The policy is already on the laptop; the step and the command
+    to rerun it are in the `.steps` file.
+  - **Continuing:** once the jobs are submitted, Ctrl-C, a closed terminal or a failed fetch leave them running;
+    `train/all.sh <folder> --run <full run>` picks up at the wait (the command is printed after submitting).
 
 ## Data layout on the laptop
 
@@ -111,7 +129,9 @@ than fit are lowered with a warning. 60 is the default because run_001 overfit a
 
 All three run offline (fake ssh/rsync/sbatch or fixtures in a temporary folder):
 
-- `bash train/tests/run_tests.sh`: the laptop scripts (pull, upload, submit, status, fetch, go, eval.sh);
-  `SHELLCHECK=/path/to/shellcheck` adds a shellcheck pass.
+- `bash train/tests/run_tests.sh`: the laptop scripts (pull, upload, submit, status, fetch, go, all, eval.sh);
+  `SHELLCHECK=/path/to/shellcheck` adds a shellcheck pass. all.sh runs end to end against the real
+  `submit_job.sh` with a fake Slurm that finishes each job at once with a chosen outcome (ok, failed, timeout,
+  never starting, dying silently) and stub analysis reports.
 - `bash train/tests/cluster/run_tests.sh`: the cluster-side `submit_job.sh` and sbatch scripts.
 - `bash train/analysis/tests/run.sh`: the analysis scripts.

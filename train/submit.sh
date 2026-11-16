@@ -20,6 +20,8 @@ usage: train/submit.sh FOLDER DATASET [--smoke | --smoke-first] [--epochs N] [--
   --dry-run        print the ssh/rsync commands, run and write nothing
   -- ...           extra Hydra overrides for train.py, e.g. -- training.lr_scheduler=constant
 
+Prints one line per submitted run on stdout (everything else goes to stderr): SMOKE_RUN=<run> and/or FULL_RUN=<run>.
+
 example: train/submit.sh block_raise br-nov13 --smoke-first --epochs 60 --note "first rig data"
 EOF
 }
@@ -154,13 +156,13 @@ case $MODE in
 esac
 
 sync_tools
-RUNS=()
+RUNS=() KINDS=()
 case $MODE in
-  smoke) submit_one smoke "$SMOKE_EPOCHS" "$AFTER"; RUNS+=("$SUB_RUN") ;;
-  full) submit_one full "$FULL_EPOCHS" "$AFTER"; RUNS+=("$SUB_RUN") ;;
+  smoke) submit_one smoke "$SMOKE_EPOCHS" "$AFTER"; RUNS+=("$SUB_RUN"); KINDS+=(SMOKE) ;;
+  full) submit_one full "$FULL_EPOCHS" "$AFTER"; RUNS+=("$SUB_RUN"); KINDS+=(FULL) ;;
   smoke-first)
-    submit_one smoke "$SMOKE_EPOCHS" "$AFTER"; RUNS+=("$SUB_RUN")
-    submit_one full "$FULL_EPOCHS" "$SUB_JOB"; RUNS+=("$SUB_RUN") ;;
+    submit_one smoke "$SMOKE_EPOCHS" "$AFTER"; RUNS+=("$SUB_RUN"); KINDS+=(SMOKE)
+    submit_one full "$FULL_EPOCHS" "$SUB_JOB"; RUNS+=("$SUB_RUN"); KINDS+=(FULL) ;;
 esac
 
 step "Submitted"
@@ -168,3 +170,7 @@ for r in "${RUNS[@]}"; do
   info "  train/status.sh $FOLDER $r [--wait]"
   info "  train/fetch.sh $FOLDER $r          (once it finished)"
 done
+# machine-readable run names (train/all.sh reads them); not in a dry-run, where the names are placeholders
+if [ "$DRY_RUN" = 0 ]; then
+  for i in "${!RUNS[@]}"; do echo "${KINDS[i]}_RUN=${RUNS[i]}"; done
+fi

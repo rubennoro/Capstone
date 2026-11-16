@@ -41,6 +41,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 host=$1; shift
+# FAKE_SSH_DOWN=1: every connection fails like an unreachable host (exit 255)
+[ -z "${FAKE_SSH_DOWN:-}" ] || { echo "ssh: connect to host $host port 22: Network is unreachable" >&2; exit 255; }
 printf 'ssh %s :: %s\n' "$host" "$*" >>"$FAKE_LOG"
 case $host in
   *jetson*) h=$FAKE_HOMES/jetson extra= ;;
@@ -80,6 +82,8 @@ cat >"$T/cluster_bin/sbatch" <<'EOF'
 n=$(( $(cat "$FAKE_T/sbatch_n" 2>/dev/null || echo 0) + 1 )); echo "$n" >"$FAKE_T/sbatch_n"
 printf '%s\n' "$@" >"$FAKE_T/sbatch_$n.args"
 printf 'sbatch %s\n' "$*" >>"$FAKE_LOG"
+# FAKE_SLURM=1: the job "runs" at once (fake_job.sh leaves what train.sbatch / eval.sbatch would)
+[ "${FAKE_SLURM:-0}" = 1 ] && bash "$FAKE_T/fake_job.sh" "$((122 + n))" "$@"
 echo "Submitted batch job $((122 + n))"
 EOF
 # squeue: nothing in the queue; on call number FLIP_AT it writes `ok` into FLIP_STATUS (to end status.sh --wait)
@@ -87,7 +91,56 @@ cat >"$T/cluster_bin/squeue" <<'EOF'
 #!/bin/bash
 n=$(( $(cat "$FAKE_T/squeue_n" 2>/dev/null || echo 0) + 1 )); echo "$n" >"$FAKE_T/squeue_n"
 if [ -f "$FAKE_T/flip" ]; then read -r at file <"$FAKE_T/flip"; [ "$n" -ge "$at" ] && echo ok >"$file"; fi
+# a queue line written by fake_job.sh for one job id (e.g. a job whose --after job failed)
+while [ $# -gt 0 ]; do
+  if [ "$1" = -j ]; then [ ! -f "$FAKE_T/squeue_$2" ] || cat "$FAKE_T/squeue_$2"; break; fi
+  shift
+done
 exit 0
+EOF
+# fake_job.sh ID SBATCH_ARGS...: what the job leaves behind, per FAKE_SMOKE / FAKE_FULL (ok|failed|timeout|hang|
+# okexit1 = STATUS ok but the Slurm job exits 1, as train.sbatch does on packaging problems) and
+# FAKE_EVAL (ok|failed|silent = dies before writing eval_job.json). A job after a failed one never starts.
+cat >"$T/fake_job.sh" <<'EOF'
+#!/bin/bash
+id=$1; shift
+a=("$@") after="" script="" i=0
+for ((i = 0; i < ${#a[@]}; i++)); do
+  case ${a[i]} in --dependency=afterok:*) after=${a[i]#--dependency=afterok:} ;; esac
+  case ${a[i]} in */train.sbatch|*/eval.sbatch) script=${a[i]##*/}; break ;; esac
+done
+dir=${a[i+1]} label=${a[i+2]}
+logs=$HOME/CapstoneProject/logs
+mkdir -p "$logs"
+if [ -n "$after" ] && [ -f "$FAKE_T/job_${after}_failed" ]; then
+  echo "PENDING 0:00 (DependencyNeverSatisfied)" >"$FAKE_T/squeue_$id"; exit 0
+fi
+if [ "$script" = train.sbatch ]; then
+  if [ "${a[i+5]}" = smoke ]; then out=${FAKE_SMOKE:-ok}; else out=${FAKE_FULL:-ok}; fi
+  [ "$out" != hang ] || exit 0
+  [ "$out" != okexit1 ] || { touch "$FAKE_T/job_${id}_failed"; out=ok; }
+  log=$logs/bp_train_${label}_$id.out
+  mkdir -p "$dir/checkpoints" "$dir/logs"
+  echo "# run" >"$dir/README.md"; echo "{\"status\": \"$out\"}" >"$dir/summary.json"
+  case $out in
+    ok|timeout)
+      f="top1_epoch=0010-val_action_mse_error_all=0.0010000.ckpt"
+      head -c 300 /dev/zero >"$dir/checkpoints/$f"
+      printf '[{"rank": 1, "file": "%s", "epoch": 10, "val_action_mse": 0.001, "size_bytes": 300}]\n' "$f" >"$dir/checkpoints/checkpoints.json"
+      echo "== Training finished with status: $out" >"$log" ;;
+    failed) echo "Traceback (most recent call last): fake training boom" >"$log"; touch "$FAKE_T/job_${id}_failed" ;;
+  esac
+  echo "$out" >"$dir/STATUS"
+else
+  out=${FAKE_EVAL:-ok} msg=""
+  log=$logs/bp_eval_${label}_$id.out
+  case $out in
+    ok) echo '{"action_mse": 0.001}' >"$dir/eval.json"; echo "== eval finished: ok" >"$log" ;;
+    failed) msg="offline_eval exited with 1"; echo "Traceback: fake offline_eval boom" >"$log" ;;
+    silent) echo "killed" >"$log"; exit 0 ;;
+  esac
+  printf '{\n  "status": "%s",\n  "job_id": "%s",\n  "message": "%s"\n}\n' "$out" "$id" "$msg" >"$dir/eval_job.json"
+fi
 EOF
 printf '#!/bin/bash\n[ -f "$FAKE_T/sacct_out" ] && cat "$FAKE_T/sacct_out"\nexit 0\n' >"$T/cluster_bin/sacct"
 printf '#!/bin/bash\nexit 0\n' >"$T/cluster_bin/module"
@@ -161,6 +214,20 @@ echo "RUN=$run"
 echo "JOB=$((900 + n))"
 EOF
 
+# Stub analysis reports for all.sh (TRAIN_ANALYSIS_SRC hook): record argv; FAKE_FAIL_<name>=1 makes one fail
+mkdir -p "$T/analysis_stub"
+for r in dataset_report run_report compare_runs eval_report; do
+  cat >"$T/analysis_stub/$r.py" <<'EOF'
+import os, sys
+name = os.path.basename(sys.argv[0])[:-3]
+with open(os.path.join(os.environ["FAKE_T"], "analysis.log"), "a") as f:
+    f.write(" ".join([name] + sys.argv[1:]) + "\n")
+if os.environ.get("FAKE_FAIL_" + name):
+    sys.exit(name + ": fake failure")
+print(name + ": fake report")
+EOF
+done
+
 # Laptop config used by every test (TRAIN_CONFIG_LOCAL hook); TEST_* env vars vary it per test
 cat >"$T/config.local.env" <<EOF
 JETSON_HOST="\${TEST_JETSON_HOST:-tester@jetson.test}"
@@ -177,7 +244,7 @@ TODAY=$(date +%F)
 
 # --------------------------------------------------------------------------------------------------------- tests
 echo "== static checks"
-for f in lib.sh pull.sh upload.sh submit.sh status.sh fetch.sh go.sh analysis/eval.sh tests/run_tests.sh; do
+for f in lib.sh pull.sh upload.sh submit.sh status.sh fetch.sh go.sh all.sh analysis/eval.sh tests/run_tests.sh; do
   check "bash -n $f" bash -n "$TRAIN/$f"
 done
 SHELLCHECK=${SHELLCHECK:-$(command -v shellcheck)}
@@ -187,7 +254,7 @@ if [ -n "$SHELLCHECK" ]; then
 else
   echo "  skip  shellcheck (not installed; SHELLCHECK=/path/to/shellcheck to use one)"
 fi
-for s in pull.sh upload.sh submit.sh status.sh fetch.sh go.sh analysis/eval.sh; do
+for s in pull.sh upload.sh submit.sh status.sh fetch.sh go.sh all.sh analysis/eval.sh; do
   run "$s" -h; check "$s -h" eval '[ $RC = 0 ] && has usage:'
 done
 
@@ -207,7 +274,9 @@ run submit.sh block_raise ds1 --smoke-first --note "a b" --dry-run -- x=1; r3=$R
 run go.sh block_raise ds1 --package --no-raw --note "n" --dry-run; r4=$RC
 run fetch.sh block_raise run_001_x --top 1 --dry-run;             r5=$RC
 run status.sh block_raise run_001_x --dry-run;                    r6=$RC
-check "dry-runs exit 0" test "$r1$r2$r3$r4$r5$r6" = 000000
+TRAIN_ANALYSIS_SRC=$T/analysis_stub run all.sh block_raise ds1 --package --no-raw --note "n" --per-demo 3 --dry-run; r7=$RC
+check "all.sh --dry-run lists the steps after the submission" eval 'has "status.sh block_raise '"'"'<full run>'"'"' --wait" && has "eval.sh block_raise '"'"'<full run>'"'"' --ckpt top1 --per-demo 3" && has "dataproc package ds1"'
+check "dry-runs exit 0" test "$r1$r2$r3$r4$r5$r6$r7" = 0000000
 check "dry-run prints commands" has "[dry-run] ssh"
 check "dry-run: no ssh/rsync/sbatch was run" test "$(calls)" = "$n0"
 check "dry-run: no file created or changed" test "$(snap)" = "$before"
@@ -319,6 +388,10 @@ if [ -f "$TRAIN/cluster/submit_job.sh" ]; then
   run status.sh block_raise "run_002_$TODAY" --wait
   check "status --wait polls until ok" eval '[ $RC = 0 ] && has "STATUS=ok" && has "train/fetch.sh block_raise run_002_$TODAY"'
   rm -f "$T/flip"
+  timeout 30 bash "$TRAIN/status.sh" block_raise run_404_nowhere --wait >"$T/out" 2>&1; RC=$?
+  check "status --wait: an error from the cluster ends the wait at once" eval '[ $RC = 1 ] && has "run not found" && has "not retrying"'
+  FAKE_SSH_DOWN=1 TRAIN_STATUS_MAX_FAILS=2 timeout 30 bash "$TRAIN/status.sh" block_raise "run_002_$TODAY" --wait >"$T/out" 2>&1; RC=$?
+  check "status --wait: ssh exit 255 retried, then gives up" eval '[ $RC = 1 ] && has "(ssh exit 255, 1 of 2)" && has "failed 2 times in a row"'
   mkdir -p "$RR/run_002_$TODAY/checkpoints"; head -c 100 /dev/urandom >"$RR/run_002_$TODAY/checkpoints/top1_epoch=0001-val_action_mse_error_all=0.1.ckpt"
   run analysis/eval.sh block_raise "run_002_$TODAY" --ckpt top1 --per-demo 5 --attention
   check "eval.sh submits eval.sbatch and prints JOB=" eval '[ $RC = 0 ] && has "JOB=125" && grep -q "eval.sbatch" "$T/sbatch_3.args"'
@@ -391,6 +464,125 @@ if [ -f "$TRAIN/cluster/submit_job.sh" ]; then
   rm -rf "$L"/block_raise/policy/run_00[0-9]_stub
   run fetch.sh block_raise --all --top 1
   check "--all fetches every finished local run, reports the running one" eval '[ $RC != 0 ] && has "1 of 5 runs not fetched" && [ -f "$L/block_raise/policy/run_004_$TODAY/checkpoints/checkpoints.json" ] && [ -f "$L/block_raise/policy/run_004_$TODAY/job.json" ]'
+fi
+
+echo "== all.sh (real submit_job.sh; fake Slurm runs each job at once; stub analysis reports)"
+if [ -f "$TRAIN/cluster/submit_job.sh" ]; then
+  ALOG=$T/analysis.log
+  # all_run ARGS...: all.sh with fake Slurm; sets RC, FULL / SMOKE (from submit.sh's lines), LOGF / STEPSF (its files)
+  all_run() {
+    : >"$ALOG"; rm -rf "$L/block_raise/logs"
+    FAKE_SLURM=1 TRAIN_ANALYSIS_SRC=$T/analysis_stub run all.sh "$@"
+    FULL=$(sed -n 's/^FULL_RUN=//p' "$T/out" | tail -1) SMOKE=$(sed -n 's/^SMOKE_RUN=//p' "$T/out" | tail -1)
+    LOGF=$(ls "$L/block_raise/logs"/all_*.log 2>/dev/null | head -1)
+    STEPSF=${LOGF%.log}.steps
+  }
+  # results: "step:result ..." of every finished step, in order
+  results() { awk -F'\t' '$3 != "started" { printf "%s:%s ", $2, $3 }' "$STEPSF" 2>/dev/null; }
+  step_msg() { awk -F'\t' -v s="$1" '$2 == s && $3 != "started" { print $4 }' "$STEPSF"; }
+  sb_n() { cat "$T/sbatch_n"; }
+  job_of() { python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["job_id"])' "$L/block_raise/policy/$1/job.json"; }
+  # shellcheck disable=SC2034  # P, SMOKE_A and c0 are used inside the eval'd checks
+  P=$L/block_raise/policy
+
+  # --- everything works: package -> ... -> eval report
+  all_run block_raise dsA --package --no-raw --note "all ok" --per-demo 3
+  check "all.sh ok: exit 0" test $RC = 0
+  check "all.sh ok: every step ok, in order" test "$(results)" = "pull:ok dataset_report:ok upload:ok submit:ok train:ok fetch:ok run_report:ok compare_runs:ok eval_submit:ok eval_wait:ok eval_fetch:ok eval_report:ok all:ok "
+  check "all.sh ok: run names from submit.sh (smoke + full)" eval '[[ -n $FULL && $SMOKE == run_*_smoke && $FULL != "$SMOKE" ]] && [ -f "$P/$FULL/job.json" ] && grep -q "\"mode\": \"full\"" "$P/$FULL/job.json"'
+  check "all.sh ok: dataset report on the pulled package" grep -qx -- "dataset_report block_raise --dataset dsA --data-root $L" "$ALOG"
+  check "all.sh ok: the pulled zip is the uploaded one" cmp -s "$RD/dsA/dsA.zarr.zip" "$L/block_raise/package/dsA/dsA.zarr.zip"
+  check "all.sh ok: full job waits for the smoke job" grep -qx -- "--dependency=afterok:$(job_of "$SMOKE")" "$T/sbatch_$(( $(job_of "$FULL") - 122 )).args"
+  check "all.sh ok: status.sh --wait ran to the end on the full run" eval 'grep -qx -- "next: train/fetch.sh block_raise $FULL" "$T/out" && has "== [train] wait for $FULL (after the smoke run $SMOKE)"'
+  check "all.sh ok: policy fetched" eval 'ls "$P/$FULL"/checkpoints/top1_*.ckpt >/dev/null 2>&1'
+  check "all.sh ok: reports on the full run" eval 'grep -qx -- "run_report block_raise $FULL --data-root $L" "$ALOG" && grep -qx -- "compare_runs block_raise --no-smoke --data-root $L" "$ALOG"'
+  check "all.sh ok: eval job on the full run's top1, per-demo 3" eval 'grep -q "eval.sbatch" "$T/sbatch_$(sb_n).args" && grep -qx -- "$FULL" "$T/sbatch_$(sb_n).args" && [ "$(tail -2 "$T/sbatch_$(sb_n).args" | head -1)" = 3 ]'
+  check "all.sh ok: eval results fetched, then reported" eval '[ -f "$P/$FULL/eval/top1/eval.json" ] && [ -f "$P/$FULL/eval/top1/eval_job.json" ] && grep -qx -- "eval_report block_raise $FULL --ckpt top1 --data-root $L" "$ALOG"'
+  check "all.sh ok: log has every script's output" eval 'grep -q "sha256 ok" "$LOGF" && grep -q "uploaded and verified" "$LOGF" && grep -q "STATUS=ok" "$LOGF" && grep -q "DONE: every step ok" "$LOGF"'
+  check "all.sh ok: continue command printed after submitting" has "continue with: train/all.sh block_raise --run $FULL --per-demo 3"
+  # shellcheck disable=SC2034
+  FULL_A=$FULL SMOKE_A=$SMOKE
+
+  # --- existing package (--pull), full run only, no eval
+  n0=$(sb_n); all_run block_raise dsA --pull --no-raw --no-smoke --no-eval
+  check "all.sh --pull --no-smoke --no-eval: exit 0, eval skipped" eval '[ $RC = 0 ] && [ "$(results)" = "pull:ok dataset_report:ok upload:ok submit:ok train:ok fetch:ok run_report:ok compare_runs:ok eval:skipped all:ok " ]'
+  check "all.sh --no-smoke --no-eval: one job submitted, no smoke run" eval '[ $(( $(sb_n) - n0 )) = 1 ] && [ -z "$SMOKE" ] && has "nothing to upload"'
+
+  # --- the smoke run fails: stop, explain, fetch its logs; the full run never starts
+  FAKE_SMOKE=failed all_run block_raise dsA --no-eval
+  check "smoke fails: exit 1, stopped at train" eval '[ $RC = 1 ] && [ "$(results)" = "pull:skipped dataset_report:ok upload:ok submit:ok train:failed all:stopped " ]'
+  check "smoke fails: the reason names the smoke run" eval 'step_msg train | grep -q "smoke run $SMOKE ended with STATUS=failed" && has "STOPPED at step '"'"'train'"'"'"'
+  check "smoke fails: smoke log tail shown, scancel hint for the full job" eval 'has "fake training boom" && has "scancel $(job_of "$FULL")"'
+  check "smoke fails: smoke files fetched, no policy, no reports" eval '[ -f "$P/$SMOKE/README.md" ] && [ ! -e "$P/$FULL/checkpoints" ] && ! grep -q run_report "$ALOG"'
+  check "smoke fails: the log has the explanation" eval 'grep -q "STOPPED at step" "$LOGF" && grep -q "smoke run $SMOKE ended" "$LOGF"'
+
+  # --- the full run fails
+  FAKE_FULL=failed all_run block_raise dsA --no-eval
+  check "full fails: exit 1, stopped at train" eval '[ $RC = 1 ] && step_msg train | grep -q "full run $FULL ended with STATUS=failed"'
+  check "full fails: Slurm log path named, run files fetched, no checkpoint" eval 'has "bp_train_block_raise_$(job_of "$FULL").out" && [ -f "$P/$FULL/README.md" ] && ! ls "$P/$FULL"/checkpoints/*.ckpt >/dev/null 2>&1'
+
+  # --- the full run times out with a packaged checkpoint: go on, exit 2
+  FAKE_FULL=timeout all_run block_raise dsA --no-smoke --no-eval
+  check "full timeout: goes on with its checkpoint, exit 2" eval '[ $RC = 2 ] && [ "$(results)" = "pull:skipped dataset_report:ok upload:ok submit:ok train:failed fetch:ok run_report:ok compare_runs:ok eval:skipped all:done_with_problems " ]'
+
+  # --- the eval job fails: the policy is there, eval_job.json fetched, exit 2
+  FAKE_EVAL=failed all_run block_raise dsA --no-smoke
+  check "eval fails: exit 2, eval_report skipped" eval '[ $RC = 2 ] && [ "$(results)" = "pull:skipped dataset_report:ok upload:ok submit:ok train:ok fetch:ok run_report:ok compare_runs:ok eval_submit:ok eval_wait:failed eval_fetch:ok eval_report:skipped all:done_with_problems " ]'
+  check "eval fails: the job's message + Slurm log in the steps file" eval 'step_msg eval_wait | grep -q "offline_eval exited with 1" && step_msg eval_wait | grep -q "bp_eval_block_raise_"'
+  check "eval fails: log tail shown, eval_job.json on the laptop, policy kept" eval 'has "fake offline_eval boom" && grep -q failed "$P/$FULL/eval/top1/eval_job.json" && ls "$P/$FULL"/checkpoints/top1_*.ckpt >/dev/null 2>&1'
+
+  # --- the eval job dies before writing eval_job.json: Slurm's state ends the wait
+  echo 'FAILED|1:0|00:01:00|a|b|gpu-short|n1' >"$T/sacct_out"
+  FAKE_EVAL=silent all_run block_raise dsA --no-smoke
+  rm -f "$T/sacct_out"
+  check "eval dies silently: wait ends, exit 2" eval '[ $RC = 2 ] && step_msg eval_wait | grep -q "Slurm says FAILED"'
+
+  # --- a report fails: the rest goes on
+  FAKE_FAIL_run_report=1 all_run block_raise dsA --no-smoke
+  check "report fails: exit 2, eval still done" eval '[ $RC = 2 ] && [ "$(results)" = "pull:skipped dataset_report:ok upload:ok submit:ok train:ok fetch:ok run_report:failed compare_runs:ok eval_submit:ok eval_wait:ok eval_fetch:ok eval_report:ok all:done_with_problems " ]'
+
+  # --- continue a submitted run (--run): nothing pulled, uploaded or submitted again
+  # shellcheck disable=SC2034
+  n0=$(sb_n) c0=$(calls)
+  all_run block_raise --run "$FULL_A" --no-eval
+  check "--run: exit 0, starts at the wait" eval '[ $RC = 0 ] && [ "$(results)" = "resume:ok train:ok fetch:ok run_report:ok compare_runs:ok eval:skipped all:ok " ]'
+  check "--run: finds the smoke run, submits and copies nothing new" eval 'has "after the smoke run $SMOKE_A" && [ "$(sb_n)" = "$n0" ] && ! tail -n +$((c0 + 1)) "$T/calls.log" | grep -qE "jetson|dataproc|datasets/block_raise"'
+  run all.sh block_raise --run "$FULL_A" --package
+  check "--run with a pre-submit option: refused" eval '[ $RC != 0 ] && has "only applies before submitting"'
+  run all.sh block_raise --run run_999_none
+  check "--run of an unknown run: refused" eval '[ $RC != 0 ] && has "needs a run submitted from this laptop"'
+  run all.sh block_raise dsA --no-raw
+  check "all.sh --no-raw without --pull: refused" eval '[ $RC != 0 ] && has "add --pull"'
+
+  # --- the smoke run writes STATUS=ok but its Slurm job fails: the full job never starts; blame the smoke run
+  FAKE_SMOKE=okexit1 all_run block_raise dsA --no-eval
+  check "smoke ok but job failed: exit 1, the smoke run is named" eval '[ $RC = 1 ] && step_msg train | grep -q "smoke run $SMOKE wrote STATUS=ok but its Slurm job .* did not succeed"'
+  check "smoke ok but job failed: the Slurm note is shown, smoke files fetched" eval 'has "the job it waits for (--after) did not succeed" && [ -f "$P/$SMOKE/README.md" ]'
+
+  # --- the cluster cannot be reached while waiting: give up after TRAIN_STATUS_MAX_FAILS, stop with a reason
+  FAKE_SSH_DOWN=1 TRAIN_STATUS_MAX_FAILS=3 all_run block_raise --run "$FULL_A" --no-eval
+  check "ssh down while waiting: exit 1 after 3 tries" eval '[ $RC = 1 ] && [ "$(results)" = "resume:ok train:failed all:stopped " ] && has "failed 3 times in a row" && [ "$(grep -c "of 3); trying again" "$T/out")" = 2 ]'
+  check "ssh down while waiting: continue command given" has "continue with: train/all.sh block_raise --run $FULL_A --no-eval"
+
+  # --- a pull failure (dsA is already packaged on the Jetson): stop before uploading
+  all_run block_raise dsA --package
+  check "pull fails: exit 1, nothing after pull" eval '[ $RC = 1 ] && [ "$(results)" = "pull:failed all:stopped " ]'
+  check "pull fails: dataproc's error in the log, --pull hint" eval 'grep -q "dataset dsA exists" "$LOGF" && has "rerun with --pull instead of --package"'
+
+  # --- killed while waiting (tmux closed / kill): the steps file and the log say where, and how to continue
+  : >"$ALOG"; rm -rf "$L/block_raise/logs"
+  ( export FAKE_SLURM=1 FAKE_FULL=hang TRAIN_ANALYSIS_SRC=$T/analysis_stub TRAIN_STATUS_POLL_SEC=1
+    exec setsid bash "$TRAIN/all.sh" block_raise dsA --no-smoke --no-eval >"$T/out" 2>&1 ) &
+  pid=$!
+  for _ in $(seq 1 150); do grep -q "STATUS=queued" "$T/out" 2>/dev/null && break; sleep 0.1; done
+  kill -TERM -- -"$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  LOGF=$(ls "$L/block_raise/logs"/all_*.log 2>/dev/null | head -1); STEPSF=${LOGF%.log}.steps
+  for _ in $(seq 1 50); do grep -q "^steps:" <(sed -n '/INTERRUPTED/,$p' "$LOGF" 2>/dev/null) && break; sleep 0.1; done
+  FULL=$(sed -n 's/^FULL_RUN=//p' "$LOGF" | tail -1)
+  check "killed: steps file says interrupted during train" eval '[ "$(results)" = "pull:skipped dataset_report:ok upload:ok submit:ok train:interrupted all:interrupted " ]'
+  check "killed: the log says how to continue" eval '[ -n "$FULL" ] && grep -q "INTERRUPTED during '"'"'train'"'"'" "$LOGF" && grep -q "Continue with: train/all.sh block_raise --run $FULL --no-eval" "$LOGF"'
+else
+  echo "  skip  train/cluster/submit_job.sh not there yet"
 fi
 
 echo

@@ -308,6 +308,39 @@ SJ status --label block_raise --run run_999 > "$T/s2" 2>&1; rc=$?
 check "status of unknown run fails" [ $rc -ne 0 ]
 : > "$T/squeue.out"; : > "$T/sacct.out"
 
+# ================================================================== submit_job.sh eval-status
+# J = the eval job submitted above for run_001 top1
+E=$R/eval/top1
+check "eval writes its job id to eval/top1/JOB" [ "$(cat "$E/JOB" 2>/dev/null)" = "$J" ]
+est() { : > "$T/squeue.out"; : > "$T/sacct.out"; [ -n "$1" ] && echo "$1" > "$T/squeue.out"; [ -n "$2" ] && echo "$2" > "$T/sacct.out"
+  SJ eval-status --label block_raise --run run_001_$DATE --ckpt top1 > "$T/es" 2>&1; }
+ejson() { printf '{\n  "status": "%s",\n  "job_id": "%s",\n  "message": "%s"\n}\n' "$1" "$2" "${3:-}" > "$E/eval_job.json"; }
+rm -f "$E/eval_job.json"
+est "PENDING 0:00 (Priority)" ""
+check "eval-status: no eval_job.json yet -> queued, JOB" eval 'line "$T/es" "STATUS=queued" && line "$T/es" "JOB=$J" && has "$T/es" "(none yet)"'
+ejson ok 999
+est "PENDING 0:00 (Priority)" ""
+check "eval-status: eval_job.json of an older job is ignored" line "$T/es" "STATUS=queued"
+est "RUNNING 0:30 d1" ""
+check "eval-status: RUNNING in Slurm -> running" line "$T/es" "STATUS=running"
+ejson ok "$J"; echo '{}' > "$E/eval.json"
+est "" "COMPLETED|0:0|00:20:00|a|b|gpu-short|d1"
+check "eval-status: ok, eval.json listed" eval 'line "$T/es" "STATUS=ok" && line "$T/es" "eval.json"'
+ejson failed "$J" "offline_eval exited with 1"
+echo "Traceback: eval boom" > "$LOGS/bp_eval_block_raise_$J.out"
+est "" "FAILED|1:0|00:02:00|a|b|gpu-short|d1"
+check "eval-status: failed + the job's message + log tail" eval 'line "$T/es" "STATUS=failed" && line "$T/es" "message: offline_eval exited with 1" && has "$T/es" "eval boom"'
+rm -f "$E/eval_job.json" "$E/eval.json"
+est "" "CANCELLED by 1|0:0|00:01:00|a|b|gpu-short|d1"
+check "eval-status: job died before writing eval_job.json -> failed" eval 'line "$T/es" "STATUS=failed" && has "$T/es" "Slurm says CANCELLED"'
+ejson running "$J"
+est "" "TIMEOUT|0:0|01:00:00|a|b|gpu-short|d1"
+check "eval-status: hard timeout while running -> timeout" line "$T/es" "STATUS=timeout"
+rm -f "$E/eval_job.json"
+SJ eval-status --label block_raise --run run_001_$DATE --ckpt top2 > "$T/es2" 2>&1; rc=$?
+check "eval-status without a submitted eval fails clearly" eval '[ $rc -ne 0 ] && has "$T/es2" "no eval of top2 submitted"'
+: > "$T/squeue.out"; : > "$T/sacct.out"
+
 # ================================================================== train.sbatch
 # run_sbatch <run> <mode> <epochs> <topk> <note> [overrides...]; runs in the background, pid in SB_PID
 start_train() {
