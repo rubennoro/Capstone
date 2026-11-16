@@ -43,6 +43,113 @@ The Nvidia Jetson replicates the data processing done by the iPhone, with a cust
 
 This is located in the **rnoro/data-work** branch.
 
+## Pipeline: Data Collection → Training → Deployment
+
+### Data Collection
+
+Demonstrations recorded with the handheld rig and processed into training data. Located in the **rnoro/data-work**
+branch.
+
+### Training
+
+Training a diffusion policy on the processed data, on the Northeastern cluster. Located in the **rnoro/training**
+branch.
+
+### Deployment
+
+Running a policy on the real Franka Panda arm, with the sensor rig mounted on its hand. Located in
+[`deployment/`](deployment/) on the **rnoro/final-deployment** branch.
+
+Three machines work together:
+
+```
+  Sensor rig (Raspberry Pi 5) ──camera frames, Wi-Fi──► Laptop ──timed moves, Wi-Fi──► PC ──Ethernet──► Franka Panda
+                                                        (policy)  ◄──arm state───────   (arm control)
+```
+
+- **Raspberry Pi 5:** on the robot's hand. It streams both cameras.
+- **Laptop:** runs the policy and decides the next moves.
+- **PC:** cabled to the arm. It's the only machine that drives it, and it checks every move first.
+
+All three are on the same lab Wi-Fi router.
+
+#### The docs
+
+| Doc | Read it for |
+|---|---|
+| [deployment/DIRECTIONS.md](deployment/DIRECTIONS.md) | **Start here.** The physical setup, which machine's directions to follow in what order, and a trial run |
+| [deployment/control_deploy/DIRECTIONS.md](deployment/control_deploy/DIRECTIONS.md) | Setting up and running the PC (the arm side) |
+| [deployment/policy_deploy/DIRECTIONS.md](deployment/policy_deploy/DIRECTIONS.md) | Setting up and running the laptop (cameras and policy) |
+| [deployment/policy_deploy/TEST_FRAMES.md](deployment/policy_deploy/TEST_FRAMES.md) | Saving camera images from the rig on any computer, to check them |
+| [deployment/PLAN.md](deployment/PLAN.md) | Why it is built this way: the messages between machines, clocks, safety, the failure rules |
+| [deployment/STRUCTURE.md](deployment/STRUCTURE.md) | How the code is laid out |
+
+#### Initial directions
+
+1. **Physical setup:**
+   - The arm has the Franka Hand, the printed fingers and the sensor rig mounted.
+   - The user stop button is within reach.
+   - The PC is cabled straight to the Franka controller.
+   - The PC, the laptop and the Pi are all on the lab router's Wi-Fi.
+2. **One-time software setup:** follow the order table in [deployment/DIRECTIONS.md](deployment/DIRECTIONS.md). It
+   alternates between the PC's and the laptop's directions. Both machines must be on the same commit, with the same
+   `deployment/contracts/link.yaml`.
+3. **A trial run:**
+   1. In Desk (the arm's web page), unlock the brakes and activate FCI.
+   2. On the PC: `control_deploy run`.
+   3. On the rig: press the C button. The LED turns blue.
+   4. On the laptop: `policy_deploy check`, then `policy_deploy run`.
+   5. Drive it from the laptop's keys: `h` home, `c` start an episode, `y` / `n` end it.
+
+   **Always start the PC before the laptop.**
+
+Until a policy is trained on data from this rig, the laptop runs **`hold_still`**: the arm stays where each episode
+started. This tests the cameras, the link and the timing without moving the arm.
+
+#### What the code does at each step
+
+1. **`control_deploy run` (PC).**
+   - It first runs its checks:
+     - the config;
+     - the arm reachable at `172.16.0.2`;
+     - the network addresses;
+     - the ports.
+   - It then starts `franka_control`, a C++ program, the only process connected to the arm. `franka_control`:
+     - homes the fingers once;
+     - holds the arm still with a 1 kHz Cartesian impedance loop;
+     - broadcasts the arm's state (pose, joints, gripper width, mode) 100 times a second;
+     - waits for commands from the laptop.
+2. **The C button (Pi).** The Pi streams both cameras (640×480, 30 FPS) as JPEG pairs over ZeroMQ. Each pair carries
+   the capture times of both images.
+3. **`policy_deploy check` (laptop).** It moves nothing. It checks:
+   - the Pi's stream arrives;
+   - the PC answers;
+   - both machines run the same commit and the same limits and TCP definition;
+   - the laptop's map from its own clock to the PC's clock agrees.
+4. **`policy_deploy run` (laptop).** Starts three separate processes:
+   - **frames:** decodes and pairs the camera images. It keeps the last second of them on the laptop's clock and
+     prepares them exactly as in training (resize, fisheye correction).
+   - **policy:** loads the model and turns images plus the hand's recent motion into the next 16 relative steps.
+   - **manager:** runs episodes and the keyboard. It is the only process that talks to the PC.
+5. **`h`, then `c`.**
+   - `h` asks the PC to move all 7 joints to the home pose.
+   - `c` starts an episode. Each policy step then:
+     1. takes the newest images;
+     2. looks up where the hand was at the moments they were taken, in the PC's state history and on the PC's clock;
+     3. asks the policy for its next steps;
+     4. turns the first few into absolute fingertip poses, timed 50 ms apart.
+   - The manager sends those poses to the PC, which checks each one before the arm moves:
+     - its time is not already past;
+     - it is inside the workspace box and the tilt cone;
+     - its speed is under the limit.
+
+     The PC's 1 kHz loop then moves smoothly between the accepted poses, and the next policy step has already
+     started.
+6. **Safety throughout.**
+   - The laptop sends a heartbeat every 20 ms. If the PC hears nothing for 1 s, it stops and holds the arm.
+   - `s` on either machine, or the user stop, stops the arm at any time.
+   - Any failure ends the run with one line saying which process failed, what failed, and what to check.
+
 ## Simulation
 
 We also validate our solution in simulation as well, under the **rnoro/main-sim** branch. Here we demonstrate a working simulation in MuJoCo, with our sensor setup, as shown below: 
