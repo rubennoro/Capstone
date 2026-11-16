@@ -14,7 +14,8 @@ from dataproc.slam.base import finalize_trajectory, ultrawide_times_ns
 from dataproc.slam.oracle import OracleBackend, load_truth
 from dataproc.slam.orbslam3 import (
     EUROC_IMU_HEADER, IMU_INIT_STRINGS, ORB_BIN, ORB_SLAM3_DIR_ENV, ORB_VOC, Orbslam3Backend, count_map_events,
-    default_orb_slam3_dir, imu_init_events, import_trajectory, orbslam3_command, subprocess_runner,
+    count_map_inits, default_orb_slam3_dir, imu_init_events, import_trajectory, no_keyframes_message,
+    orbslam3_command, subprocess_runner, write_euroc,
 )
 from test_geometry_common import EXPOSURE_NS, IMU_HZ, analytic_episode, make_rig, truth_poses, yaw_residual
 
@@ -308,6 +309,111 @@ def test_orbslam3_reports_not_enough_motion(tmp_path, rig, episode):
     log = "Not enough motion for initializing. Reseting...\nSYSTEM-> Reseting active map in monocular case\n"
     res = Orbslam3Backend(runner=FakeOrbslam(log_text=log), scale=0.25).run(episode, rig, tmp_path / "w")
     assert res.n_resets == 1 and res.diagnostics["n_not_enough_motion_resets"] == 1
+
+
+# --------------------------------------------------------------------------------------------- slam_mask
+
+STRIP_MASK = {"polygons": [[[0, 462], [820, 462], [820, 616], [0, 616]]], "source": "test: bottom strip"}
+
+
+@pytest.fixture(scope="module")
+def masked_rig():
+    return make_rig(**{"cameras.ultrawide.T_imu_cam": UW_ROT, "cameras.ultrawide.slam_mask": STRIP_MASK})
+
+
+def _png(work, t) -> np.ndarray:
+    return cv2.imread(str(work / f"mav0/cam0/data/{t}.png"), cv2.IMREAD_UNCHANGED)
+
+
+def test_orbslam3_fake_end_to_end_masked(tmp_path, rig, masked_rig, episode):
+    """Same episode with and without the mask at scale 0.5: the strip (rows 231..307 of 410x308) is black, the rest
+    of each image and the settings are unchanged, and only the masked run reports the mask."""
+    runs = {name: get_backend("orbslam3", scale=0.5, runner=FakeOrbslam()).run(episode, r, tmp_path / name)
+            for name, r in (("plain", rig), ("masked", masked_rig))}
+    wp, wm = tmp_path / "plain", tmp_path / "masked"
+    assert "slam_mask" not in runs["plain"].diagnostics["prep"]
+    assert runs["masked"].diagnostics["prep"]["slam_mask"] == {"n_polygons": 1, "masked_fraction": 0.25}
+    assert (wm / "orbslam3_settings.yaml").read_bytes() == (wp / "orbslam3_settings.yaml").read_bytes()
+    times = (wm / "times.txt").read_text().split()
+    assert times == (wp / "times.txt").read_text().split() and len(times) > 100
+    for t in times[::20]:
+        a, b = _png(wp, t), _png(wm, t)
+        assert a.shape == b.shape == (308, 410)
+        assert (b[231:] == 0).all() and a[231:].any()
+        # the episode's 64x48 frames get their own mask before the upscale; its edge is a source pixel boundary
+        # (462 / 616 * 48 = 36), so nothing above the strip changes
+        assert np.array_equal(b[:231], a[:231])
+
+
+@pytest.mark.parametrize("frame_size", [(820, 616), (1640, 1232), (64, 48)])
+def test_write_euroc_frames_hook_masked(tmp_path, masked_rig, episode, frame_size):
+    """White frames through the frames= hook, at the rig's resolution and at other sizes: written at scale 0.5,
+    the strip is exactly 0 and the rest stays white."""
+    white = np.full((frame_size[1], frame_size[0], 3), 255, np.uint8)
+    n = len(ultrawide_times_ns(episode, masked_rig))
+    info = write_euroc(episode, masked_rig, tmp_path, scale=0.5, frames=((i, white) for i in range(n)))
+    assert info["slam_mask"] == {"n_polygons": 1, "masked_fraction": 0.25} and info["size"] == [410, 308]
+    for t in info["t_cam_ns"][::15]:
+        img = _png(tmp_path, t)
+        assert img.shape == (308, 410) and (img[231:] == 0).all() and (img[:231] == 255).all()
+
+
+# real mono_inertial_euroc output (ORB-SLAM3 v1.0 on the Pi recordings, 2026-11-15)
+LOG_START = ("Initialization of Atlas from scratch \nCreation of new map with id: 0\n"
+             "Creation of new map with last KF id: 0\nSeq. Name: \nThere are 1 cameras in the atlas\n"
+             "Camera 0 is fisheye\n")
+LOG_LOST = ("First KF:0; Map init KF:0\nNew Map created with 111 points\nFail to track local map!\n"
+            "IMU is not or recently initialized. Reseting active map...\n"
+            "SYSTEM-> Reseting active map in monocular case\nLM: Active map reset recieved\n"
+            "LM: Active map reset, waiting...\nLM: Reseting current map in Local Mapping...\n"
+            "LM: End reseting Local Mapping...\nLM: Reset free the mutex\nLM: Active map reset, Done!!!\n"
+            "mnFirstFrameId = 242\nmnInitialFrameId = 0\n72 Frames set to lost\n")
+LOG_NO_MOTION = ("First KF:12; Map init KF:0\nNew Map created with 79 points\n"
+                 "Not enough motion for initializing. Reseting...\n"
+                 "TRACK: Reset map because local mapper set the bad imu flag \n"
+                 "SYSTEM-> Reseting active map in monocular case\n174 Frames set to lost\n")
+LOG_EMPTY_SAVE = ("Shutdown\n\nSaving trajectory to f_episode.txt ...\nThere are 1 maps in the atlas\n"
+                  "  Map 0 has 0 KFs\n")
+
+
+def test_orbslam3_zero_keyframe_messages(tmp_path, rig, masked_rig, episode):
+    """ORB-SLAM3 crashed saving an empty map: "never initialised" only when the log shows no initialisation."""
+    def fail(r, log_text, name):
+        with pytest.raises(SlamError) as e:
+            Orbslam3Backend(runner=FakeOrbslam(rc=-11, write=False, log_text=log_text), scale=0.25).run(
+                episode, r, tmp_path / name)
+        return str(e.value)
+
+    log_a = (tmp_path / "a").resolve() / "orbslam3.log"
+    assert fail(rig, LOG_START + LOG_EMPTY_SAVE, "a") == (
+        "orbslam3: never initialised (0 keyframes; mono-inertial needs the camera to move with parallax: a static "
+        "recording cannot work; the gripper itself may be blocking SLAM: set cameras.ultrawide.slam_mask in the "
+        f"rig), see {log_a}")
+    msg = fail(masked_rig, LOG_START + LOG_EMPTY_SAVE, "b")
+    assert "never initialised" in msg and "check that cameras.ultrawide.slam_mask still covers the gripper" in msg
+    log_c = (tmp_path / "c").resolve() / "orbslam3.log"
+    assert fail(masked_rig, LOG_START + 2 * LOG_LOST + LOG_EMPTY_SAVE, "c") == (
+        "orbslam3: initialised 2 times but lost tracking before the IMU finished initialising (2 map resets, no "
+        "keyframes kept): the recording needs more texture in view and side-to-side motion at the start, "
+        f"see {log_c}")
+    msg = fail(rig, LOG_START + LOG_LOST + LOG_NO_MOTION + LOG_EMPTY_SAVE, "d")
+    assert msg.startswith("orbslam3: initialised 2 times but lost tracking before the IMU finished initialising "
+                          "(2 map resets, 1 of them for not enough motion during the IMU initialisation, no "
+                          "keyframes kept): ")
+    assert "; the gripper itself may also be blocking SLAM: set cameras.ultrawide.slam_mask in the rig, see" in msg
+    # a crash with a non-empty map is not a 0-keyframe run
+    two_maps = "There are 2 maps in the atlas\n  Map 0 has 0 KFs\n  Map 1 has 23 KFs\n"
+    assert "rc=-11" in fail(rig, LOG_START + LOG_LOST + two_maps, "e")
+
+
+def test_no_keyframes_message_counts():
+    assert count_map_inits(LOG_START + 2 * LOG_LOST + LOG_NO_MOTION) == 3
+    wrong = "New Map created with 60 points\nWrong initialization, reseting...\n"     # rejected at once: not counted
+    assert count_map_inits(LOG_START + wrong) == 0 and count_map_inits(wrong + LOG_LOST) == 1
+    assert "never initialised" in no_keyframes_message(LOG_START + wrong + LOG_EMPTY_SAVE, "x", masked=True)
+    one = no_keyframes_message(LOG_START + LOG_LOST + LOG_EMPTY_SAVE, "x", masked=True)
+    assert one.startswith("orbslam3: initialised 1 time but") and "(1 map reset, no keyframes kept)" in one
+    assert no_keyframes_message(LOG_START + LOG_LOST, "x", masked=True) is None          # no save listing
 
 
 # --------------------------------------------------------------------------------------------- scale check

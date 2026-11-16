@@ -71,6 +71,31 @@ def test_world_offset_change_reruns_pose_and_later(root):
                        atol=1e-5)
 
 
+def test_slam_mask_reruns_slam_and_later(root):
+    """A slam_mask added to the rig re-runs slam and what depends on it (the oracle ignores images, but the mask is
+    in the slam hash); check, grid, width and the calibration stay. Its ``source`` note re-runs nothing."""
+    before, cal = _starts(root), _calib_start(root)
+    d = fast_rig_dict()                                       # ultrawide 410x308
+    d["cameras"]["ultrawide"]["slam_mask"] = {"source": "test", "polygons": [[[0, 250], [410, 250], [410, 308],
+                                                                              [0, 308]]]}
+    write_rig(root, d)
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.exit_code == 0 and res.report["calibration"]["ran"] is False and _calib_start(root) == cal
+    later = ["slam", "pose", "validate", "images", "export"]
+    assert res.ran == {f"episode_{k}": later for k in range(N_DEMOS)}
+    after = _starts(root)
+    for k in range(N_DEMOS):
+        for s in STAGES:
+            assert (after[k][s] > before[k][s]) == (s in later), (k, s)
+    assert res.report["totals"]["exported"] == N_DEMOS
+    res = run_process(root, TASK, slam="oracle", log=quiet)                  # nothing changed: nothing to do
+    assert res.ran == {f"episode_{k}": [] for k in range(N_DEMOS)} and res.report["calibration"]["ran"] is False
+    d["cameras"]["ultrawide"]["slam_mask"]["source"] = "another note"
+    write_rig(root, d)
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.ran == {f"episode_{k}": [] for k in range(N_DEMOS)} and _starts(root) == after
+
+
 def test_label_change_reruns_images_and_export_only(root):
     import yaml
 

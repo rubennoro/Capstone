@@ -1,6 +1,7 @@
 import copy
 import math
 import datetime
+import re
 from pathlib import Path
 
 import numpy as np
@@ -103,6 +104,7 @@ def _set(d, path, value):
 
 
 _DEL = object()
+_TRI = [[0, 0], [10, 0], [0, 10]]                 # a valid slam_mask polygon on any camera
 
 
 @pytest.mark.parametrize("path, value, where", [
@@ -151,6 +153,35 @@ _DEL = object()
     ("gripper.opening_tolerance_m", _DEL, "gripper.opening_tolerance_m: missing"),
     ("gripper.extra", 1.0, "gripper.extra: unknown key"),
     ("gripper.closed_width_m", 0, "gripper.closed_width_m: must be > 0"),
+    # slam_mask (rig_v1's ultrawide is 820x616)
+    ("cameras.main.slam_mask", {"polygons": [_TRI]},
+     re.escape("cameras.main.slam_mask: only cameras.ultrawide (the SLAM camera) takes a slam_mask")),
+    ("cameras.ultrawide.slam_mask", [_TRI], "cameras.ultrawide.slam_mask: must be a mapping, got list"),
+    ("cameras.ultrawide.slam_mask", {"source": "x"}, "slam_mask.polygons: missing required key"),
+    ("cameras.ultrawide.slam_mask", {"polygons": []}, "slam_mask.polygons: expected a non-empty list of polygons"),
+    ("cameras.ultrawide.slam_mask", {"polygons": [5]}, re.escape("slam_mask.polygons[0]: expected a polygon")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], [10, 0]]]},
+     re.escape("polygons[0]: expected a polygon: a list of at least 3 points")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], [10, 10], [20, 20]]]},
+     re.escape("polygons[0]: degenerate polygon (area 0 square pixels")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], [1, 0], [0, 1]]]},
+     re.escape("polygons[0]: degenerate polygon (area 0.5 square pixels")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], ["a", 0], [0, 10]]]},
+     re.escape("polygons[0][1][0]: expected a number, got 'a'")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], [True, 0], [0, 10]]]}, "expected a number, got True"),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], [float("nan"), 0], [0, 10]]]}, "must be finite, got nan"),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0], [float("inf"), 0], [0, 10]]]}, "must be finite, got inf"),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[0, 0, 0], [10, 0], [0, 10]]]},
+     re.escape("polygons[0][0]: expected a point [x, y] of 2 numbers, got [0, 0, 0]")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[0, [10, 0], [0, 10]]]}, "of 2 numbers, got 0"),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[821, 0], [10, 0], [0, 10]]]},
+     re.escape("polygons[0][0]: point [821, 0] is outside the 820x616 image")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [[[-1, 0], [10, 0], [0, 10]]]},
+     re.escape("point [-1, 0] is outside the 820x616 image")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [_TRI, [[0, 0], [10, 0], [5, 616.5]]]},
+     re.escape("polygons[1][2]: point [5, 616.5] is outside the 820x616 image")),
+    ("cameras.ultrawide.slam_mask", {"polygons": [_TRI], "margin": 3}, "slam_mask.margin: unknown key"),
+    ("cameras.ultrawide.slam_mask", {"polygons": [_TRI], "source": 5}, "slam_mask.source: expected a string"),
 ])
 def test_rig_errors(rig_dict, path, value, where):
     d = copy.deepcopy(rig_dict)
@@ -168,6 +199,33 @@ def test_gripper_section(rig_dict):
     d = copy.deepcopy(rig_dict)
     del d["gripper"]
     assert parse_rig(d, "rig.yaml").gripper is None                     # optional: older rig files still load
+
+
+def test_slam_mask_section(rig_dict):
+    from dataproc.config import SlamMask
+
+    for name in ("rig_v1", "rig_pi_v1", "rig_pi_v2", "rig_pi_v3"):      # optional: rigs without one still load
+        rig = load_rig(RIG_V1.with_name(f"{name}.yaml"))
+        assert rig.rig_id == name
+        if name != "rig_pi_v3":                                         # (rig_pi_v3 is to get one)
+            assert [c.slam_mask for c in rig.cameras.values()] == [None, None]
+    d = copy.deepcopy(rig_dict)
+    d["cameras"]["ultrawide"]["slam_mask"] = {"source": "traced by hand", "polygons": [
+        [[0, 616], [0, 500], [820, 500], [820, 616]],                   # pixel edges: the borders are allowed
+        [[100.5, 200], [300, 200.25], [200, 400]]]}
+    rig = parse_rig(d, "rig.yaml")
+    m = rig.cameras["ultrawide"].slam_mask
+    assert m == SlamMask(polygons=(((0.0, 616.0), (0.0, 500.0), (820.0, 500.0), (820.0, 616.0)),
+                                   ((100.5, 200.0), (300.0, 200.25), (200.0, 400.0))), source="traced by hand")
+    assert all(type(v) is float for poly in m.polygons for pt in poly for v in pt)       # ints -> floats
+    assert rig.cameras["main"].slam_mask is None and hash(m) == hash(SlamMask(m.polygons, "traced by hand"))
+    as_floats = copy.deepcopy(d)
+    as_floats["cameras"]["ultrawide"]["slam_mask"]["polygons"][0] = [[0.0, 616.0], [0.0, 500.0], [820.0, 500.0],
+                                                                     [820.0, 616.0]]
+    assert parse_rig(as_floats).cameras["ultrawide"].slam_mask == m
+    d["cameras"]["ultrawide"]["slam_mask"] = {"polygons": [[[0, 0], [820, 0], [820, 616], [0, 616]]]}  # all of it
+    m = parse_rig(d).cameras["ultrawide"].slam_mask
+    assert m.source is None and m.polygons == (((0.0, 0.0), (820.0, 0.0), (820.0, 616.0), (0.0, 616.0)),)
 
 
 def test_rig_file_name_must_match_id(tmp_path):

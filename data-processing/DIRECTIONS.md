@@ -25,15 +25,15 @@ The `echo` must print `not set`. If it prints a folder (e.g. `~/dataproc_practic
 
 Use one task name per session, e.g. `block_raise`.
 
-**Calibration recording (first, at the start of every session, and again if the gripper, tags or camera mount
-change).** One clip where:
+**Calibration recording** (first, at the start of every session, and again if the gripper, tags or camera mount
+change). One clip where:
 - the gripper opens **fully** and closes **fully**, several times (at least 5 cycles), slowly;
 - **both finger ArUco tags stay visible to the ultrawide (IMX219) camera** the whole time;
 - the rig is held roughly still.
 
 Write down its folder name when it arrives (e.g. `episode_000010`).
 
-**Demonstrations.** Each clip is 15 s, and the **whole clip** becomes training data.
+**Demonstrations.** Each clip is ~15 s, and the **whole clip** becomes training data.
 - **Start moving straight away:** about 2 s of gentle side-to-side / up-down movement in front of a textured scene.
   ORB-SLAM3 can't start mapping without motion. Static recordings always fail at SLAM.
 - Then do the task, smoothly (faster than 3 m/s is rejected).

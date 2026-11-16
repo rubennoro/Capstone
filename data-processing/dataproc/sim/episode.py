@@ -354,9 +354,9 @@ def generate_episode(out_dir, rig: RigConfig, kind: str = "demonstration", seed:
 def fast_rig(rig_yaml_path, main_scale: float = 0.25, ultrawide_scale: float = 0.5,
              suffix: str = "_fast") -> tuple[dict, RigConfig]:
     """Low-resolution copy of a rig yaml for tests: camera resolutions scaled (intrinsics via the camera model's
-    ``scaled()``, half-pixel convention), ``rig_id`` + ``suffix``; everything else (virtual ultrawide, tags, IMU,
-    extrinsics, time model) unchanged. Returns ``(yaml dict, RigConfig)``; write the dict as
-    ``rigs/<rig_id>.yaml`` so processing can load it."""
+    ``scaled()``, half-pixel convention; ``slam_mask`` polygons, which are pixel edges, by the same factor),
+    ``rig_id`` + ``suffix``; everything else (virtual ultrawide, tags, IMU, extrinsics, time model) unchanged.
+    Returns ``(yaml dict, RigConfig)``; write the dict as ``rigs/<rig_id>.yaml`` so processing can load it."""
     path = Path(rig_yaml_path)
     d = yaml.safe_load(path.read_text(encoding="utf-8"))
     d["rig_id"] = f"{d['rig_id']}{suffix}"
@@ -372,7 +372,25 @@ def fast_rig(rig_yaml_path, main_scale: float = 0.25, ultrawide_scale: float = 0
                              "distortion": c["model"]["distortion"]}, (w, h)).scaled(w1, h1)
         c["resolution"] = [w1, h1]
         c["model"]["intrinsics"] = [float(m.fx), float(m.fy), float(m.cx), float(m.cy)]
+        _scale_slam_mask(c, (w, h), (w1, h1))
     return d, parse_rig(d, f"{path} ({suffix.strip('_')})")
+
+
+def _scale_slam_mask(cam: dict, size: tuple[int, int], new_size: tuple[int, int]) -> None:
+    """Scale the camera's ``slam_mask`` polygon points (pixel edges, so ``x * w1 / w`` maps ``[0, w]`` exactly onto
+    ``[0, w1]``) in place. Anything malformed is left as it is, for ``parse_rig`` to report."""
+    mask = cam.get("slam_mask")
+    polygons = mask.get("polygons") if isinstance(mask, dict) else None
+    if not isinstance(polygons, list):
+        return
+    (w, h), (w1, h1) = size, new_size
+    for poly in polygons:
+        if not isinstance(poly, list):
+            continue
+        for i, pt in enumerate(poly):
+            if (isinstance(pt, list) and len(pt) == 2
+                    and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in pt)):
+                poly[i] = [pt[0] * w1 / w, pt[1] * h1 / h]
 
 
 

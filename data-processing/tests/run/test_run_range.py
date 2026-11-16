@@ -314,6 +314,44 @@ def test_retry_failed(tmp_path_factory, tmp_path, monkeypatch):
         "ingested"
 
 
+def test_slam_mask_then_retry_failed(tmp_path_factory, tmp_path, monkeypatch):
+    """The real case: a recording failed at slam (ORB-SLAM3 never initialised on the gripper), then a slam_mask is
+    added to the data root's rig and the range is run with --retry-failed. Without the mask the retry runs nothing;
+    with it slam runs again (check does not: its hash is unchanged) and so do the stages slam had stopped; the
+    calibration is not fitted again."""
+    import yaml
+
+    from dataproc.stages.base import StageFailed
+    from dataproc.stages.geometry import SlamStage
+
+    root, src = _one_recording_root(tmp_path_factory, tmp_path)
+
+    def never_initialised(self, ctx, ep):
+        raise StageFailed("failed", ["slam_error"], "orbslam3: never initialised (0 keyframes)")
+
+    with monkeypatch.context() as m:
+        m.setattr(SlamStage, "run", never_initialised)
+        res = _run(root, src, end="episode_000001")
+    o = _outcomes(res)["episode_000001"]
+    assert o.state == "failed" and o.stage == "slam" and o.ran == ["check", "slam"]
+    res = _run(root, src, end="episode_000001", retry_failed=True)            # same rig: nothing to re-run
+    o = _outcomes(res)["episode_000001"]
+    assert o.state == "failed" and o.ran == []
+    d = yaml.safe_load(root.rig_file(RIG).read_text())
+    d["cameras"]["ultrawide"]["slam_mask"] = {"polygons": [[[0, 250], [410, 250], [410, 308], [0, 308]]]}
+    root.rig_file(RIG).write_text(yaml.safe_dump(d, sort_keys=False))
+    res = _run(root, src, end="episode_000001", retry_failed=True)
+    o = _outcomes(res)["episode_000001"]
+    assert o.state == "episode" and o.slot == "episode_1"
+    assert o.ran == ["slam", "grid", "pose", "width", "validate", "images", "export"]
+    assert res.calibration["ran"] is False and res.report["calibration"]["ran"] is False
+    res = _run(root, src, end="episode_000001")                                # nothing left to do
+    o = _outcomes(res)["episode_000001"]
+    assert o.state == "skipped" and o.quiet and o.ran == []
+    pr = run_process(root, TASK, slam="oracle", log=quiet)                     # its hashes are up to date
+    assert pr.ran == {"episode_1": []} and pr.report["calibration"]["ran"] is False
+
+
 def test_crash_mid_episode_resumes_from_staging(tmp_path_factory, tmp_path, monkeypatch):
     from dataproc.stages.output import ImagesStage
 

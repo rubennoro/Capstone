@@ -1,14 +1,16 @@
 # Vendored/adapted from sensor_rig/sensor_rig/pose/{euroc,orbslam3,vio_hooks,stage}.py at commit 4be9982.
 # Changes: EuRoC images are decoded from the ultrawide MP4 (RawEpisode.read_video_frames) instead of JPEG folders;
 # times are dataproc's IMU time base (RigConfig.camera_time_ns / imu_time_ns); frames outside the IMU span are dropped
-# (mono_inertial_euroc indexes past its IMU array otherwise); the runner is injectable; no mask support.
+# (mono_inertial_euroc indexes past its IMU array otherwise); the runner is injectable; no mask file for a mask-aware
+# ORB-SLAM3 build: the rig's cameras.ultrawide.slam_mask is blacked out in the written frames instead (euroc_image).
 # Jetson: runs a native ORB-SLAM3 build (``$ORB_SLAM3_DIR``, default ``~/ORB_SLAM3``) instead of the Docker image.
 """``orbslam3`` backend: ORB-SLAM3 v1.0 mono-inertial (``mono_inertial_euroc``), built natively on the Jetson
 (docs/ORBSLAM3.md), on the fisheye ultrawide plus the IMU.
 
 Steps (all files in ``work_dir``, which is also the working directory of the run):
 
-1. **EuRoC prep** (:func:`write_euroc`): ``mav0/cam0/data/<t_ns>.png`` (gray, resized to the settings size),
+1. **EuRoC prep** (:func:`write_euroc`): ``mav0/cam0/data/<t_ns>.png`` (gray, resized to the settings size, with the
+   rig's ``cameras.ultrawide.slam_mask`` blacked out, see :func:`euroc_image` and :mod:`dataproc.slam.mask`),
    ``mav0/cam0/data.csv``, ``times.txt`` (one ``t_ns`` per line; ``mono_inertial_euroc`` loads
    ``<seq>/mav0/cam0/data/<line>.png``), ``mav0/imu0/data.csv`` (``t_ns,gx,gy,gz,ax,ay,az``). Camera times are the
    ultrawide mid-exposure times, IMU times ``rig.imu_time_ns`` (one time base). Frames with ``t < t_imu[0]`` or
@@ -29,7 +31,8 @@ body = our IMU frame) in a world re-based on the **first keyframe's IMU frame** 
 the time as ``1e9 * t_s`` at 6 decimals, then ``x y z qx qy qz qw``. So each row already is ``T_b0_imu``: the
 import keeps the poses as ``T_W_imu`` with ``W = b0`` (arbitrary tilt and yaw), snaps each time back to the exact
 input frame time (the ns went through a double in seconds), and :func:`dataproc.slam.base.finalize_trajectory`
-gravity-aligns ``W`` from the episode's IMU. ``n_maps`` / ``n_resets`` are counted from the run's log.
+gravity-aligns ``W`` from the episode's IMU. ``n_maps`` / ``n_resets`` are counted from the run's log, and so is the
+reason when a run ends without a keyframe (:func:`no_keyframes_message`).
 """
 
 from __future__ import annotations
@@ -49,12 +52,14 @@ from dataproc.geometry.trajectory import Trajectory, load_orbslam3_euroc
 from dataproc.slam.base import (
     SlamBackend, SlamError, SlamResult, finalize_trajectory, imu_samples, ultrawide_camera, ultrawide_times_ns,
 )
+from dataproc.slam.mask import slam_keep_mask
 
 __all__ = [
     "ORB_BIN", "ORB_VOC", "EUROC_IMU_HEADER", "TRAJ_NAME", "scaled_size", "block_average_imu",
-    "camera_model_at", "write_euroc", "write_orbslam3_settings", "ORB_SLAM3_DIR_ENV", "default_orb_slam3_dir",
-    "orbslam3_command", "subprocess_runner",
-    "count_map_events", "IMU_INIT_STRINGS", "imu_init_events", "import_trajectory", "Orbslam3Backend",
+    "camera_model_at", "euroc_image", "write_euroc", "write_orbslam3_settings", "ORB_SLAM3_DIR_ENV",
+    "default_orb_slam3_dir", "orbslam3_command", "subprocess_runner",
+    "count_map_events", "IMU_INIT_STRINGS", "imu_init_events", "count_map_inits", "no_keyframes_message",
+    "import_trajectory", "Orbslam3Backend",
 ]
 
 ORB_SLAM3_DIR_ENV = "ORB_SLAM3_DIR"                  # where ORB-SLAM3 was built (docs/ORBSLAM3.md)
@@ -118,12 +123,36 @@ def camera_model_at(rig, scale: float = 1.0, role: str = "ultrawide"):
     return model, w, h
 
 
+def euroc_image(rgb, rig, size) -> np.ndarray:
+    """One EuRoC image: the RGB frame ``rgb`` ((H, W, 3) uint8) as gray uint8 at ``size = (w, h)``, with the
+    rig's ``cameras.ultrawide.slam_mask`` (if it has one) set to 0.
+
+    Steps: gray; with a mask and a frame that is not ``size``, zero the mask at the frame's own size first, so the
+    resize cannot blend a masked (gripper) pixel into a kept one; ``INTER_AREA`` resize if the size differs; with a
+    mask, zero it at ``size``. Without a mask this is gray plus the resize, exactly as before masks existed.
+    """
+    import cv2
+
+    img = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2GRAY)
+    size = (int(size[0]), int(size[1]))
+    frame_size = (img.shape[1], img.shape[0])
+    masked = rig.cameras["ultrawide"].slam_mask is not None
+    if masked and frame_size != size:
+        img &= slam_keep_mask(rig, frame_size)          # 255 (keep) leaves a pixel as it is, 0 zeroes it
+    if frame_size != size:
+        img = cv2.resize(img, size, interpolation=cv2.INTER_AREA)
+    if masked:
+        img &= slam_keep_mask(rig, size)
+    return img
+
+
 def write_euroc(episode, rig, out_dir, scale: float = 1.0, imu_rate_hz: float | None = None,
                 frames=None) -> dict:
     """Write the EuRoC folder for ``episode`` into ``out_dir`` (layout: module docstring).
 
     ``frames`` (optional, for tests) replaces the MP4 decode: an iterable of ``(frame_index, rgb)``.
-    Returns a JSON-able summary including ``t_cam_ns`` (the image times actually written).
+    Returns a JSON-able summary including ``t_cam_ns`` (the image times actually written) and, only when the rig
+    has a ``slam_mask``, ``slam_mask: {n_polygons, masked_fraction}`` (the fraction at the written size).
     """
     import cv2
 
@@ -155,9 +184,7 @@ def write_euroc(episode, rig, out_dir, scale: float = 1.0, imu_rate_hz: float | 
     for i, rgb in src:
         if i not in want:
             continue
-        img = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2GRAY)
-        if (img.shape[1], img.shape[0]) != (w, h):
-            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+        img = euroc_image(rgb, rig, (w, h))
         t = int(t_all[i])
         fn = f"{t}.png"
         if not cv2.imwrite(str(cam_dir / "data" / fn), img):
@@ -169,10 +196,16 @@ def write_euroc(episode, rig, out_dir, scale: float = 1.0, imu_rate_hz: float | 
     (cam_dir / "data.csv").write_text("#timestamp [ns],filename\n" + "".join(r + "\n" for r in rows))
     (out / "times.txt").write_text("".join(f"{t}\n" for t in written))
     imu_rate = 1e9 / float(np.median(np.diff(ti)))
-    return {"out_dir": str(out), "n_frames_total": int(len(t_all)), "n_images": len(written),
+    info = {"out_dir": str(out), "n_frames_total": int(len(t_all)), "n_images": len(written),
             "n_dropped_outside_imu": int(len(t_all) - len(idx)), "size": [w, h],
             "scale": w / int(rig.cameras["ultrawide"].resolution[0]), "scale_requested": scale, "n_imu": int(len(ti)),
-            "imu_rate_hz": imu_rate, "imu_decimation": factor, "t_cam_ns": written}
+            "imu_rate_hz": imu_rate, "imu_decimation": factor}
+    keep = slam_keep_mask(rig, (w, h))
+    if keep is not None:            # only with a mask, so a rig without one reports exactly what it did before
+        info["slam_mask"] = {"n_polygons": len(rig.cameras["ultrawide"].slam_mask.polygons),
+                             "masked_fraction": round(float(np.mean(keep == 0)), 6)}
+    info["t_cam_ns"] = written
+    return info
 
 
 def _matrix(name: str, M: np.ndarray) -> str:
@@ -303,6 +336,58 @@ def imu_init_events(log_text: str) -> dict:
     return {k: log_text.count(v) for k, v in IMU_INIT_STRINGS.items()}
 
 
+#: ``Tracking::CreateInitialMapMonocular`` (Tracking.cc; ``VERBOSITY_QUIET``, so always printed): the two-view
+#: initialisation built a map (its first two keyframes). Not anchored, like ``_RESET``.
+_MAP_INIT = re.compile(r"New Map created with \d+ points")
+#: Printed right after it when that map is rejected (median depth < 0 or < 50 tracked points); a reset follows.
+_WRONG_INIT = "Wrong initialization, reseting..."
+#: ``System::SaveTrajectoryEuRoC`` lists every map before saving the one with the most keyframes. When all of them
+#: have 0 it crashes (it dereferences a map pointer that was never set).
+_MAP_KFS = re.compile(r"Map \d+ has (\d+) KFs")
+
+
+def count_map_inits(log_text: str) -> int:
+    """Successful monocular initialisations in ORB-SLAM3's stdout: "New Map created with N points" lines minus the
+    "Wrong initialization, reseting..." lines that rejected such a map at once."""
+    return max(0, len(_MAP_INIT.findall(log_text)) - log_text.count(_WRONG_INIT))
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}" + ("" if n == 1 else "s")
+
+
+def no_keyframes_message(log_text: str, log_path, *, masked: bool) -> str | None:
+    """The :class:`SlamError` text for a run that ended with 0 keyframes in every map (ORB-SLAM3 then crashes
+    while saving the empty map), or None if the log does not show that. ``masked``: the rig has a
+    ``cameras.ultrawide.slam_mask``.
+
+    No initialisation in the log (:func:`count_map_inits`): "never initialised". Otherwise ORB-SLAM3 did initialise
+    but every map was reset before the IMU initialisation finished (Tracking resets the map when tracking fails
+    before then, LocalMapping when the IMU initialisation sees "not enough motion"); the resets are counted with
+    :func:`count_map_events` and :func:`imu_init_events`.
+    """
+    kfs = [int(n) for n in _MAP_KFS.findall(log_text)]
+    if not kfs or any(kfs):
+        return None
+    n_inits = count_map_inits(log_text)
+    if n_inits == 0:
+        hint = ("check that cameras.ultrawide.slam_mask still covers the gripper" if masked else
+                "the gripper itself may be blocking SLAM: set cameras.ultrawide.slam_mask in the rig")
+        return (f"orbslam3: never initialised (0 keyframes; mono-inertial needs the camera to move with parallax: "
+                f"a static recording cannot work; {hint}), see {log_path}")
+    n_resets = count_map_events(log_text)[1]
+    n_motion = imu_init_events(log_text)["not_enough_motion_reset"]
+    resets = _count(n_resets, "map reset")
+    if n_motion:
+        resets += f", {n_motion} of them for not enough motion during the IMU initialisation"
+    msg = (f"orbslam3: initialised {_count(n_inits, 'time')} but lost tracking before the IMU finished initialising "
+           f"({resets}, no keyframes kept): the recording needs more texture in view and side-to-side motion at "
+           f"the start")
+    if not masked:
+        msg += "; the gripper itself may also be blocking SLAM: set cameras.ultrawide.slam_mask in the rig"
+    return f"{msg}, see {log_path}"
+
+
 def import_trajectory(path, t_frames_ns, snap_tol_ns: int = 1_000_000) -> tuple[Trajectory, dict]:
     """Load ``f_<name>.txt`` as ``T_W_imu`` (W = ORB-SLAM3's first-keyframe IMU frame, see module docstring) and
     snap each time to the nearest of ``t_frames_ns`` (the times written to times.txt). Rows further than
@@ -371,11 +456,10 @@ class Orbslam3Backend(SlamBackend):
         rc = (self.runner or subprocess_runner)(cmd, log, self.timeout_s, work)
         out = work / f"f_{TRAJ_NAME}.txt"
         if rc != 0:
-            if re.search(r"Map \d+ has 0 KFs", log.read_text(errors="replace")):
-                # ORB-SLAM3 crashes while saving an empty map: it never initialised (no keyframe ever made)
-                raise SlamError(f"orbslam3: never initialised (0 keyframes; mono-inertial needs the camera to "
-                                f"move with parallax: a static recording cannot work), see {log}")
-            raise SlamError(f"orbslam3: mono_inertial_euroc failed (rc={rc}), see {log}")
+            # ORB-SLAM3 crashes while saving when no map has a keyframe: say why from its log
+            msg = no_keyframes_message(log.read_text(errors="replace"), log,
+                                       masked=rig.cameras["ultrawide"].slam_mask is not None)
+            raise SlamError(msg or f"orbslam3: mono_inertial_euroc failed (rc={rc}), see {log}")
         if not out.is_file() or out.stat().st_size == 0:
             raise SlamError(f"orbslam3: no trajectory {out} (tracking never initialised?), see {log}")
         log_text = log.read_text(errors="replace")

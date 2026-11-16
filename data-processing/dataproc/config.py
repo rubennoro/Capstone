@@ -22,6 +22,19 @@ Conventions (normative for the package):
   Kalibr: ``time_offset_ns = round(timeshift_cam_imu_s * 1e9)``, with Kalibr run on these mid-exposure stamps; a
   constant rolling-shutter half-readout is absorbed in ``time_offset_ns``. See :meth:`RigConfig.camera_time_ns`.
 * ``provenance`` is ``nominal`` (CAD / datasheet guesses) or ``calibrated`` (measured), per section.
+* ``cameras.ultrawide.slam_mask`` (optional; only the ultrawide, the SLAM camera, takes one): regions blacked out in
+  the frame copies given to SLAM only (the gripper's fingers, the held object, rig parts that never move in the
+  image); training images and tag detection read the videos unmasked::
+
+      slam_mask:
+        source: "traced from episode_000115"       # optional note, not part of any hash
+        polygons:                                  # at least one, each with at least 3 [x, y] points
+          - [[x, y], [x, y], [x, y], ...]
+
+  Coordinates are pixel **edges** in the camera's native resolution ``W x H``: ``0 <= x <= W``, ``0 <= y <= H``,
+  both ends allowed, so ``[[0, 0], [W, 0], [W, H], [0, H]]`` is the whole image (read like a numpy slice). Each
+  polygon must enclose at least 1 square pixel. Parsed to floats (:class:`SlamMask`), so ``720`` and ``720.0`` are
+  the same mask.
 
 Transforms in YAML are either ``{matrix: 4x4}`` or ``{rotation: {matrix: 3x3} | {euler_xyz_deg: [rx, ry, rz]},
 translation_m: [x, y, z]}`` (extrinsic x-y-z Euler angles, ``Rz @ Ry @ Rx``). Unknown keys are errors.
@@ -49,8 +62,8 @@ from dataproc.paths import NAME_RE
 
 __all__ = [
     "RIG_SCHEMA", "CAMERA_MODEL_TYPES", "PROVENANCE", "TIMESTAMP_REFS", "DEFAULT_WORLD_OFFSET", "ConfigError",
-    "TaskConfig", "CameraModel", "CameraConfig", "VirtualCamera", "ImuNoise", "ImuConfig", "ArucoConfig",
-    "GripperConfig", "RigConfig",
+    "TaskConfig", "CameraModel", "SlamMask", "CameraConfig", "VirtualCamera", "ImuNoise", "ImuConfig",
+    "ArucoConfig", "GripperConfig", "RigConfig",
     "load_task_config", "dump_task_config", "load_rig", "parse_rig",
 ]
 
@@ -95,6 +108,16 @@ class CameraModel:
         return np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
 
 
+@dataclass(frozen=True)
+class SlamMask:
+    """``cameras.ultrawide.slam_mask``: polygons blacked out in the frames given to SLAM. Points are ``(x, y)``
+    pixel edges in the camera's native resolution (``0 <= x <= W``, ``0 <= y <= H``), as floats, so the mask is
+    hashable and ``720`` / ``720.0`` compare equal. ``source`` is a free-form note (not hashed)."""
+
+    polygons: tuple[tuple[tuple[float, float], ...], ...]
+    source: str | None = None
+
+
 @dataclass(frozen=True, eq=False)
 class CameraConfig:
     role: str                            # main | ultrawide
@@ -106,6 +129,7 @@ class CameraConfig:
     timestamp_ref: str                   # start_of_exposure | end_of_exposure: what the raw t_ns marks
     time_offset_ns: int
     provenance: str
+    slam_mask: SlamMask | None = None    # ultrawide only; None: nothing is masked
 
 
 @dataclass(frozen=True, eq=False)
@@ -398,6 +422,37 @@ def dump_task_config(cfg: TaskConfig, path: str | os.PathLike) -> None:
 
 # --------------------------------------------------------------------------------------------- rig yaml
 
+def _slam_mask(sm: _Map, res: tuple[int, int]) -> SlamMask:
+    """``slam_mask`` of a camera with resolution ``res`` (see the module docstring)."""
+    w, h = res
+    raw = sm.req("polygons")
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise sm.err("polygons", f"expected a non-empty list of polygons, got {raw!r}")
+    polygons = []
+    for i, poly in enumerate(raw):
+        key = f"polygons[{i}]"
+        if not isinstance(poly, (list, tuple)) or len(poly) < 3:
+            raise sm.err(key, f"expected a polygon: a list of at least 3 points [x, y], got {poly!r}")
+        pts = []
+        for j, pt in enumerate(poly):
+            if not isinstance(pt, (list, tuple)) or len(pt) != 2:
+                raise sm.err(f"{key}[{j}]", f"expected a point [x, y] of 2 numbers, got {pt!r}")
+            x, y = (_float(v, sm, f"{key}[{j}][{k}]") for k, v in enumerate(pt))
+            if not (0.0 <= x <= w and 0.0 <= y <= h):
+                raise sm.err(f"{key}[{j}]", f"point [{x:g}, {y:g}] is outside the {w}x{h} image (pixel edges: "
+                             f"0 <= x <= {w}, 0 <= y <= {h})")
+            pts.append((x, y))
+        area = 0.5 * abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1])))
+        if area < 1.0:
+            raise sm.err(key, f"degenerate polygon (area {area:g} square pixels, at least 1 needed)")
+        polygons.append(tuple(pts))
+    source = sm.opt("source")
+    if source is not None and not isinstance(source, str):
+        raise sm.err("source", f"expected a string, got {source!r}")
+    sm.finish()
+    return SlamMask(tuple(polygons), source or None)
+
+
 def _camera(role: str, m: _Map) -> CameraConfig:
     res = m.size("resolution")
     mm = m.sub("model")
@@ -409,10 +464,16 @@ def _camera(role: str, m: _Map) -> CameraConfig:
         raise mm.err("intrinsics", f"principal point ({cx}, {cy}) is outside the {res[0]}x{res[1]} image")
     model = CameraModel(typ, (fx, fy, cx, cy), mm.vec("distortion", 4))
     mm.finish()
+    slam_mask = None
+    if m.has("slam_mask"):
+        if role != "ultrawide":
+            raise m.err("slam_mask", "only cameras.ultrawide (the SLAM camera) takes a slam_mask")
+        slam_mask = _slam_mask(m.sub("slam_mask"), res)
     cam = CameraConfig(role=role, sensor=m.str("sensor"), resolution=res, fps=m.float("fps", positive=True),
                        model=model, T_imu_cam=_transform(m.sub("T_imu_cam")),
                        timestamp_ref=m.str("timestamp_ref", choices=TIMESTAMP_REFS),
-                       time_offset_ns=m.int("time_offset_ns"), provenance=m.str("provenance", choices=PROVENANCE))
+                       time_offset_ns=m.int("time_offset_ns"), provenance=m.str("provenance", choices=PROVENANCE),
+                       slam_mask=slam_mask)
     m.finish()
     return cam
 

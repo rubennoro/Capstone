@@ -15,6 +15,7 @@ is never taken twice. A source that failed to convert is not recorded (it can be
 from __future__ import annotations
 
 import shutil
+import textwrap
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,11 +47,12 @@ class TakeResult:
 
 def ensure_rig(root: DataRoot, rig_id: str, log: Callable = print) -> None:
     """Copy ``configs/rigs/<rig_id>.yaml`` to ``rigs/<rig_id>.yaml`` if it is missing there (never overwrites).
-    An existing copy is checked by :func:`check_rig_copy`."""
+    An existing copy is checked by :func:`check_rig_copy` (its warnings are logged)."""
     dst = root.rig_file(rig_id)
     src = REPO_RIGS / f"{rig_id}.yaml"
     if dst.is_file():
-        check_rig_copy(dst, src)
+        for w in check_rig_copy(dst, src):
+            log(f"rig: warning: {w}")
         return
     if not src.is_file():
         raise PiIntakeError(f"no rig yaml for {rig_id!r}: neither {dst} nor {src} exists")
@@ -59,25 +61,75 @@ def ensure_rig(root: DataRoot, rig_id: str, log: Callable = print) -> None:
     log(f"rig: copied {src.name} to {dst}")
 
 
-def check_rig_copy(dst: Path, src: Path) -> None:
-    """Raise :class:`PiIntakeError` when the data root's rig yaml ``dst`` has no ``gripper`` section but the repo's
-    ``src`` (same rig id) has one: ``dst`` is a copy from before the section existed, and with it the calibration
-    opening and closed-width warnings would be skipped without anyone noticing. Nothing to check when ``src`` does not exist or either
-    file cannot be parsed (loading the rig reports that)."""
+def _ultrawide_mask(d: dict):
+    """``cameras.ultrawide.slam_mask`` of a decoded rig yaml, None when there is none."""
+    cams = d.get("cameras")
+    uw = cams.get("ultrawide") if isinstance(cams, dict) else None
+    return uw.get("slam_mask") if isinstance(uw, dict) else None
+
+
+def _slam_mask_yaml(mask) -> str:
+    """``slam_mask:`` as YAML to paste under ``cameras.ultrawide``: block style, one line per polygon."""
+    import yaml
+
+    class Dumper(yaml.SafeDumper):
+        pass
+
+    def seq(dumper, data):          # a polygon or a point (scalars, or lists of scalars, inside): one line
+        flat = all(not isinstance(x, (list, dict))
+                   or (isinstance(x, list) and not any(isinstance(y, (list, dict)) for y in x)) for x in data)
+        return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=flat)
+
+    Dumper.add_representer(list, seq)
+    return yaml.dump({"slam_mask": mask}, Dumper=Dumper, sort_keys=False, width=1 << 30).rstrip()
+
+
+def check_rig_copy(dst: Path, src: Path) -> list[str]:
+    """Check the data root's rig yaml ``dst`` (what processing reads) against the repo's ``src`` (same rig id).
+
+    Raises :class:`PiIntakeError` when ``dst`` is a copy from before the repo rig got a section that would otherwise
+    be missed without anyone noticing, with the section to add or "delete ``dst``":
+
+    * ``gripper``: without it the calibration opening and closed-width warnings are skipped;
+    * ``cameras.ultrawide.slam_mask``: without it ORB-SLAM3 tracks the gripper in the frames instead of the scene.
+
+    Returns warnings for the caller to log: both have a ``slam_mask`` but with different polygons (processing uses
+    ``dst``). A mask only in ``dst`` is fine. Nothing to check when ``src`` does not exist or either file cannot be
+    parsed (loading the rig reports that)."""
     import yaml
 
     if not src.is_file():
-        return
+        return []
     try:
         mine, repo = yaml.safe_load(dst.read_text(encoding="utf-8")), yaml.safe_load(src.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError):
-        return
-    if not isinstance(mine, dict) or not isinstance(repo, dict) or "gripper" in mine or "gripper" not in repo:
-        return
-    section = yaml.safe_dump({"gripper": repo["gripper"]}, sort_keys=False).rstrip()
-    raise PiIntakeError(f"{dst} has no gripper section, but the repo's {src} has one: the copy predates it, and "
-                        "without it the calibration opening warnings are skipped. Add the section to "
-                        f"{dst}:\n{section}\nor delete {dst} (the repo copy is then used).")
+        return []
+    if not isinstance(mine, dict) or not isinstance(repo, dict):
+        return []
+    if "gripper" not in mine and "gripper" in repo:
+        section = yaml.safe_dump({"gripper": repo["gripper"]}, sort_keys=False).rstrip()
+        raise PiIntakeError(f"{dst} has no gripper section, but the repo's {src} has one: the copy predates it, and "
+                            "without it the calibration opening warnings are skipped. Add the section to "
+                            f"{dst}:\n{section}\nor delete {dst} (the repo copy is then used).")
+    mask, repo_mask = _ultrawide_mask(mine), _ultrawide_mask(repo)
+    if repo_mask is None:
+        return []
+    if mask is None:
+        snippet = textwrap.indent(_slam_mask_yaml(repo_mask), "    ")
+        raise PiIntakeError(f"{dst} has no cameras.ultrawide.slam_mask, but the repo's {src} has one: the copy "
+                            "predates it, and without it ORB-SLAM3 tracks the gripper (its fingers, the held object "
+                            "and the rig parts that never move in the image) instead of the scene. Add it to "
+                            f"{dst} under cameras.ultrawide (indented as here):\n{snippet}\n"
+                            f"or delete {dst} (the repo copy is then used).")
+
+    def polygons(m):
+        return m.get("polygons") if isinstance(m, dict) else m
+
+    if polygons(mask) != polygons(repo_mask):         # == treats 720 and 720.0 alike; the source note is ignored
+        return [f"the cameras.ultrawide.slam_mask polygons of {dst} differ from the repo's {src}: processing uses "
+                f"{dst} (the data-root copy). If the repo's mask is the one to use, copy it into {dst} or delete "
+                f"{dst} (the repo copy is then used)."]
+    return []
 
 
 def clear_staging(root: DataRoot) -> None:

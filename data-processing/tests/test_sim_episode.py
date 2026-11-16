@@ -297,6 +297,29 @@ def test_fast_rig_scales_intrinsics():
     assert np.array_equal(r.T_cam_tcp, full.T_cam_tcp) and r.virtual_ultrawide.resolution == (640, 480)
 
 
+def test_fast_rig_scales_slam_mask(tmp_path):
+    import yaml
+
+    from dataproc.config import ConfigError, parse_rig
+
+    d = yaml.safe_load(RIG_PATH.read_text())
+    d["cameras"]["ultrawide"]["slam_mask"] = {"source": "a note", "polygons": [
+        [[0, 500], [820, 500], [820, 616], [0, 616]], [[101, 33], [401.5, 33], [251, 301]]]}
+    p = tmp_path / "rig_v1.yaml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    d1, r = fast_rig(p)                                   # ultrawide x 0.5: 410x308; pixel edges scale exactly
+    m = r.cameras["ultrawide"].slam_mask
+    assert r.cameras["ultrawide"].resolution == (410, 308) and m.source == "a note"
+    assert m.polygons == (((0.0, 250.0), (410.0, 250.0), (410.0, 308.0), (0.0, 308.0)),
+                          ((50.5, 16.5), (200.75, 16.5), (125.5, 150.5)))
+    assert r.cameras["main"].slam_mask is None
+    assert parse_rig(yaml.safe_load(yaml.safe_dump(d1))).cameras["ultrawide"].slam_mask == m   # as written to rigs/
+    d["cameras"]["ultrawide"]["slam_mask"]["polygons"][1][0] = ["a", 33]     # malformed: left for parse_rig
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    with pytest.raises(ConfigError, match="expected a number, got 'a'"):
+        fast_rig(p)
+
+
 def test_cli_sim_contract(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
     inc = tmp_path / "incoming"

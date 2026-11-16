@@ -29,7 +29,10 @@ class SlamStage(Stage):
     backend in ``processed/slam/work/``. Writes ``processed/slam/{trajectory.tum, slam.npz, result.json}``
     (``slam.npz``: exact ns times, positions, quaternions, per-frame ``tracked``). Fails on ``SlamError`` or, for the
     oracle, a missing ``truth.npz``; scale problems are only recorded here (validate rejects). Skipped when the
-    manifest, the backend name, ``cameras.ultrawide`` and ``imu`` are unchanged."""
+    manifest, the backend name, ``cameras.ultrawide``, its ``slam_mask`` polygons and ``imu`` are unchanged. The
+    mask is hashed only when the rig has one (so a rig without one hashes as before), and only here: adding or
+    changing it re-runs slam and, through the deps, pose, validate, images and export, never check, grid, width or
+    the calibration."""
 
     name = "slam"
     # Only the backend *name* is hashed, not its options: bump this version when the ORB-SLAM3 build or the
@@ -39,7 +42,9 @@ class SlamStage(Stage):
 
     def inputs(self, ctx, ep) -> dict:
         s = ctx.sections
-        return {"backend": ctx.backend_name, "cameras.ultrawide": s["cameras.ultrawide"], "imu": s["imu"]}
+        mask = s.get("cameras.ultrawide.slam_mask")
+        return {"backend": ctx.backend_name, "cameras.ultrawide": s["cameras.ultrawide"], "imu": s["imu"],
+                **({} if mask is None else {"cameras.ultrawide.slam_mask": mask})}
 
     def run(self, ctx, ep) -> dict:
         from dataproc.geometry.trajectory import save_tum

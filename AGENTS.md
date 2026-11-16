@@ -12,6 +12,10 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Current state (2026-11-05)
 
+- **WIP (2026-11-16): SLAM gripper mask for `dataproc` (every Pi recording failed at slam). Read
+  [HANDOFF_SLAM_MASK.md](HANDOFF_SLAM_MASK.md) first.** Temporary: whoever finishes that work deletes the file and
+  this bullet.
+
 - **`dataproc` (branch `rnoro/data-work`, folder `data-processing/`): Jetson-side processing of the Pi 5 rig's
   recordings into training zips.** The Pi (black box, not written) records each episode in its own format (2 MP4s +
   frame CSVs + IMU CSV + meta.json + MANIFEST.sha256 + COMPLETE) into `/data/incoming/episode_NNNNNN/`;

@@ -60,8 +60,11 @@ def _cam_section(rig, role: str) -> dict:
 
 def rig_sections(rig) -> dict:
     """Canonical (parsed) rig yaml sections for the stage hashes. ``provenance`` and ``notes`` are left out: they
-    do not change any output."""
+    do not change any output. ``cameras.ultrawide.slam_mask`` (its polygons; the ``source`` note is left out) is
+    only there when the rig has one, and is not part of ``cameras.ultrawide``: only the slam stage hashes it, and a
+    rig without a mask gives exactly the sections (and hashes) it gave before masks existed."""
     n, v, a = rig.imu.noise, rig.virtual_ultrawide, rig.aruco
+    mask = rig.cameras["ultrawide"].slam_mask
     return {
         "rig_id": rig.rig_id,
         "cameras.main": _cam_section(rig, "main"),
@@ -83,6 +86,8 @@ def rig_sections(rig) -> dict:
                      "opening_tolerance_m": rig.gripper.opening_tolerance_m,
                      **({} if rig.gripper.closed_width_m is None else
                         {"closed_width_m": rig.gripper.closed_width_m})}),
+        **({} if mask is None else
+           {"cameras.ultrawide.slam_mask": {"polygons": [[list(p) for p in poly] for poly in mask.polygons]}}),
     }
 
 
