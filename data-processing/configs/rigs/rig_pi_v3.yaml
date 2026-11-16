@@ -55,17 +55,7 @@ cameras:
     timestamp_ref: end_of_exposure                    # see main
     time_offset_ns: 0
     provenance: nominal
-    slam_mask:                                        # the gripper parts that never move in this image
-      # (fingers + tags at every opening, the held-object zone between the fingers, housing/board/fan/LED). Blacked out
-      # ONLY in the frames dataproc writes for ORB-SLAM3; training images, tag widths and the videos are untouched.
-      # Without it ORB-SLAM3 matches the gripper with zero parallax and never initialises. Pixel edges at 1280x960
-      # (0 <= x <= 1280, 0 <= y <= 960); two halves sharing the edge x=671. The notch (x 580-762, top y=462) fits the
-      # eraser as held in episodes 61 and 117: a taller or higher-held object needs it raised. Re-trace after
-      # remounting the camera or changing the fingers.
-      source: "traced 2026-11-16 from episode_000115/000060 (fully open and closed) and 000117/000061 (eraser held), >= 12 px margin"
-      polygons:
-        - [[176, 960], [178, 905], [190, 860], [204, 828], [240, 784], [270, 758], [380, 624], [432, 614], [500, 558], [578, 514], [580, 462], [671, 462], [671, 960]]
-        - [[671, 462], [762, 462], [762, 524], [830, 558], [910, 606], [968, 614], [1064, 733], [1150, 728], [1204, 760], [1254, 866], [1280, 936], [1280, 960], [671, 960]]
+    # slam_mask: drafted, not applied yet: configs/slam_masks/rig_pi_v3.yaml (see HANDOFF_SLAM_MASK.md)
 virtual_ultrawide:                                    # the iPhone 16 Pro ultrawide K at 640x480 (iPhUMI exports)
   resolution: [640, 480]
   intrinsics: [246.64919, 246.64919, 320.16495, 239.53679]

@@ -28,6 +28,31 @@ gripper.
 brisk side-to-side *sliding* at the start. The current recordings (session 1: 61–113 on a bare gray table; session 2:
 117–121 with a few objects behind the eraser) mostly still fail later, at `validate` (too little of the clip has poses).
 
+## Update 2026-11-15 (laptop session): mask parked, not applied by `dataproc run`
+- **The mask is out of the active rig.** The `slam_mask` block moved from `configs/rigs/rig_pi_v3.yaml` to the draft
+  `data-processing/configs/slam_masks/rig_pi_v3.yaml`. All the mask code stays; a rig without a mask processes
+  exactly as before. To try it, paste the draft into a scratch data root's `rigs/rig_pi_v3.yaml`.
+- **Jetson:** `~/data/rigs/rig_pi_v3.yaml` still has the mask, and dataproc does not warn when only the copy has
+  one. Delete that copy (it is re-copied from the repo without the mask) before the next real run.
+- **Why parked: the mask edge.** Blacking out leaves a hard black border whose corners never move. In wall-facing
+  frames about half of the remaining ORB features sit within 20 px of it (episode 117). Idea to test: fill the
+  masked area with a heavily blurred image instead of black, so the border has no edge.
+- **Step 3 is written and tested** (138 targeted tests). The new error message, run on the 10 real logs: session 1
+  (61–65) never initialised; session 2 (117–121) initialised 2–6 times, then lost tracking before IMU init.
+- **Per-episode measurement** (usable ORB features = outside the mask, > 20 px from its border; IMU over the
+  first 3 s):
+
+  | | features/frame (median) | frames < 150 | gyro rms | accel std |
+  |---|---|---|---|---|
+  | session 1 (61–65) | 83–121 | ~60% | 20–34 °/s | 0.29–0.39 m/s² |
+  | session 2 (117–121) | 636–1413 | 3–9% | 5–14 °/s | 0.08–0.17 m/s² |
+
+  Session 1 lacks texture (re-record). Session 2 has texture but a gentle start (IMU init).
+- **Laptop:** everything up to ORB-SLAM3 runs (scratch root: `calibrate` from 115, `run` 117–121 stopped at
+  "mono_inertial_euroc not found"). ORB-SLAM3 is not built here: all apt deps are present, so it needs no sudo,
+  about 2 GB and about 10 min. Not decided yet.
+- `--retry-failed` cannot be reproduced from a copy of `tasks/` alone: the root-level `pi_sources.csv` is needed.
+
 ## Status (pushed as a WIP commit on `rnoro/data-work`)
 | Step | What | Status |
 |---|---|---|
