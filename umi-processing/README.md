@@ -4,6 +4,7 @@ UMI's SLAM recipe for the Pi 5 rig (IMX219 ultrawide + IMX519 main + LSM6DSOX IM
 demo localized against it, with checks, into per-task folders of episodes ready to package. Runs on the Jetson:
 reads `/data/incoming`, writes `~/data/umi/`.
 
+- What problem this solves and why it is built this way (start here if you're new): [PROBLEM.md](PROBLEM.md)
 - How to use it: [DIRECTIONS.md](DIRECTIONS.md)
 - How it is built and why: [docs/DESIGN.md](docs/DESIGN.md)
 
