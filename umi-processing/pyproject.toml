@@ -24,6 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+plot = ["matplotlib==3.9.2"]
 
 [project.scripts]
 umiproc = "umiproc.cli:main"

@@ -20,6 +20,7 @@ COMMANDS = [
     ("run", "umiproc.run.cli", "localize and check a range of demo recordings against the folder's map"),
     ("status", "umiproc.status", "show the data root (rig files, SLAM program, recordings, task folders) or one "
                                  "task folder (map, gripper calibration, episodes, waiting, failed)"),
+    ("plot-run", "umiproc.viz.slam_run", "plot one SLAM run (trajectory CSV + log): tracking timeline, path, frames"),
 ]
 
 
