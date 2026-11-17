@@ -8,26 +8,30 @@ Steps, all under ``<root>/.run.lock``:
    and the SLAM inputs written from them now. **Refused** when the fingerprint they give differs from the map's
    ``slam_fingerprint.json`` (the map is out of date: same rig file, SLAM config, lens file, mask, settings and SLAM
    build required; the differing keys are named).
-2. Repairs after an interrupted run (the copied ``finish_interrupted``, then
-   :func:`umiproc.run.recording.finish_interrupted_pieces`), an empty ``incoming/``, then the copied plan
-   (``umiproc.dp.run.plan``, without requiring a calibration): ``take`` (new), ``resume`` (in ``.staging/``, also
-   outside the range), ``retry`` (``--retry-failed``) or ``skip`` with the reason (the map and calibration
-   recordings, by their ``pi_sources.csv`` kind; another folder's; still syncing; failed earlier).
-3. **The gripper calibration**: the copied calibration step on the folder (reuses what ``umiproc calibrate`` saved)
+2. The copied plan (``umiproc.dp.run.plan``, read only, without requiring a calibration): ``take`` (new),
+   ``resume`` (in ``.staging/``, also outside the range), ``retry`` (``--retry-failed``) or ``skip`` with the reason
+   (the map and calibration recordings, by their ``pi_sources.csv`` kind; another folder's; still syncing; failed
+   earlier). The folder context (effective rig). **Refused** when the gripper calibration would be fitted again
+   (its inputs changed) while the folder has episodes (:func:`check_calibration_unchanged`), or when ``incoming/``
+   is not empty. Everything up to here only reads, so a refusal changes nothing.
+3. Repairs after an interrupted run (the copied ``clear_staging`` and ``finish_interrupted``, then
+   :func:`umiproc.run.recording.finish_interrupted_pieces`); the plan is made again when they changed what it reads.
+4. **The gripper calibration**: the copied calibration step on the folder (reuses what ``umiproc calibrate`` saved)
    plus UMI's 80 % finger-tag rule on its recorded detections. Without a usable one every demo is localized and
    checked, then waits in ``.staging/``.
-4. Each recording (:class:`umiproc.run.recording.RecordingProcessor`): ``episode_N`` (one per kept piece),
+5. Each recording (:class:`umiproc.run.recording.RecordingProcessor`): ``episode_N`` (one per kept piece),
    ``failed/<pi_name>/``, or waiting for the gripper calibration.
-5. ``tasks/<folder>/report.json``: this run's outcome per recording.
+6. ``tasks/<folder>/report.json``: this run's outcome per recording.
 
 Exit codes: 0 every recording has its outcome (episodes or failed: both listed); 3 some wait for the gripper
-calibration; 2 the command could not run (folder, map missing or out of date, SLAM build, range, another command
-running: nothing was changed); 1 an unexpected error stopped the run (the recordings done so far keep their
-outcome).
+calibration; 2 the command could not run (folder, map missing or out of date, SLAM build, range, gripper
+calibration changed after episodes were made, incoming/ not empty, another command running: nothing was changed);
+1 an unexpected error stopped the run (the recordings done so far keep their outcome).
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 import traceback
@@ -39,7 +43,7 @@ import numpy as np
 
 __all__ = ["EXIT_OK", "EXIT_FAILED", "EXIT_INPUT", "EXIT_WAITING", "REPORT_NAME", "REPORT_FORMAT", "WORK_SUBDIR",
            "RunInputError", "RunResult", "MapRef", "the_map", "check_map_fingerprint", "calibration_state",
-           "run_range"]
+           "check_calibration_unchanged", "run_range"]
 
 EXIT_OK, EXIT_FAILED, EXIT_INPUT, EXIT_WAITING = 0, 1, 2, 3
 REPORT_NAME = "report.json"
@@ -151,6 +155,61 @@ def calibration_state(ctx) -> tuple[bool, str]:
     return True, f"gripper calibration {cal.name}"
 
 
+def check_calibration_unchanged(ctx) -> None:
+    """:class:`RunInputError` (code ``calibration_changed``) when the folder's gripper calibration would be fitted
+    again (the inputs it was fitted with, the copied ``calibration_inputs_hash``, differ from the current ones: the
+    rig file's ``aruco`` / ``gripper`` / ultrawide sections, the lens file, the copied calibration version) while the
+    folder already has episodes made with it: one calibration per session. Without episodes the copied calibration
+    step simply fits it again, as before."""
+    from umiproc.dp.files import load_status
+    from umiproc.dp.paths import episode_dirs
+    from umiproc.dp.stages.calibration import calibration_inputs_hash, newest_calibration
+
+    cal_dir = newest_calibration(ctx.task_dir, ctx.ledger)
+    if cal_dir is None:
+        return
+    prev = load_status(cal_dir / "processed").get("gripper_range") or {}
+    if not prev.get("inputs_hash"):
+        return
+    if prev["inputs_hash"] == calibration_inputs_hash(cal_dir / "raw", ctx.rig, ctx.task.rig):
+        return
+    eps = [d.name for d in episode_dirs(ctx.task_dir) if os.path.lexists(d / "raw")]
+    if not eps:
+        return
+    raise RunInputError(
+        f"the gripper calibration calibration/{cal_dir.name} was fitted with other settings than the current ones "
+        "(the rig file's aruco, gripper or ultrawide camera section, the lens file, or the calibration step's "
+        f"version changed), and {ctx.task_dir.name} already has {len(eps)} episode(s) made with it "
+        f"({', '.join(eps[:5])}{' ...' if len(eps) > 5 else ''}). Fitting it again now would give this session's "
+        "episodes two different gripper ranges: one calibration per session. Put back the settings it was made "
+        "with, or record a new session (mapping clip, gripper calibration, demos) with the new ones.",
+        "calibration_changed")
+
+
+def _check_incoming(r) -> None:
+    """The copied ``clear_staging``'s refusal, read only: the data root's ``incoming/`` must hold nothing but
+    umiproc's own temporary leftovers (dot-entries)."""
+    inc = r.incoming
+    if not inc.is_dir():
+        return
+    stray = sorted(p.name for p in inc.iterdir() if not p.name.startswith("."))
+    if stray:
+        raise RunInputError(f"{inc} is not empty ({', '.join(stray[:5])}{' ...' if len(stray) > 5 else ''}): an "
+                            "interrupted command left it; move them away first", "incoming")
+
+
+def _repair_state(task_dir: Path) -> tuple:
+    """What the plan reads of the folder: the ledger, the slots on disk and the failed recordings' reasons. The
+    repairs at the start of a run changed something the plan sees when this differs before and after them."""
+    from umiproc.dp.paths import episode_dirs
+    from umiproc.dp.run.staging import REASON_FILE, failed_names, staging_names
+
+    ledger = task_dir / "episodes.csv"
+    return (ledger.read_bytes() if ledger.is_file() else b"", tuple(staging_names(task_dir)),
+            tuple((n, (task_dir / "failed" / n / REASON_FILE).is_file()) for n in failed_names(task_dir)),
+            tuple((d.name, os.path.lexists(d / "raw")) for d in episode_dirs(task_dir)))
+
+
 def _check_folder(r, folder: str):
     from umiproc.dp.run.plan import RunError, check_folder
 
@@ -201,6 +260,13 @@ def run_range(root, folder: str, start: str, end: str, *, source: Path = Path("/
             raise RunInputError(str(e), "rig_files") from None
         check_map_fingerprint(the, h, rec)
         plan = _plan(r, folder, start, end, source, retry_failed)
+        from umiproc.dp.process import ProcessError, load_folder_context
+
+        try:
+            check_calibration_unchanged(load_folder_context(r, folder, slam="none", log=log))
+        except ProcessError as e:
+            raise RunInputError(str(e), "folder") from None
+        _check_incoming(r)
         return RunResult(EXIT_OK, plan, [_skipped(x) for x in plan.skipped()], map=the, fingerprint_hash=h)
     try:
         lock = session_lock(r)
@@ -222,7 +288,7 @@ def run_range(root, folder: str, start: str, end: str, *, source: Path = Path("/
 
 def _run_locked(r, folder, start, end, source, retry_failed, log, runner, binary, vocabulary, timeout_s,
                 work) -> RunResult:
-    from umiproc.dp.pi_intake import PiIntakeError, clear_staging
+    from umiproc.dp.pi_intake import clear_staging
     from umiproc.dp.process import ProcessError, load_folder_context, process_calibration
     from umiproc.dp.run.staging import finish_interrupted
     from umiproc.run.recording import RecordingProcessor, Session, finish_interrupted_pieces
@@ -246,18 +312,22 @@ def _run_locked(r, folder, start, end, source, retry_failed, log, runner, binary
     except SlamBuildError as e:
         raise RunInputError(str(e), "slam_build") from None
     check_map_fingerprint(the, inputs.fingerprint_hash, inputs.fingerprint)
-    try:
-        clear_staging(r)
-    except PiIntakeError as e:
-        raise RunInputError(str(e), "incoming") from None
-    finish_interrupted(r, task_dir, log)
-    for slot in finish_interrupted_pieces(task_dir):
-        log(f"reconciled: {slot} made from a piece an interrupted run left behind")
+    # everything that can refuse the run comes before the first change (the repairs below)
     plan = _plan(r, folder, start, end, source, retry_failed)
     try:
         ctx = load_folder_context(r, folder, slam="none", rig=sensors.rig, log=log)
     except ProcessError as e:
         raise RunInputError(str(e), "folder") from None
+    check_calibration_unchanged(ctx)
+    _check_incoming(r)
+    before = _repair_state(task_dir)
+    clear_staging(r)                                 # only removes umiproc's own temporary leftovers now
+    finish_interrupted(r, task_dir, log)
+    for slot in finish_interrupted_pieces(task_dir):
+        log(f"reconciled: {slot} made from a piece an interrupted run left behind")
+    if _repair_state(task_dir) != before:            # a repair moved or recorded something: read it again
+        plan = _plan(r, folder, start, end, source, retry_failed)
+        ctx = load_folder_context(r, folder, slam="none", rig=sensors.rig, log=log)
     cal = process_calibration(ctx)
     usable, cal_why = calibration_state(ctx)
     log(f"run: tasks/{folder} (label {task.label}), map/{the.pi_name}, fingerprint {inputs.fingerprint_hash[:12]}, "

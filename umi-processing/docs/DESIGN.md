@@ -306,9 +306,10 @@ How `map` computes them (`umiproc/map/`; DIRECTIONS.md §3 for the user's side):
 | the demo is **split at its lost frames**; pieces < 24 frames dropped; every other piece is its own episode | 0.4 s | < 12 frames |
 
 "Tracked" means visually tracked (state OK), never an IMU-only prediction. Added to UMI's rules: relocalized within the
-first 0.5 s (a later relocalization is where the fork's inertial link was wrong); the copied validate's speed, scale,
-gravity and finger-tag-coverage checks on every piece; the gripper calibration is the copied method plus UMI's rule that
-both finger tags are seen in ≥ 80 % of the calibration frames.
+first 0.5 s (a later relocalization is where the fork's inertial link was wrong); the copied gravity and scale checks
+and M4's orientation check **once per demo** on all its tracked frames; the copied validate's speed and
+finger-tag-coverage checks on every piece; the gripper calibration is the copied method plus UMI's rule that both
+finger tags are seen in ≥ 80 % of the calibration frames.
 
 How `run` computes them (`umiproc/run/`; DIRECTIONS.md §4 for the user's side):
 
@@ -330,20 +331,37 @@ How `run` computes them (`umiproc/run/`; DIRECTIONS.md §4 for the user's side):
   the demo to find itself within its first 6 frames (0.17 s); the 0.5 s rule only names the cause.
 - **Table frame** (UMI `06:110-119, 617-626`): `T_tag_cam = inv(tx_slam_tag) @ T_W_cam` with the map's
   `tx_slam_tag.json` (the localized CSV's world is the map's world, the same one M5 measured the tag in),
-  `T_tag_imu = T_tag_cam @ inv(T_imu_cam)`, and the copied pose stage's TCP `T_world_offset @ T_tag_imu @ T_imu_cam @
-  T_cam_tcp` (`T_world_offset`: the rig's training-world offset, which the copy always applies) on the copied 60 Hz
-  grid (the button span). Every episode's `eef_pos` / `eef_rot_axis_angle` are in that frame.
-- **Pose checks per piece**: the copied `finalize_trajectory` on the piece's tracked IMU poses in the SLAM world
-  (gravity-aligned first, as M4, so the tag's small tilt does not enter): `gravity_check` (|g| within 0.5 m/s²) and
-  `scale_check` (status ok: |s - 1| <= 0.1 and observable; it needs about 1 s of motion, so shorter pieces fail with
-  `scale_unobservable`); the copied validate's TCP speed per 60 Hz step <= 3 m/s (`speed_extreme` > 7 m/s). On the
-  whole demo: M4's `orientation_consistency` (every 2.5 s window within 3° of the demo's mean), judged when the demo
-  has >= 4 windows (10 s tracked), else reported as not judged; a failure fails every piece (`orientation`).
+  `T_tag_imu = T_tag_cam @ inv(T_imu_cam)`, and the copied pose stage's TCP `T_tag_imu @ T_imu_cam @ T_cam_tcp` on
+  the copied 60 Hz grid (the button span), as UMI's `tx_tag_tcp = tx_tag_cam @ tx_cam_tcp`. The copy's
+  `T_world_offset` (the rig file's training-world offset, yaw 30° and a shift from rig_v1) is set to the identity in
+  code for these calls (`umiproc.run.pieces.table_rig`; the copy's yaml loader refuses a yaw near 0), so every
+  episode's `eef_pos` / `eef_rot_axis_angle` really are in the tag frame (`piece.json`: `"world": "table_tag",
+  "world_offset": "identity"`). The copied export's refusal of a zero rotation vector cannot hit a real pose: the
+  TCP looking down at the table is ~180° from the tag frame (the zero vector would be the gripper looking up with
+  its axes on the tag's), and the copied `tcp_poses` already marks rows with |rotvec| ≤ 1e-6 invalid.
+- **Pose checks once per demo** (UMI has none; the map's scale is judged by M4): the copied `finalize_trajectory` on
+  **all** the demo's visually tracked IMU poses in the SLAM world (gravity-aligned first, as M4, so the tag's small
+  tilt does not enter): `gravity_check` (|g| within 0.5 m/s²) and `scale_check` (|s - 1| ≤ 0.1; it interpolates over
+  the demo's short losses, ≤ 5 frames = 167 ms, and splits only at gaps > 200 ms). The demo fails on `gravity` or an
+  observable `scale_mismatch`; `scale_unobservable` (too short or too little motion: it needs about 1 s of real
+  motion) is reported in `localize.json` (`demo_checks`) and the log, never a failure. M4's
+  `orientation_consistency` (every 2.5 s window within 3° of the demo's mean) on the same frames, judged when the
+  demo has ≥ 4 windows (10 s tracked), else reported as not judged. A failure of any of these fails the demo (every
+  piece; `reason.json` names the demo's reason). Judging gravity and scale per piece would drop pieces UMI keeps: the
+  scale check cannot measure under ~1.2 s, and |g| over a short piece includes the hand's mean acceleration
+  (|Δv|/T). Even on the whole demo a demo of about 1 s (the 30-frame minimum) with brisk motion can reach the 0.5
+  m/s² gravity limit (seen on the synthetic clip: up to 0.48 m/s² over 1 s).
+- **Pose checks per piece**: the copied validate's TCP speed per 60 Hz step ≤ 3 m/s (`speed_extreme` > 7 m/s: a SLAM
+  jump), and grid rows inside the button span; UMI's 12-frame piece length is the rules'.
 - **Widths and export per piece** (needs the gripper range): the copied `detect_episode_tags` / `episode_widths` /
   `width_on_grid` on the effective rig, then the copied `validate_episode` on the piece's grid rows (kept span = its
   longest run with pose, width and a main frame within 25 ms; `kept_fraction` >= 0.8 of the piece; speed; ultrawide and
   IMU gaps; `tag_coverage` >= 0.8), **except** its `too_short` (kept span >= 2 s), which UMI's piece length replaces:
-  the kept span must still cover >= 12 of the piece's frames (`piece_too_short`). Then the copied images and
+  the kept span must still cover >= 12 of the piece's frames (`piece_too_short`). What the kept span leaves out is
+  reported, never silent: `trimmed` in `piece.json`, in each piece of `reason.json` / `localize.json`, in the log and
+  the outcome line (seconds, grid rows, the piece's frames not covered, and per cause: no finger width, no
+  main-camera frame, no pose, usable but outside the longest stretch). UMI instead splits at width gaps
+  (`06:669-684` interpolates the widths and warns below 0.9): an open decision (TODO.md). Then the copied images and
   `write_episode_zarr`. The copied `slam_tracking` check always passes inside a piece (every frame of it is tracked).
 - **Gripper calibration** (`umiproc/calibrate/gripper.py`): the copied `fit_calibration` with the effective rig
   (`ImagePrep` of the lens model), then UMI's rule (`scripts/calibrate_gripper_range.py:22, 28-35, 41-50, 59-61`):
@@ -369,8 +387,10 @@ In detail (`umiproc/run/recording.py`):
                      pose = the table frame + the pose checks
   check.json grid.npy    the copied check and grid stages
   localize/          trajectory.csv (+ .t0_ns), umiproc_slam.log, times.txt
-  localize.json      map, fingerprint, the run, the rules and the pieces (frames, pose checks, finish), orientation;
-                     phase: localized (pose checks done: waiting, or ready for the widths) | finished | failed
+  localize.json      map, fingerprint, the run, the rules, demo_checks (gravity, scale, orientation on the whole
+                     demo) and the pieces (frames, pose checks, finish with trimmed, slot), orientation;
+                     phase: localized (pose checks done: waiting, or ready for the widths) | finished (exported,
+                     being moved into episode_N) | failed
   pieces/<k>/        while finishing: episode.zarr, status.json, piece.json
 episode_N/           the first exported piece: raw/ (the recording), processed/ with its episode.zarr, status.json,
                      piece.json, localize.json, localize/
@@ -384,8 +404,22 @@ episode_N+1/ ...     the other pieces: raw -> ../episode_N/raw (relative symlink
   refuses two episodes with one name). Each episode's status.json has every stage `done`.
 - A piece that fails a check is dropped and the others are kept; a recording with no exported piece goes to
   `failed/<pi_name>/` with the stage it got furthest to (`slam`, `pose`, `validate`, `images`).
-- An interrupted promotion (pieces left in `episode_N/processed/pieces/`, a piece slot without its `raw` link) is
-  finished at the start of the next `run`.
+- An interrupted promotion is finished by the next `run`, without a new localization or export: a recording whose
+  `localize.json` says `finished` while it is still in `.staging/` is moved on from where it stopped (the first
+  piece's files still in `pieces/<k>/` are moved, then the folder); pieces left in `episode_N/processed/pieces/`,
+  a piece slot without its `raw` link or ledger row, are finished at the start of every run. Each step is a rename
+  that can be repeated; the other pieces' `piece.json` names their slot before it is made, so a slot left empty by
+  a crash is reused (no gap, no second ledger row).
+- A piece's `raw` is a link to the first piece's: deleting the first piece's folder alone leaves the others
+  dangling. `status` lists them ("pieces without their recording") and packaging skips them with a warning that
+  names them (DIRECTIONS.md §5).
+- One gripper calibration per session: `run` refuses (exit 2) when the calibration would be fitted again (the
+  copied `calibration_inputs_hash` changed: the rig file's `aruco`, `gripper` or ultrawide section, the lens file,
+  the calibration step's version) while the folder has episodes; without episodes it is fitted again as before.
+  `status` shows the calibration `run` uses (newest by the ledger's intake time, the copied `newest_calibration`).
+- Everything that can refuse a `run` (folder, map, fingerprint, range, the calibration rule above, a non-empty
+  `incoming/`) is checked before the repairs of an interrupted run, so "nothing was changed" holds; the plan is
+  made again after the repairs when they changed what it reads.
 - `--retry-failed` moves `failed/<pi_name>` back and runs it from scratch (a new localization).
 
 ## Build order and DIRECTIONS.md
@@ -429,6 +463,11 @@ Step 2 (`umiproc map`) changed nothing in the copy (it calls `write_euroc`, `fin
 validation and `DuplicateIndex` as they are).
 
 Step 3 (`umiproc calibrate`, `umiproc run`):
+
+- `package/collect.py` (`collect_folder`): an `episode_N` whose `raw` is a dangling link (a piece of a split
+  recording whose first piece was deleted) is excluded (`raw link dangling`) and named in a warning, instead of
+  being skipped silently like an empty `episode_N/`. (`run` passes `T_world_offset` = identity to the copied
+  `tcp_poses` without changing the copy.)
 
 - **Effective rig** in the copied stages that loaded the rig file themselves, so tags, widths and training images use
   the lens file (`umiproc.sensors.effective_rig`: the data-root rig file with the lens file's ultrawide model in

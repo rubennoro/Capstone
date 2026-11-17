@@ -648,8 +648,10 @@ nothing: put back what changed, or record a new session with the new settings.
 
 Exit code 0: every recording got its outcome (episodes or failed: both are listed). 3: some wait for the gripper
 calibration (section 5). 2: it could not run (no such folder, no usable map, map out of date, SLAM build missing, bad
-range, another umiproc command running); nothing was changed. 1: an unexpected error stopped it (the recordings done
-so far keep their outcome; run it again).
+range, `incoming/` in the data root not empty, the gripper calibration's settings changed after episodes were made
+with it (section 5), another umiproc command running); nothing was changed (these are all checked before anything is
+touched, also before an interrupted run is tidied up). 1: an unexpected error stopped it (the recordings done so far
+keep their outcome; run it again).
 
 ### What happens to each demo
 
@@ -662,13 +664,17 @@ so far keep their outcome; run it again).
    tracked, or when it did not find itself in the map within 0.5 s. Otherwise the demo is **split at every lost
    frame**, and each tracked stretch of at least 12 frames (0.4 s) is a **piece**; shorter ones are dropped.
    "Tracked" means seen by the camera (ORB-SLAM3's state OK), never an IMU-only guess.
-4. **Pose checks per piece**, with the poses in the table frame (tag 13 of the map at the origin, z up): gravity
-   (|g| = 9.81 ± 0.5 m/s²), metric scale (within 10 %), speed (≤ 3 m/s), and, for a demo of at least 10 s, the
-   orientation check of map check M4 (SLAM's orientation agrees with gravity within 3°).
+4. **Pose checks**, with the poses in the table frame (tag 13 of the map at the origin, z up). **Once on the whole
+   demo** (all its tracked frames): gravity (|g| = 9.81 ± 0.5 m/s²), metric scale (within 10 %; a demo too short or
+   too still to measure it is only reported: "scale not observable"), and, for a demo of at least 10 s, the
+   orientation check of map check M4 (SLAM's orientation agrees with gravity within 3°); a failure drops the whole
+   demo. **Per piece**: speed (≤ 3 m/s). So a short piece (0.4 s or more) is kept as UMI keeps it.
 5. Without the gripper calibration it stops here: **waiting** in `.staging/` (exit 3).
 6. **Widths and export per piece**: the finger widths from the tags with the folder's `gripper_range.json`, the
    copied checks on the piece (finger tags seen in ≥ 80 % of its frames, widths and main-camera frames for ≥ 80 % of
-   it, no camera or IMU gaps, speed again), then the training images and `processed/episode.zarr`.
+   it, no camera or IMU gaps, speed again), then the training images and `processed/episode.zarr`. Only the piece's
+   longest stretch with a pose, a finger width and a main-camera frame is exported; what is cut off is **reported**
+   (`trimmed 0.27 s (no finger width)` on the outcome line, the details in `piece.json` / `reason.json`).
 7. A demo with k pieces that pass becomes **k consecutive `episode_N` folders**. The first holds the recording
    (`raw/`); the others point to it (`raw -> ../episode_<first>/raw`), each with its own `processed/episode.zarr`
    (named `<pi_name>_piece<k>` when the demo was split). A demo with no piece left goes to `failed/<pi_name>/` with
@@ -681,7 +687,7 @@ At the end it prints one line per recording, what each reason means, and `umipro
 
 ```
 episode_000132  ->  episode_1
-episode_000133  ->  episode_2, episode_3 (2 of 3 pieces; piece 2 dropped: scale_unobservable)
+episode_000133  ->  episode_2, episode_3 (2 of 3 pieces; piece 2 dropped: speed); piece 1 trimmed 0.27 s (no finger width)
 episode_000134  ->  failed (slam: too_many_lost)
 episode_000135  ->  waiting for the gripper calibration (1 piece(s) passed every pose check)
 ```
@@ -695,18 +701,20 @@ episode_000135  ->  waiting for the gripper calibration (1 piece(s) passed every
 | `no_piece` | no tracked stretch of 12 frames (0.4 s) between the losses | fewer, shorter losses |
 | `new_map` | SLAM lost the map and started a new one (its poses would not be in the map's coordinates) | stay inside the mapped area, move more slowly |
 | `slam_error` | the SLAM run crashed, timed out or left no trajectory | not the recording: read `processed/localize/umiproc_slam.log` (in `failed/<pi_name>/`) |
-| `gravity` | the trajectory disagrees with the IMU's gravity | smooth motion, no bumps; if it repeats on smooth demos, the map, lens or camera-IMU rotation (map check M4) |
-| `scale_unobservable` | too short or too little motion to check the metric scale; it needs about 1 s of real motion, so pieces under about 1 s cannot pass | longer pieces: fewer losses (a demo cut in short pieces loses them) |
-| `scale_mismatch` | the scale is off by more than 10 % | the map's scale (re-check map check M4) or a SLAM jump after a loss |
+| `gravity` | the demo's trajectory disagrees with the IMU's gravity (checked once on the whole demo) | smooth motion, no bumps; a demo of only about 1 s with brisk motion can fail it through its own acceleration (record longer demos); if it repeats on smooth demos, the map, lens or camera-IMU rotation (map check M4) |
+| `scale_mismatch` | the demo's scale (checked once on the whole demo) is off by more than 10 % | the map's scale (re-check map check M4) or a SLAM jump after a loss |
 | `speed`, `speed_extreme` | faster than 3 m/s (7 m/s: a SLAM jump, not the hand) | move slower |
-| `orientation` | SLAM's orientation disagrees with gravity by more than 3° (demos of 10 s or more) | not the recording if the demo was smooth: lens model, camera-IMU rotation |
+| `orientation` | SLAM's orientation disagrees with gravity by more than 3° (demos of 10 s or more; drops the whole demo) | not the recording if the demo was smooth: lens model, camera-IMU rotation |
 | `tag_coverage` | the finger tags were seen in fewer than 80 % of the piece's frames | keep both finger tags in view; no hand or object over them |
 | `kept_fraction`, `piece_too_short` | widths or main-camera frames were missing for more than 20 % of the piece, or what is left covers fewer than 12 frames | as `tag_coverage` |
 | `ultrawide_gap`, `imu_gap` | frames or IMU samples missing in the recording | not the hand: check the Pi's recording (dropped frames) |
 
-A piece that fails is dropped and the others are kept (the line says which piece and why). Every reason is also in
-`failed/<pi_name>/reason.json` (`stage`, `reasons`, `message`, the rules' counts and each piece's outcome) or, for a
-kept recording, in `episode_N/processed/localize.json`.
+A piece that fails is dropped and the others are kept (the line says which piece and why); `gravity`,
+`scale_mismatch` and `orientation` are judged on the whole demo and drop all of it. A scale that could not be
+measured ("scale not observable") is not a reason: it is printed with the demo's pose checks and kept in
+`localize.json` (`demo_checks`). Every reason is also in `failed/<pi_name>/reason.json` (`stage`, `reasons`,
+`message`, the rules' counts and each piece's outcome, with what was trimmed) or, for a kept recording, in
+`episode_N/processed/localize.json`.
 
 ### Run it again
 
@@ -714,7 +722,8 @@ kept recording, in `episode_N/processed/localize.json`.
   outside the recording (for example a rebuilt SLAM program for `slam_error`), `--retry-failed` runs them again
   **from scratch** (a new localization; SLAM differs a little from run to run).
 - A run that was interrupted (Ctrl-C, ssh dropped, power) leaves its recording in `.staging/`; the next run of the
-  folder (any range) picks it up.
+  folder (any range) picks it up. One interrupted while moving a finished demo into its `episode_N` folders is
+  finished by the next run without localizing or exporting it again (`reconciled: …` / `finishing the move`).
 - Recordings waiting for the gripper calibration: section 5.
 
 ## 5. Gripper calibration and finishing the episodes
@@ -764,7 +773,11 @@ The tags are found through the lens model the SLAM runs use (the lens file when 
 
 One calibration per session: a second one replaces the first only while the folder has no episodes yet (a
 calibration with warnings can be redone right away); once episodes were made with it, `calibrate` refuses (record a
-new session to calibrate again).
+new session to calibrate again). For the same reason `run` refuses (exit 2, nothing changed) when the settings the
+calibration was fitted with changed after episodes were made with it (the rig file's `aruco`, `gripper` or ultrawide
+camera section in `~/data/umi/rigs/`, the lens file): it would otherwise fit it again, and the session's episodes
+would have two different gripper ranges. Put the settings back, or record a new session. Without episodes it is simply
+fitted again.
 
 ### Finishing the waiting demos
 
@@ -781,8 +794,15 @@ The demos waiting in `.staging/` are **not localized again**: only the widths, t
 umiproc status block_raise
 ```
 
-It shows the map, the gripper calibration (opening, the finger-tag rule, its warnings), the episodes with the pieces of
-one recording on one line (`episode_2, episode_3 … (pieces 1, 3 of 3)`), what waits in `.staging/` and why, and the
-failed recordings with their reasons. Each `episode_N/processed/` holds `episode.zarr` (the training data, poses in
-the table frame), `status.json`, `piece.json` (which piece of which recording) and, for the first piece of a
+It shows the map, the gripper calibration `run` uses (opening, the finger-tag rule, its warnings), the episodes with
+the pieces of one recording on one line (`episode_2, episode_3 … (pieces 1, 3 of 3)`), pieces whose recording is gone
+(below), what waits in `.staging/` and why, and the failed recordings with their reasons. Each `episode_N/processed/`
+holds `episode.zarr` (the training data, poses in the table frame: tag 13 at the origin, no other offset),
+`status.json`, `piece.json` (which piece of which recording, what was trimmed) and, for the first piece of a
 recording, `localize.json` and the SLAM run (`localize/`).
+
+**Never delete the first piece of a split recording alone.** The recording (`raw/`) is stored once, in the first
+piece's `episode_N`; the other pieces' `raw` is a link to it (`raw -> ../episode_N/raw`). Deleting that folder leaves
+them without their recording: `umiproc status` lists them under "pieces without their recording", and packaging
+skips them with a warning that names them. To drop a whole recording, delete all its pieces; to drop one piece that
+is not the first, delete only its folder.

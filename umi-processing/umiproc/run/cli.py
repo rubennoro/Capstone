@@ -27,11 +27,11 @@ REASON_HINTS = {
     "no_piece": "no tracked stretch of 12 frames (0.4 s) between losses",
     "new_map": "SLAM lost the map and started a new one: stay inside the mapped area, move more slowly",
     "slam_error": "not a recording problem: read processed/localize/umiproc_slam.log",
-    "gravity": "the trajectory disagrees with the IMU's gravity: smooth motion, no bumps; if it repeats on smooth "
-               "demos, check the lens and camera-IMU rotation (map check M4)",
-    "scale_unobservable": "too short or too little motion to check the metric scale (it needs about 1 s of real "
-                          "motion): pieces under ~1 s cannot pass",
-    "scale_mismatch": "the metric scale is off by more than 10 %: the map's scale (map check M4) or a SLAM jump",
+    "gravity": "the demo's trajectory disagrees with the IMU's gravity (checked once on all its tracked frames): "
+               "smooth motion, no bumps; if it repeats on smooth demos, check the lens and camera-IMU rotation (map "
+               "check M4)",
+    "scale_mismatch": "the demo's metric scale (checked once on all its tracked frames) is off by more than 10 %: "
+                      "the map's scale (map check M4) or a SLAM jump",
     "speed": "the gripper moved faster than 3 m/s: move slower (or a SLAM jump)",
     "speed_extreme": "faster than 7 m/s: a SLAM jump, not the hand",
     "orientation": "the SLAM orientation disagrees with gravity by more than 3 deg (as map check M4): not the "
@@ -62,7 +62,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
 def _hint_lines(outcomes) -> list[str]:
     codes = []
     for o in outcomes:
-        for r in o.reasons:                      # "too_many_lost" or "piece 2: speed, scale_unobservable"
+        for r in o.reasons:                      # "too_many_lost" or "piece 2: speed, speed_extreme"
             codes += [c.strip() for c in r.split(": ")[-1].split(",")]
         for p in o.pieces:
             codes += list(p.get("reasons") or [])

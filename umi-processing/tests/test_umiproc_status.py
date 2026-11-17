@@ -131,6 +131,34 @@ def test_gripper_calibration_and_lens_shown(tmp_path, session):
     assert "pose check: the next `umiproc run` of this folder finishes it (widths, export)" in out
 
 
+def test_the_calibration_shown_is_the_one_run_uses(tmp_path, session):
+    """``run`` uses the newest calibration by the ledger's intake time (the copied ``newest_calibration``), not by
+    name: status shows that one."""
+    import shutil
+
+    from umiproc.calibrate.gripper import REPORT_NAME
+    from umiproc.dp.intake import read_ledger
+    from umiproc.dp.stages.calibration import newest_calibration
+
+    root, m, d = session
+    copy = tmp_path / "root"
+    shutil.copytree(root.path, copy)
+    f = copy / "tasks" / "block_raise"
+    (f / GRIPPER_RANGE_FILE).write_text(json.dumps({"min_width": 0.04, "max_width": 0.12}))
+    taken = next(p.name for p in (f / "calibration").iterdir())
+    other = f / "calibration" / "zzz-later-by-name"                    # no ledger row: the oldest for run
+    shutil.copytree(f / "calibration" / taken, other)
+    for name, opening in ((taken, 0.081), (other.name, 0.050)):
+        (f / "calibration" / name / "processed").mkdir(exist_ok=True)
+        write_json(f / "calibration" / name / "processed" / REPORT_NAME,
+                   {"opening": {"measured_m": opening, "min_width": 0.04, "max_width": 0.04 + opening},
+                    "finger_tag_rule": {"message": f"rule of {name}"}, "warnings": []})
+    assert newest_calibration(f, read_ledger(f / "episodes.csv")).name == taken
+    code, out, _ = _status("block_raise", "--root", str(copy))
+    assert f"gripper_range.json (from calibration/{taken})" in out and f"rule of {taken}" in out
+    assert "opening 0.081 m" in out and "zzz-later-by-name" not in out
+
+
 def test_empty_and_missing_roots(tmp_path):
     code, out, _ = _status("--root", str(tmp_path / "nothing"))
     assert code == 0 and "does not exist yet" in out and "not there yet" in out

@@ -108,16 +108,26 @@ def _staging_reason(entry: Path, has_gripper: bool) -> str:
     return "not finished (a run was interrupted; the next `umiproc run` picks it up)"
 
 
-def _calibration_info(d: Path, calibrations: list[str]) -> dict | None:
-    """The newest calibration's ``umiproc_calibrate.json`` (umiproc calibrate), else None."""
+def _calibration_info(d: Path, name: str | None) -> dict | None:
+    """The ``umiproc_calibrate.json`` (umiproc calibrate) of calibration ``name``, else None."""
     from umiproc.calibrate.gripper import REPORT_NAME
     from umiproc.dp.files import read_json
 
-    for name in reversed(calibrations):
-        rep = read_json(d / "calibration" / name / "processed" / REPORT_NAME)
-        if isinstance(rep, dict):
-            return {"name": name, **rep}
-    return None
+    if name is None:
+        return None
+    rep = read_json(d / "calibration" / name / "processed" / REPORT_NAME)
+    return {"name": name, **rep} if isinstance(rep, dict) else None
+
+
+def _newest_calibration(d: Path, ledger: list[dict]) -> str | None:
+    """The calibration ``run`` uses: the copied ``newest_calibration`` (newest by the ledger's intake time)."""
+    from umiproc.dp.stages.calibration import newest_calibration
+
+    try:
+        c = newest_calibration(d, ledger)
+    except OSError:
+        return None
+    return c.name if c is not None else None
 
 
 def _current_fingerprint(root: Path, rig_id: str | None, cache: dict) -> tuple[str | None, dict | None, str | None]:
@@ -165,8 +175,8 @@ def folder_status(root: Path, folder: str, *, _fingerprints: dict | None = None)
 
     d = Path(root) / "tasks" / folder
     st = {"folder": folder, "dir": d, "problem": None, "label": None, "rig": None, "created": None, "maps": [],
-          "map_info": [], "calibration_info": None,
-          "gripper_range": False, "calibrations": [], "episodes": [], "staging": [], "failed": [],
+          "map_info": [], "calibration_info": None, "calibration_used": None,
+          "gripper_range": False, "calibrations": [], "episodes": [], "dangling": [], "staging": [], "failed": [],
           "report": (d / "report.json").is_file()}
     if not d.is_dir():
         st["problem"] = f"no task folder {d}"
@@ -188,11 +198,18 @@ def folder_status(root: Path, folder: str, *, _fingerprints: dict | None = None)
     cal = d / CALIBRATION_DIR
     if cal.is_dir():
         st["calibrations"] = sorted(p.name for p in cal.iterdir() if not p.name.startswith(".") and p.is_dir())
-    st["calibration_info"] = _calibration_info(d, st["calibrations"]) if st["gripper_range"] else None
+    st["calibration_used"] = _newest_calibration(d, ledger)
+    st["calibration_info"] = _calibration_info(d, st["calibration_used"]) if st["gripper_range"] else None
     from umiproc.dp.files import read_json
     from umiproc.run.recording import PIECE_FILE
 
     for e in episode_dirs(d):
+        if os.path.islink(e / "raw") and not (e / "raw").exists():
+            piece = read_json(e / "processed" / PIECE_FILE, {}) or {}
+            st["dangling"].append({"slot": e.name, "target": os.readlink(e / "raw"), "raw_of": piece.get("raw_of"),
+                                   "pi_name": pi.get(e.name, "") or piece.get("pi_name", ""),
+                                   "piece": piece.get("piece"), "pieces": piece.get("pieces")})
+            continue
         if not (e / "raw").exists():
             continue
         s = episode_summary(load_status(e / "processed"))
@@ -231,6 +248,8 @@ def _folder_line(f: dict) -> str:
         return f"  {f['folder']}: not a usable task folder ({f['problem']})"
     parts = [f"label {f['label']}", "map " + (_map_word(f["map_info"]) if f["maps"] else "no"),
              "gripper calibration " + ("yes" if f["gripper_range"] else "no"), _plural(len(f["episodes"]), "episode")]
+    if f.get("dangling"):
+        parts.append(f"{len(f['dangling'])} piece(s) without their recording")
     if f["staging"]:
         parts.append(f"{len(f['staging'])} waiting")
     if f["failed"]:
@@ -355,7 +374,7 @@ def format_folder_status(f: dict) -> str:
     lines += _map_lines(f["map_info"])
     if f["gripper_range"]:
         ci = f.get("calibration_info")
-        cal = f" (from calibration/{f['calibrations'][-1]})" if f["calibrations"] else ""
+        cal = f" (from calibration/{f['calibration_used']})" if f.get("calibration_used") else ""
         lines.append(f"  gripper calibration:  yes, gripper_range.json{cal}")
         if ci:
             op = ci.get("opening") or {}
@@ -385,6 +404,11 @@ def format_folder_status(f: dict) -> str:
             rows.append([slots, rec, st_, steps, "; ".join(r for e in g for r in e["reasons"]) or "-"])
         lines += ["    " + ln for ln in format_table(rows, ["slot", "recording", "status", "steps",
                                                               "problems"]).splitlines()]
+    if f.get("dangling"):
+        lines.append(f"  pieces without their recording: {len(f['dangling'])} (their raw link points to a deleted "
+                     "first piece; packaging skips them)")
+        lines += [f"    {x['slot']}: piece {x['piece']} of {x['pieces']} of {x['pi_name'] or '?'}, raw -> "
+                  f"{x['target']} is missing ({x['raw_of'] or 'the first piece'} was deleted)" for x in f["dangling"]]
     lines.append(f"  waiting in .staging/: {len(f['staging'])}")
     lines += [f"    {s['pi_name']}: {s['why']}" for s in f["staging"]]
     lines.append(f"  failed/:              {len(f['failed'])}")

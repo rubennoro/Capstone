@@ -3,7 +3,9 @@
 Per folder (in the order given), every ``episode_N`` (in N order) whose ``processed/status.json`` says
 ``exported`` and whose ``processed/episode.zarr`` exists is included. Everything else is listed as excluded, with
 why: an ``episode_N`` that did not export, every ``failed/<pi_name>/`` (with its ``reason.json``) and every
-``.staging/<pi_name>/`` ("not finished"). Nothing under ``failed/`` or ``.staging/`` is ever included.
+``.staging/<pi_name>/`` ("not finished"). Nothing under ``failed/`` or ``.staging/`` is ever included. umiproc: an
+``episode_N`` whose ``raw`` is a dangling link (a piece of a split recording whose first piece was deleted) is
+excluded too, and named in a warning.
 
 Checks: every folder exists and has a ``task.yaml``; no folder is named twice; all folders have the same rig;
 at least one episode overall; no Pi episode name twice (it is ``meta/episode_names`` in the zip); each
@@ -13,6 +15,7 @@ at least one episode overall; no Pi episode name twice (it is ``meta/episode_nam
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -135,7 +138,15 @@ def check_same_rig(folders: list[FolderInfo]) -> None:
 
 def collect_folder(info: FolderInfo, sel: Selection) -> None:
     """Adds ``info``'s exported episodes to ``sel.episodes`` and everything else to ``sel.excluded``."""
+    dangling = []
     for d in episode_dirs(info.task_dir):
+        if os.path.islink(d / "raw") and not (d / "raw").exists():
+            # umiproc: a piece of a split recording whose raw link points to a deleted first piece
+            dangling.append(d.name)
+            sel.excluded.append(ExcludedEntry(info.folder, d.name, "raw link dangling",
+                                              f"raw -> {os.readlink(d / 'raw')} is missing (its first piece was "
+                                              "deleted)"))
+            continue
         if not (d / "raw").is_dir():
             continue                       # an empty episode_N/ from an interrupted move (as in status)
         status = load_status(d / "processed")
@@ -147,6 +158,9 @@ def collect_folder(info: FolderInfo, sel: Selection) -> None:
             sel.excluded.append(ExcludedEntry(info.folder, d.name, "exported", "processed/episode.zarr is missing"))
         else:
             sel.episodes.append(packaged_episode(info, d, status, s["n_steps"]))
+    if dangling:
+        sel.warnings.append(f"{info.folder}: skipped {len(dangling)} episode(s) whose raw link points to a deleted "
+                            f"first piece of their recording: {', '.join(dangling)}")
     for name, reason in failed_entries(info.task_dir):
         sel.excluded.append(ExcludedEntry(info.folder, f"{FAILED_DIR}/{name}", "failed", reason))
     for name in staging_entries(info.task_dir):

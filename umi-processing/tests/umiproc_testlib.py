@@ -179,15 +179,9 @@ def _rot(axis: str, a):
     return Rotation.from_euler(axis, a).as_matrix()
 
 
-def rig_motion(T_imu_cam, *, duration_s: float = 30.0, fps: float = 30.0, imu_hz: float = 104.0,
-               yaw_amp: float = 1.6, accel_bias=(0.0, 0.0, 0.0)) -> dict:
-    """A handheld clip in which every quantity agrees exactly: the camera looks down at a table (gravity frame G,
-    z up, the table tag at its origin, its z axis up) from about 0.45 m, swinging its yaw by +-``yaw_amp`` rad, tilting
-    a few degrees and moving 8-10 cm in every direction; the SLAM world W is G rotated and shifted arbitrarily.
-
-    Returns ``t_cam_ns`` (frames), ``T_W_imu``/``T_W_cam`` at the frames (``T_W_cam = T_W_imu @ T_imu_cam``),
-    ``T_G_cam`` (for rendering the tag), ``imu_t_ns``, ``acc_imu`` (specific force in the IMU frame,
-    ``R_imu_G (a + g up)``, plus ``accel_bias``), ``gyro_imu`` (rad/s), ``T_W_G`` and ``up_W`` (the true up in W)."""
+def _motion(T_imu_cam, yaw_amp: float = 1.6, accel_bias=(0.0, 0.0, 0.0)):
+    """The closed-form handheld motion of :func:`rig_motion` (times in seconds on the IMU clock): ``T_G_imu(t)``,
+    ``imu(t) -> (gyro, acc)`` and ``T_W_G``."""
     import numpy as np
     from scipy.spatial.transform import Rotation
 
@@ -217,25 +211,59 @@ def rig_motion(T_imu_cam, *, duration_s: float = 30.0, fps: float = 30.0, imu_hz
     def R_G_imu(t):
         return np.einsum("nij,kj->nik", R_G_cam(t), R_imu_cam)    # R_G_cam @ R_imu_cam^T
 
-    t_cam_ns = (np.arange(int(round(duration_s * fps))) * (1e9 / fps)).astype(np.int64) + 5_000_000_000
-    t_imu_ns = np.arange(t_cam_ns[0] - 50_000_000, t_cam_ns[-1] + 50_000_000, 1e9 / imu_hz).astype(np.int64)
-    ts, ti = t_cam_ns * 1e-9, t_imu_ns * 1e-9
+    def T_G_imu(t):
+        t = np.atleast_1d(np.asarray(t, float))
+        T = np.tile(np.eye(4), (len(t), 1, 1))
+        T[:, :3, :3] = R_G_imu(t)
+        T[:, :3, 3] = p_imu(t)
+        return T
 
-    T_G_imu = np.tile(np.eye(4), (len(ts), 1, 1))
-    T_G_imu[:, :3, :3] = R_G_imu(ts)
-    T_G_imu[:, :3, 3] = p_imu(ts)
-    T_G_cam = T_G_imu @ T_imu_cam
-    R_i = R_G_imu(ti)
-    acc = np.einsum("nji,nj->ni", R_i, a_imu(ti) + [0.0, 0.0, GRAVITY]) + np.asarray(accel_bias, float)
-    h = 1e-4
-    gyro = Rotation.from_matrix(np.einsum("nji,njk->nik", R_G_imu(ti - h), R_G_imu(ti + h))).as_rotvec() / (2 * h)
+    def imu(t):
+        t = np.atleast_1d(np.asarray(t, float))
+        R_i = R_G_imu(t)
+        acc = np.einsum("nji,nj->ni", R_i, a_imu(t) + [0.0, 0.0, GRAVITY]) + np.asarray(accel_bias, float)
+        h = 1e-4
+        gyro = Rotation.from_matrix(np.einsum("nji,njk->nik", R_G_imu(t - h), R_G_imu(t + h))).as_rotvec() / (2 * h)
+        return gyro, acc
 
     T_W_G = np.eye(4)
     T_W_G[:3, :3] = Rotation.from_euler("xyz", [25.0, -40.0, 70.0], degrees=True).as_matrix()
     T_W_G[:3, 3] = [0.3, -0.2, 1.1]
+    return T_G_imu, imu, T_W_G
+
+
+def rig_motion(T_imu_cam, *, duration_s: float = 30.0, fps: float = 30.0, imu_hz: float = 104.0,
+               yaw_amp: float = 1.6, accel_bias=(0.0, 0.0, 0.0)) -> dict:
+    """A handheld clip in which every quantity agrees exactly: the camera looks down at a table (gravity frame G,
+    z up, the table tag at its origin, its z axis up) from about 0.45 m, swinging its yaw by +-``yaw_amp`` rad, tilting
+    a few degrees and moving 8-10 cm in every direction; the SLAM world W is G rotated and shifted arbitrarily.
+
+    Returns ``t_cam_ns`` (frames), ``T_W_imu``/``T_W_cam`` at the frames (``T_W_cam = T_W_imu @ T_imu_cam``),
+    ``T_G_cam`` (for rendering the tag), ``imu_t_ns``, ``acc_imu`` (specific force in the IMU frame,
+    ``R_imu_G (a + g up)``, plus ``accel_bias``), ``gyro_imu`` (rad/s), ``T_W_G`` and ``up_W`` (the true up in W)."""
+    import numpy as np
+
+    T_imu_cam = np.asarray(T_imu_cam, float)
+    T_G_imu_at, imu_at, T_W_G = _motion(T_imu_cam, yaw_amp, accel_bias)
+    t_cam_ns = (np.arange(int(round(duration_s * fps))) * (1e9 / fps)).astype(np.int64) + 5_000_000_000
+    t_imu_ns = np.arange(t_cam_ns[0] - 50_000_000, t_cam_ns[-1] + 50_000_000, 1e9 / imu_hz).astype(np.int64)
+    ts, ti = t_cam_ns * 1e-9, t_imu_ns * 1e-9
+    T_G_imu = T_G_imu_at(ts)
+    T_G_cam = T_G_imu @ T_imu_cam
+    gyro, acc = imu_at(ti)
     T_W_imu = T_W_G @ T_G_imu
     return {"t_cam_ns": t_cam_ns, "T_W_imu": T_W_imu, "T_W_cam": T_W_imu @ T_imu_cam, "T_G_cam": T_G_cam,
             "imu_t_ns": t_imu_ns, "acc_imu": acc, "gyro_imu": gyro, "T_W_G": T_W_G, "up_W": T_W_G[:3, 2].copy()}
+
+
+def motion_T_W_cam(T_imu_cam, t_ns):
+    """:func:`rig_motion`'s camera poses in its SLAM world W at any times (ns on the IMU clock): what a SLAM run of
+    a recording made with :func:`moving_demo_recording` would give."""
+    import numpy as np
+
+    T_imu_cam = np.asarray(T_imu_cam, float)
+    T_G_imu_at, _imu, T_W_G = _motion(T_imu_cam)
+    return T_W_G @ T_G_imu_at(np.asarray(t_ns, np.int64) * 1e-9) @ T_imu_cam
 
 
 def fork_trajectory(t_ns, T_W_cam, keyframe_every: int = 30):
@@ -381,10 +409,33 @@ def fake_finger_tags(monkeypatch, *, visible=None, width=None, nominal_z: float 
     return detect
 
 
-def session_template(base: Path, demos=(), n_frames: int = 40) -> dict:
+def moving_demo_recording(source: Path, number: int, T_imu_cam, *, n_frames: int = 120) -> Path:
+    """A :func:`pi_demo_recording` whose IMU (``imu.csv``, the Pi's raw counts) is :func:`rig_motion`'s handheld
+    motion at the recording's own sample times, so a fake SLAM run that answers :func:`motion_T_W_cam` at the
+    frame times agrees with it: gravity, the metric scale and the time offset can be checked end to end."""
+    import numpy as np
+
+    from umiproc.dp.pi_format import ACCEL_G_PER_LSB, GYRO_DPS_PER_LSB, write_pi_manifest
+
+    d = pi_demo_recording(source, number, n_frames=n_frames)
+    lines = (d / "imu.csv").read_text().splitlines()
+    rows = [ln.split(",") for ln in lines[1:]]
+    t = np.array([int(r[1]) for r in rows], np.int64)
+    _T, imu_at, _W = _motion(np.asarray(T_imu_cam, float))
+    gyro, acc = imu_at(t * 1e-9)
+    g = np.rint(gyro * 180.0 / np.pi / GYRO_DPS_PER_LSB).astype(np.int64)
+    a = np.rint(acc / 9.80665 / ACCEL_G_PER_LSB).astype(np.int64)
+    out = [lines[0]] + [f"{r[0]},{r[1]},{x[0]},{x[1]},{x[2]},{y[0]},{y[1]},{y[2]}" for r, x, y in zip(rows, g, a)]
+    (d / "imu.csv").write_text("\n".join(out) + "\n")
+    write_pi_manifest(d)
+    return d
+
+
+def session_template(base: Path, demos=(), n_frames: int = 40, moving=()) -> dict:
     """Build once (e.g. in a module fixture): a stand-in SLAM build in ``base/fork``, a data root ``base/root`` with
-    a passed session folder (:func:`session_folder`) and a source ``base/src`` with the mapping clip and
-    :func:`pi_demo_recording` recordings ``demos`` (Pi episode numbers). Copy it per test with
+    a passed session folder (:func:`session_folder`) and a source ``base/src`` with the mapping clip,
+    :func:`pi_demo_recording` recordings ``demos`` (Pi episode numbers) and :func:`moving_demo_recording` recordings
+    ``moving`` (``{number: n_frames}``: an IMU that follows the synthetic handheld motion). Copy it per test with
     :func:`clone_session`."""
     import pytest
 
@@ -398,6 +449,13 @@ def session_template(base: Path, demos=(), n_frames: int = 40) -> dict:
         folder = session_folder(DataRoot(base / "root"), src, mp)
     for k in demos:
         pi_demo_recording(src, k, n_frames=n_frames)
+    if moving:
+        from umiproc.dp.config import load_rig
+        from umiproc.paths import repo_config
+
+        T_imu_cam = load_rig(repo_config("rigs", "rig_pi_v3.yaml")).cameras["ultrawide"].T_imu_cam
+        for k, n in dict(moving).items():
+            moving_demo_recording(src, k, T_imu_cam, n_frames=n)
     return {"base": base, "folder": folder}
 
 

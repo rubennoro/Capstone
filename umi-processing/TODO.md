@@ -45,7 +45,7 @@ How to do each step: [DIRECTIONS.md](DIRECTIONS.md). Tick items off here as they
       `umiproc/dp/process.py` (`load_folder_context`), `umiproc/dp/calibrate/task.py`, `umiproc/dp/run/range.py`.
       Otherwise tags, widths and training images would use the nominal lens.
 - [x] DIRECTIONS §4 (prove the demos) and §5 (gripper calibration and finishing).
-- [ ] Reviewer pass, fixes, commit.
+- [x] Reviewer pass, fixes, commit.
 
 ## 4. Then: smoke test and the first real session end to end
 
@@ -63,6 +63,11 @@ How to do each step: [DIRECTIONS.md](DIRECTIONS.md). Tick items off here as they
 - [ ] **Pooling several board recordings** in one `lens-calibrate` (valid if focus and camera mode didn't change).
 - [ ] **`build.sh` A/B variant**: today `PATCHES_UPTO=0006` also drops the crash fixes 0010–0011, so that variant can
       crash when a second map starts. Add a way to skip only 0007–0009 (e.g. `PATCHES_SKIP=0007,0008,0009`).
+- [ ] **Split pieces at finger-width gaps like UMI** (`06:669-684` interpolates the widths and warns below 0.9) instead
+      of keeping the longest usable stretch and dropping below 80 % (what `run` does now, with the trimmed part
+      reported in `piece.json` / `reason.json`).
+- [ ] **RECENTLY_LOST frames** (IMU-only predictions) count as lost in umiproc but as tracked in UMI: this keeps the
+      > 5-lost rule and the splitting stricter than UMI's. Keep, or match UMI exactly?
 
 ## Later
 

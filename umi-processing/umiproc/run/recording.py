@@ -11,8 +11,9 @@ Where things are while it is processed, in ``tasks/<folder>/.staging/<pi_name>/`
     processed/grid.npy           the copied 60 Hz grid (the button span)
     processed/localize/          the localization run: trajectory.csv (+ .t0_ns), umiproc_slam.log, times.txt
     processed/localize.json      umiproc's record: map, fingerprint, the run, UMI's rules and the pieces, every
-                                 piece's pose checks, the orientation check, ``phase`` (``localized`` = every pose
-                                 check done, waiting for or ready for the widths; ``finished``)
+                                 piece's pose checks, the demo's (``demo_checks``) and the orientation check,
+                                 ``phase`` (``localized`` = every pose check done, waiting for or ready for the
+                                 widths; ``finished`` = exported, being moved into ``episode_N``)
     processed/pieces/<k>/        while finishing: piece k's episode.zarr, status.json, piece.json
 
 Steps (``status.json`` record in brackets):
@@ -24,16 +25,20 @@ Steps (``status.json`` record in brackets):
    ``03_batch_slam.py``); a run that crashed, timed out or left no readable trajectory fails (``slam_error``); a run
    that started a second map is rejected (``new_map``: its poses would not be in the map's coordinates); then UMI's
    lost-frame rules (:mod:`umiproc.run.rules`), which give the pieces or drop the demo.
-4. **pose checks** [pose] per piece, and the orientation check on the whole demo (:mod:`umiproc.run.pieces`).
-   ``localize.json`` is written with ``phase: localized``.
+4. **pose checks** [pose]: gravity, scale and orientation once on the whole demo (a failure drops the demo; an
+   unobservable scale is only reported), then each piece's speed (:mod:`umiproc.run.pieces`). ``localize.json`` is
+   written with ``phase: localized``.
 5. Without ``gripper_range.json``: the recording stays in ``.staging/`` **waiting for the gripper calibration**. A
    later run (after ``umiproc calibrate``) resumes here: steps 1-4 are not redone.
 6. **finish** [width, validate, images, export] every piece that passed its pose checks.
 7. k pieces exported -> k consecutive ``episode_N``: the first takes the ``.staging/<pi_name>`` folder (its
    ``raw/``); every other one gets ``processed/`` with its own ``episode.zarr``, ``raw`` -> ``../episode_<first>/raw``
    (a relative symlink: the raw copy is stored once) and its own ``episodes.csv`` row. Every episode has
-   ``processed/piece.json`` (which piece of which recording, its frames). No piece exported -> ``failed/<pi_name>/``
-   with ``reason.json``.
+   ``processed/piece.json`` (which piece of which recording, its frames, what was trimmed). No piece exported ->
+   ``failed/<pi_name>/`` with ``reason.json``. ``localize.json`` says ``finished`` before the moves start, so a
+   crash during them is finished by the next run (:meth:`RecordingProcessor._promotion_interrupted` for a recording
+   still in ``.staging/``, :func:`finish_interrupted_pieces` for pieces left in ``episode_N/processed/pieces/``)
+   without a new localization or export.
 """
 
 from __future__ import annotations
@@ -53,6 +58,9 @@ from umiproc.dp.paths import STAGING_DIR
 __all__ = ["LOCALIZE_DIR", "LOCALIZE_FILE", "LOCALIZE_FORMAT", "PIECES_DIR", "PIECE_FILE", "EPISODE", "FAILED",
            "WAITING", "SKIPPED", "LOCALIZED", "FINISHED", "Session", "Outcome", "RecordingProcessor",
            "finish_interrupted_pieces"]
+
+#: The renames and links of a promotion (module level, so the tests can interrupt them at any step).
+_replace, _symlink = os.replace, os.symlink
 
 LOCALIZE_DIR = "localize"
 LOCALIZE_FILE = "localize.json"
@@ -127,7 +135,9 @@ class Outcome:
                 s += f" ({len(self.slots)} of {len(self.pieces)} pieces"
                 s += ("; " + "; ".join(f"piece {p['index']} dropped: {', '.join(p.get('reasons') or [])}"
                                        for p in dropped) if dropped else "") + ")"
-            return s
+            trims = [f"piece {p['index']} {_trim_words(p['trimmed'])}" for p in self.pieces
+                     if p.get("outcome") == EPISODE and (p.get("trimmed") or {}).get("rows")]
+            return s + ("; " + "; ".join(trims) if trims else "")
         if self.state == FAILED:
             return f"failed ({self.stage}: {'; '.join(self.reasons) or self.message})"
         if self.state == WAITING:
@@ -142,6 +152,14 @@ class Outcome:
         return {"source_name": self.name, "pi_name": self.pi_name, "outcome": self.state, "slots": list(self.slots),
                 "stage": self.stage, "reasons": list(self.reasons), "message": self.message, "action": self.action,
                 "pieces": list(self.pieces), "seconds": round(self.seconds, 3)}
+
+
+def _trim_words(trim: dict) -> str:
+    """``"trimmed 0.42 s (no finger width)"`` for the one-line outcome."""
+    from umiproc.run.pieces import _CAUSE_WORDS
+
+    why = ", ".join(_CAUSE_WORDS.get(k, k) for k, v in (trim.get("causes") or {}).items() if v)
+    return f"trimmed {trim.get('seconds', 0):.2f} s" + (f" ({why})" if why else "")
 
 
 def _rec(status: str, *, reasons=(), reason=None, outputs=None, details=None) -> dict:
@@ -244,6 +262,10 @@ class RecordingProcessor:
         processed = d / "processed"
         loc = read_json(processed / LOCALIZE_FILE)
         ep = Episode(d, pi_name)
+        if self._promotion_interrupted(loc, processed):
+            self.s.log(f"  {pi_name}: exported earlier, its move into episode_N was interrupted: finishing the move "
+                       "(no new localization, no new export)")
+            return self._promote_outcome(name, pi_name, loc)
         try:
             if not self._localized(loc):
                 shutil.rmtree(processed, ignore_errors=True)
@@ -279,6 +301,18 @@ class RecordingProcessor:
         stage = next((x for x in RECORDING_STAGES + PIECE_STAGES if (st.get(x) or {}).get("status") != "done"),
                      "export")
         return _Stop(stage, "failed", ["exception"], f"{type(e).__name__}: {e} (traceback in processed/{ERROR_FILE})")
+
+    def _promotion_interrupted(self, loc, processed: Path) -> bool:
+        """``localize.json`` says ``finished`` while the recording is still in ``.staging/``: every exported piece
+        is in ``processed/pieces/<k>/`` (or, for the first one, already moved into ``processed/``) and only the move
+        into ``episode_N`` was interrupted."""
+        if not (isinstance(loc, dict) and loc.get("format") == LOCALIZE_FORMAT and loc.get("phase") == FINISHED):
+            return False
+        exported = [p for p in loc.get("pieces") or [] if p.get("outcome") == EPISODE]
+        if not exported:
+            return False
+        first = processed / PIECES_DIR / str(exported[0]["index"])
+        return first.is_dir() or (processed / "episode.zarr").is_dir()
 
     def _localized(self, loc) -> bool:
         return (isinstance(loc, dict) and loc.get("format") == LOCALIZE_FORMAT and loc.get("phase") == LOCALIZED
@@ -324,15 +358,22 @@ class RecordingProcessor:
                                                "pieces": len(rules.pieces), "map": self.s.map_pi_name})
         self._save(ep, status)
         log(f"  {ep.pi_name}: {rules.message}")
-        loc["pieces"], loc["orientation"] = self._pose_phase(ep, traj, rules)
+        loc["pieces"], loc["demo_checks"], loc["orientation"] = self._pose_phase(ep, traj, rules)
         passed = [p for p in loc["pieces"] if p["pose"]["ok"]]
         if not passed:
             loc["phase"] = "failed"
             write_json(ep.processed / LOCALIZE_FILE, loc)
+            demo = loc["demo_checks"]
+            if demo["reasons"]:
+                raise _Stop("pose", "rejected", demo["reasons"], "the demo failed its pose checks: "
+                            + ", ".join(demo["reasons"]) + " (" + demo["summary"] + ")")
             reasons = _piece_reasons(loc["pieces"], "pose")
             raise _Stop("pose", "rejected", reasons, "no piece passed its pose checks: " + "; ".join(reasons))
         status["pose"] = _rec("done", outputs={"pieces_passed": [p["index"] for p in passed],
-                                               "pieces": len(loc["pieces"]), "world": "table_tag"})
+                                               "pieces": len(loc["pieces"]), "world": "table_tag",
+                                               "world_offset": "identity",
+                                               "demo_checks": {k: loc["demo_checks"][k]
+                                                               for k in ("reasons", "reported", "summary")}})
         self._save(ep, status)
         loc["phase"] = LOCALIZED
         write_json(ep.processed / LOCALIZE_FILE, loc)
@@ -397,24 +438,29 @@ class RecordingProcessor:
             return rules, (rules.reasons, rules.message + ": " + "; ".join(REASONS[r] for r in rules.reasons))
         return rules, None
 
-    def _pose_phase(self, ep, traj, rules) -> tuple[list[dict], dict]:
-        from umiproc.run.pieces import orientation_check, pose_checks
+    def _pose_phase(self, ep, traj, rules) -> tuple[list[dict], dict, dict]:
+        """The demo's pose checks once on all its tracked frames (gravity, scale, orientation), then each piece's
+        own (speed). A demo failure fails every piece. Returns ``(pieces, demo checks, orientation)``."""
+        from umiproc.run.pieces import demo_pose_checks, describe_demo_checks, orientation_check, pose_checks
 
         grid = ep.grid()
+        demo = demo_pose_checks(traj, ep.raw, self.s.rig)
         orient = orientation_check(traj, ep.raw, self.s.rig)
+        if not orient["ok"]:
+            demo = {**demo, "ok": False, "reasons": demo["reasons"] + ["orientation"]}
+        demo["summary"] = describe_demo_checks(demo, orient)
+        self.s.log(f"  {ep.pi_name}: demo pose checks " + ("passed" if demo["ok"] else "FAILED: "
+                                                           + ", ".join(demo["reasons"])) + f", {demo['summary']}")
         pieces = []
         for p in rules.pieces:
-            chk = pose_checks(p, traj, ep.raw, self.s.rig, self.s.tx_slam_tag, grid)
-            if not orient["ok"]:
-                chk = {**chk, "ok": False, "reasons": chk["reasons"] + ["orientation"]}
+            chk = pose_checks(p, traj, self.s.rig, self.s.tx_slam_tag, grid)
+            reasons = chk["reasons"] + demo["reasons"]
+            chk = {**chk, "ok": not reasons, "reasons": reasons, "piece_reasons": chk["reasons"]}
             pieces.append({**p.to_json(), "pose": chk, "outcome": WAITING if chk["ok"] else FAILED,
-                           "stage": None if chk["ok"] else "pose", "reasons": [] if chk["ok"] else chk["reasons"]})
+                           "stage": None if chk["ok"] else "pose", "reasons": [] if chk["ok"] else reasons})
             self.s.log(f"  {ep.pi_name}: piece {p.index} ({p.n_frames} frames): pose checks "
-                       + ("passed" if chk["ok"] else "FAILED: " + ", ".join(chk["reasons"])))
-        if orient.get("judged"):
-            self.s.log(f"  {ep.pi_name}: orientation vs gravity: max {orient['max_deg']:.2f} deg over "
-                       f"{orient['windows']} windows " + ("ok" if orient["ok"] else "FAILED (limit 3 deg)"))
-        return pieces, orient
+                       + ("passed" if chk["ok"] else "FAILED: " + ", ".join(reasons)))
+        return pieces, demo, orient
 
     # ----------------------------------------------------------------------------------------- 5: waiting
     def _waiting(self, name, pi_name, loc) -> Outcome:
@@ -426,7 +472,7 @@ class RecordingProcessor:
         from umiproc.dp.export.images import camera_times
         from umiproc.dp.slam.base import imu_samples
         from umiproc.dp.stages.width import detect_episode_tags, episode_widths
-        from umiproc.run.pieces import finish_piece, piece_zarr_name
+        from umiproc.run.pieces import describe_trim, finish_piece, piece_zarr_name
         from umiproc.run.rules import Piece
         from umiproc.slam.trajectory_csv import read_fork_csv
 
@@ -464,15 +510,18 @@ class RecordingProcessor:
                        "message": f"{type(e).__name__}: {e} (traceback in processed/error_piece{piece.index}.txt)"}
             p["finish"] = {k: res[k] for k in ("ok", "stage", "reasons", "message")}
             p["finish"]["values"] = _short_values(res["values"])
+            trim = describe_trim(res["values"].get("trimmed"))
             if res["ok"]:
                 p["outcome"], p["stage"], p["reasons"] = EPISODE, None, []
                 save_status(pdir, self._piece_status(ep, p, res, cal))
                 write_json(pdir / PIECE_FILE, self._piece_record(pi_name, source_name, p, n_all))
-                log(f"  {pi_name}: piece {piece.index}: exported, {res['values']['n_steps']} steps")
+                log(f"  {pi_name}: piece {piece.index}: exported, {res['values']['n_steps']} steps"
+                    + (f"; {trim}" if trim else ""))
             else:
                 p["outcome"], p["stage"], p["reasons"] = FAILED, res["stage"], res["reasons"]
                 shutil.rmtree(pdir, ignore_errors=True)
-                log(f"  {pi_name}: piece {piece.index}: FAILED at {res['stage']}: {', '.join(res['reasons'])}")
+                log(f"  {pi_name}: piece {piece.index}: FAILED at {res['stage']}: {', '.join(res['reasons'])}"
+                    + (f"; {trim}" if trim else ""))
         exported = [p for p in loc["pieces"] if p.get("outcome") == EPISODE]
         status = load_status(ep.processed)
         if not exported:
@@ -485,8 +534,12 @@ class RecordingProcessor:
             save_status(ep.processed, status)
             shutil.rmtree(pieces_dir, ignore_errors=True)
             return self._fail(name, pi_name, source_name, stage, loc)
-        loc["phase"] = FINISHED
+        loc["phase"] = FINISHED          # from here on a crash is finished by the next run (_promotion_interrupted)
         write_json(ep.processed / LOCALIZE_FILE, loc)
+        return self._promote_outcome(name, pi_name, loc)
+
+    def _promote_outcome(self, name, pi_name, loc: dict) -> Outcome:
+        exported = [p for p in loc["pieces"] if p.get("outcome") == EPISODE]
         slots = self._promote(pi_name, exported)
         for p, slot in zip(exported, slots):
             p["slot"] = slot
@@ -508,19 +561,24 @@ class RecordingProcessor:
         return {"format": PIECE_FORMAT, "pi_name": pi_name, "source_name": source_name, "piece": p["index"],
                 "pieces": n_all, "frames": p["frames"], "n_frames": p["n_frames"], "t_first_ns": p["t_first_ns"],
                 "t_last_ns": p["t_last_ns"], "name": p["finish"]["values"].get("name"), "world": "table_tag",
+                "world_offset": "identity", "trimmed": p["finish"]["values"].get("trimmed"),
                 "map": self.s.map_pi_name, "fingerprint_hash": self.s.fingerprint_hash, "raw_of": None}
 
     def _promote(self, pi_name: str, exported: list[dict]) -> list[str]:
         """``.staging/<pi_name>`` -> ``episode_N`` with the first exported piece; one more ``episode_N`` per other
-        piece (raw -> the first one's). Returns the slots in piece order."""
+        piece (raw -> the first one's). Returns the slots in piece order. Every step is a rename and each can be
+        repeated after a crash: the first piece's files that are still in ``pieces/<k>/`` are moved, then the
+        folder; the other pieces are :func:`finish_interrupted_pieces`' (also run at the start of every run)."""
         from umiproc.dp.run import staging
 
         d = self.task_dir / STAGING_DIR / pi_name
         pieces_dir = d / "processed" / PIECES_DIR
         first = pieces_dir / str(exported[0]["index"])
-        for f in ("episode.zarr", "status.json", PIECE_FILE):
-            os.replace(first / f, d / "processed" / f)
-        first.rmdir()
+        if first.is_dir():
+            for f in ("episode.zarr", "status.json", PIECE_FILE):
+                if os.path.lexists(first / f):
+                    _replace(first / f, d / "processed" / f)
+            first.rmdir()
         slot = staging.promote(self.task_dir, pi_name)
         return [slot] + finish_interrupted_pieces(self.task_dir, only=slot)
 
@@ -564,9 +622,13 @@ def _piece_reasons(pieces: list[dict], stage: str | None) -> list[str]:
 
 
 def _piece_summary(pieces: list[dict]) -> list[dict]:
-    return [{"index": p["index"], "frames": p["frames"], "outcome": p.get("outcome"), "stage": p.get("stage"),
-             "reasons": list(p.get("reasons") or []), **({"slot": p["slot"]} if p.get("slot") else {})}
-            for p in pieces]
+    out = []
+    for p in pieces:
+        trim = ((p.get("finish") or {}).get("values") or {}).get("trimmed")
+        out.append({"index": p["index"], "frames": p["frames"], "outcome": p.get("outcome"), "stage": p.get("stage"),
+                    "reasons": list(p.get("reasons") or []), **({"slot": p["slot"]} if p.get("slot") else {}),
+                    **({"trimmed": trim} if trim is not None else {})})
+    return out
 
 
 def _short_values(v: dict) -> dict:
@@ -580,8 +642,12 @@ def _short_values(v: dict) -> dict:
 def finish_interrupted_pieces(task_dir: Path, only: str | None = None) -> list[str]:
     """Give every piece left in ``episode_N/processed/pieces/<k>/`` (an interrupted promotion, or the one just
     promoted with ``only``) its own ``episode_M``: ``processed/`` moved in, its ``episodes.csv`` row (a copy of
-    ``episode_N``'s), then ``raw`` -> ``../episode_N/raw``. Also links a piece slot whose ``raw`` link is missing.
-    Returns the new slots."""
+    ``episode_N``'s), then ``raw`` -> ``../episode_N/raw``; ``episode_N``'s ``localize.json`` records the slot.
+    Without ``only`` also links a piece slot whose ``raw`` link is missing (and adds its missing ledger row).
+
+    Every step can be interrupted and repeated: ``piece.json`` names the slot before it is made, so an
+    ``episode_M`` left empty by a crash is reused instead of leaving a gap; a piece moved but not yet linked is
+    linked by the second pass; a ledger row is only added when the slot has none. Returns the new slots."""
     from umiproc.dp.intake import Ledger
     from umiproc.dp.paths import episode_dirs, next_episode_index
 
@@ -598,26 +664,48 @@ def finish_interrupted_pieces(task_dir: Path, only: str | None = None) -> list[s
                 if not (k / "status.json").is_file() or not (k / "episode.zarr").is_dir():
                     shutil.rmtree(k, ignore_errors=True)
                     continue
-                slot = f"episode_{max(1, next_episode_index(task_dir))}"
-                new = task_dir / slot
-                new.mkdir()
                 rec = read_json(k / PIECE_FILE, {}) or {}
-                rec["raw_of"] = d.name
-                write_json(k / PIECE_FILE, rec)
-                os.replace(k, new / "processed")
-                if rows:
+                slot = rec.get("slot")
+                new = task_dir / slot if slot else None
+                if new is None or not new.is_dir() or any(new.iterdir()) or os.path.islink(new):
+                    slot = f"episode_{max(1, next_episode_index(task_dir))}"
+                    new = task_dir / slot
+                    rec.update(raw_of=d.name, slot=slot)
+                    write_json(k / PIECE_FILE, rec)
+                    new.mkdir()
+                _replace(k, new / "processed")
+                if rows and slot not in ledger.slots():
                     ledger.append({**rows[-1], "slot": slot, "intake_unix_ns": str(time.time_ns())})
-                os.symlink(os.path.join("..", d.name, "raw"), new / "raw")
+                _symlink(os.path.join("..", d.name, "raw"), new / "raw")
+                _record_slot(d, rec.get("piece"), slot)
                 made.append(slot)
             shutil.rmtree(pdir, ignore_errors=True)
     if only is None:
         for d in episode_dirs(task_dir):
             rec = read_json(d / "processed" / PIECE_FILE, {}) or {}
             if rec.get("raw_of") and not os.path.lexists(d / "raw"):
-                os.symlink(os.path.join("..", rec["raw_of"], "raw"), d / "raw")
                 if d.name not in ledger.slots():
                     rows = [r for r in ledger.rows() if r["slot"] == rec["raw_of"]]
                     if rows:
                         ledger.append({**rows[-1], "slot": d.name, "intake_unix_ns": str(time.time_ns())})
+                _symlink(os.path.join("..", rec["raw_of"], "raw"), d / "raw")
+                _record_slot(task_dir / rec["raw_of"], rec.get("piece"), d.name)
     return made
 
+
+def _record_slot(first: Path, piece: int | None, slot: str) -> None:
+    """Note in the first piece's ``processed/localize.json`` that piece ``piece`` is ``slot`` (and that the first
+    piece, the one in ``first/processed/piece.json``, is ``first`` itself)."""
+    first = Path(first)
+    path = first / "processed" / LOCALIZE_FILE
+    loc = read_json(path)
+    if not isinstance(loc, dict):
+        return
+    want = {(read_json(first / "processed" / PIECE_FILE, {}) or {}).get("piece"): first.name, piece: slot}
+    changed = False
+    for p in loc.get("pieces") or []:
+        k = p.get("index")
+        if k is not None and k in want and p.get("slot") != want[k]:
+            p["slot"], changed = want[k], True
+    if changed:
+        write_json(path, loc)
