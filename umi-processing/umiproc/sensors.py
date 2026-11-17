@@ -39,7 +39,7 @@ from umiproc.paths import repo_config, rig_file, rig_lens_file, rig_slam_file
 
 __all__ = ["DEFAULT_RIG", "IMU_RATE_HZ", "NOMINAL", "CALIBRATED", "RigFilesError", "SensorError", "CopyState",
            "RigFiles", "check_copy", "check_rig_files", "ensure_rig_files", "SensorValues", "load_sensors",
-           "recording_mismatches", "rig_copy_rules"]
+           "recording_mismatches", "rig_copy_rules", "effective_rig"]
 
 DEFAULT_RIG = "rig_pi_v3"
 #: Output data rate the Pi sets on the IMU (meta.json ``imu.odr_hz``), by sensor. ORB-SLAM3's ``IMU.Frequency`` (it
@@ -347,6 +347,47 @@ def _with_lens(rig, lens):
     return dataclasses.replace(rig, cameras={**rig.cameras, "ultrawide": cam})
 
 
+def _apply_lens(rig, rig_id: str, lens, lens_path: Path):
+    """``rig`` with ``lens`` applied (:func:`_with_lens`), or :class:`SensorError` when the lens file is for another
+    rig, camera, sensor or resolution."""
+    cam = rig.cameras["ultrawide"]
+    problems = []
+    if lens.rig_id != rig_id:
+        problems.append(f"it is for rig {lens.rig_id}")
+    if lens.camera != "ultrawide":
+        problems.append(f"it is for camera {lens.camera!r}")
+    if lens.sensor.lower() != cam.sensor.lower():
+        problems.append(f"it is for sensor {lens.sensor}, the rig's ultrawide is {cam.sensor}")
+    if tuple(lens.resolution) != tuple(cam.resolution):
+        problems.append(f"it was measured at {lens.resolution[0]}x{lens.resolution[1]}, the rig's ultrawide "
+                        f"records {cam.resolution[0]}x{cam.resolution[1]}")
+    if problems:
+        raise SensorError(f"lens file {lens_path}: " + "; ".join(problems) + ". Re-run `umiproc lens-calibrate "
+                          "... --apply` for this camera, or move the file away to use the nominal lens.")
+    return _with_lens(rig, lens)
+
+
+def effective_rig(root: Path, rig_id: str, rig_path: Path | None = None):
+    """The **effective rig** of the copied stages (``umiproc.dp``: calibrate, the folder context of process / run):
+    the data-root rig file ``<root>/rigs/<rig_id>.yaml`` (or ``rig_path``) with the lens file's ultrawide model in
+    place when ``<root>/rigs/<rig_id>.lens.yaml`` exists, else the rig as written. The same rig
+    :func:`load_sensors` gives as ``SensorValues.rig``, without needing the SLAM config (the copied tests' rigs have
+    none). Raises ``umiproc.dp.config.ConfigError`` for the rig file and :class:`SensorError` for a lens file that
+    cannot be used (both ``ValueError``)."""
+    from umiproc.dp.config import load_rig
+    from umiproc.lens.lensfile import LensFileError, load_lens
+
+    rig = load_rig(Path(rig_path) if rig_path is not None else rig_file(root, rig_id))
+    lens_path = rig_lens_file(root, rig_id)
+    if not lens_path.is_file():
+        return rig
+    try:
+        lens = load_lens(lens_path)
+    except LensFileError as e:
+        raise SensorError(str(e)) from None
+    return _apply_lens(rig, rig_id, lens, lens_path)
+
+
 def load_sensors(root: Path, rig_id: str = DEFAULT_RIG, log: Callable = print, *,
                  ensure: bool = True) -> SensorValues:
     """Load the data-root rig file, SLAM config and optional lens file of ``rig_id`` (copied from the repo first
@@ -390,21 +431,6 @@ def load_sensors(root: Path, rig_id: str = DEFAULT_RIG, log: Callable = print, *
     if rate is None:
         raise SensorError(f"{files.rig.path}: imu.sensor {rig.imu.sensor!r}: no known output data rate (known: "
                           f"{sorted(IMU_RATE_HZ)})")
-    eff = rig
-    if lens is not None:
-        problems = []
-        if lens.rig_id != rig_id:
-            problems.append(f"it is for rig {lens.rig_id}")
-        if lens.camera != "ultrawide":
-            problems.append(f"it is for camera {lens.camera!r}")
-        if lens.sensor.lower() != cam.sensor.lower():
-            problems.append(f"it is for sensor {lens.sensor}, the rig's ultrawide is {cam.sensor}")
-        if tuple(lens.resolution) != tuple(cam.resolution):
-            problems.append(f"it was measured at {lens.resolution[0]}x{lens.resolution[1]}, the rig's ultrawide "
-                            f"records {cam.resolution[0]}x{cam.resolution[1]}")
-        if problems:
-            raise SensorError(f"lens file {files.lens}: " + "; ".join(problems) + ". Re-run `umiproc lens-calibrate "
-                              "... --apply` for this camera, or move the file away to use the nominal lens.")
-        eff = _with_lens(rig, lens)
+    eff = rig if lens is None else _apply_lens(rig, rig_id, lens, files.lens)
     return SensorValues(rig_id=rig_id, rig=eff, nominal_rig=rig, slam=slam, lens=lens, imu_rate_hz=rate,
                         rig_path=files.rig.path, slam_path=files.slam.path, lens_path=files.lens)

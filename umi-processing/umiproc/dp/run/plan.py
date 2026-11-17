@@ -98,8 +98,10 @@ def natural_key(name: str) -> list:
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)] + [name]
 
 
-def check_folder(root: DataRoot, folder: str):
-    """``(task_dir, TaskConfig)`` of a folder with a successful calibration, else :class:`RunError`."""
+def check_folder(root: DataRoot, folder: str, require_calibration: bool = True):
+    """``(task_dir, TaskConfig)`` of a folder with a successful calibration, else :class:`RunError`.
+    ``require_calibration=False`` (umiproc run: demos wait for the gripper calibration): only the folder and its
+    ``task.yaml``."""
     from umiproc.dp.config import ConfigError, load_task_config
     from umiproc.dp.intake import IntakeError, read_ledger
     from umiproc.dp.stages.calibration import newest_calibration
@@ -118,6 +120,8 @@ def check_folder(root: DataRoot, folder: str):
         cal = newest_calibration(task_dir, read_ledger(task_dir / "episodes.csv"))
     except (ConfigError, IntakeError, ValueError) as e:
         raise RunError(f"task folder {folder}: {e}") from None
+    if not require_calibration:
+        return task_dir, task
     rec = load_status(cal / "processed").get("gripper_range") if cal is not None else None
     if not rec or rec.get("status") != "done":
         raise RunError(hint)
@@ -158,11 +162,12 @@ def _episode_slots(task_dir: Path) -> dict[str, str]:
 
 
 def plan_run(root: DataRoot, folder: str, start: str, end: str, source: Path, retry_failed: bool = False,
-             force: bool = False) -> RunPlan:
-    """The :class:`RunPlan` (see the module docstring). Raises :class:`RunError`; reads only."""
+             force: bool = False, require_calibration: bool = True) -> RunPlan:
+    """The :class:`RunPlan` (see the module docstring). Raises :class:`RunError`; reads only.
+    ``require_calibration``: see :func:`check_folder`."""
     from umiproc.dp.pi_adapter import converted_name, inspect_source
 
-    task_dir, task = check_folder(root, folder)
+    task_dir, task = check_folder(root, folder, require_calibration)
     source = Path(source)
     if not source.is_dir():
         raise RunError(f"--source {source} is not a directory")

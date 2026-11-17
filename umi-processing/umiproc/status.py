@@ -91,15 +91,33 @@ def root_status(root: Path, rig_id: str) -> dict:
 
 
 def _staging_reason(entry: Path, has_gripper: bool) -> str:
-    from umiproc.dp.files import load_status
-    from umiproc.dp.run.staging import waiting_for_slam
+    """Why a recording is in ``.staging/``, from its ``processed/localize.json`` (umiproc run)."""
+    from umiproc.dp.files import read_json
+    from umiproc.run.recording import LOCALIZE_FILE, LOCALIZED
 
-    status = load_status(entry / "processed")
-    if waiting_for_slam(status):
-        return "waiting for SLAM (umiproc_slam was not available when it ran)"
-    if not has_gripper:
-        return "waiting for the gripper calibration (run `umiproc calibrate`, then `umiproc run` again)"
+    loc = read_json(entry / "processed" / LOCALIZE_FILE, {}) or {}
+    if loc.get("phase") == LOCALIZED:
+        ok = [p for p in loc.get("pieces") or [] if (p.get("pose") or {}).get("ok")]
+        head = (f"localized against map/{(loc.get('map') or {}).get('pi_name')}, {len(ok)} piece(s) passed every "
+                "pose check")
+        if not has_gripper:
+            return head + ": waiting for the gripper calibration (run `umiproc calibrate`, then `umiproc run` again)"
+        return head + ": the next `umiproc run` of this folder finishes it (widths, export)"
+    if not has_gripper and not loc:
+        return "not localized yet (an interrupted run; the next `umiproc run` picks it up)"
     return "not finished (a run was interrupted; the next `umiproc run` picks it up)"
+
+
+def _calibration_info(d: Path, calibrations: list[str]) -> dict | None:
+    """The newest calibration's ``umiproc_calibrate.json`` (umiproc calibrate), else None."""
+    from umiproc.calibrate.gripper import REPORT_NAME
+    from umiproc.dp.files import read_json
+
+    for name in reversed(calibrations):
+        rep = read_json(d / "calibration" / name / "processed" / REPORT_NAME)
+        if isinstance(rep, dict):
+            return {"name": name, **rep}
+    return None
 
 
 def _current_fingerprint(root: Path, rig_id: str | None, cache: dict) -> tuple[str | None, dict | None, str | None]:
@@ -147,7 +165,7 @@ def folder_status(root: Path, folder: str, *, _fingerprints: dict | None = None)
 
     d = Path(root) / "tasks" / folder
     st = {"folder": folder, "dir": d, "problem": None, "label": None, "rig": None, "created": None, "maps": [],
-          "map_info": [],
+          "map_info": [], "calibration_info": None,
           "gripper_range": False, "calibrations": [], "episodes": [], "staging": [], "failed": [],
           "report": (d / "report.json").is_file()}
     if not d.is_dir():
@@ -170,12 +188,19 @@ def folder_status(root: Path, folder: str, *, _fingerprints: dict | None = None)
     cal = d / CALIBRATION_DIR
     if cal.is_dir():
         st["calibrations"] = sorted(p.name for p in cal.iterdir() if not p.name.startswith(".") and p.is_dir())
+    st["calibration_info"] = _calibration_info(d, st["calibrations"]) if st["gripper_range"] else None
+    from umiproc.dp.files import read_json
+    from umiproc.run.recording import PIECE_FILE
+
     for e in episode_dirs(d):
         if not (e / "raw").exists():
             continue
         s = episode_summary(load_status(e / "processed"))
-        st["episodes"].append({"slot": e.name, "pi_name": pi.get(e.name, ""), "status": s["status"],
-                               "n_steps": s["n_steps"], "reasons": s["reasons"]})
+        piece = read_json(e / "processed" / PIECE_FILE, {}) or {}
+        st["episodes"].append({"slot": e.name, "pi_name": pi.get(e.name, "") or piece.get("pi_name", ""),
+                               "status": s["status"], "n_steps": s["n_steps"], "reasons": s["reasons"],
+                               "piece": piece.get("piece"), "pieces": piece.get("pieces"),
+                               "frames": piece.get("frames"), "raw_of": piece.get("raw_of")})
     for name in staging_names(d):
         st["staging"].append({"pi_name": name, "why": _staging_reason(d / ".staging" / name, st["gripper_range"])})
     for name in failed_names(d):
@@ -184,6 +209,18 @@ def folder_status(root: Path, folder: str, *, _fingerprints: dict | None = None)
 
 
 # --------------------------------------------------------------------------------------------- printing
+
+def _episode_groups(episodes: list[dict]) -> list[list[dict]]:
+    """The episodes grouped by recording: consecutive slots with the same ``pi_name`` (the pieces of one split
+    recording) form one group."""
+    groups: list[list[dict]] = []
+    for e in episodes:
+        if groups and e["pi_name"] and groups[-1][0]["pi_name"] == e["pi_name"]:
+            groups[-1].append(e)
+        else:
+            groups.append([e])
+    return groups
+
 
 def _plural(n: int, noun: str) -> str:
     return f"{n} {noun}" + ("" if n == 1 else "s")
@@ -317,15 +354,36 @@ def format_folder_status(f: dict) -> str:
         lines.append(f"  PROBLEM: {f['problem']}")
     lines += _map_lines(f["map_info"])
     if f["gripper_range"]:
+        ci = f.get("calibration_info")
         cal = f" (from calibration/{f['calibrations'][-1]})" if f["calibrations"] else ""
         lines.append(f"  gripper calibration:  yes, gripper_range.json{cal}")
+        if ci:
+            op = ci.get("opening") or {}
+            rule = ci.get("finger_tag_rule") or {}
+            if op.get("measured_m") is not None:
+                lines.append(f"                        opening {op['measured_m']:.3f} m (closed {op['min_width']:.3f} m"
+                             f", open {op['max_width']:.3f} m); finger tags: {rule.get('message', '-')}")
+            lines += [f"                        warning: {w}" for w in ci.get("warnings") or []]
     else:
         lines.append("  gripper calibration:  no (record one and run `umiproc calibrate`); demos wait for it")
-    lines.append(f"  episodes:             {len(f['episodes'])}")
+    groups = _episode_groups(f["episodes"])
+    lines.append(f"  episodes:             {len(f['episodes'])}"
+                 + (f" (from {len(groups)} recordings)" if len(groups) != len(f["episodes"]) else ""))
     if f["episodes"]:
-        rows = [[e["slot"], e["pi_name"] or "-", e["status"], "-" if e["n_steps"] is None else e["n_steps"],
-                 "; ".join(e["reasons"]) or "-"] for e in f["episodes"]]
-        lines += ["    " + ln for ln in format_table(rows, ["slot", "recording", "status", "frames",
+        rows = []
+        for g in groups:
+            e0 = g[0]
+            slots = ", ".join(e["slot"] for e in g)
+            n = [e["n_steps"] for e in g]
+            if e0.get("pieces") and e0["pieces"] > 1:
+                kept = ", ".join(str(e.get("piece")) for e in g)
+                rec = f"{e0['pi_name'] or '-'} (piece{'s' if len(g) > 1 else ''} {kept} of {e0['pieces']})"
+            else:
+                rec = e0["pi_name"] or "-"
+            st_ = ", ".join(dict.fromkeys(e["status"] for e in g))
+            steps = "+".join("-" if x is None else str(x) for x in n)
+            rows.append([slots, rec, st_, steps, "; ".join(r for e in g for r in e["reasons"]) or "-"])
+        lines += ["    " + ln for ln in format_table(rows, ["slot", "recording", "status", "steps",
                                                               "problems"]).splitlines()]
     lines.append(f"  waiting in .staging/: {len(f['staging'])}")
     lines += [f"    {s['pi_name']}: {s['why']}" for s in f["staging"]]

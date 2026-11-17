@@ -61,12 +61,17 @@ def report_path(task_dir: Path) -> Path:
 # --------------------------------------------------------------------------------------------- the folder context
 
 def load_folder_context(root: DataRoot, folder: str, *, slam: str = "orbslam3", backend=None, force: bool = False,
-                        log: Callable = print) -> ProcessContext:
+                        log: Callable = print, rig=None) -> ProcessContext:
     """The :class:`~dataproc.stages.base.ProcessContext` of ``tasks/<folder>``: reads ``task.yaml``,
     ``episodes.csv`` and ``rigs/<task.yaml rig>.yaml``; resolves the SLAM backend (``auto`` -> orbslam3 if built,
     else none; ``backend``: an instance to use instead, for tests). Writes nothing. Raises :class:`ProcessError`
-    when any of them is missing or invalid. The calibration is not loaded yet (:func:`process_calibration`)."""
-    from umiproc.dp.config import ConfigError, load_rig, load_task_config
+    when any of them is missing or invalid. The calibration is not loaded yet (:func:`process_calibration`).
+
+    umiproc: the context's rig is the **effective rig** (the lens file's ultrawide model in place,
+    :func:`umiproc.sensors.effective_rig`), so tags, widths and training images use the lens the SLAM runs use;
+    ``rig``: that rig already loaded (``umiproc.sensors.SensorValues.rig``), used instead of loading it here."""
+    from umiproc.dp.config import ConfigError, load_task_config
+    from umiproc.sensors import effective_rig
     from umiproc.dp.intake import IntakeError, read_ledger
     from umiproc.dp.slam import BACKENDS, get_backend, resolve_backend_name
 
@@ -85,7 +90,10 @@ def load_folder_context(root: DataRoot, folder: str, *, slam: str = "orbslam3", 
         if not rig_file.is_file():
             raise ProcessError(f"rig yaml {rig_file} is missing (task.yaml rig: {task.rig}); copy the rig "
                                "description there")
-        rig = load_rig(rig_file)
+        if rig is None:
+            rig = effective_rig(root.path, task.rig, rig_file)
+        elif rig.rig_id != task.rig:
+            raise ProcessError(f"the rig passed in is {rig.rig_id}, task.yaml says {task.rig}")
         ledger = read_ledger(task_dir / "episodes.csv")
     except (ConfigError, IntakeError, ValueError) as e:
         raise ProcessError(str(e)) from None

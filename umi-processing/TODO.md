@@ -34,17 +34,17 @@ How to do each step: [DIRECTIONS.md](DIRECTIONS.md). Tick items off here as they
 
 ## 3. Build: step 3, `calibrate` and `run`
 
-- [ ] `umiproc calibrate TASK_FOLDER EPISODE`: the gripper opening range (the copied method + UMI's rule that both
+- [x] `umiproc calibrate TASK_FOLDER EPISODE`: the gripper opening range (the copied method + UMI's rule that both
       finger tags are seen in ≥ 80 % of frames). Resolve the 3 inherited failing tests in
       `tests/dp/calibrate/test_calibrate_task.py` (docs/DESIGN.md "Changes to the copy").
-- [ ] `umiproc run TASK_FOLDER START END`: localize each demo in the map (`--max_lost_frames 30`), UMI's lost-frame
+- [x] `umiproc run TASK_FOLDER START END`: localize each demo in the map (`--max_lost_frames 30`), UMI's lost-frame
       rules at 30 fps (> 5 lost → drop, < 30 tracked → drop, split at gaps, pieces < 12 frames dropped), relocalized
       within 0.5 s, the copied pose checks, finger widths, `processed/episode.zarr`; "waiting for gripper calibration"
       when `calibrate` hasn't run (exit 3).
-- [ ] Wire the **effective rig** (with the lens file) into the copied stages that still load the rig file directly:
+- [x] Wire the **effective rig** (with the lens file) into the copied stages that still load the rig file directly:
       `umiproc/dp/process.py` (`load_folder_context`), `umiproc/dp/calibrate/task.py`, `umiproc/dp/run/range.py`.
       Otherwise tags, widths and training images would use the nominal lens.
-- [ ] DIRECTIONS §4 (prove the demos) and §5 (gripper calibration and finishing).
+- [x] DIRECTIONS §4 (prove the demos) and §5 (gripper calibration and finishing).
 - [ ] Reviewer pass, fixes, commit.
 
 ## 4. Then: smoke test and the first real session end to end

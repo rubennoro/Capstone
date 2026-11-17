@@ -255,3 +255,162 @@ def fork_trajectory(t_ns, T_W_cam, keyframe_every: int = 30):
                           state=np.full(n, 2), is_lost=~tracked, is_keyframe=kf, posed=tracked, tracked=tracked,
                           T_W_cam=np.asarray(T_W_cam, float), n_frames_total=n,
                           anomalies={"stale": 0, "bad_pose": 0})
+
+
+# --------------------------------------------------------------------------------------------- umiproc calibrate / run
+
+class _UniformFrames:
+    """``n`` uniform RGB frames of ``size`` made on demand (the fixture's own list of full-size gradients would hold
+    hundreds of MB at 1600x1200)."""
+
+    def __init__(self, n: int, size, seed: int):
+        self.n, self.size, self.seed = n, tuple(size), seed
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, i):
+        import numpy as np
+
+        if not 0 <= i < self.n:
+            raise IndexError(i)
+        w, h = self.size
+        return np.full((h, w, 3), ((i * 8 + self.seed * 40) % 200) + 20, np.uint8)
+
+    def __iter__(self):
+        return (self[i] for i in range(self.n))
+
+
+def pi_demo_recording(source: Path, number: int, *, n_frames: int = 40, seed: int | None = None) -> Path:
+    """A Pi-format recording with rig_pi_v3's settings for both cameras (the copied check stage compares them): main
+    IMX519 1600x1200 and ultrawide IMX219 1280x960, both at 30 fps, the IMU at 104 Hz; ``n_frames`` frames each
+    (uniform images: no finger tags, see :func:`fake_finger_tags`)."""
+    old = dict(_fx.SIZES), dict(_fx.FPS), _fx.IMU_HZ, _fx._frames, _fx._write_mp4
+    _fx.SIZES.update(cam0=(1600, 1200), cam1=(1280, 960))
+    _fx.FPS.update(cam0=30, cam1=30)
+    _fx.IMU_HZ = 104
+    _fx._frames = lambda n, size, seed: _UniformFrames(n, size, seed)
+    _fx._write_mp4 = _write_mp4_fast
+    try:
+        return pi_recording(source, number, n_cam0=n_frames, n_cam1=n_frames, seed=seed)
+    finally:
+        _fx.SIZES.clear()
+        _fx.SIZES.update(old[0])
+        _fx.FPS.clear()
+        _fx.FPS.update(old[1])
+        _fx.IMU_HZ, _fx._frames, _fx._write_mp4 = old[2], old[3], old[4]
+
+
+def _write_mp4_fast(path: Path, frames, fps: int) -> None:
+    """The fixture's ``_write_mp4`` with libx264's ultrafast preset (large uniform frames)."""
+    import av
+
+    with av.open(str(path), "w") as c:
+        st = c.add_stream("libx264", rate=fps)
+        st.width, st.height, st.pix_fmt = frames[0].shape[1], frames[0].shape[0], "yuv420p"
+        st.options = {"crf": "10", "preset": "ultrafast"}
+        for f in frames:
+            for pkt in st.encode(av.VideoFrame.from_ndarray(f, format="rgb24")):
+                c.mux(pkt)
+        for pkt in st.encode():
+            c.mux(pkt)
+
+
+#: The table tag's pose in the SLAM world of :func:`session_folder`'s map (tilted and shifted, z up = tag normal).
+def tx_slam_tag_example():
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+
+    T = np.eye(4)
+    T[:3, :3] = Rotation.from_euler("xyz", [100.0, 10.0, -30.0], degrees=True).as_matrix()
+    T[:3, 3] = [0.2, -0.1, 0.6]
+    return T
+
+
+def session_folder(root, source: Path, monkeypatch, *, task: str = "block_raise", number: int = 900,
+                   tx_slam_tag=None) -> str:
+    """A task folder with a map that passed (``umiproc map`` with :class:`FakeSlam`, checks M4/M5 made to pass) and a
+    ``tx_slam_tag.json`` (the fake map run sees no tag, so it is written here). Needs :func:`fake_slam_build`.
+    Returns the folder name."""
+    import json
+
+    from umiproc.map import build as B
+    from umiproc.map import checks as C
+
+    with monkeypatch.context() as m:
+        m.setattr(C, "check_m4", lambda *a, **k: C.CheckResult("M4", True, {}, "ok (test)"))
+        m.setattr(C, "check_m5", lambda *a, **k: C.CheckResult("M5", True, {}, "ok (test)"))
+        pi_map_recording(source, number)
+        o = B.build_map(root, task, f"episode_{number:06d}", source=source, rig_id="rig_pi_v3",
+                        log=lambda *a, **k: None, runner=FakeSlam())
+    assert o.passed, o.message
+    T = tx_slam_tag_example() if tx_slam_tag is None else tx_slam_tag
+    (o.where / B.TAG_POSE_NAME).write_text(json.dumps({"tx_slam_tag": [list(map(float, r)) for r in T]}))
+    return o.folder
+
+
+def fake_finger_tags(monkeypatch, *, visible=None, width=None, nominal_z: float = 0.098):
+    """Replace the copied ``detect_episode_tags`` with synthetic finger tags 0 (left) and 1 (right): at frame i (of
+    n) the gripper is ``width(i, n)`` metres open (tag centres at x = -+width/2, z = ``nominal_z``) and
+    ``visible(i, n)`` gives the set of tag ids seen (default both). The tag-to-tag x distance is the width, so the
+    default sweep (0.044-0.124 m, 3 cycles) fits rig_pi_v3's gripper section (closed 0.044 m, opening 0.080 m). The
+    real fit, widths and checks run on them."""
+    import numpy as np
+
+    from umiproc.dp.stages import width as W
+
+    visible = visible or (lambda i, n: {0, 1})
+    width = width or (lambda i, n: 0.044 + 0.040 * (1 - np.cos(2 * np.pi * 3 * i / max(n, 1))))
+
+    def detect(episode, rig, to_virtual, indices=None):
+        from umiproc.dp.slam.base import ultrawide_times_ns
+
+        t = ultrawide_times_ns(episode, rig)
+        n = len(t)
+        out = []
+        for i in range(n):
+            half = width(i, n) / 2
+            f = {}
+            for tag, x in ((0, -half), (1, half)):
+                if tag in visible(i, n):
+                    f[tag] = W.TagDetection(np.zeros(3), np.array([x, 0.045, nominal_z]), np.zeros((4, 2)))
+            out.append(f)
+        return t, out
+
+    monkeypatch.setattr(W, "detect_episode_tags", detect)
+    return detect
+
+
+def session_template(base: Path, demos=(), n_frames: int = 40) -> dict:
+    """Build once (e.g. in a module fixture): a stand-in SLAM build in ``base/fork``, a data root ``base/root`` with
+    a passed session folder (:func:`session_folder`) and a source ``base/src`` with the mapping clip and
+    :func:`pi_demo_recording` recordings ``demos`` (Pi episode numbers). Copy it per test with
+    :func:`clone_session`."""
+    import pytest
+
+    from umiproc.dp.paths import DataRoot
+
+    base = Path(base)
+    src = base / "src"
+    src.mkdir(parents=True)
+    with pytest.MonkeyPatch.context() as mp:
+        fake_slam_build(base / "fork", mp)
+        folder = session_folder(DataRoot(base / "root"), src, mp)
+    for k in demos:
+        pi_demo_recording(src, k, n_frames=n_frames)
+    return {"base": base, "folder": folder}
+
+
+def clone_session(template: dict, tmp_path: Path, monkeypatch) -> dict:
+    """A copy of :func:`session_template`'s root and source in ``tmp_path`` (the SLAM build stays shared: the map's
+    fingerprint names it). Returns ``{root, src, folder, binary, tmp}``."""
+    import shutil
+
+    from umiproc.dp.paths import DataRoot
+
+    base = template["base"]
+    shutil.copytree(base / "root", tmp_path / "root", symlinks=True)
+    shutil.copytree(base / "src", tmp_path / "src", symlinks=True)
+    binary = fake_slam_build(base / "fork", monkeypatch)
+    return {"root": DataRoot(tmp_path / "root"), "src": tmp_path / "src", "folder": template["folder"],
+            "binary": binary, "tmp": tmp_path}

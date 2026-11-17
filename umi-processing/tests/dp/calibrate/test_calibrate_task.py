@@ -168,10 +168,11 @@ def test_opening_out_of_tolerance_only_warns(env, capsys):
     assert "warning: measured opening 0.060 m, expected 0.110 m ± 0.010 m" in out
     assert "open/close cycles: 1; closed 0.030 m, open 0.090 m" in out
     assert (root.tasks / TASK / GRIPPER_RANGE_FILE).is_file()
-    # inside the tolerance (both sides): no opening warning
+    # inside the tolerance (both sides): no opening warning. umiproc: other recordings (cal_1, cal_2) under new
+    # names; a copy of cal_0 has cal_0's manifest and is refused as already taken.
     for k, rid in enumerate([rig("rig_edge", **{"gripper.max_opening_m": 0.069}),
                              rig("rig_edge2", **{"gripper.max_opening_m": 0.052})]):
-        add("cal_0", as_name=f"cal_e{k}")
+        add(f"cal_{k + 1}", as_name=f"cal_e{k}")
         res = calibrate_task(root, TASK, f"cal_e{k}", source=source, rig_id=rid, log=quiet)
         assert res.ok and not any("measured opening" in w for w in res.fit.warnings)
 
@@ -180,7 +181,7 @@ def test_closed_width_far_off_warns(env, capsys):
     """A closed width well above the expected one (a tag hidden when closing) is a warning, not a failure."""
     root, source, add, rig = env
     add("cal_0")
-    add("cal_0", as_name="cal_ok")
+    add("cal_1", as_name="cal_ok")          # umiproc: another recording (a copy of cal_0 is already taken)
     rid = rig("rig_closed", **{"gripper.closed_width_m": 0.015})
     assert cli_calibrate(root, TASK, "cal_0", source=source, rig_id=rid) == 0
     out = capsys.readouterr().out
@@ -294,7 +295,10 @@ def test_failed_fit_record_is_not_written_anywhere(env):
     rid = rig("rig_far2", **{"aruco.nominal_z_m": 0.5})
     res = calibrate_task(root, TASK, "cal_0", source=source, rig_id=rid, log=quiet)
     assert not res.ok and res.reasons == ["gripper_range_fit"] and res.folder is None
-    assert json.loads(json.dumps(res.fit.diagnostics))["n_in_window"] > 0
+    # umiproc: the fit fails because no frame has both tags at the expected depth (the old opening failure had a
+    # fit, so n_in_window > 0); the diagnostics are still there and JSON-able
+    diag = json.loads(json.dumps(res.fit.diagnostics))
+    assert diag["n_frames"] > 0 and diag["n_both"] > 0 and diag["n_in_window"] == 0
     _assert_nothing_taken(root, source / "cal_0", None)
 
 

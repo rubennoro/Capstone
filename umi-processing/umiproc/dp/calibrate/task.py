@@ -133,12 +133,14 @@ def calibrate_task(root: DataRoot, task: str, episode_dir: str, source: Path = P
 
 
 def _load_rig(root: DataRoot, rig_id: str, log: Callable):
-    from umiproc.dp.config import ConfigError, load_rig
+    """umiproc: the effective rig (the lens file's ultrawide model in place, :func:`umiproc.sensors.effective_rig`),
+    so the finger tags are measured through the lens the SLAM runs use."""
+    from umiproc.sensors import effective_rig
 
     ensure_rig(root, rig_id, log)
     try:
-        return load_rig(root.rig_file(rig_id))
-    except ConfigError as e:
+        return effective_rig(root.path, rig_id, root.rig_file(rig_id))
+    except ValueError as e:                    # ConfigError, SensorError (a lens file that cannot be used)
         raise CalibrateError(str(e)) from None
 
 

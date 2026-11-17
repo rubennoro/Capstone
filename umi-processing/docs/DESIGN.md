@@ -70,6 +70,8 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
                               take); nothing else records a failed map
   .work/map/<pi_name>/        umiproc map's work folder (EuRoC frames, SLAM runs); removed at the end, cleared by the
                               next map after a crash
+  .work/run/                  umiproc run's work folder (the SLAM inputs, one demo's EuRoC frames at a time); removed
+                              at the end
   tasks/TASK/                 TASK, TASK_2, ... (task.yaml label stays TASK)
     task.yaml                 label, rig, created
     episodes.csv              the folder's ledger: one row per slot (slot, pi_name, ..., kind), append-only
@@ -166,6 +168,11 @@ Every SLAM run (map and localization) gets the same two files, written from the 
 - `run` needs the map. Without the gripper calibration it still localizes every demo and runs every pose check, then
   leaves it in `.staging/` as **waiting for gripper calibration** (exit 3); a later `calibrate` + `run` finishes it,
   re-running only the width and export steps.
+- `run` refuses (exit 2, nothing changed) a map that is not complete and passed, and a map whose fingerprint differs
+  from the one the current rig files, lens file, mask, settings and SLAM build give (out of date: every demo must be
+  localized with exactly the map's settings; the message names the differing keys).
+- `calibrate` goes into a folder whose map is complete and passed. One calibration per session: a second one replaces
+  the first (the newest is used) only while the folder has no `episode_N`; once episodes exist it is refused.
 - The map, calibration and demo recordings are recorded in `pi_sources.csv` by kind, so `run`'s range skips the map and
   calibration recordings by itself.
 
@@ -303,13 +310,83 @@ first 0.5 s (a later relocalization is where the fork's inertial link was wrong)
 gravity and finger-tag-coverage checks on every piece; the gripper calibration is the copied method plus UMI's rule that
 both finger tags are seen in ≥ 80 % of the calibration frames.
 
+How `run` computes them (`umiproc/run/`; DIRECTIONS.md §4 for the user's side):
+
+- **Localization** (UMI `03_batch_slam.py:113-123`): the copied `write_euroc` with the effective rig (native
+  1280x960, unmasked frames, IMU not decimated) into `<root>/.work/run/<pi_name>/euroc` (removed after the run), then
+  `umiproc_slam --load_map <map_atlas.osa> --mask_img --max_lost_frames 30`, real time, without tag options. The
+  front-end counts the frames `LocalizeMonocular` did not track over the whole run (not in a row), as the fork's
+  `gopro_slam.cc:248-258`; unlike `gopro_slam` it still saves the CSV after the stop, but a stopped run is dropped
+  whatever it tracked (UMI has no trajectory then: `06_generate_dataset_plan.py:592-596`). A run that crashed, timed
+  out or left no readable CSV is `failed` (`slam_error`); a run that ends with more than one map with keyframes is
+  rejected (`new_map`: the CSV's world is the biggest map's first keyframe, then not necessarily the loaded map's).
+- **UMI's rules** (`umiproc/run/rules.py`, mirroring `06_generate_dataset_plan.py` for one gripper camera): the
+  counts are over every frame of times.txt (frames never fed after a stop count as lost); `06:604-608` > 10 lost ->
+  ours > 5; `06:610-614` < 60 tracked -> ours < 30; then `06:719-726` with `get_bool_segments` (`06:41-54`): the
+  tracked frames are cut at every lost frame and runs shorter than `min_episode_length` (`06:88`, 24) -> ours 12 are
+  dropped; `06:729-763`: every remaining run is one episode. UMI's window shift for multi-camera alignment
+  (`06:555-568`, one frame) does not apply to one camera. The 0.5 s relocalization rule: the first tracked frame at
+  most 0.5 s after the first frame (as M3). Because every frame before it is lost, the > 5 lost rule already asks for
+  the demo to find itself within its first 6 frames (0.17 s); the 0.5 s rule only names the cause.
+- **Table frame** (UMI `06:110-119, 617-626`): `T_tag_cam = inv(tx_slam_tag) @ T_W_cam` with the map's
+  `tx_slam_tag.json` (the localized CSV's world is the map's world, the same one M5 measured the tag in),
+  `T_tag_imu = T_tag_cam @ inv(T_imu_cam)`, and the copied pose stage's TCP `T_world_offset @ T_tag_imu @ T_imu_cam @
+  T_cam_tcp` (`T_world_offset`: the rig's training-world offset, which the copy always applies) on the copied 60 Hz
+  grid (the button span). Every episode's `eef_pos` / `eef_rot_axis_angle` are in that frame.
+- **Pose checks per piece**: the copied `finalize_trajectory` on the piece's tracked IMU poses in the SLAM world
+  (gravity-aligned first, as M4, so the tag's small tilt does not enter): `gravity_check` (|g| within 0.5 m/s²) and
+  `scale_check` (status ok: |s - 1| <= 0.1 and observable; it needs about 1 s of motion, so shorter pieces fail with
+  `scale_unobservable`); the copied validate's TCP speed per 60 Hz step <= 3 m/s (`speed_extreme` > 7 m/s). On the
+  whole demo: M4's `orientation_consistency` (every 2.5 s window within 3° of the demo's mean), judged when the demo
+  has >= 4 windows (10 s tracked), else reported as not judged; a failure fails every piece (`orientation`).
+- **Widths and export per piece** (needs the gripper range): the copied `detect_episode_tags` / `episode_widths` /
+  `width_on_grid` on the effective rig, then the copied `validate_episode` on the piece's grid rows (kept span = its
+  longest run with pose, width and a main frame within 25 ms; `kept_fraction` >= 0.8 of the piece; speed; ultrawide and
+  IMU gaps; `tag_coverage` >= 0.8), **except** its `too_short` (kept span >= 2 s), which UMI's piece length replaces:
+  the kept span must still cover >= 12 of the piece's frames (`piece_too_short`). Then the copied images and
+  `write_episode_zarr`. The copied `slam_tracking` check always passes inside a piece (every frame of it is tracked).
+- **Gripper calibration** (`umiproc/calibrate/gripper.py`): the copied `fit_calibration` with the effective rig
+  (`ImagePrep` of the lens model), then UMI's rule (`scripts/calibrate_gripper_range.py:22, 28-35, 41-50, 59-61`):
+  each tag's rate = frames it was detected in / all frames, the gripper's rate = the smaller one, >= 0.8. The copied
+  fit keeps its own 0.2 floor; the 80 % rule runs on the same detections afterwards. `run` applies the rule again to
+  the calibration it uses (the copied calibration step can refit after a rig edit). A failure records nothing.
+
 ## Episodes
 
 - Same layout as dataproc: `.staging/<pi_name>/` while processing, then `episode_N/` (from `episode_1`) or
-  `failed/<pi_name>/` with `reason.json` (stage, reasons, message, time).
+  `failed/<pi_name>/` with `reason.json` (stage, reasons, message, time; umiproc adds the rules' counts and every
+  piece's outcome).
 - A recording that splits into k pieces becomes k consecutive `episode_N` folders, each with its own
   `processed/episode.zarr`; the raw copy is stored once and the other pieces point to it.
 - `processed/episode.zarr` is the copied export's per-episode file, so the copied packaging can read the folders later.
+
+In detail (`umiproc/run/recording.py`):
+
+```
+.staging/<pi_name>/processed/
+  status.json        the copied stage records (check, slam, grid, pose, width, validate, images, export): the copied
+                     status, reason.json and packaging read them as before. slam = localization + UMI's rules,
+                     pose = the table frame + the pose checks
+  check.json grid.npy    the copied check and grid stages
+  localize/          trajectory.csv (+ .t0_ns), umiproc_slam.log, times.txt
+  localize.json      map, fingerprint, the run, the rules and the pieces (frames, pose checks, finish), orientation;
+                     phase: localized (pose checks done: waiting, or ready for the widths) | finished | failed
+  pieces/<k>/        while finishing: episode.zarr, status.json, piece.json
+episode_N/           the first exported piece: raw/ (the recording), processed/ with its episode.zarr, status.json,
+                     piece.json, localize.json, localize/
+episode_N+1/ ...     the other pieces: raw -> ../episode_N/raw (relative symlink), processed/{episode.zarr,
+                     status.json, piece.json (raw_of: episode_N)}; its own episodes.csv row (a copy of episode_N's)
+```
+
+- A waiting recording is resumed by any later `run` of the folder: when its `localize.json` is `localized` for the
+  same map and fingerprint, only the widths, validate, images and export run.
+- `episode.zarr`'s name is the recording's `pi_name`, or `<pi_name>_piece<k>` when it was split (the copied packaging
+  refuses two episodes with one name). Each episode's status.json has every stage `done`.
+- A piece that fails a check is dropped and the others are kept; a recording with no exported piece goes to
+  `failed/<pi_name>/` with the stage it got furthest to (`slam`, `pose`, `validate`, `images`).
+- An interrupted promotion (pieces left in `episode_N/processed/pieces/`, a piece slot without its `raw` link) is
+  finished at the start of the next `run`.
+- `--retry-failed` moves `failed/<pi_name>` back and runs it from scratch (a new localization).
 
 ## Build order and DIRECTIONS.md
 
@@ -351,7 +428,21 @@ Apart from the import rewrite and the repo paths:
 Step 2 (`umiproc map`) changed nothing in the copy (it calls `write_euroc`, `finalize_trajectory`, the intake's
 validation and `DuplicateIndex` as they are).
 
-Known failures inherited from `e69b4b1` (they fail in `data-processing/` too, after its "remove hard cap on calibration"
-change): `tests/dp/calibrate/test_calibrate_task.py::{test_opening_out_of_tolerance_only_warns,
-test_closed_width_far_off_warns, test_failed_fit_record_is_not_written_anywhere}`. Step 3 (`umiproc calibrate`)
-resolves them.
+Step 3 (`umiproc calibrate`, `umiproc run`):
+
+- **Effective rig** in the copied stages that loaded the rig file themselves, so tags, widths and training images use
+  the lens file (`umiproc.sensors.effective_rig`: the data-root rig file with the lens file's ultrawide model in
+  place, the rig `load_sensors` gives as `SensorValues.rig`, without needing the SLAM config):
+  `process.py` `load_folder_context` (default: the effective rig; new `rig=` argument: one already loaded, as `run`
+  passes `SensorValues.rig`; a lens file that cannot be used is a `ProcessError`), `calibrate/task.py` `_load_rig`,
+  `calibrate/cli.py` `_rig` (the hints). Through the context this reaches `CalibrationStep`, the width, images and
+  export functions and the stage hashes (`rig_sections` of the effective rig).
+- `run/plan.py`: `check_folder(..., require_calibration=True)` and `plan_run(..., require_calibration=True)`; `umiproc
+  run` passes False (its demos wait for the calibration instead of the run refusing).
+- `tests/dp/calibrate/test_calibrate_task.py`: the three tests that failed after dataproc's "remove hard cap on
+  calibration" (`8eefea2`) were out of date, not the code (the code is that commit's: the opening and closed width
+  only warn). `test_opening_out_of_tolerance_only_warns` and `test_closed_width_far_off_warns` re-used `cal_0` under
+  another name, but a copy has the same `MANIFEST.sha256` and is refused as already taken (they now use `cal_1`,
+  `cal_2`); `test_failed_fit_record_is_not_written_anywhere` kept the old opening failure's `n_in_window > 0`, but the
+  failure it now provokes (tags outside the depth window) has `n_in_window == 0` by construction (it now asserts the
+  diagnostics are there: frames, both-tag frames, none in the window). The 31 tests of `tests/dp/calibrate/` pass.

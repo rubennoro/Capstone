@@ -386,9 +386,9 @@ command. `TASK` is the task's name (e.g. `block_raise`).
 
 | Order | Command | Result | Status |
 |---|---|---|---|
-| 1 | `umiproc map TASK episode_000130` | builds and checks the map (section 3); on success creates the session's folder `~/data/umi/tasks/TASK` (or `TASK_2`, … if taken) and prints its name | being built (step 2) |
-| 2 | `umiproc calibrate TASK_FOLDER episode_000131` | the gripper opening range for the folder (section 5) | coming with step 3 |
-| 3 | `umiproc run TASK_FOLDER episode_000132 episode_000140` | every demo in the range localized in the map and checked: `episode_N` folders, or `failed/<name>/` with the reason (section 4) | coming with step 3 |
+| 1 | `umiproc map TASK episode_000130` | builds and checks the map (section 3); on success creates the session's folder `~/data/umi/tasks/TASK` (or `TASK_2`, … if taken) and prints its name | built (step 2) |
+| 2 | `umiproc calibrate TASK_FOLDER episode_000131` | the gripper opening range for the folder (section 5) | built (step 3) |
+| 3 | `umiproc run TASK_FOLDER episode_000132 episode_000140` | every demo in the range localized in the map and checked: `episode_N` folders, or `failed/<name>/` with the reason (section 4) | built (step 3) |
 | any time | `umiproc status TASK_FOLDER` | what the folder has: map, gripper calibration, episodes, waiting, failed | available |
 
 - `TASK_FOLDER` is the folder name `map` printed (`TASK`, or `TASK_2` …).
@@ -608,8 +608,181 @@ env -u UMIPROC_SLAM_BINARY UMIPROC_ROOT=$AB/p0009_infl10 \
 
 ## 4. Prove the demos
 
-(Coming with step 3.)
+**Why:** every demo is located inside the session's map (UMI's recipe), so all demos come out in the same
+coordinates: the table's, fixed by tag 13 in the mapping clip. `umiproc run` does that for a range of recordings,
+applies UMI's rules for lost tracking (a demo is split at short losses, dropped at long ones), checks every piece, and
+turns each piece that passes into an `episode_N` folder ready to package. It needs the map (section 3). The gripper
+calibration (section 5) can come before or after: without it every demo is located and checked, then **waits** for
+it.
+
+**How to record the demos:** see "A collection session at a glance", step 3. What matters most for the checks below:
+start **looking at the mapped workspace and still for about 1 s** (the demo must find itself in the map at once:
+the first frames count as lost until it does), stay inside the area the mapping clip covered, no fast swings, never
+cover the lens, keep both finger tags visible.
+
+### Run it (on the Jetson)
+
+```bash
+ls -t /data/incoming | head                    # newest first: note the first and last demo
+umiproc run block_raise episode_000132 episode_000140
+```
+
+- `block_raise` is the session's folder (the name `umiproc map` printed: `block_raise`, `block_raise_2`, …).
+- The range is every recording from the first to the last name, inclusive. The mapping and gripper calibration clips
+  in it are skipped by themselves (`skipped (is the map recording …)` / `(is a calibration …)`), and so is a
+  recording another folder took, one still syncing, and one that is already an episode of this folder.
+- On the laptop, add `--source ~/Downloads/data/incoming`. `--root DIR` (or `UMIPROC_ROOT`) chooses another data
+  root.
+- `--dry-run` checks the folder and its map and prints what each recording would get (`take`, `resume`, `skip` and
+  why), changing nothing.
+- It takes about **1.5 times the demos' length** (the frames are converted, then SLAM runs in real time) plus the
+  export. Use `tmux` on the Jetson for a long range (section 3, "Run it").
+- Disk: one demo's converted frames at a time (`~/data/umi/.work/run/`, about 400 KB per frame), removed after each.
+
+The command first checks the folder's map: complete, passed, and **made with exactly the current settings** (the
+rig file, SLAM config and lens file in `~/data/umi/rigs/`, the mask, the ORB-SLAM3 settings and the SLAM build: the
+same fingerprint `umiproc status` compares). If anything changed since the map, it stops with `the map … is OUT OF
+DATE` and the keys that differ (for example `sensors.imu` after editing `vio_inflation`, `sensors.ultrawide` after a
+new lens calibration, `binary` / `patches` after a rebuild, or a different `UMIPROC_SLAM_BINARY`), and changes
+nothing: put back what changed, or record a new session with the new settings.
+
+Exit code 0: every recording got its outcome (episodes or failed: both are listed). 3: some wait for the gripper
+calibration (section 5). 2: it could not run (no such folder, no usable map, map out of date, SLAM build missing, bad
+range, another umiproc command running); nothing was changed. 1: an unexpected error stopped it (the recordings done
+so far keep their outcome; run it again).
+
+### What happens to each demo
+
+1. **Taken** into `~/data/umi/tasks/<folder>/.staging/<pi_name>/` (and recorded in `pi_sources.csv`); the copied
+   contract and camera checks run on it.
+2. **Localized** in the map: ORB-SLAM3 with the gripper mask, the frames fed in real time, stopped after 30 frames it
+   could not track (UMI's `--max_lost_frames`, 1 s).
+3. **UMI's lost-frame rules** (converted to the same times at our 30 frames/s, docs/DESIGN.md "Checks → run"):
+   dropped when the run stopped, when more than 5 frames (0.17 s) were lost, when fewer than 30 frames (1 s) were
+   tracked, or when it did not find itself in the map within 0.5 s. Otherwise the demo is **split at every lost
+   frame**, and each tracked stretch of at least 12 frames (0.4 s) is a **piece**; shorter ones are dropped.
+   "Tracked" means seen by the camera (ORB-SLAM3's state OK), never an IMU-only guess.
+4. **Pose checks per piece**, with the poses in the table frame (tag 13 of the map at the origin, z up): gravity
+   (|g| = 9.81 ± 0.5 m/s²), metric scale (within 10 %), speed (≤ 3 m/s), and, for a demo of at least 10 s, the
+   orientation check of map check M4 (SLAM's orientation agrees with gravity within 3°).
+5. Without the gripper calibration it stops here: **waiting** in `.staging/` (exit 3).
+6. **Widths and export per piece**: the finger widths from the tags with the folder's `gripper_range.json`, the
+   copied checks on the piece (finger tags seen in ≥ 80 % of its frames, widths and main-camera frames for ≥ 80 % of
+   it, no camera or IMU gaps, speed again), then the training images and `processed/episode.zarr`.
+7. A demo with k pieces that pass becomes **k consecutive `episode_N` folders**. The first holds the recording
+   (`raw/`); the others point to it (`raw -> ../episode_<first>/raw`), each with its own `processed/episode.zarr`
+   (named `<pi_name>_piece<k>` when the demo was split). A demo with no piece left goes to `failed/<pi_name>/` with
+   `reason.json`.
+
+At the end it prints one line per recording, what each reason means, and `umiproc status <folder>`; the same is in
+`tasks/<folder>/report.json`.
+
+### Reading the outcome
+
+```
+episode_000132  ->  episode_1
+episode_000133  ->  episode_2, episode_3 (2 of 3 pieces; piece 2 dropped: scale_unobservable)
+episode_000134  ->  failed (slam: too_many_lost)
+episode_000135  ->  waiting for the gripper calibration (1 piece(s) passed every pose check)
+```
+
+| Reason | Means | Change this in the recording |
+|---|---|---|
+| `stopped_lost` | SLAM could not follow the demo in the map for 30 frames (1 s) and stopped | start looking at the mapped workspace, stay inside the mapped area, no fast swings, never cover the lens |
+| `too_many_lost` | more than 5 frames (0.17 s) not tracked, counted over the whole demo, **including the first frames before it found itself in the map** | start still (about 1 s) looking at the mapped workspace from where the mapping clip went; smooth motion |
+| `too_few_tracked` | fewer than 30 tracked frames (1 s) | a demo must be tracked for at least a second |
+| `late_relocalization` | not found in the map within 0.5 s | as `too_many_lost`: the start must show what the map knows |
+| `no_piece` | no tracked stretch of 12 frames (0.4 s) between the losses | fewer, shorter losses |
+| `new_map` | SLAM lost the map and started a new one (its poses would not be in the map's coordinates) | stay inside the mapped area, move more slowly |
+| `slam_error` | the SLAM run crashed, timed out or left no trajectory | not the recording: read `processed/localize/umiproc_slam.log` (in `failed/<pi_name>/`) |
+| `gravity` | the trajectory disagrees with the IMU's gravity | smooth motion, no bumps; if it repeats on smooth demos, the map, lens or camera-IMU rotation (map check M4) |
+| `scale_unobservable` | too short or too little motion to check the metric scale; it needs about 1 s of real motion, so pieces under about 1 s cannot pass | longer pieces: fewer losses (a demo cut in short pieces loses them) |
+| `scale_mismatch` | the scale is off by more than 10 % | the map's scale (re-check map check M4) or a SLAM jump after a loss |
+| `speed`, `speed_extreme` | faster than 3 m/s (7 m/s: a SLAM jump, not the hand) | move slower |
+| `orientation` | SLAM's orientation disagrees with gravity by more than 3° (demos of 10 s or more) | not the recording if the demo was smooth: lens model, camera-IMU rotation |
+| `tag_coverage` | the finger tags were seen in fewer than 80 % of the piece's frames | keep both finger tags in view; no hand or object over them |
+| `kept_fraction`, `piece_too_short` | widths or main-camera frames were missing for more than 20 % of the piece, or what is left covers fewer than 12 frames | as `tag_coverage` |
+| `ultrawide_gap`, `imu_gap` | frames or IMU samples missing in the recording | not the hand: check the Pi's recording (dropped frames) |
+
+A piece that fails is dropped and the others are kept (the line says which piece and why). Every reason is also in
+`failed/<pi_name>/reason.json` (`stage`, `reasons`, `message`, the rules' counts and each piece's outcome) or, for a
+kept recording, in `episode_N/processed/localize.json`.
+
+### Run it again
+
+- **Failed recordings** are not run again by themselves (`skipped (failed earlier at …)`). After fixing a cause
+  outside the recording (for example a rebuilt SLAM program for `slam_error`), `--retry-failed` runs them again
+  **from scratch** (a new localization; SLAM differs a little from run to run).
+- A run that was interrupted (Ctrl-C, ssh dropped, power) leaves its recording in `.staging/`; the next run of the
+  folder (any range) picks it up.
+- Recordings waiting for the gripper calibration: section 5.
 
 ## 5. Gripper calibration and finishing the episodes
 
-(Coming with step 3.)
+**Why:** the policy also learns the gripper's opening. It is read from the two finger tags in every frame, which
+needs the tag-to-tag distance of the fully closed and fully open gripper: the **gripper calibration**, measured once
+per session from a short clip.
+
+**How to record it:** see "A collection session at a glance", step 2: close the fingers fully, then open them fully,
+slowly, 3-4 times (at least 5 open/close cycles in all is better), with **both finger tags visible the whole time**.
+
+### Run it (on the Jetson)
+
+```bash
+umiproc calibrate block_raise episode_000131
+```
+
+- `block_raise` is the session's folder; the folder's map must have passed (section 3).
+- On the laptop, add `--source ~/Downloads/data/incoming`; `--root` as above.
+- It takes about a minute (every frame is read and the tags found in it).
+
+It prints the measured opening, the tag statistics and **UMI's rule**: each finger tag must be seen in at least
+80 % of the frames.
+
+```
+calibrate: PASSED -> tasks/block_raise/gripper_range.json (from calibration/pi-2026-11-20_episode_000131)
+  measured opening 0.080 m (expected 0.080 m +- 0.010 m); closed width 0.0440 m (expected 0.044 m), open width 0.1240 m
+  ultrawide frames 452; tag 0 seen 440 (97%), tag 1 seen 431 (95%), both 425 (94%; the fit needs 20 %, UMI's rule 80 %)
+  both tags at the expected depth (z 0.018-0.178 m): 425; median z 0.097 m (aruco.nominal_z_m 0.098 m)
+  open/close cycles: 5; closed 0.044 m, open 0.124 m (tag-to-tag x; 3-D distance 0.044 m / 0.124 m)
+  UMI's finger-tag rule PASS: tag 0 seen in 97 % and tag 1 in 95 % of 452 frames (both at once: 94 %); UMI needs each tag in >= 80 %
+```
+
+Exit code 0: passed; 1: failed (nothing was recorded and the clip was not taken: record a new one, or fix the cause,
+and run it again); 2: it could not run (no such folder, map not passed, recording missing / still syncing / already
+taken, another umiproc command running).
+
+| Line | Passes when | If it fails, change this |
+|---|---|---|
+| UMI's finger-tag rule | each finger tag seen in ≥ 80 % of the frames | keep both tags in view the whole time (the message names the one missed most): no hand or object over them, even light, open and close slowly, the lens in focus |
+| the fit (`gripper_range_fit`) | both tags at the expected depth in at least 3 frames, each tag in ≥ 20 % of the frames | the message names the cause (a tag never seen, tags at the wrong depth: `aruco.nominal_z_m`) |
+| `warning: measured opening …` | (a warning, not a failure) the opening is the rig's 0.080 m ± 0.010 m | open fully and close fully; both tags visible at both ends. Record again if it is far off: every width is measured against it |
+| `warning: closed width …` | (a warning) the closed width is the rig's 0.044 m ± 0.010 m | close the fingers fully; a tag hidden when closed reads as a wider closed gripper |
+| `warning: only N open/close cycles` | (a warning) at least 5 cycles | more cycles |
+
+The tags are found through the lens model the SLAM runs use (the lens file when there is one, section 1).
+
+One calibration per session: a second one replaces the first only while the folder has no episodes yet (a
+calibration with warnings can be redone right away); once episodes were made with it, `calibrate` refuses (record a
+new session to calibrate again).
+
+### Finishing the waiting demos
+
+```bash
+umiproc run block_raise episode_000132 episode_000140      # the same command again (any range of this folder)
+```
+
+The demos waiting in `.staging/` are **not localized again**: only the widths, the copied checks and the export run
+(about a minute per demo), and each becomes its `episode_N` folders or goes to `failed/`.
+
+### Check the result
+
+```bash
+umiproc status block_raise
+```
+
+It shows the map, the gripper calibration (opening, the finger-tag rule, its warnings), the episodes with the pieces of
+one recording on one line (`episode_2, episode_3 … (pieces 1, 3 of 3)`), what waits in `.staging/` and why, and the
+failed recordings with their reasons. Each `episode_N/processed/` holds `episode.zarr` (the training data, poses in
+the table frame), `status.json`, `piece.json` (which piece of which recording) and, for the first piece of a
+recording, `localize.json` and the SLAM run (`localize/`).

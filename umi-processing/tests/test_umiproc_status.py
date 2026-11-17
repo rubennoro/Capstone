@@ -48,6 +48,11 @@ def session(tmp_path_factory):
     d = [R.take_recording(root, src, f"episode_00000{n}", R.DEMONSTRATION, rig_id=RIG, folder=m.folder, log=quiet)
          for n in (3, 4, 5)]
     f = m.task_dir
+    # demo 3 was localized and passed its pose checks (umiproc run's localize.json): it waits for the gripper
+    (f / ".staging" / d[0].pi_name / "processed").mkdir()
+    write_json(f / ".staging" / d[0].pi_name / "processed" / "localize.json",
+               {"format": "umiproc.localize.v1", "phase": "localized", "map": {"pi_name": m.pi_name},
+                "pieces": [{"index": 1, "pose": {"ok": True}}]})
     # demo 4 failed at slam; demo 5 became episode_1 (as the run step will move them)
     (f / "failed").mkdir()
     (f / ".staging" / d[1].pi_name).rename(f / "failed" / d[1].pi_name)
@@ -93,7 +98,8 @@ def test_folder_details(session):
     assert "record a new mapping clip (it creates a new session folder)" in out and "move the folder" not in out
     assert "gripper calibration:  no" in out
     assert "episodes:             1" in out and "episode_1" in out and "exported" in out and "287" in out
-    assert f"{d[0].pi_name}: waiting for the gripper calibration" in out
+    assert (f"{d[0].pi_name}: localized against map/{m.pi_name}, 1 piece(s) passed every pose check: waiting for "
+            "the gripper calibration") in out
     assert f"{d[1].pi_name}: slam: too_many_lost_frames" in out
     code2, out2, _ = _status(str(m.task_dir), env_root=root.path)         # a path works too
     assert code2 == 0 and out2 == out
@@ -122,7 +128,7 @@ def test_gripper_calibration_and_lens_shown(tmp_path, session):
     assert f"block_raise: label block_raise, {INC}, gripper calibration yes" in out
     code, out, _ = _status("block_raise", "--root", str(copy))
     assert "gripper calibration:  yes, gripper_range.json" in out
-    assert f"{d[0].pi_name}: not finished" in out
+    assert "pose check: the next `umiproc run` of this folder finishes it (widths, export)" in out
 
 
 def test_empty_and_missing_roots(tmp_path):

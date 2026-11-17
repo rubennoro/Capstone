@@ -17,10 +17,10 @@ EXIT_OK, EXIT_FAILED = 0, 1
 
 
 def _rig(root: DataRoot, rig_id: str):
-    """The rig yaml for the hints, or None when it cannot be loaded."""
+    """The rig yaml for the hints (umiproc: the effective rig), or None when it cannot be loaded."""
     try:
-        from umiproc.dp.config import load_rig
-        return load_rig(root.rig_file(rig_id))
+        from umiproc.sensors import effective_rig
+        return effective_rig(root.path, rig_id, root.rig_file(rig_id))
     except Exception:  # noqa: BLE001 - the hints then name the fields without their values
         return None
 
