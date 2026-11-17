@@ -9,11 +9,33 @@ Step-by-step procedures for the Pi 5 rig, in the order you do them. Each section
 4. Prove the demos
 5. Gripper calibration and finishing the episodes
 
+## Start here: bringing the Jetson up, step by step
+
+Do these in order; each step has a check that tells you it passed before you go on.
+
+| # | Do | Where | Passed when |
+|---|---|---|---|
+| 1 | Get the code: `cd <repo> && git fetch && git checkout rnoro/data-work && git pull` | Jetson | `git log --oneline -1` shows the newest umi-processing commit |
+| 2 | Python environment (section 2.2, about 5 min) | Jetson | `umiproc --help` lists `lens-board`, `lens-calibrate`, …, and the check tests pass |
+| 3 | Start the SLAM build (section 2.1, about an hour) **inside `tmux`**, and let it run while you do step 4 | Jetson | it ends with `== done` |
+| 4 | **Lens calibration** (section 1): print the board, tape it to cardboard, record about 60 s on the Pi, run `umiproc lens-calibrate`, repeat until every check passes, then `--apply` | Pi + Jetson | `lens-calibrate` prints no `FAIL`, and `--apply` installs `~/data/umi/rigs/rig_pi_v3.lens.yaml` |
+| 5 | `umiproc status` (section 2.4) | Jetson | lens file: calibrated; umiproc_slam and vocabulary: found |
+| 6 | A collection session: map, then gripper calibration, then demos | Pi + Jetson | sections 3–5 (`umiproc map` is being finished; it comes with the next update of this branch) |
+
+**Do step 4 before any mapping.** The lens model matters more than anything else for SLAM on this rig: on the first
+real mapping clip (episode 128) the rig file's nominal lens, about 18 % off in focal length, made SLAM lose every map
+it started (34 resets, no usable map), while the same clip with a measured lens built a map with the IMU fully
+initialised. Lens calibration needs only step 2, not the SLAM build.
+
+`tmux` in one line: `tmux new -s build`, run the command, detach with `Ctrl-b` then `d`, come back with
+`tmux attach -t build`. A long command keeps running even if your ssh connection drops.
+
 ## 1. Lens calibration
 
 **Why:** it measures how the ultrawide (IMX219, 160°) lens bends light, so SLAM uses the real lens instead of the
-rig file's nominal guess. Optional: `map` and `run` never wait for it (without it they use the nominal lens, labelled
-"nominal, uncalibrated"). About 1 minute of recording, then 1–2 minutes of processing.
+rig file's nominal guess. `map` and `run` never wait for it (without it they use the nominal lens, labelled
+"nominal, uncalibrated"), **but do it first**: the nominal lens is about 18 % off in focal length, which is enough
+to make SLAM fail (see "Start here"). About 1 minute of recording, then 1–2 minutes of processing.
 
 **What you need:** a printer, something rigid and flat to glue the board to (foam board, a clipboard, a flat piece
 of wood or acrylic), glue (spray adhesive or a glue stick), a ruler, a small piece of tape, and a well-lit spot.
@@ -33,10 +55,10 @@ The commands need `umiproc` installed (section 2).
    printer scaled it: print again at 100 %.
    Printing it larger is fine if it is scaled the same in both directions (e.g. Tabloid/A3 at 140 %): the lens model
    does not depend on the board's absolute size; the 30 mm check then reads ~42 mm.
-4. Glue it onto the rigid backing, smoothly: no bubbles, waves or curled corners. A flat board matters more than
-   anything else here.
-5. Fix the board **flat and still**: tape it to a wall, or lay it on a table. During the recording the board stays
-   put and you move the rig.
+4. **Glue or tape it onto the rigid backing** (cardboard, foam board, a clipboard, a hardcover book), all four
+   edges, smoothly: no bubbles, waves or curled corners. **Never record with bare paper**, held or lying on a table:
+   paper bends and curls by a few millimetres, and that alone fails checks (b) and (c) (see "Lessons from the first
+   tries" below). A flat board matters more than anything else here.
 
 The board uses `DICT_5X5_100` markers on purpose: the gripper's finger tags and the table tag are `DICT_4X4_50` and
 are often in view; they are never mistaken for the board.
@@ -51,69 +73,66 @@ are often in view; they are never mistaken for the board.
 
 ### Record (on the Pi)
 
-Record **one ordinary episode of about 60 seconds** on the Pi, started and stopped like a demo. Hold the rig as
-usual; the fingers and whatever they hold are in view at the bottom of the image, and that is expected (that area is
-masked and ignored).
+Record **one ordinary episode of about 60 seconds** on the Pi, started and stopped like a demo. The fingers are in
+view at the bottom of the image; that is expected (that area is masked and ignored). Keep the fingers still the whole
+time.
 
-- **Move slowly, and hold still about 1 second at each pose.** Only the still moments are used.
-- **Distance:** 20–45 cm from the board. Use near, middle and far.
-- **Tilt:** besides looking at the board straight on, also look at it from the side, up to about 45°: left, right,
-  from above, from below.
-- **Where the board appears in the image:** make it visit the **centre**, the **left** and **right** edges, the
-  **top** edge, **both top corners**, and the **lower left, beside the gripper**. The bottom middle and lower right
-  are covered by the gripper, so the board cannot show up there. That is expected.
-- **For the edges and corners, turn the rig rather than sliding it sideways.** Face the board, then rotate the rig
-  until the board sits in the corner of the image. The board then still faces the lens, and its corners are still
-  detected even at the very edge of the fisheye image. Check (d) needs these corner views.
-- Keep the board's markers sharp and unobstructed. A partly visible board is fine.
+**The easy way: the rig stays still, you move the board.**
 
-#### The shot list (about 30 holds, about 60 s)
+1. **Prop the rig on the table so it cannot move**, looking straight ahead (horizontal), fingers in their usual
+   place. Start recording.
+2. Hold the board **by its backing** (both hands if you can), **always turned to face the lens**.
+3. Rhythm: **move for about 1 s, hold still for about 1 s** (count "one-one-thousand"). Only the holds count.
+4. Put the board in each of these places. **The lens sees almost sideways** (about 75° off-axis at the image's left
+   and right edges, about 80° at its top corners), so the edges and corners of the image are **beside** the lens,
+   not in front of it: if a spot feels "too far to the side to be seen", it is usually exactly right.
 
-Tape the board flat on a wall at chest height, so you can stand in front of it and move freely. Keep the gripper
-still in one position the whole time (don't squeeze it). Rhythm: **move for about 1 s, hold still for about 1 s**
-(count "one-one-thousand"), move to the next. Holds are what count; the moves in between are thrown away.
+| In the image | Where the board physically is (at about 30 cm from the lens) |
+|---|---|
+| centre | straight ahead |
+| left edge / right edge | far out to the side: about 28 cm left or right and only about 10 cm forward |
+| top edge | high up: about 25 cm above the lens and about 15 cm forward |
+| **top-left / top-right corner** | **up and to the side at about 45° diagonally, barely in front of the lens (about 5 cm forward)**; hold these **2 s** |
+| lower left | low and to the left, at the fingers' height, left of the left fingertip |
 
-**How to put the board in a given part of the image: turn the rig the opposite way.** Turn the rig to the right and
-the board slides to the left of the image; tip the rig down and the board slides up. Keep the rig at the same
-distance and just rotate it, as if your wrist were a tripod head.
+5. Do that circuit **three times: at about 30 cm, about 20 cm and about 45 cm**, then a few holds with the board
+   tilted 30–45° (turned left, right, up, down). About 30 holds in all.
 
-The image, as the 3 x 3 grid the checks use (the gripper covers the bottom middle and bottom right):
+The image, as the 3 x 3 grid the checks use (the gripper covers the bottom middle and bottom right; the other 7
+cells each need at least 20 board corners):
 
 ```
 +-----------+-----------+-----------+
-| TOP-LEFT  |    TOP    | TOP-RIGHT |   board goes here by tipping the rig DOWN
-|           |           |           |   (and turning it right / left for the corners)
+| TOP-LEFT  |    TOP    | TOP-RIGHT |
 +-----------+-----------+-----------+
 |   LEFT    |  CENTRE   |   RIGHT   |
-|           |           |           |
 +-----------+-----------+-----------+
 | LOW-LEFT  |  gripper  |  gripper  |   only the lower left is usable
-|           | (masked)  | (masked)  |
 +-----------+-----------+-----------+
 ```
 
-| # | Distance (lens to board) | Holds (where the board appears in the image) | How |
-|---|---|---|---|
-| 1 | ~40 cm (a forearm) | centre; centre again with the rig rolled ~45° | face the board squarely |
-| 2 | ~40 cm | left, right, top | turn right / turn left / tip down |
-| 3 | ~40 cm | top-left, top-right (hold each **2 s**, these are the hardest) | tip down **and** turn right / left until the board touches the image's corner |
-| 4 | ~40 cm | low-left, beside the fingers | turn right and tip up a little |
-| 5 | ~20–25 cm (a hand span) | centre, left, right, top-left, top-right, low-left | same moves; the board fills much of the image and is partly cut off at the edges, which is fine |
-| 6 | about 45 cm | centre, left, right, top, top-left, top-right, low-left | same moves |
-| 7 | ~35 cm, board in the centre | tilted ~45°: from the left, from the right, from above, from below | step sideways (or crouch / reach up) and aim back at the board |
-| 8 | ~35 cm | two tilted holds with the board in the top-left and top-right | combine 7 and 3 |
+(The other way also works: tape the board flat on a wall and move the rig, turning it so the board lands in each
+part of the image: turn the rig right and the board slides left in the image, tip it down and the board slides up.)
 
-That is about 30 holds. If the recording is cut short, rows 3 and 5 matter most (checks (d), (e) and (h)).
+**What a good recording looks like when you play it back:** the board sharp in every hold and visibly flat; over the
+clip it visits all 7 cells, including right up into both top corners and the lower left; some holds big (close),
+some small (far), some at a slant. After processing, `coverage.png` shows green dots in all 7 cells and beyond the
+magenta circle in the top corners.
 
-**What a good recording looks like when you play it back:** the board sharp (markers crisp, no smear) in every
-hold; over the whole clip the board has visited every cell of the grid except the two gripper cells, including
-right up into both top corners; some holds with the board big and some small; some with it seen at a slant. After
-processing, `coverage.png` shows the same thing: green dots in all 7 cells and beyond the magenta circle in the top
-corners.
+#### Lessons from the first tries (episodes 122–127)
 
-**What makes it fail:** the board only ever near the centre (the most common mistake: the edges are what the lens
-calibration needs); moving through holds without stopping (blur); the board curling or flexing; glare across the
-markers; the lens focus changing.
+| Episode | What happened | Checks it failed |
+|---|---|---|
+| 122 | the table tag (one big 4×4 marker) instead of the board | all: the board was never seen |
+| 124 | board on the table, rig pointed at it: the board only ever in the middle; few holds | a, b, d, e, h |
+| 125 | bare paper held by one edge: it bent; never close, never lower left | a, b, c, d, e, g |
+| 126 | bare paper held taut with two hands: much better (0.26–0.5 px when taut, over 1 px when it bent); not far enough into the corners or the lower left | a, b, c, d, e, h |
+| 127 | loose sheets on the table, rig moved over them: curled edges; the board stayed in the middle | a, b, c, d, e |
+
+Pooling the views of 125–127 does not help: the bent views pull the whole fit off (1.5 px). The two things that
+were always missing: **a rigid board**, and **the board right out at the image's edges, top corners and lower
+left**. The focal length came out at 464–472 px every time (the nominal is 572.9), so the lens is clearly not the
+nominal one.
 
 ### Process it (on the Jetson)
 

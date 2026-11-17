@@ -243,7 +243,7 @@ def _camera_entry(src) -> dict:
 
 def _check_a(n_fit: int, stats: dict) -> Check:
     ok = n_fit >= MIN_FIT_VIEWS
-    hint = ("Record more distinct poses (about 60 s): move slowly and pause about half a second at each pose "
+    hint = ("Record more distinct poses (about 60 s): move slowly and hold still about 1 s at each pose "
             "(only the pauses are used), keep most of the board in view at 20-45 cm. ")
     if stats["with_board"] == 0:
         hint += ("The board was not seen in any frame: is this the board recording, and is the board the one "
