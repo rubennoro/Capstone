@@ -1,0 +1,35 @@
+umiproc patch 0007: the first relocalized keyframe starts from the map's IMU bias, not zero
+
+What: Tracking::Track, INIT_RELOCALIZE. While a run against a loaded map has no keyframe of its own yet
+(mpLastKeyFrame is null, i.e. until its first relocalization), each frame waiting to relocalize gets the IMU bias
+of the map's last keyframe (highest id: the keyframe the relocalized one is linked to as mPrevKF). On success the
+new keyframe copies it, and patch 0003's fresh preintegration starts from it.
+Why: only Track's "bias of the last keyframe" step sets a frame's bias, and before the first relocalization
+there is no last keyframe, so the frame and the relocalized keyframe had a zero bias, the IMU was integrated
+against zero bias, and (with no edge to the previous keyframe, patch 0003) nothing pulled it to the map's
+estimate. Later relocalizations already carry the run's last keyframe's bias.
+Behaviour change: localization runs (loaded map), from the first relocalization on: bias, IMU prediction and
+preintegration start from the map's bias. No change in mapping runs.
+
+diff --git a/src/Tracking.cc b/src/Tracking.cc
+index 6da1bc1..baba67a 100644
+--- a/src/Tracking.cc
++++ b/src/Tracking.cc
+@@ -1660,6 +1660,17 @@ void Tracking::Track()
+                 }
+                 else if (mState == INIT_RELOCALIZE)
+                 {
++                    // umiproc patch 0007: before the first relocalization of a run against a loaded map there is no
++                    // keyframe of this run, so the frame (and the keyframe made from it on success) kept a zero IMU
++                    // bias, and nothing ties it to the map's. Start from the bias of the map's last keyframe (the one
++                    // the relocalized keyframe is linked to). Later relocalizations already carry the bias of the
++                    // run's last keyframe (set at the top of Track).
++                    if(!mpLastKeyFrame && (mSensor==System::IMU_MONOCULAR || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD))
++                    {
++                        const vector<KeyFrame*> vpMapKFs = pCurrentMap->GetAllKeyFrames();
++                        if(!vpMapKFs.empty())
++                            mCurrentFrame.SetNewBias((*max_element(vpMapKFs.begin(),vpMapKFs.end(),KeyFrame::lId))->GetImuBias());
++                    }
+                     bOK = Relocalization();
+                     if (bOK) { 
+                         cout << "INIT_RELOCALIZE success!" << endl;

@@ -1,0 +1,47 @@
+umiproc patch 0003: no inertial edge across a relocalization (localization against a loaded map)
+
+What: Tracking::Track, INIT_RELOCALIZE success (the first relocalization against a loaded map and every later
+one after tracking fails). For an inertial sensor the new keyframe gets no preintegration (nullptr), the
+current frame too (it is that keyframe), the frame's last keyframe is that keyframe, and a fresh
+mpImuPreintegratedFromLastKF starts from it (its bias, the IMU calibration). The old preintegration object is
+not deleted: earlier Frame copies still point to it.
+Why: the keyframe copied the tracker's running preintegration, i.e. the IMU since the start of the run (first
+relocalization) or since the last keyframe before tracking was lost, and that same object then also became the
+next keyframe's preintegration (CreateNewKeyFrame hands the running object to the next keyframe). So
+LocalInertialBA linked the mapping run's last keyframe (or the keyframe before the loss) to the relocalized
+keyframe with IMU that does not belong to that interval, as a non-robust edge once the map has passed VIBA 2,
+and PoseInertialOptimizationLastKeyFrame used the same over-long preintegration.
+What the optimizers then do with that keyframe (the fork's existing null guards, the same path the fork already
+takes when relocalization succeeds on frame 0, which has no IMU samples): LocalInertialBA skips its inertial
+and bias random-walk edges to the previous keyframe ("No IMU Preintegration for KeyFrame N, skipping inertial
+edge."); its pose is held by its visual edges; its velocity and bias vertices have no edge until the next
+keyframe exists, so g2o leaves them out of the optimisation; the next keyframe's edge (IMU integrated from the
+relocalized frame) then links the two correctly. FullInertialBA, InertialOptimization, MergeInertialBA and
+InitializeIMU skip it the same way; KeyFrameCulling never removes it (or its predecessor while it is the next
+keyframe), so the keyframe chain stays intact.
+Behaviour change: localization runs whose relocalization succeeds after frame 0, or that relocalize again
+later. A relocalization on frame 0 is unchanged apart from the bias the fresh preintegration starts from.
+
+diff --git a/src/Tracking.cc b/src/Tracking.cc
+index 01e7881..beb6781 100644
+--- a/src/Tracking.cc
++++ b/src/Tracking.cc
+@@ -1660,6 +1660,18 @@ void Tracking::Track()
+                     if (bOK) { 
+                         cout << "INIT_RELOCALIZE success!" << endl;
+                         KeyFrame* pKFcur = new KeyFrame(mCurrentFrame,mpAtlas->GetCurrentMap(),mpKeyFrameDB);
++                        if(mSensor==System::IMU_MONOCULAR || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
++                        {
++                            // umiproc patch 0003: no inertial link across a relocalization. The keyframe used to copy
++                            // the running preintegration (IMU since the start of the run or the last keyframe, which
++                            // the next keyframe then shared), so the edge to the previous keyframe spanned unrelated
++                            // IMU. Now it has none (the optimizers skip a keyframe without one, as after frame 0), and
++                            // the IMU is integrated afresh from here. The old object is left alone (frames use it).
++                            pKFcur->mpImuPreintegrated = nullptr;
++                            mCurrentFrame.mpImuPreintegrated = nullptr;
++                            mCurrentFrame.mpLastKeyFrame = pKFcur;
++                            mpImuPreintegratedFromLastKF = new IMU::Preintegrated(pKFcur->GetImuBias(),pKFcur->mImuCalib);
++                        }
+ 
+                         // update prev and next pointers
+                         vector<KeyFrame*> vpKFs = pCurrentMap->GetAllKeyFrames();

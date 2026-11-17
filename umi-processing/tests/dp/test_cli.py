@@ -14,7 +14,7 @@ PKG = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(autouse=True)
 def _root(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path))
 
 
 def _usage_error(argv, capsys) -> str:

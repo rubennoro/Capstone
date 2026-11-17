@@ -1,5 +1,7 @@
-"""``umiproc`` command line. Each command lives in its own module with ``add_arguments(parser)`` and
-``run(args) -> int`` (the exit code); a module that does not exist yet makes its command print "not implemented yet".
+"""umiproc: UMI's map -> calibrate -> run SLAM recipe for the Pi 5 rig's recordings (DIRECTIONS.md, docs/DESIGN.md).
+
+Each command lives in its own module with ``add_arguments(parser)`` and ``run(args) -> int`` (the exit code); a module
+that does not exist yet makes its command print "not implemented yet".
 """
 
 from __future__ import annotations
@@ -8,14 +10,16 @@ import argparse
 import importlib
 import sys
 
-# (command, module, one-line help), in the order of a session (docs/DESIGN.md "Commands")
+# (command, module, one-line help): the optional lens calibration, then a session in UMI's order (docs/DESIGN.md
+# "The session"), then status
 COMMANDS = [
     ("lens-board", "umiproc.lens.board", "write the printable ChArUco board PDF for the lens calibration"),
     ("lens-calibrate", "umiproc.lens.calibrate", "fit the IMX219 fisheye lens model from a board recording"),
     ("map", "umiproc.map.cli", "build and check the session map from a mapping recording (creates the task folder)"),
     ("calibrate", "umiproc.calibrate.cli", "fit the gripper range from a gripper calibration recording"),
     ("run", "umiproc.run.cli", "localize and check a range of demo recordings against the folder's map"),
-    ("status", "umiproc.status", "show a task folder: map, calibration, episodes, failed, waiting"),
+    ("status", "umiproc.status", "show the data root (rig files, SLAM program, recordings, task folders) or one "
+                                 "task folder (map, gripper calibration, episodes, waiting, failed)"),
 ]
 
 

@@ -1,8 +1,8 @@
 """``dataproc`` command line: ``calibrate`` -> ``run`` -> ``package``, plus ``status`` and ``sim`` (docs/DESIGN.md).
 
-The data root is ``$DATAPROC_ROOT`` (default ``~/data``). This module only parses the arguments and calls each
-command's ``cli_*`` function (``dataproc/calibrate``, ``dataproc/run``, ``dataproc/package``, ``dataproc/status.py``,
-``dataproc/sim``), which prints and returns the exit code.
+The data root is ``$UMIPROC_ROOT`` (default ``~/data/umi``; umiproc.paths). This module only parses the arguments and
+calls each command's ``cli_*`` function (``dataproc/calibrate``, ``dataproc/run``, ``dataproc/package``,
+``dataproc/status.py``, ``dataproc/sim``), which prints and returns the exit code.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ __all__ = ["build_parser", "main"]
 
 _SLAM_CHOICES = ("auto", "orbslam3", "oracle", "none")      # = dataproc.slam.BACKEND_CHOICES (not imported here)
 _SOURCE_HELP = "where the Pi delivers its recordings; read only (default /data/incoming)"
-_FOLDER_HELP = "task folder under $DATAPROC_ROOT/tasks, as printed by calibrate (e.g. block_raise or block_raise_2)"
+_FOLDER_HELP = "task folder under $UMIPROC_ROOT/tasks, as printed by calibrate (e.g. block_raise or block_raise_2)"
 
 
 def _non_negative_int(s: str) -> int:
@@ -79,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("package", help="combine the finished episodes of task folders into one training .zarr.zip",
                        description="Combine every exported episode_N of the FOLDERs into "
-                       "$DATAPROC_ROOT/datasets/<label>/DATASET/DATASET.zarr.zip (+ package.json); several labels "
+                       "$UMIPROC_ROOT/datasets/<label>/DATASET/DATASET.zarr.zip (+ package.json); several labels "
                        "go to datasets/multi/. failed/ and .staging/ are never included.")
     p.add_argument("dataset", metavar="DATASET", help="dataset name (e.g. block_raise-1110)")
     p.add_argument("folders", metavar="FOLDER", nargs="+", help="task folders to include")
@@ -112,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="session id (default sim-<UTC time, microseconds>); --contract directory names are "
                    "<session>_episode_NNNNNN (Pi format: only recorded in truth.npz)")
     p.add_argument("--rigs-dir", default=None, metavar="DIR",
-                   help="where the rig yaml used is copied if missing (default $DATAPROC_ROOT/rigs)")
+                   help="where the rig yaml used is copied if missing (default $UMIPROC_ROOT/rigs)")
     p.add_argument("--unverified", action="store_true", help="with --contract: do not write .verified")
     for parser in sub.choices.values():
         parser.set_defaults(_parser=parser)        # usage errors print the subcommand's usage line

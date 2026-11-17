@@ -1,6 +1,10 @@
 """Where things live on the Jetson: the data root, task folders and ``episode_N`` directories.
 
-Layout under the root (``$DATAPROC_ROOT``, default ``~/data``)::
+umiproc: the root is :func:`umiproc.paths.data_root` (``$UMIPROC_ROOT``, default ``~/data/umi``; ``/data`` and
+dataproc's own root are refused), the one source of the root for the copied code too. ``$DATAPROC_ROOT`` is never
+read here.
+
+Layout under the root::
 
     incoming/<pi_episode>/            raw episodes as the Pi delivers them (docs/CONTRACT.md)
     tasks/<folder>/                   task.yaml, episodes.csv, calibration/, episode_N/{raw,processed},
@@ -18,18 +22,18 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from umiproc.paths import DEFAULT_ROOT, ENV_ROOT        # UMIPROC_ROOT, ~/data/umi (the one source of the root)
+
 __all__ = [
     "STAGING_DIR", "FAILED_DIR", "ENV_ROOT", "DEFAULT_ROOT", "NAME_RE", "EPISODE_DIR_RE", "DataRoot", "TaskRef", "data_root", "validate_name",
     "validate_episode_dir_name", "episode_index", "episode_dirs", "next_episode_index", "resolve_task",
     "resolve_intake_target",
 ]
 
-ENV_ROOT = "DATAPROC_ROOT"
 #: ``tasks/<folder>/.staging/<pi_name>/``: a recording ``dataproc run`` is processing (or that waits for SLAM).
 STAGING_DIR = ".staging"
 #: ``tasks/<folder>/failed/<pi_name>/``: a recording that failed or was rejected at some stage (never packaged).
 FAILED_DIR = "failed"
-DEFAULT_ROOT = Path.home() / "data"             # /home/<user>/data
 
 #: Allowed task, folder and rig names.
 NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
@@ -42,9 +46,15 @@ _LEADING_ZERO_RE = re.compile(r"episode_0[0-9]+")
 
 @dataclass(frozen=True)
 class DataRoot:
-    """The data root and its four top-level folders."""
+    """The data root and its four top-level folders. A root umiproc refuses (``/data``, dataproc's root) raises
+    ``ValueError`` (:func:`umiproc.paths.check_root`)."""
 
     path: Path
+
+    def __post_init__(self):
+        from umiproc.paths import check_root
+
+        check_root(self.path)
 
     @property
     def incoming(self) -> Path:
@@ -81,10 +91,11 @@ class TaskRef:
 
 
 def data_root(path: str | os.PathLike | None = None) -> DataRoot:
-    """The data root: ``path`` if given, else ``$DATAPROC_ROOT`` if set and non-empty, else ``~/data``."""
-    if path is None:
-        path = os.environ.get(ENV_ROOT) or DEFAULT_ROOT
-    return DataRoot(Path(path).expanduser().absolute())
+    """The data root: ``path`` if given, else ``$UMIPROC_ROOT`` if set and non-empty, else ``~/data/umi``
+    (:func:`umiproc.paths.data_root`; ``ValueError`` for a refused root)."""
+    from umiproc.paths import data_root as umiproc_data_root
+
+    return DataRoot(umiproc_data_root(path))
 
 
 def validate_name(name: str, what: str = "task name") -> str:

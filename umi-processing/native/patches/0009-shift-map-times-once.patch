@@ -1,0 +1,39 @@
+umiproc patch 0009: shift the loaded map's keyframe times only on the first relocalization
+
+What: Tracking::Track, INIT_RELOCALIZE: the time shift that puts the map's last keyframe one frame period before
+the relocalized frame is applied only the first time (a Tracking flag); later relocalizations leave every
+keyframe time as it is.
+Why: on every relocalization the fork shifted all keyframes of the map, the run's own included, so that the last
+one sat just before the new keyframe. After the first one this moves the run's keyframes away from their frames
+(the CSV's is_keyframe stops matching; the map's first keyframe went -6.40 -> -13.08 -> -23.82 s over three
+relocalizations) and inflates the time between the last keyframe and the new one, which LocalMapping adds to
+mTinit (VIBA 1 at 5 s, VIBA 2 at 15 s, scale refinements at 25, 35, ... s): VIBA 2 ran inside a 12 s demo.
+Behaviour change: localization runs that relocalize more than once.
+Exported with 1 line of context, so that it and patch 0001 do not overlap.
+
+diff --git a/include/Tracking.h b/include/Tracking.h
+index 6a7ce8f..ee07c61 100644
+--- a/include/Tracking.h
++++ b/include/Tracking.h
+@@ -316,2 +316,3 @@ protected:
+     bool mbLoadedMap;
++    bool mbMapTimesShifted = false;   // umiproc patch 0009: the loaded map's keyframe times were shifted once
+ 
+diff --git a/src/Tracking.cc b/src/Tracking.cc
+index 4c2ded1..fa6eeff 100644
+--- a/src/Tracking.cc
++++ b/src/Tracking.cc
+@@ -1704,2 +1704,9 @@ void Tracking::Track()
+                         double t_offset = - vpKFs.back()->mTimeStamp - dt;
++                        // umiproc patch 0009: shift only on the first relocalization, when the keyframes are all the
++                        // loaded map's (so the demo starts right after it in time). Later ones shifted every keyframe,
++                        // the run's own too, again: their times drifted (is_keyframe in the CSV, KF culling) and the
++                        // gap to the new keyframe was inflated (LocalMapping's mTinit, which triggers VIBA 1/2 and the
++                        // scale refinements).
++                        if (mbMapTimesShifted)
++                            t_offset = 0.0;
+                         for (auto kf : vpKFs) {
+@@ -1707,2 +1714,3 @@ void Tracking::Track()
+                         }
++                        mbMapTimesShifted = true;
+ 

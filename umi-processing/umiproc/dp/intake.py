@@ -25,7 +25,10 @@ already taken). Generic filesystem plumbing lives in :mod:`dataproc.fsutil`.
 ``task.yaml`` (it is never created), and each episode goes to ``tasks/<folder>/.staging/<pi_name>/raw`` instead of
 ``episode_N``. ``dataproc run`` later moves it on with :func:`move_slot` (to ``episode_N`` when it passed every
 stage, to ``failed/<pi_name>`` otherwise), which appends the new slot's ledger row. ``episodes.csv`` stays
-append-only: the newest row of a recording is where it is now; :meth:`Intake.reconcile` knows all four slot kinds.
+append-only: the newest row of a recording is where it is now; :meth:`Intake.reconcile` knows all five slot kinds.
+
+**Map target** (``map_slot=True``, umiproc: ``umiproc map``): like ``calibration`` (one episode), but the episode goes
+to ``tasks/<folder>/map/<pi_name>/raw`` with kind ``map``; a folder holds at most one map recording.
 
 Nothing is ever deleted or copied; raw files are never opened for writing.
 """
@@ -67,7 +70,9 @@ TASK_YAML = "task.yaml"
 PENDING_NAME = ".intake_pending.json"
 REASON_NAME = "reason.json"
 
-DEMONSTRATION, CALIBRATION = "demonstration", "calibration"
+DEMONSTRATION, CALIBRATION, MAP = "demonstration", "calibration", "map"
+#: ``tasks/<folder>/map/<pi_name>/``: the session's map recording (umiproc).
+MAP_DIR = "map"
 
 
 class IntakeError(Exception):
@@ -192,13 +197,15 @@ def _task_folders(root: DataRoot) -> list[Path]:
 
 
 def _slots_on_disk(task_dir: Path) -> list[tuple[str, str, Path]]:
-    """``(slot, kind, raw_dir)`` for every ``episode_N/raw``, ``calibration/<x>/raw``, ``.staging/<x>/raw`` and
-    ``failed/<x>/raw`` present (the last two are demonstrations ``dataproc run`` has not finished / that failed)."""
+    """``(slot, kind, raw_dir)`` for every ``episode_N/raw``, ``calibration/<x>/raw``, ``map/<x>/raw``,
+    ``.staging/<x>/raw`` and ``failed/<x>/raw`` present (the last two are demonstrations ``dataproc run`` has not
+    finished / that failed)."""
     out = []
     for d in episode_dirs(task_dir):
         if os.path.lexists(d / "raw"):
             out.append((d.name, DEMONSTRATION, d / "raw"))
-    for sub, kind in (("calibration", CALIBRATION), (STAGING_DIR, DEMONSTRATION), (FAILED_DIR, DEMONSTRATION)):
+    for sub, kind in (("calibration", CALIBRATION), (MAP_DIR, MAP), (STAGING_DIR, DEMONSTRATION),
+                      (FAILED_DIR, DEMONSTRATION)):
         parent = task_dir / sub
         if parent.is_dir() and not parent.is_symlink():
             for d in sorted(parent.iterdir()):
@@ -208,8 +215,9 @@ def _slots_on_disk(task_dir: Path) -> list[tuple[str, str, Path]]:
 
 
 def _named_slot(slot: str) -> bool:
-    """True for ``calibration/<x>``, ``.staging/<x>`` and ``failed/<x>``: slots whose dir name is the Pi name."""
-    return slot.split("/", 1)[0] in ("calibration", STAGING_DIR, FAILED_DIR) and "/" in slot
+    """True for ``calibration/<x>``, ``map/<x>``, ``.staging/<x>`` and ``failed/<x>``: slots whose dir name is the
+    Pi name."""
+    return slot.split("/", 1)[0] in ("calibration", MAP_DIR, STAGING_DIR, FAILED_DIR) and "/" in slot
 
 
 def _read_pending(task_dir: Path) -> dict:
@@ -439,11 +447,25 @@ class TaskTarget:
         self.rig = rig_id
         self._ready = True
 
-    def next_slot(self, pi_name: str, calibration: bool, staging: bool = False) -> tuple[Path, str, str]:
+    def next_slot(self, pi_name: str, calibration: bool, staging: bool = False,
+                  map_slot: bool = False) -> tuple[Path, str, str]:
         """``(slot_dir, slot, kind)`` for the next episode: ``episode_N`` (N = next free number), with
-        ``calibration`` ``calibration/<pi_name>[__k]`` (creating ``calibration/`` if missing), or with ``staging``
-        ``.staging/<pi_name>`` (creating ``.staging/`` if missing; an existing one is an :class:`IntakeError`).
-        Not created yet."""
+        ``calibration`` ``calibration/<pi_name>[__k]`` (creating ``calibration/`` if missing), with ``staging``
+        ``.staging/<pi_name>`` (creating ``.staging/`` if missing; an existing one is an :class:`IntakeError`), or
+        with ``map_slot`` ``map/<pi_name>`` (creating ``map/`` if missing; a ``map/`` that already holds anything is
+        an :class:`IntakeError`: one map recording per folder). Not created yet."""
+        if map_slot:
+            md = self.dir / MAP_DIR
+            if os.path.lexists(md):
+                if not md.is_dir() or md.is_symlink():
+                    raise IntakeError(f"{md} exists but is not a directory")
+                taken = sorted(p.name for p in md.iterdir() if not p.name.startswith("."))
+                if taken:
+                    raise IntakeError(f"{md} already holds a map recording ({', '.join(taken)}): one map per folder")
+            else:
+                os.mkdir(md)
+                self.note_made(md)
+            return md / pi_name, f"{MAP_DIR}/{pi_name}", MAP
         if staging:
             st = self.dir / STAGING_DIR
             if not os.path.lexists(st):
@@ -476,8 +498,8 @@ class TaskTarget:
 
     def rollback_if_unused(self) -> None:
         """After a failed first ingest: undo what this run created in the folder (``task.yaml``, the pending
-        record, an empty ``calibration/``, the folder itself if this run made it and it is then empty). Only when
-        this run wrote ``task.yaml`` and the folder still holds no episode; never touches episode data."""
+        record, an empty ``calibration/`` or ``map/``, the folder itself if this run made it and it is then empty).
+        Only when this run wrote ``task.yaml`` and the folder still holds no episode; never touches episode data."""
         if not any(p.name == TASK_YAML for p in self._made) or self._has_episodes():
             return
         for p in reversed(self._made):
@@ -507,18 +529,20 @@ class Intake:
     """One ``dataproc intake`` run. :meth:`run` is the whole sequence; each step is one method below it."""
 
     def __init__(self, root: DataRoot, task: str, new: bool = False, calibration: bool = False, log=print,
-                 staging: bool = False):
+                 staging: bool = False, map_slot: bool = False):
         validate_name(task)
-        if staging and (new or calibration):
+        if staging and (new or calibration or map_slot):
             raise IntakeError("the staging target takes demonstrations into an existing folder (no --new, no "
-                              "--calibration)")
+                              "--calibration, no map)")
+        if map_slot and calibration:
+            raise IntakeError("an episode is either the map recording or a calibration, not both")
         self.root, self.task, self.new, self.calibration, self.log = root, task, new, calibration, log
-        self.staging = staging
+        self.staging, self.map_slot = staging, map_slot
         self.result = IntakeResult(None, None)
         self.quarantine_area = Quarantine(root)
         self.target: TaskTarget | None = None
         self.duplicates: DuplicateIndex | None = None
-        self.calibration_taken = False       # --calibration takes one episode; later candidates wait
+        self.calibration_taken = False       # --calibration (and the map target) take one episode; later ones wait
         self.current: Candidate | None = None
 
     def run(self) -> IntakeResult:
@@ -682,6 +706,8 @@ class Intake:
             if self.calibration:
                 checks.append((fsutil.nearest_existing(self.target.dir / "calibration"),
                                "the target calibration/ folder"))
+            if self.map_slot:
+                checks.append((fsutil.nearest_existing(self.target.dir / MAP_DIR), "the target map/ folder"))
         _require_writable(checks)
 
     def in_order(self, candidates: list[Candidate]) -> list[Candidate]:
@@ -717,7 +743,8 @@ class Intake:
         duplicate -> rig -> quarantine (any reason) or ingest."""
         self.current = c
         if self.calibration_taken:
-            self.record(EpisodeOutcome(c.name, "waiting", note="left in incoming (--calibration takes one episode)"))
+            self.record(EpisodeOutcome(c.name, "waiting", note="left in incoming (--calibration and the map target "
+                                                               "take one episode)"))
             return
         report = self.validate(c)
         if self.transfer_restarted(c):
@@ -766,7 +793,7 @@ class Intake:
     def quarantine(self, c: Candidate, reasons: list[str], report: ValidationReport, details: dict) -> None:
         """Move the episode to ``quarantine/<name>[__k]/raw`` and write its ``reason.json`` (see
         :meth:`Quarantine.put`)."""
-        mode = CALIBRATION if self.calibration else DEMONSTRATION
+        mode = CALIBRATION if self.calibration else MAP if self.map_slot else DEMONSTRATION
         self.record(self.quarantine_area.put(c, reasons, report, details, self.target.folder, mode))
 
     def ingest(self, c: Candidate) -> None:
@@ -778,7 +805,7 @@ class Intake:
         slot_dir = None
         try:
             target.ensure(meta.rig_id)
-            slot_dir, slot, kind = target.next_slot(c.name, self.calibration, self.staging)
+            slot_dir, slot, kind = target.next_slot(c.name, self.calibration, self.staging, self.map_slot)
             manifest_sha = _manifest_sha(c.path)
             target.write_pending(slot, c.name, kind)
             os.mkdir(slot_dir)
@@ -791,7 +818,7 @@ class Intake:
         target.ledger.append(Ledger.make_row(slot, c.name, meta, kind, _now_ns(), manifest_sha))
         self.record(EpisodeOutcome(c.name, "ingested", slot=slot))
         self.duplicates.add(c.name, meta.session_id, str(meta.episode_number), f"{target.folder}/{slot}")
-        self.calibration_taken = self.calibration
+        self.calibration_taken = self.calibration or self.map_slot
 
     # ----------------------------------------------------------------------------------------- outcomes
 
@@ -805,14 +832,15 @@ class Intake:
 # --------------------------------------------------------------------------------------------- public entry points
 
 def run_intake(root: DataRoot, task: str, new: bool = False, calibration: bool = False, log=print,
-               staging: bool = False) -> IntakeResult:
+               staging: bool = False, map_slot: bool = False) -> IntakeResult:
     """Run one intake for task name ``task`` (``[A-Za-z0-9_-]+``) into ``resolve_intake_target(...)``, or with
-    ``staging`` into ``tasks/<task>/.staging/<pi_name>/`` of the existing folder ``task``.
+    ``staging`` into ``tasks/<task>/.staging/<pi_name>/`` of the existing folder ``task``, or with ``map_slot`` into
+    ``map/<pi_name>/`` of the target (umiproc's map recording; one episode).
 
     ``log`` receives progress lines (reconcile notes). Raises :class:`IntakeError` (incl. :class:`LockHeldError`);
     quarantined episodes are not errors. See :class:`Intake` and docs/INTAKE.md.
     """
-    return Intake(root, task, new=new, calibration=calibration, log=log, staging=staging).run()
+    return Intake(root, task, new=new, calibration=calibration, log=log, staging=staging, map_slot=map_slot).run()
 
 
 def reconcile(root: DataRoot, log=print) -> list[tuple[str, str]]:

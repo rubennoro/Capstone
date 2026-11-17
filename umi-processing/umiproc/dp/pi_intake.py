@@ -8,7 +8,8 @@
         adapted, problems = adapt_sources(root, sources, rig_id)       # -> incoming/<converted_name>/
         taken = intake_adapted(root, task, adapted, "demonstration")   # intake + pi_sources.csv rows
 
-Every source that reached intake (ingested or quarantined) is recorded in ``$DATAPROC_ROOT/pi_sources.csv``, so it
+Every source that reached intake (ingested or quarantined) is recorded in ``<root>/pi_sources.csv`` (umiproc: the
+root is ``umiproc.paths.data_root()``) with its kind (umiproc: ``map``, ``calibration`` or ``demonstration``), so it
 is never taken twice. A source that failed to convert is not recorded (it can be retried).
 """
 
@@ -178,18 +179,19 @@ def set_source_status(root: DataRoot, manifest_sha256: str, status: str) -> bool
 
 
 def intake_adapted(root: DataRoot, task: str, adapted: dict, kind: str, *, calibration: bool = False,
-                   new: bool = False, staging: bool = False, log: Callable = print) -> TakeResult:
-    """Run intake on the episodes :func:`adapt_sources` put in ``incoming/`` (``task``, ``new``, ``calibration``
-    and ``staging`` as for :func:`~dataproc.intake.run_intake`), then append a ``pi_sources.csv`` row (``kind``,
-    the folder, ingested / quarantined) for each source that reached intake. Raises :class:`PiIntakeError` if
-    intake left anything in ``incoming/``."""
+                   new: bool = False, staging: bool = False, map_slot: bool = False,
+                   log: Callable = print) -> TakeResult:
+    """Run intake on the episodes :func:`adapt_sources` put in ``incoming/`` (``task``, ``new``, ``calibration``,
+    ``staging`` and ``map_slot`` as for :func:`~dataproc.intake.run_intake`), then append a ``pi_sources.csv`` row
+    (``kind``, the folder, ingested / quarantined) for each source that reached intake. Raises
+    :class:`PiIntakeError` if intake left anything in ``incoming/``."""
     from umiproc.dp.intake import run_intake
     from umiproc.dp.pi_adapter import SOURCES_FILE, append_sources
 
     res = TakeResult(None)
     if not adapted:
         return res
-    result = run_intake(root, task, new=new, calibration=calibration, log=log, staging=staging)
+    result = run_intake(root, task, new=new, calibration=calibration, log=log, staging=staging, map_slot=map_slot)
     res.folder = result.folder
     for o in result.outcomes:
         s = adapted.get(o.pi_name)

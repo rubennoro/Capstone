@@ -38,6 +38,114 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
     task.yaml  map/  calibration/  gripper_range.json  .staging/  episode_N/  failed/<pi_name>/  episodes.csv  report.json
 ```
 
+### The root (`umiproc/paths.py`)
+
+- `umiproc.paths.data_root()` is the only source of the root: `--root`, else `$UMIPROC_ROOT`, else `~/data/umi`. The
+  copied dataproc code asks it too (`umiproc.dp.paths.data_root`, and every `DataRoot` checks its path), so nothing
+  umiproc runs reads `$DATAPROC_ROOT` or defaults to `~/data`.
+- Refused as the root (also through a symlink or `..`): `/data`, and dataproc's own root, `~/data` and
+  `$DATAPROC_ROOT` when it is set (umiproc's `tasks/`, `incoming/`, `rigs/` and `pi_sources.csv` would mix with
+  dataproc's). A folder inside them, such as the default `~/data/umi`, is fine, except:
+- Refused as the root, and every folder inside them: the Pi's `/data/incoming` (umiproc would write `.run.lock`,
+  `incoming/`, `tasks/` and `pi_sources.csv` into the Pi's delivery folder), and dataproc's managed subfolders
+  `incoming/`, `tasks/`, `rigs/`, `quarantine/`, `datasets/` of `~/data` and of `$DATAPROC_ROOT` when it is set.
+
+### Full layout
+
+```
+~/data/umi/
+  pi_sources.csv              one row per recording taken: source_name, source_manifest_sha256, converted_name, task
+                              (the folder), kind (map | calibration | demonstration), status, adapted_unix_ns
+  .run.lock                   held by every command that takes recordings (one at a time)
+  rigs/<rig>.yaml             copy of configs/rigs/<rig>.yaml       (schema dataproc.rig.v1)
+  rigs/<rig>.slam.yaml        copy of configs/slam/<rig>.yaml       (schema umiproc.slam.v1)
+  rigs/<rig>.lens.yaml        optional: `umiproc lens-calibrate --apply` (schema umiproc.lens.v1); an older one is
+                              kept as <rig>.lens.yaml.bak-<UTC time>
+  lens/<pi_name>/             lens-calibrate results: report.json, coverage.png, lens.yaml (only when every check passed)
+  incoming/<pi_name>/         a recording converted to the copied raw format, while a command checks it; empty between
+                              commands (a leftover stops the next command until it is moved away)
+  quarantine/<pi_name>/       a converted recording the copied intake refused (validation, duplicate), with reason.json
+  tasks/TASK/                 TASK, TASK_2, ... (task.yaml label stays TASK)
+    task.yaml                 label, rig, created
+    episodes.csv              the folder's ledger: one row per slot (slot, pi_name, ..., kind), append-only
+    map/<pi_name>/raw/        the map recording (exactly one per folder; step 2 adds the map next to raw/)
+    calibration/<pi_name>/raw/  the gripper calibration recording
+    gripper_range.json        the gripper calibration's result
+    .staging/<pi_name>/       a demonstration being processed, or waiting for the gripper calibration
+    episode_N/                passed every check (from episode_1)
+    failed/<pi_name>/         failed a check: reason.json (stage, reasons, message, time)
+    report.json               the last run's outcome per recording
+```
+
+`<pi_name>` is the converted name `pi-YYYY-MM-DD_episode_NNNNNN` (the local date the Pi wrote `COMPLETE`).
+
+### Taking recordings (`umiproc/recordings.py`)
+
+- A command takes a recording in two steps under `.run.lock`: `inspect_recording` (read only: `COMPLETE`, every file
+  against `MANIFEST.sha256`, `meta.json` valid, not in `pi_sources.csv` yet), `stage` (convert it into
+  `incoming/<pi_name>/` with the copied adapter), then `take(kind)` (the copied intake moves it into its slot and writes
+  both ledgers) or `discard` (nothing recorded: it can be retried). So a failed map or calibration attaches nothing.
+- By kind: `map` creates the session's folder (`TASK`, else `TASK_2`, ... as the copied calibrate does) with the
+  recording in `map/<pi_name>/raw`; `calibration` and `demonstration` go into an existing folder (made by `map`), to
+  `calibration/<pi_name>/raw` and `.staging/<pi_name>/raw`.
+- `run`'s range reads the kind from `pi_sources.csv` (`kind_of`, `not_a_demonstration`) and skips the map and
+  calibration recordings with a reason.
+- A recording the copied intake refuses (contract errors, or the same converted name as one already taken) goes to
+  `quarantine/` and is recorded as `quarantined`, as in dataproc.
+
+### The rig file, SLAM config and lens file (`umiproc/sensors.py`)
+
+- The processing reads only the data-root copies in `rigs/`. A missing rig file or SLAM config is copied from the repo
+  (`ensure_rig_files`; never over an existing copy). An existing copy is compared with the repo by value (`720` equals
+  `720.0`; free-text notes ignored): differences are printed and shown by `umiproc status`, and the copy is used (it may
+  be edited on purpose). Refused: a rig copy that predates a section the repo has (the copied `check_rig_copy` rule) and
+  a rig file with `cameras.ultrawide.slam_mask` (the mask is the SLAM config's only, see "SLAM").
+- `lens-calibrate` reads the data-root copies when they exist, else the repo's files; it copies nothing (the first
+  `map` does).
+- `load_sensors` gives the **effective sensor values**: the rig with the lens file's model in place of the nominal
+  ultrawide model when the lens file exists (provenance `calibrated`, its date and source), else the nominal model
+  (`nominal, uncalibrated`); the CAD `T_imu_cam`; time offsets 0 (a rig copy with another offset is refused); the IMU
+  noise as in the rig file (`imu.vio_inflation` applied for SLAM); the IMU rate 104 Hz (the LSM6DSOX rate the Pi
+  sets, `meta.json imu.odr_hz`). Refused: a lens file for another rig, camera, sensor or resolution, and a SLAM config
+  whose mask resolution is not the ultrawide's. The effective rig is the one every stage uses (SLAM, tags, images).
+
+### SLAM inputs (`umiproc/slam_inputs.py`)
+
+Every SLAM run (map and localization) gets the same two files, written from the effective sensor values:
+
+- `orbslam3_settings.yaml`, format `File.version "1.0"`: the fork picks its `Settings` parser for it
+  (`src/System.cc`), which aborts on a missing key or a wrong type (reals need a `.` or an `e`, `IMU.T_b_c1` must be
+  `dt: f`). Every key is checked against `src/Settings.cc` and by running the real binary
+  (`tests/test_umiproc_slam_inputs.py`).
+
+  | Key | Value | Source / reason |
+  |---|---|---|
+  | `Camera.type` | `"KannalaBrandt8"` | the rig's fisheye-equidistant = Kannala-Brandt k1..k4 |
+  | `Camera1.fx fy cx cy k1..k4` | effective ultrawide model, native pixels | lens file, else the rig's nominal model |
+  | `Camera.width/height` | 1280 / 960 | native size, no scaling (UMI scaled its GoPro to 960x720) |
+  | `Camera.fps` | 30 | the ultrawide's rate (patches 0001/0005 use it) |
+  | `Camera.RGB` | 0 | frames are grey PNGs read as grey: not used |
+  | `IMU.T_b_c1` | the ultrawide's CAD `T_imu_cam` | camera -> IMU body |
+  | `IMU.NoiseGyro/NoiseAcc` | 6.63e-5 / 7.36e-4 | datasheet densities x `vio_inflation.noise_density` (1.0) |
+  | `IMU.GyroWalk/AccWalk` | 2e-6 / 1e-4 | assumed random walks x `vio_inflation.random_walk` (1.0) |
+  | `IMU.Frequency` | 104.0 | the LSM6DSOX rate the Pi sets (only scales the noise per sample) |
+  | `IMU.InsertKFsWhenLost` | 1 | the parser's default, which UMI's settings use (they omit the key) |
+  | `ORBextractor.*` | SLAM config `orb` (1500, 1.2, 8, 20, 7) | |
+  | `System.thFarPoints` | 20.0 | UMI's |
+  | `Viewer.*` | UMI's values | required by the parser; no viewer runs |
+
+  No file path goes into it, so its hash does not depend on where the root is.
+- `slam_mask.png`: the SLAM config's polygons drawn by `mask_keep` at 1280x960, 8-bit grey, **255 = masked** (the
+  front-end sets nonzero pixels to 0 in every frame). Pixel-identical to the mask of the 2026-11-16 experiments.
+- **Fingerprint** (`slam_fingerprint`, `fingerprint_hash`): the effective sensor values, the SLAM config (mask
+  polygons, table tag, ORB), the mask's pixel hash, the settings file's sha256, the umiproc_slam binary's path and
+  sha256, and its build: the sha256 of the build's `BUILD_INFO` (next to the binary; without its `built <time>` line, which every `build.sh` run rewrites), the patch list parsed from that
+  `BUILD_INFO` (names and content hashes: what the build applied), and the path and sha256 of the `libORB_SLAM3.so`
+  the binary loads (all the patches live in that library). The library is resolved with `ldd` on the binary, as
+  `build.sh`'s own check does, and must be the `library` that `BUILD_INFO` records. A missing binary, `BUILD_INFO` or
+  library is an error naming `native/build.sh`. Its hash is the sha256 of the canonical JSON. Maps and episodes
+  store it; a different hash means they are out of date (re-run the map, then every episode).
+
 ## The session (UMI's order)
 
 | Step | Record | Command | Result |
@@ -55,10 +163,35 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
 ## SLAM (UMI's ORB-SLAM3 fork)
 
 - Fork `github.com/cheng-chi/ORB_SLAM3` at `b741dca`, Pangolin at the pinned `d484494`, built natively (no Docker) with
-  `native/build.sh` on the Jetson and the laptop; our patches in `native/patches/`.
-- Front-end `native/umi_slam/dataproc_umi_slam.cc`: reads the EuRoC folder the copied `write_euroc` writes (real
-  per-frame times, starting at 0 for the fork's map loading), `--save_map` / `--load_map`, `--mask_img`, real-time
-  pacing (ORB-SLAM3 skips keyframes otherwise), input checks, `--max_lost_frames`.
+  `native/build.sh` on the Jetson and the laptop (it builds its own OpenCV 4.5.4 + contrib: JetPack's 4.8 has the
+  newer aruco API the fork cannot build against); our patches in `native/patches/`, listed in
+  `~/ORB_SLAM3_umi/umiproc_build/BUILD_INFO`:
+
+  | Patch | Fixes |
+  |---|---|
+  | 0001 | frame period from `Camera.fps` (was hard-coded 1/59.97 s, UMI's GoPro) |
+  | 0002 | `SaveTrajectoryCSV` crashed when no map had a keyframe |
+  | 0003 | a relocalization against the loaded map gave the new keyframe an IMU link spanning everything since frame 0 |
+  | 0004 | the table-tag pose used uninitialised distortion values |
+  | 0005 | `mnFramesToResetIMU` is never set for the settings format UMI uses (0 in our runs); set to `Camera.fps`, as ORB-SLAM3's older settings reader does. **A deliberate difference from UMI's behaviour** (user, 2026-11-16): demo 119 localized 20/362 frames without it, 340–362/362 with it |
+  | 0006 | `System::MapSummary()`, read only (the map checks) |
+  | 0007 | the first keyframe after a relocalization started with zero IMU bias; it now starts from the map's |
+  | 0008 | after a relocalization `mnLastKeyFrameId` held a keyframe id where every other place holds a frame id |
+  | 0009 | every relocalization shifted the map's keyframe times again (−6.4 → −13.1 → −23.8 s); now only the first does |
+
+  0007–0009 were checked mechanically on demo recordings only (each removes its symptom; no crash or regression in
+  the earlier runs); their effect on pose quality is judged on the first real mapping session (user, 2026-11-16),
+  against a 0001–0006 build: `PATCHES_UPTO=0006 native/build.sh` → `~/ORB_SLAM3_umi/umiproc_build_0006/` (its own
+  library), selected with `UMIPROC_SLAM_BINARY`. Not patched: a first relocalization late in a clip still adds the
+  whole wait to LocalMapping's `mTinit` (as the fork intends).
+
+- Front-end `native/umi_slam/umiproc_slam.cc` (binary `~/ORB_SLAM3_umi/umiproc_build/umiproc_slam`): reads the EuRoC
+  folder the copied `write_euroc` writes (real per-frame times, starting at 0 for the fork's map loading),
+  `--save_map` / `--load_map`, `--mask_img`, real-time pacing (ORB-SLAM3 skips keyframes otherwise), input checks,
+  `--max_lost_frames`; its last line `UMIPROC_SUMMARY {json}` gives every map's keyframes, IMU init and VIBA 1/2,
+  and the pacing: per-frame tracking time (median, p95, max in ms), the frames whose tracking took longer than their
+  frame period, and the achieved feed rate against the recording's (whether the Jetson keeps up).
+  Python side: `umiproc/slam/{runner,log,trajectory_csv}.py`.
 - **Gripper mask, UMI's exact mechanism:** a mask PNG drawn once from our polygons (`configs/slam/rig_pi_v3.yaml`),
   nonzero = masked; the front-end sets those pixels to 0 in every frame it feeds ORB-SLAM3 (`im.setTo(0, mask)`, as
   `gopro_slam.cc`), in the mapping run **and** every localization run. The frames on disk, tag widths and training
@@ -70,6 +203,12 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
   uncalibrated"); camera→IMU = the rig's CAD `T_imu_cam`; time offset = 0 (the copied `time_offset_check` is reported
   as a diagnostic on every map and episode); IMU noise = datasheet densities (LSM6DSOX Rn 3.8 mdps/√Hz; An 75 µg/√Hz at
   ±4 g, the Pi's range) and the two random walks as documented assumptions.
+- **IMU noise A/B on the first real mapping session** (user, 2026-11-16): the datasheet values stay the documented
+  default (`imu.vio_inflation` 1.0 / 1.0 in `configs/rigs/rig_pi_v3.yaml`). The first mapping clip is run twice: as
+  is, and with `imu.vio_inflation: {noise_density: 10, random_walk: 10}` set in the data-root rig copy
+  (`~/data/umi/rigs/rig_pi_v3.yaml`; the settings writer multiplies both densities by `noise_density` and both
+  random walks by `random_walk`, and the fingerprint changes with it). The two are compared on checks M2–M4,
+  alongside the 0006-vs-0009 patch comparison. No other change to the noise values.
 - Every map and episode records the exact sensor values and SLAM settings it was made with; changing them re-runs
   the map and then every episode.
 
@@ -112,7 +251,7 @@ both finger tags are seen in ≥ 80 % of the calibration frames.
 | Step | Built | DIRECTIONS.md |
 |---|---|---|
 | 0 | `lens-board`, `lens-calibrate` | §1 lens calibration (optional, 1 min) |
-| 1 | native build + patches, data root and organization, rig + SLAM config, `status` | §2 Jetson setup |
+| 1 | native build + patches, data root and organization, rig + SLAM config, settings, mask, fingerprint, `status` | §2 Jetson setup |
 | 2 | `map` and M1–M5 | §3 prove the environment: record a mapping clip, run `map`, read the checks |
 | 3 | `run` (UMI's rules, splitting, waiting for gripper calibration) and `calibrate` | §4 prove demos, §5 gripper calibration and finishing |
 | 4 | smoke test on existing recordings, final pass | §3–5 adjusted |
@@ -129,6 +268,20 @@ Apart from the import rewrite and the repo paths:
   ±2 g figure), each value labelled datasheet or assumption.
 - User-facing messages still name `dataproc` commands (e.g. "dataproc calibrate first"); the steps that wire a module
   into a `umiproc` command change its messages.
+- `paths.py`: the root is `umiproc.paths.data_root()` (`$UMIPROC_ROOT`, default `~/data/umi`); `ENV_ROOT` and
+  `DEFAULT_ROOT` are umiproc's; `DataRoot` refuses `/data` and dataproc's root (`umiproc.paths.check_root`).
+  `$DATAPROC_ROOT` is no longer read anywhere.
+- `intake.py`: a fifth slot kind, `map` (`map/<pi_name>/raw`, one per folder, one episode per intake, like
+  `calibration`): `run_intake(..., map_slot=True)`, `TaskTarget.next_slot(..., map_slot)`; reconcile, rollback, the
+  quarantine `mode` and the writable checks know it.
+- `pi_intake.py`: `intake_adapted(..., map_slot=False)` passes it through (the `kind` written to `pi_sources.csv` was
+  already free text).
+- `run/plan.py`: a recording recorded as `map` is skipped ("is the map recording (of task folder ...)"), like a
+  calibration.
+- Messages and help naming `$DATAPROC_ROOT` now name `$UMIPROC_ROOT` (`cli.py`, `calibrate/task.py`, `run/plan.py`,
+  docstrings of `pi_adapter.py`, `pi_intake.py`, `package/build.py`).
+- `tests/dp/`: `$DATAPROC_ROOT` became `$UMIPROC_ROOT`; `conftest.py` points `$UMIPROC_ROOT` at a temporary folder
+  for the whole session and removes `$DATAPROC_ROOT`, so no copied test can reach a real root.
 
 Known failures inherited from `e69b4b1` (they fail in `data-processing/` too, after its "remove hard cap on calibration"
 change): `tests/dp/calibrate/test_calibrate_task.py::{test_opening_out_of_tolerance_only_warns,

@@ -131,7 +131,7 @@ def test_fatal_setup_errors(tmp_path_factory, tmp_path, capsys):
     from umiproc.dp.process import cli_process
 
     root = copy_root(template_root(tmp_path_factory), tmp_path / "root")
-    os.environ["DATAPROC_ROOT"] = str(root.path)
+    os.environ["UMIPROC_ROOT"] = str(root.path)
     try:
         assert cli_process(data_root(), "other", slam="oracle") == 1
         assert "run intake first" in capsys.readouterr().err
@@ -145,7 +145,7 @@ def test_fatal_setup_errors(tmp_path_factory, tmp_path, capsys):
         assert cli_process(data_root(), TASK, slam="oracle") == 1
         assert "task.yaml is missing" in capsys.readouterr().err
     finally:
-        del os.environ["DATAPROC_ROOT"]
+        del os.environ["UMIPROC_ROOT"]
 
 
 def test_status_json_records(root):

@@ -12,8 +12,8 @@
    * ``retry``: in this folder's ``failed/`` and ``--retry-failed``;
    * ``reprocess``: already an ``episode_N`` of this folder and ``--force``;
    * ``skip`` with why: still syncing, manifest failed, marked invalid by the Pi, already an episode of this folder
-     (``quiet``), taken by another task folder, a calibration, quarantined at intake, failed earlier at
-     ``<stage>: <reason>``.
+     (``quiet``), taken by another task folder, a calibration, a map recording (umiproc), quarantined at intake,
+     failed earlier at ``<stage>: <reason>``.
 
    Every ``.staging/`` leftover outside the range is resumed too (its source is not needed any more). Everything
    is processed in natural order of the source names, so episode numbers follow the recording order.
@@ -167,7 +167,8 @@ def plan_run(root: DataRoot, folder: str, start: str, end: str, source: Path, re
     if not source.is_dir():
         raise RunError(f"--source {source} is not a directory")
     if root.incoming.resolve() == source.resolve():
-        raise RunError(f"--source {source} is dataproc's own incoming/ (staging); point DATAPROC_ROOT elsewhere")
+        raise RunError(f"--source {source} is the data root's own incoming/ (staging); point UMIPROC_ROOT "
+                       "elsewhere")
     names = select_range(source, start, end)
     plan = RunPlan(folder, task_dir, task.label, task.rig, source, start, end)
     taken = taken_sources(root)
@@ -208,6 +209,8 @@ def _classify_taken(rec: Recording, folder: str, task_dir: Path, staged: set, fa
     pi = rec.pi_name = row.get("converted_name") or None
     if row.get("kind") == "calibration":
         rec.why = f"is a calibration (of task folder {row.get('task')})"
+    elif row.get("kind") == "map":                                   # umiproc: the session's map recording
+        rec.why = f"is the map recording (of task folder {row.get('task')})"
     elif row.get("task") != folder:
         rec.why = f"taken by another task folder ({row.get('task')}: {row.get('kind')}, {row.get('status')})"
     elif pi in staged:

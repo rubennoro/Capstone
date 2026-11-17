@@ -1,0 +1,26 @@
+umiproc patch 0001: one frame period from Camera.fps when a loaded map is shifted in time
+
+What: Tracking::Track, INIT_RELOCALIZE success. The loaded map's keyframe times are shifted so that its last
+keyframe sits `dt` before t = 0. dt is now `const double dt = 1.0 / mMaxFrames` (Camera.fps from the settings),
+and the dead block that re-declared dt in an inner scope is removed.
+Why: dt was hard-coded to 1.0 / 59.97 (UMI's GoPro at 60 fps); our camera runs at 30 fps. The removed
+`if (...) { double dt = ...->dT; }` shadowed the outer dt, so the preintegration's dT was never used.
+Behaviour change: vs the fork, the map's last keyframe is put 1/30 s (not 1/59.97 s) before the demo's first
+frame. Removing the shadowed block changes nothing.
+Exported with 1 line of context, so that patch 0009 can add lines right after it.
+
+diff --git a/src/Tracking.cc b/src/Tracking.cc
+index 2c2b4b7..01e7881 100644
+--- a/src/Tracking.cc
++++ b/src/Tracking.cc
+@@ -1672,6 +1672,6 @@ void Tracking::Track()
+                         cout << "vpKFs.back()->mpImuPreintegrated" << vpKFs.back()->mpImuPreintegrated << endl;
+-                        double dt = 1.0 / 59.97;
+-                        if (vpKFs.back()->mpImuPreintegrated != nullptr){
+-                            double dt = vpKFs.back()->mpImuPreintegrated->dT;
+-                        }
++                        // umiproc patch 0001: the map's last keyframe is put one frame period (at Camera.fps) before
++                        // t = 0; was 1.0 / 59.97 (GoPro). The removed `if` re-declared dt in an inner scope, so the
++                        // preintegration's dT was never used.
++                        const double dt = 1.0 / mMaxFrames;
+                         double t_offset = - vpKFs.back()->mTimeStamp - dt;

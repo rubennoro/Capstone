@@ -1,0 +1,28 @@
+umiproc patch 0005: set mnFramesToResetIMU for File.version "1.0" settings too
+
+What: the Tracking constructor sets mnFramesToResetIMU = mMaxFrames (Camera.fps) for inertial sensors when the
+settings are the new format, as the legacy parser already does.
+Why: only the legacy parser set it, so with File.version "1.0" settings (umiproc's and UMI's own) it was
+indeterminate (it read 0 on the laptop in 3 of 3 runs). It is how many frames after a relocalization (or a map
+reset) tracking stays visual only before the IMU prediction is used again.
+Behaviour change: yes. For 1 s (30 frames at 30 fps) after each relocalization or reset, the pose comes from
+visual-only optimisation, and a tracking failure in that window counts as LOST rather than RECENTLY_LOST, as
+upstream ORB-SLAM3 intends. UMI's runs most likely had 0 here, i.e. the IMU right away.
+Deliberate difference from UMI (decided 2026-11-16): UMI's File.version "1.0" settings leave this value unset;
+umiproc uses Camera.fps, the value ORB-SLAM3's older settings reader sets.
+
+diff --git a/src/Tracking.cc b/src/Tracking.cc
+index beb6781..6da1bc1 100644
+--- a/src/Tracking.cc
++++ b/src/Tracking.cc
+@@ -55,6 +55,10 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
+     // Load camera parameters from settings file
+     if(settings){
+         newParameterLoader(settings);
++        // umiproc patch 0005: as the legacy parser below; for File.version "1.0" settings this was never set
++        // (indeterminate; 0 in practice), so frames right after a relocalization or reset were IMU-predicted at once
++        if(sensor==System::IMU_MONOCULAR || sensor==System::IMU_STEREO || sensor==System::IMU_RGBD)
++            mnFramesToResetIMU = mMaxFrames;
+     }
+     else{
+         cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);

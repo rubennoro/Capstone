@@ -10,11 +10,11 @@ from umiproc.dp.paths import (
 
 
 def test_root_default_env_and_explicit(monkeypatch, tmp_path):
-    monkeypatch.delenv("DATAPROC_ROOT", raising=False)
+    monkeypatch.delenv("UMIPROC_ROOT", raising=False)
     assert data_root().path == DEFAULT_ROOT
-    monkeypatch.setenv("DATAPROC_ROOT", "")
+    monkeypatch.setenv("UMIPROC_ROOT", "")
     assert data_root().path == DEFAULT_ROOT
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path))
     r = data_root()
     assert r.path == tmp_path
     assert (r.incoming, r.tasks, r.rigs, r.quarantine) == tuple(tmp_path / n for n in

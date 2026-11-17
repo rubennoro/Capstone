@@ -121,7 +121,7 @@ def test_raw_untouched_and_no_extra_folders(tmp_path_factory, tmp_path):
 
 def test_status_command(done, monkeypatch, capsys):
     root, _ = done
-    monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(root.path))
     assert cli.main(["status", TASK]) == 0
     out = capsys.readouterr().out
     assert "calibration: done (cal_episode_000000)" in out
@@ -137,7 +137,7 @@ def test_status_lists_staging_and_failed(tmp_path_factory, tmp_path, monkeypatch
 
     root = copy_root(processed_root(tmp_path_factory)[0], tmp_path / "root")
     td = task_dir(root)
-    monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(root.path))
     (td / ".staging").mkdir()
     shutil.copytree(td / "episode_0", td / ".staging" / "s_wait")
     p = td / ".staging" / "s_wait" / "processed" / "status.json"
@@ -159,7 +159,7 @@ def test_status_lists_staging_and_failed(tmp_path_factory, tmp_path, monkeypatch
 
 def test_status_before_processing(tmp_path_factory, tmp_path, monkeypatch, capsys):
     root = copy_root(template_root(tmp_path_factory), tmp_path / "root")
-    monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(root.path))
     before = tree_digest(root.path)
     assert cli.main(["status", TASK]) == 0
     out = capsys.readouterr().out
@@ -169,7 +169,7 @@ def test_status_before_processing(tmp_path_factory, tmp_path, monkeypatch, capsy
 
 def test_cli_process_rerun_prints_table(tmp_path_factory, tmp_path, monkeypatch, capsys):
     root = copy_root(processed_root(tmp_path_factory)[0], tmp_path / "root")
-    monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(root.path))
     from umiproc.dp.paths import data_root
     from umiproc.dp.process import cli_process
 

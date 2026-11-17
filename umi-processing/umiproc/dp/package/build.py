@@ -3,8 +3,8 @@
 Output, in the cluster's dataset layout (``~/CapstoneProject/datasets/<task>/<dataset>/<dataset>.zarr.zip``,
 scripts/run_pipeline.sh)::
 
-    $DATAPROC_ROOT/datasets/<label>/<DATASET>/<DATASET>.zarr.zip     one label
-    $DATAPROC_ROOT/datasets/multi/<DATASET>/<DATASET>.zarr.zip       several labels
+    $UMIPROC_ROOT/datasets/<label>/<DATASET>/<DATASET>.zarr.zip     one label
+    $UMIPROC_ROOT/datasets/multi/<DATASET>/<DATASET>.zarr.zip       several labels
                                              package.json            what went in (see :func:`package_record`)
 
 The zip is written by :func:`dataproc.export.zarr_writer.build_task_zarr_zip` (unchanged: concatenates the

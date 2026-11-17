@@ -1,0 +1,25 @@
+umiproc patch 0004: zero distortion for the tag pose in the tag-based initialisation
+
+What: KannalaBrandt8::ReconstructWithTwoViewsAndTags passes cv::Mat::zeros(5, 1, CV_32F) as the distortion to
+cv::aruco::estimatePoseSingleMarkers.
+Why: the tag corners are already undistorted (cv::fisheye::undistortPoints just above), so the pose must be
+computed with no distortion; cv::Mat1f(5, 1) left the five coefficients uninitialised (whatever was in that
+memory), which could bend the tag pose that scales the initial map.
+Behaviour change: only the tag-based initialisation (mapping with --init_tag_id), and only when that memory was
+not already zero.
+
+diff --git a/src/CameraModels/KannalaBrandt8.cpp b/src/CameraModels/KannalaBrandt8.cpp
+index 2eceffa..77e3da8 100644
+--- a/src/CameraModels/KannalaBrandt8.cpp
++++ b/src/CameraModels/KannalaBrandt8.cpp
+@@ -247,7 +247,9 @@ namespace ORB_SLAM3 {
+         cv::fisheye::undistortPoints(markerCorners2[tag_idx2], tag2Corners[0], Kc,Dc,Rc,Kc);
+ 
+         // localize tags
+-        cv::Mat distCoeffs = cv::Mat1f(5, 1);
++        // umiproc patch 0004: the corners are already undistorted above, so no distortion here; cv::Mat1f(5, 1) left
++        // the coefficients uninitialised (whatever was in that memory)
++        cv::Mat distCoeffs = cv::Mat::zeros(5, 1, CV_32F);
+         std::vector<cv::Vec3d> rvecs1, tvecs1, rvecs2, tvecs2;
+         cv::aruco::estimatePoseSingleMarkers(tag1Corners, tag_size, Kc, distCoeffs, rvecs1, tvecs1);
+         cv::aruco::estimatePoseSingleMarkers(tag2Corners, tag_size, Kc, distCoeffs, rvecs2, tvecs2);

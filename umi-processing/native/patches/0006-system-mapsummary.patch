@@ -1,0 +1,61 @@
+umiproc patch 0006: read-only System::MapSummary()
+
+What: a public System::MapSummary() returning, for every map in the atlas (id order), its id, keyframe count,
+map point count, whether its IMU is initialised and whether ORB-SLAM3's two inertial refinements (VIBA 1 and 2,
+Map::GetIniertialBA1/2) have run. umiproc_slam prints it in its UMIPROC_SUMMARY line (map check M1/M2).
+Why: System keeps the atlas private and the fork prints none of this.
+Behaviour change: none (read-only; call it after Shutdown()).
+
+diff --git a/include/System.h b/include/System.h
+index 58c245d..5cc4b95 100644
+--- a/include/System.h
++++ b/include/System.h
+@@ -187,6 +187,19 @@ public:
+     // Information from most recent processed frame
+     // You can call this right after TrackMonocular (or stereo or RGBD)
+     int GetTrackingState();
++
++    // umiproc patch 0006: read-only summary of every map in the atlas, in id order (call it after Shutdown()).
++    struct MapInfo
++    {
++        unsigned long id;
++        unsigned long keyframes;
++        unsigned long map_points;
++        bool imu_initialized;
++        bool inertial_ba1;      // ORB-SLAM3's first inertial refinement (VIBA 1) has run on this map
++        bool inertial_ba2;      // and the second (VIBA 2)
++    };
++    std::vector<MapInfo> MapSummary();
++
+     std::vector<MapPoint*> GetTrackedMapPoints();
+     std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
+ 
+diff --git a/src/System.cc b/src/System.cc
+index 04e5066..9821b8c 100644
+--- a/src/System.cc
++++ b/src/System.cc
+@@ -1503,6 +1503,24 @@ int System::GetTrackingState()
+     return mTrackingState;
+ }
+ 
++// umiproc patch 0006: read-only (no behaviour change)
++std::vector<System::MapInfo> System::MapSummary()
++{
++    std::vector<MapInfo> vInfo;
++    for(Map* pMap : mpAtlas->GetAllMaps())
++    {
++        MapInfo info;
++        info.id = pMap->GetId();
++        info.keyframes = pMap->KeyFramesInMap();
++        info.map_points = pMap->MapPointsInMap();
++        info.imu_initialized = pMap->isImuInitialized();
++        info.inertial_ba1 = pMap->GetIniertialBA1();
++        info.inertial_ba2 = pMap->GetIniertialBA2();
++        vInfo.push_back(info);
++    }
++    return vInfo;
++}
++
+ vector<MapPoint*> System::GetTrackedMapPoints()
+ {
+     unique_lock<mutex> lock(mMutexState);

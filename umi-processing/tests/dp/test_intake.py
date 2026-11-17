@@ -23,7 +23,7 @@ from fixtures import UNIX0_NS, build_episode, corrupt_hash, drop_csv_row, make_n
 
 @pytest.fixture
 def root(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path))
     return data_root()
 
 
@@ -142,7 +142,7 @@ def test_incoming_missing(root, capsys):
 
 
 def test_root_missing(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path / "nope"))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path / "nope"))
     assert cli_main(["intake", "--task", "block_raise"]) == 0
     assert not (tmp_path / "nope").exists()
 

@@ -9,8 +9,8 @@ converted copy that the rest of dataproc (intake, process) takes unchanged. Fiel
     if src.ok:
         out = adapt_into(src, root.incoming, rig_id="rig_pi_v1")   # -> incoming/<session>_episode_000004/
 
-Source records (``$DATAPROC_ROOT/pi_sources.csv``) say which source episodes were already taken in, so a source is
-never taken twice (keyed by the sha256 of its ``MANIFEST.sha256``).
+Source records (``<root>/pi_sources.csv``, root: umiproc.paths.data_root()) say which source episodes were already
+taken in, so a source is never taken twice (keyed by the sha256 of its ``MANIFEST.sha256``).
 """
 
 from __future__ import annotations

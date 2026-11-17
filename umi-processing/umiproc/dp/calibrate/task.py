@@ -92,7 +92,7 @@ def calibrate_task(root: DataRoot, task: str, episode_dir: str, source: Path = P
     if not source.is_dir():
         raise CalibrateError(f"--source {source} is not a directory")
     if root.incoming.resolve() == source.resolve():
-        raise CalibrateError(f"--source {source} is dataproc's own incoming/ (staging); point DATAPROC_ROOT "
+        raise CalibrateError(f"--source {source} is the data root's own incoming/ (staging); point UMIPROC_ROOT "
                              "elsewhere")
     res = CalibrateResult(False, task, episode_dir, source / episode_dir, rig_id)
 

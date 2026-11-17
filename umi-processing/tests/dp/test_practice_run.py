@@ -18,7 +18,7 @@ RIG = "rig_v1_fast"
 def practice(tmp_path_factory):
     base = tmp_path_factory.mktemp("practice")
     mp = pytest.MonkeyPatch()
-    mp.setenv("DATAPROC_ROOT", str(base / "root"))
+    mp.setenv("UMIPROC_ROOT", str(base / "root"))
     src = str(base / "src")
     try:
         assert cli.main(["sim", "--out", src, "--episodes", "1", "--calibration", "--fast"]) == 0   # 000000
@@ -70,6 +70,6 @@ def test_package(practice):
 
 def test_unknown_folder(practice, monkeypatch, capsys):
     root, _ = practice
-    monkeypatch.setenv("DATAPROC_ROOT", str(root.path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(root.path))
     assert cli.main(["run", "nope", "a", "b"]) == 1
     assert "dataproc calibrate" in capsys.readouterr().err

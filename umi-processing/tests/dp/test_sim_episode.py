@@ -321,7 +321,7 @@ def test_fast_rig_scales_slam_mask(tmp_path):
 
 
 def test_cli_sim_contract(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path))
     inc = tmp_path / "incoming"
     assert cli.main(["sim", "--out", str(inc), "--episodes", "1", "--fast", "--duration", "3.5", "--session",
                      "t1", "--calibration", "--seed", "4", "--contract"]) == 0
@@ -350,7 +350,7 @@ def test_cli_sim_pi_format(tmp_path, monkeypatch, capsys):
     from umiproc.dp.pi_adapter import convert_episode, inspect_source
     from umiproc.dp.raw_episode import COMPLETE, MANIFEST
 
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path / "root"))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path / "root"))
     src = tmp_path / "src"
     assert cli.main(["sim", "--out", str(src), "--fast", "--duration", "3.5", "--calibration"]) == 0
     assert cli.main(["sim", "--out", str(src), "--fast", "--duration", "3.5", "--episodes", "2"]) == 0
@@ -373,7 +373,7 @@ def test_cli_sim_pi_format(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_sim_usage_errors(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("DATAPROC_ROOT", str(tmp_path))
+    monkeypatch.setenv("UMIPROC_ROOT", str(tmp_path))
     with pytest.raises(SystemExit) as e:
         cli.main(["sim", "--out", str(tmp_path), "--duration", "-1"])
     assert e.value.code == 2

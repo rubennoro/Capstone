@@ -1,0 +1,26 @@
+umiproc patch 0008: after a relocalization, mnLastKeyFrameId is the frame id
+
+What: Tracking::Track, INIT_RELOCALIZE: mnLastKeyFrameId = mCurrentFrame.mnId (was pKFcur->mnId).
+Why: everywhere else mnLastKeyFrameId is a frame id (CreateNewKeyFrame, the map initialisations), and
+NeedNewKeyFrame compares it with frame ids (c1a: frame id >= mnLastKeyFrameId + Camera.fps). In a localization run
+the frame ids continue from the mapping run (the atlas saves Frame::nNextId: 733+ for our 733-frame map) while the
+keyframe ids are the map's (100-180), so c1a counted "Camera.fps frames since the last keyframe" from the
+relocalization frame on. The effect is small: with more than Camera.fps keyframes in the map, NeedNewKeyFrame
+inserts nothing in the first Camera.fps frames after a relocalization anyway.
+Behaviour change: localization runs, keyframe insertion right after a relocalization (mostly small maps).
+
+diff --git a/src/Tracking.cc b/src/Tracking.cc
+index baba67a..4c2ded1 100644
+--- a/src/Tracking.cc
++++ b/src/Tracking.cc
+@@ -1718,7 +1718,9 @@ void Tracking::Track()
+                         cout << "1691 pKFcur->GetVelocity() " << pKFcur->GetVelocity() << endl;
+ 
+                         // update last keyframe
+-                        mnLastKeyFrameId = pKFcur->mnId;
++                        // umiproc patch 0008: a frame id, as everywhere else (NeedNewKeyFrame compares it with frame ids);
++                        // the keyframe id made "frames since the last keyframe" wrong after a relocalization
++                        mnLastKeyFrameId = mCurrentFrame.mnId;
+                         mpLastKeyFrame = pKFcur;
+ 
+                         cout << "pKFcur->mnId" << pKFcur->mnId << endl;
