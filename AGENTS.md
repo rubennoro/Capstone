@@ -10,11 +10,25 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-11-05)
+## Current state (2026-11-17)
 
-- **WIP (2026-11-16): SLAM gripper mask for `dataproc` (every Pi recording failed at slam). Read
-  [HANDOFF_SLAM_MASK.md](HANDOFF_SLAM_MASK.md) first.** Temporary: whoever finishes that work deletes the file and
-  this bullet.
+- **`umi-processing/` (package `umiproc`, branch `rnoro/data-work`, pushed): the active Pi-rig pipeline.** Every Pi
+  demo failed SLAM in `dataproc` (ORB-SLAM3 run from scratch per demo), so this replaces dataproc's SLAM path with
+  UMI's recipe: one mapping clip per session, every demo localized in that map, then gripper calibration and run.
+  - **Start with `umi-processing/PROBLEM.md`** (the why, for newcomers), then `TODO.md` (open work in order),
+    `DIRECTIONS.md` (how to run each step, "Start here" for the Jetson), `PLAN.md` (status), `docs/DESIGN.md`
+    (decisions; nothing changes there without asking the user).
+  - Self-contained: dataproc is **copied** into `umiproc/dp/`; never import, read or modify `data-processing/` from it.
+    Data root `~/data/umi` (`$UMIPROC_ROOT`; `/data`, `/data/incoming` and dataproc's `~/data` are refused).
+  - Built and pushed: lens calibration (`lens-board`, `lens-calibrate`), UMI's ORB-SLAM3 fork `b741dca` + 11 patches
+    (`native/build.sh`; built on the laptop at `~/ORB_SLAM3_umi`, **not yet on the Jetson**), `status`, `map` (checks
+    M1–M5), `plot-run`. 358 fast tests. Steps 3 (`calibrate`, `run`) and 4 not built yet.
+  - Key finding (2026-11-16): the rig's nominal IMX219 lens model is ~18 % off in focal length; on mapping clip 128 it
+    gave 34 map resets, while a measured lens gave a 31 s map with the IMU fully initialised. **A passing lens
+    calibration comes first**; the user's tries 122–127 failed on a bent paper board and missing edge coverage.
+  - The dataproc SLAM-mask work ([HANDOFF_SLAM_MASK.md](HANDOFF_SLAM_MASK.md), commit `e69b4b1`) is **parked**:
+    umi-processing uses UMI's mask mechanism with the same polygons. The handoff file stays until the user decides
+    whether dataproc's SLAM path is retired.
 
 - **`dataproc` (branch `rnoro/data-work`, folder `data-processing/`): Jetson-side processing of the Pi 5 rig's
   recordings into training zips.** The Pi (black box, not written) records each episode in its own format (2 MP4s +
@@ -95,8 +109,16 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-0. `dataproc` (see data-processing/README.md and docs/):
-   - Push `rnoro/data-work` (ask first); confirm the 0.010 m opening tolerance.
+0. **umi-processing** (follow `umi-processing/TODO.md`; the user runs the real commands on the Jetson):
+   - User: pull on the Jetson, Python env (DIRECTIONS §0), SLAM build (§2.1, first aarch64 build), a **passing lens
+     calibration** (§1: a flat board, the board out at the image edges/corners/lower left), `--apply`, `status`.
+   - Then a map that passes M1–M5 (re-run clip 128 with the real lens, or a new mapping clip), and the comparisons
+     (IMU noise 1× vs 10×; patches with/without 0007–0009).
+   - Build Step 3 (`umiproc calibrate`, `umiproc run`; was started 2026-11-17), then Step 4 (a real session end to end).
+   - Open decisions: provisional lens mode, `lens-board --screen`, pooling board recordings, `build.sh` skipping only
+     0007–0009 (TODO.md "Decisions still open").
+0. `dataproc` (superseded for SLAM by umi-processing; kept as is; see data-processing/README.md and docs/):
+   - Confirm the 0.010 m opening tolerance.
    - On the Jetson: pull, run the tests, then the first real session: `dataproc calibrate block_raise <cal dir>`,
      `dataproc run block_raise <first> <last>` (native ORB-SLAM3), `dataproc package <name> block_raise`. Measure the
      real gripper opening for `rig_pi_v1.yaml` `gripper.max_opening_m` (0.110 m is the planned value, unmeasured).

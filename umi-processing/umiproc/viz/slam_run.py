@@ -182,7 +182,7 @@ def stats_lines(st: RunStats, summary: SlamSummary | None) -> list[str]:
         a, b, ta, tb = st.longest_s
         L.append(f"                 longest stretch {tb - ta:.1f} s")
         L.append(f"                 (frames {a}-{b})")
-    L += [f"Tracked in a later map:",
+    L += ["Tracked in a later map:",
           f"                 {st.n_later} ({st.pct(st.n_later):.1f}%)",
           f"Not tracking     {st.n_not_tracking} ({st.pct(st.n_not_tracking):.1f}%)", ""]
     if summary is not None and summary.maps:

@@ -298,7 +298,7 @@ def format_root_status(st: dict, source: str) -> str:
     lines += [_folder_line(f) for f in st["folders"]]
     fm = st.get("failed_maps") or []
     if fm:
-        lines += ["", f"failed maps (maps_failed/, newest first; nothing was taken, each can be run again):"]
+        lines += ["", "failed maps (maps_failed/, newest first; nothing was taken, each can be run again):"]
         for x in fm[:5]:
             why = x["error"] or (", ".join(x["failed"]) + " failed" if x["failed"] else "see report.json")
             lines.append(f"  {x['pi_name']} at {x['when']}: {why} ({x['dir']}/report.json)")

@@ -73,9 +73,9 @@ How to do each step: [DIRECTIONS.md](DIRECTIONS.md). Tick items off here as they
 
 ## Small cleanups
 
-- [ ] `umiproc/status.py`: an f-string without placeholders (pyflakes).
-- [ ] `tests/test_umiproc_map_command.py`: unused `numpy` import.
+- [x] `umiproc/status.py`: an f-string without placeholders (pyflakes).
+- [x] `tests/test_umiproc_map_command.py`: unused `numpy` import.
 - [ ] Delete the experiment root `~/data/umi_ab/lens126/` (on the laptop) once a real lens is installed: its lens file
       is a failed calibration labelled "EXPERIMENT ONLY".
-- [ ] Repo-level: update `AGENTS.md` ("Current state" / "Next time") for umi-processing, and decide what to do with
+- [x] Repo-level: update `AGENTS.md` ("Current state" / "Next time") for umi-processing, and decide what to do with
       `HANDOFF_SLAM_MASK.md` (the parked dataproc mask work).
