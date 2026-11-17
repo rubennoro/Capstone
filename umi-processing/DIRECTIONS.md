@@ -516,8 +516,9 @@ variant root checked without its `UMIPROC_SLAM_BINARY` says OUT OF DATE, which i
 
 ### The A/B comparison on the first real session
 
-The first mapping clip is run in three variants (docs/DESIGN.md "SLAM"): all fixes (patches 0001–0009) with the
-datasheet IMU noise; the 0001–0006 build; and the IMU noise ×10. Each variant gets **its own data root**, so a
+The first mapping clip is run in three variants (docs/DESIGN.md "SLAM"): all fixes (patches 0001–0011) with the
+datasheet IMU noise; the 0001–0006 build (note: it also lacks the crash fixes 0010–0011, so it can crash when a
+second map starts; rerun it if it does); and the IMU noise ×10. Each variant gets **its own data root**, so a
 variant never mixes with another (a root holds one variant's maps and nothing else) and the same clip can be taken in
 each. `/data/incoming` is only read, so all three read the same clip.
 
@@ -566,7 +567,7 @@ setup_variant p0006_infl1  ~/ORB_SLAM3_umi/umiproc_build_0006/umiproc_slam 1.0
 setup_variant p0009_infl10 ~/ORB_SLAM3_umi/umiproc_build/umiproc_slam      10.0
 ```
 
-Each must end with its `NAME: SLAM binary … (9 patches)` (6 for `p0006_infl1`) line and no `STOP`. Then run the
+Each must end with its `NAME: SLAM binary … (11 patches)` (6 for `p0006_infl1`) line and no `STOP`. Then run the
 three, with the clip's name (here `episode_000123`). Commands 1 and 3 remove `UMIPROC_SLAM_BINARY`, so a value left
 over in the terminal cannot silently run them with the 0006 build:
 
@@ -583,7 +584,7 @@ env -u UMIPROC_SLAM_BINARY UMIPROC_ROOT=$AB/p0009_infl10 \
 ```
 
 - Check the first lines of each output. The one starting `map: <pi_name>: SLAM build` reads
-  `SLAM build /home/<you>/ORB_SLAM3_umi/umiproc_build/umiproc_slam (patches 0001-0009 (9 patches)); IMU vio_inflation
+  `SLAM build /home/<you>/ORB_SLAM3_umi/umiproc_build/umiproc_slam (patches 0001-0011 (11 patches)); IMU vio_inflation
   noise_density 1, random_walk 1; lens nominal, uncalibrated; fingerprint …` for 1;
   `…/umiproc_build_0006/umiproc_slam (patches 0001-0006 (6 patches))` for 2; `noise_density 10, random_walk 10`
   only for 3; the same `lens …` in all three (`lens calibrated` when a lens file was copied). The diagnostics at the

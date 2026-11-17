@@ -72,7 +72,7 @@ masked out of the SLAM images exactly the way UMI masks it.
 
 `umi-processing/` is this recipe for our rig:
 
-- it runs **UMI's own ORB-SLAM3 fork** (built from source, with nine small bug fixes of ours, each documented in
+- it runs **UMI's own ORB-SLAM3 fork** (built from source, with eleven small bug fixes of ours, each documented in
   `native/patches/`);
 - it is **self-contained**: whatever it reuses from dataproc is copied in, so the old pipeline is never touched;
 - it adds **checks UMI doesn't have**, so a bad map or demo is caught and explained instead of silently producing bad
@@ -119,7 +119,7 @@ using this model, so getting it right helps there as well.
 | # | Step | Status |
 |---|---|---|
 | 1 | Lens calibration: a passing board recording, installed with `--apply` | **Next.** Six tries so far; the method works, and the remaining issues are a flat board and reaching the image's edges and corners |
-| 2 | Mapping clip and `umiproc map` (checks M1–M5) | Built. On clip 128 a measured lens gave a 31 s map, but tracking was lost once, so three maps instead of one; an occasional SLAM crash when a second map starts is being fixed |
+| 2 | Mapping clip and `umiproc map` (checks M1–M5) | Built. On clip 128 a measured lens gave a 31 s map, but tracking was lost once, so three maps instead of one; an occasional SLAM crash when a second map starts was two bugs in ORB-SLAM3 itself, now fixed |
 | 3 | Gripper calibration and `umiproc run` (localize each demo, split or drop at gaps, export the episode) | To build |
 | 4 | Packaging episodes for training | Later |
 

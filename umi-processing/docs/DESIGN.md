@@ -187,6 +187,8 @@ Every SLAM run (map and localization) gets the same two files, written from the 
   | 0007 | the first keyframe after a relocalization started with zero IMU bias; it now starts from the map's |
   | 0008 | after a relocalization `mnLastKeyFrameId` held a keyframe id where every other place holds a frame id |
   | 0009 | every relocalization shifted the map's keyframe times again (−6.4 → −13.1 → −23.8 s); now only the first does |
+  | 0010 | upstream bug: when Tracking started a new map while LocalMapping still had keyframes of the old one queued, their new points went into the new map; its first IMU initialisation (FullInertialBA) then dereferenced a NULL keyframe vertex (the SIGSEGV of map run 128). Points now go to their keyframe's map |
+  | 0011 | upstream bug: an IMU initialisation (VIBA 1/2) that ends after Tracking started a new map forced Tracking to OK on the empty new map (SearchByBoW(NULL), SIGSEGV). Now only if the map being initialised is still current |
 
   0007–0009 were checked mechanically on demo recordings only (each removes its symptom; no crash or regression in
   the earlier runs); their effect on pose quality is judged on the first real mapping session (user, 2026-11-16),

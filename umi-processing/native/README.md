@@ -6,7 +6,7 @@ at `b741dca`, built natively (no Docker) on the laptop and the Jetson. This fold
 | Path | What |
 |---|---|
 | `build.sh` | clones and pins the fork, applies `patches/`, builds everything (laptop and Jetson) |
-| `patches/0001…0009-*.patch` | our fixes to the fork, applied in order (each file starts with what, why and the behaviour change) |
+| `patches/0001…0011-*.patch` | our fixes to the fork, applied in order (each file starts with what, why and the behaviour change) |
 | `umi_slam/umiproc_slam.cc` | the front-end: runs the fork on a umiproc EuRoC folder (the header comment documents it) |
 | `umi_slam/CMakeLists.txt` | builds the front-end against the fork |
 
@@ -15,7 +15,7 @@ reads the trajectory.
 
 ## The patches
 
-All nine apply with `git apply` to a clean `b741dca`, in order. Each one also applies (or reverse-applies) on its
+All eleven apply with `git apply` to a clean `b741dca`, in order. Each one also applies (or reverse-applies) on its
 own, which is how `build.sh` tells "not yet applied" from "already applied".
 
 | # | File | Fix | Behaviour change |
@@ -29,6 +29,8 @@ own, which is how `build.sh` tells "not yet applied" from "already applied".
 | 0007 | Tracking.cc | Before a localization run's first relocalization there is no keyframe of the run yet, so the relocalized keyframe (and the IMU integration from it) started from a zero IMU bias, with nothing tying it to the map's. Frames waiting for that first relocalization now carry the bias of the map's last keyframe. | Localization runs |
 | 0008 | Tracking.cc | After a relocalization, `mnLastKeyFrameId` held a keyframe id; everywhere else it is a frame id, and `NeedNewKeyFrame` compares it with frame ids. Localization frame ids continue from the mapping run (733+), keyframe ids are the map's (100–180). | Small: keyframe insertion right after a relocalization, mostly on small maps |
 | 0009 | Tracking.cc, Tracking.h | The loaded map's keyframe times were shifted on every relocalization, the run's own keyframes included. That made the CSV's `is_keyframe` stop matching and inflated LocalMapping's `mTinit` (VIBA 2 ran inside a 12 s demo). Now they are shifted only on the first relocalization. | Localization runs that relocalize more than once |
+| 0010 | LocalMapping.cc | When Tracking starts a new map while LocalMapping still has keyframes of the old map queued, the points triangulated from them went into the NEW map (`mpAtlas->GetCurrentMap()`), with observations only in the old one. The new map's first IMU initialisation (`FullInertialBA`) then dereferenced a NULL keyframe vertex: the SIGSEGV of the episode-128 map run. Points now go to their keyframe's map. | Only keyframes processed after a new map was started |
+| 0011 | LocalMapping.cc | `InitializeIMU` (VIBA 1/2, seconds long) ended with `mpTracker->mState = OK` unconditionally. If Tracking had started a new map meanwhile, that forced it to track an empty map with no reference keyframe (`SearchByBoW(NULL)`, SIGSEGV; seen once under gdb on episode 128). Now only if the atlas's current map is still the one being initialised. | Only when a new map is started during an IMU initialisation |
 
 0001 and 0009 are exported with 1 line of context, because 0009 adds lines right after 0001's.
 

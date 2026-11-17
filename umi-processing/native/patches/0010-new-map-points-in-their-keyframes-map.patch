@@ -1,0 +1,39 @@
+umiproc patch 0010: LocalMapping creates a new map point in its keyframe's map, not the atlas's current map
+
+What: LocalMapping::CreateNewMapPoints creates each triangulated point with mpCurrentKeyFrame->GetMap() (was
+mpAtlas->GetCurrentMap()). Atlas::AddMapPoint adds a point to its own map (pMP->GetMap()), so it lands there too.
+Why: when tracking of an IMU-initialised map is lost, Tracking starts a new map (CreateMapInAtlas ->
+Atlas::CreateNewMap) while LocalMapping may still have keyframes of the old map queued (in RECENTLY_LOST, with
+IMU.InsertKFsWhenLost, Tracking inserts keyframes without waiting for LocalMapping). Each of them was triangulated
+into the NEW map: points whose observations are all keyframes of the old map. At the new map's first IMU
+initialisation, LocalMapping::InitializeIMU -> Optimizer::FullInertialBA(new map) adds every point of the map and,
+for each observation, the keyframe's vertex. An old-map keyframe has an id below the new map's maxKFid (so it is not
+skipped) but no vertex: optimizer.vertex() returns NULL and `if(!VP->fixed())` dereferences it (Optimizer.cc
+FullInertialBA, mono observation). The other optimizers survive such points (BundleAdjustment skips a NULL vertex,
+the local BAs keep only points of the keyframe's map), so the run went on until the new map's IMU initialisation,
+which prints nothing. Upstream ORB-SLAM3 v1.0 has the same line.
+Evidence: map run of episode 000128 (exit -11): right after "Creation of new map with id: 1" the new map had no
+keyframe but 25 map points ("line 1873 keyframes 0MapPoints25"; only this line creates points in a map without
+keyframes); the log ends at the new map's "New Map created with 145 points". On the regenerated input, a gdb
+breakpoint on MapPoint::MapPoint(pos, pRefKF, pMap) with pMap != pRefKF's map caught 61 such points, all created
+by the LocalMapping thread right after map 1 was created.
+Behaviour change: only for keyframes LocalMapping processes after Tracking started another map: their new points
+stay in the old map, with their keyframes (where its local BA, which keeps only points of the keyframe's map, now
+also uses them). Nothing changes while the atlas has one map.
+
+diff --git a/src/LocalMapping.cc b/src/LocalMapping.cc
+index 4ec5e4f..fd48367 100644
+--- a/src/LocalMapping.cc
++++ b/src/LocalMapping.cc
+@@ -634,7 +634,10 @@ void LocalMapping::CreateNewMapPoints()
+                 continue;
+ 
+             // Triangulation is succesfull
+-            MapPoint* pMP = new MapPoint(x3D, mpCurrentKeyFrame, mpAtlas->GetCurrentMap());
++            // umiproc patch 0010: the point belongs to the map of the keyframes that observe it. The atlas's current
++            // map is a different, new one when Tracking started a map while this keyframe was still queued; the point
++            // then sat in the new map with observations only in the old one (FullInertialBA segfaulted on it).
++            MapPoint* pMP = new MapPoint(x3D, mpCurrentKeyFrame, mpCurrentKeyFrame->GetMap());
+             if (bPointStereo)
+                 countStereo++;
+             

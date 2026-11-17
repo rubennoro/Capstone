@@ -1,0 +1,42 @@
+umiproc patch 0011: an IMU initialisation does not set Tracking to OK after Tracking started another map
+
+What: LocalMapping::InitializeIMU remembers the atlas's current map when it starts, and at its end sets
+Tracking::mState = OK only if that is still the current map.
+Why: InitializeIMU runs in LocalMapping and takes seconds for VIBA 1 and 2 (FullInertialBA, 100 iterations). If
+tracking is lost meanwhile and Tracking starts a new map (CreateMapInAtlas: state NO_IMAGES_YET, no reference or
+last keyframe, mbVelocity false), the unconditional `mpTracker->mState=Tracking::OK` at the end put Tracking into
+the tracking branch for a map that has no keyframe: Track -> TrackReferenceKeyFrame (new map not IMU-initialised,
+no velocity) -> ORBmatcher::SearchByBoW(mpReferenceKF = NULL) -> KeyFrame::GetMapPointMatches locks mMutexFeatures
+of a NULL keyframe (offset 0x1150 in this build). Upstream ORB-SLAM3 v1.0 has the same line.
+Evidence: on the regenerated input of episode 000128, under gdb: "start VIBA 2", tracking lost, "Creation of new map
+with id: 1", "end VIBA 2", then SIGSEGV in the main (Tracking) thread in pthread_mutex_lock(mutex=0x1150).
+Behaviour change: only when Tracking started another map during an IMU initialisation: Tracking keeps its own state
+(it initialises the new map as usual). Not changed: the rest of that InitializeIMU still works on
+mpAtlas->GetCurrentMap() (the fork's and upstream's code), which after such a switch is the new map.
+
+diff --git a/src/LocalMapping.cc b/src/LocalMapping.cc
+index fd48367..451bcfe 100644
+--- a/src/LocalMapping.cc
++++ b/src/LocalMapping.cc
+@@ -1121,6 +1121,8 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
+     if (mbResetRequested)
+         return;
+ 
++    Map* pMapInit = mpAtlas->GetCurrentMap();   // umiproc patch 0011: the map this initialisation works on
++
+     float minTime;
+     int nMinKF;
+     if (mbMonocular)
+@@ -1364,7 +1366,11 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
+     }
+     mlNewKeyFrames.clear();
+ 
+-    mpTracker->mState=Tracking::OK;
++    // umiproc patch 0011: only while Tracking is still on the map just initialised. If it started a new map during
++    // the initialisation (VIBA 2's FullInertialBA takes seconds), forcing OK made it track the new, empty map with no
++    // reference keyframe (TrackReferenceKeyFrame -> SearchByBoW(NULL) segfaulted).
++    if (mpAtlas->GetCurrentMap() == pMapInit)
++        mpTracker->mState=Tracking::OK;
+     bInitializing = false;
+ 
+     mpCurrentKeyFrame->GetMap()->IncreaseChangeIndex();
