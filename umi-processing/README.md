@@ -6,6 +6,7 @@ reads `/data/incoming`, writes `~/data/umi/`.
 
 - What problem this solves and why it is built this way (start here if you're new): [PROBLEM.md](PROBLEM.md)
 - How to use it: [DIRECTIONS.md](DIRECTIONS.md)
+- What's left to do: [TODO.md](TODO.md)
 - How it is built and why: [docs/DESIGN.md](docs/DESIGN.md)
 
 Self-contained: `umiproc/dp/` is a copy of `data-processing/dataproc` (nothing here imports `data-processing/`).
