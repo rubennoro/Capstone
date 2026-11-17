@@ -1,0 +1,183 @@
+frames 362, IMU samples 1274, t0_ns 432661920000, load_map /work/map120_r2.osa, mask /work/umi_mask_1280x960.png
+
+ORB-SLAM3 Copyright (C) 2017-2020 Carlos Campos, Richard Elvira, Juan J. Gómez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+ORB-SLAM2 Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+This program comes with ABSOLUTELY NO WARRANTY;
+This is free software, and you are welcome to redistribute it
+under certain conditions. See LICENSE.txt.
+
+Input sensor was set to: Monocular-Inertial
+Loading settings from /data/pi-2026-11-15_episode_000119/processed/slam/work/orbslam3_settings.yaml
+	-Loaded camera 1
+Camera.newHeight optional parameter does not exist...
+Camera.newWidth optional parameter does not exist...
+	-Loaded image info
+	-Loaded IMU calibration
+	-Loaded ORB settings
+Viewer.imageViewScale optional parameter does not exist...
+	-Loaded viewer settings
+System.LoadAtlasFromFile optional parameter does not exist...
+System.SaveAtlasToFile optional parameter does not exist...
+	-Loaded Atlas settings
+System.thFarPoints optional parameter does not exist...
+	-Loaded misc parameters
+----------------------------------
+SLAM settings: 
+	-Camera 1 parameters (Kannala-Brandt): [ 572.9 572.9 639.5 479.5 0.02 -0.005 0.001 0 ]
+	-Original image size: [ 1280 , 960 ]
+	-Current image size: [ 1280 , 960 ]
+	-Sequence FPS: 30
+	-Gyro noise: 6.6e-05
+	-Accelerometer noise: 0.0007
+	-Gyro walk: 2e-06
+	-Accelerometer walk: 0.0001
+	-IMU frequency: 104.7
+	-Features per image: 1500
+	-ORB scale factor: 1.2
+	-ORB number of scales: 8
+	-Initial FAST threshold: 20
+	-Min FAST threshold: 7
+
+
+Loading ORB Vocabulary. This could take a while...
+Vocabulary loaded!
+
+Initialization of Atlas from file: /work/map120_r2.osa
+Starting to read the save binary file
+End to load the save binary file
+Change to map with id: 0
+Atlas loaded!
+There are 1 cameras in the atlas
+Camera 0 is fisheye
+line 1873 keyframes 34MapPoints1228
+line 1877
+mlFrameTimes.size()= 0
+KeyFrame::nNextId=100
+Relocalized!!
+INIT_RELOCALIZE success!
+vpKFs.back()->mpImuPreintegrated0x5a1ab432d3c0
+pKFCur->mTimeStamp0
+vpKFs.front()->mTimeStamp-6.40433
+vpKFs.back()->mTimeStamp-0.0333333
+pKFcur->GetMapPointMatches().size()2420
+1691 pKFcur->GetVelocity() 0
+0
+0
+pKFcur->mnId100
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 7
+Fail to track local map!
+Relocalized!!
+INIT_RELOCALIZE success!
+vpKFs.back()->mpImuPreintegrated0x5a1ab59aa0a0
+pKFCur->mTimeStamp6.8045590000000002
+vpKFs.front()->mTimeStamp-13.07544166666667
+vpKFs.back()->mTimeStamp-0.033333333333333215
+pKFcur->GetMapPointMatches().size()1500
+1691 pKFcur->GetVelocity() 0.035538405179977417
+0.049290444701910019
+-0.10873079299926758
+pKFcur->mnId141
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+start VIBA 1
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+end VIBA 1
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 14
+Fail to track local map!
+Relocalization() failed.
+Fail to track local map!
+Relocalized!!
+INIT_RELOCALIZE success!
+vpKFs.back()->mpImuPreintegrated0x5a1ab6c5c0a0
+pKFCur->mTimeStamp10.907304
+vpKFs.front()->mTimeStamp-23.815944000000002
+vpKFs.back()->mTimeStamp-0.033333333333333215
+pKFcur->GetMapPointMatches().size()1236
+1691 pKFcur->GetVelocity() -0.020364848896861076
+-0.072097785770893097
+ -0.18500490486621857
+pKFcur->mnId163
+No IMU Preintegration for KeyFrame 163, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+start VIBA 2
+No IMU Preintegration for KeyFrame 100, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+No IMU Preintegration for KeyFrame 163, skipping inertial edge.
+end VIBA 2
+No IMU Preintegration for KeyFrame 163, skipping inertial edge.
+No IMU Preintegration for KeyFrame 141, skipping inertial edge.
+lost frames 3 of 362 fed (362 in the sequence)
+Shutdown
+mpLocalMapper is not finished
+mpLoopCloser is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+No IMU Preintegration for KeyFrame 163, skipping inertial edge.
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+
+Saving camera trajectory to /work/loc119_r2.csv ...
+There are 1 maps in the atlas
+  Map 0 has 64 KFs
+
+CSV camera trajectory saved!
+
+UMIPROC_SUMMARY {"format":"umiproc.slam_summary.v1","exit_code":0,"error":null,"frames_total":362,"frames_fed":362,"lost_frames":3,"not_tracking_frames":3,"stopped_early":false,"stop_reason":null,"state_counts":{"2":359,"6":3},"maps":[{"id":0,"keyframes":64,"map_points":1965,"imu_initialized":true,"inertial_ba1":true,"inertial_ba2":true}],"t0_ns":432661920000,"map_removed":false,"options":{"vocabulary":"/fork/Vocabulary/ORBvoc.txt","setting":"/data/pi-2026-11-15_episode_000119/processed/slam/work/orbslam3_settings.yaml","sequence":"/data/pi-2026-11-15_episode_000119/processed/slam/work","output_trajectory_csv":"/work/loc119_r2.csv","load_map":"/work/map120_r2.osa","save_map":null,"mask_img":"/work/umi_mask_1280x960.png","max_lost_frames":-1,"aruco_dict_id":0,"init_tag_id":-1,"init_tag_size":0.159999996,"realtime":true}}

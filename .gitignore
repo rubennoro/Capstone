@@ -9,3 +9,6 @@ data/
 *.ckpt
 .*.ckpt.*
 results/**/checkpoints/
+
+# umi-processing test fixtures are real SLAM logs: keep them
+!umi-processing/tests/fixtures/**/*.log

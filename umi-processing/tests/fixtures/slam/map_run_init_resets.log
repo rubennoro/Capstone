@@ -1,0 +1,524 @@
+# trimmed copy of a real mapping log (Pi clip pi-2026-11-16_episode_000128, nominal lens, umiproc map 2026-11-17): lines 1-496 (the first 12 map resets) and the end of the run (pacing, shutdown, UMIPROC_SUMMARY); absolute paths replaced by <root>
+frames 2268, IMU samples 7976, t0_ns 2104577913000, save_map <root>/.work/map/pi-2026-11-16_episode_000128/map_atlas.osa, mask <root>/.work/map/pi-2026-11-16_episode_000128/slam_mask.png
+
+ORB-SLAM3 Copyright (C) 2017-2020 Carlos Campos, Richard Elvira, Juan J. Gómez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+ORB-SLAM2 Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+This program comes with ABSOLUTELY NO WARRANTY;
+This is free software, and you are welcome to redistribute it
+under certain conditions. See LICENSE.txt.
+
+Input sensor was set to: Monocular-Inertial
+Loading settings from <root>/.work/map/pi-2026-11-16_episode_000128/orbslam3_settings.yaml
+	-Loaded camera 1
+Camera.newHeight optional parameter does not exist...
+Camera.newWidth optional parameter does not exist...
+	-Loaded image info
+	-Loaded IMU calibration
+	-Loaded ORB settings
+	-Loaded viewer settings
+System.LoadAtlasFromFile optional parameter does not exist...
+System.SaveAtlasToFile optional parameter does not exist...
+	-Loaded Atlas settings
+	-Loaded misc parameters
+----------------------------------
+SLAM settings: 
+	-Camera 1 parameters (Kannala-Brandt): [ 572.9 572.9 639.5 479.5 0.02 -0.005 0.001 0 ]
+	-Original image size: [ 1280 , 960 ]
+	-Current image size: [ 1280 , 960 ]
+	-Sequence FPS: 30
+	-Gyro noise: 6.63e-05
+	-Accelerometer noise: 0.000736
+	-Gyro walk: 2e-06
+	-Accelerometer walk: 0.0001
+	-IMU frequency: 104
+	-Features per image: 1500
+	-ORB scale factor: 1.2
+	-ORB number of scales: 8
+	-Initial FAST threshold: 20
+	-Min FAST threshold: 7
+
+
+Loading ORB Vocabulary. This could take a while...
+Vocabulary loaded!
+
+Initialization of Atlas from scratch 
+Creation of new map with id: 0
+Creation of new map with last KF id: 0
+There are 1 cameras in the atlas
+Camera 0 is fisheye
+Discard points further than 20 m from current camera
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3436 time_since_init_frame0.30019899999999999
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3210 time_since_init_frame0.30020000000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3321 time_since_init_frame0.3001990000000001
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:0; Map init KF:0
+New Map created with 150 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 44
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 41
+mnInitialFrameId = 0
+47 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:2; Map init KF:0
+New Map created with 240 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 49
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 50
+mnInitialFrameId = 46
+58 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:4; Map init KF:2
+New Map created with 223 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 48
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 61
+mnInitialFrameId = 57
+70 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:7; Map init KF:4
+New Map created with 268 points
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 14
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 76
+mnInitialFrameId = 69
+273 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+Reconsturct failed line 213 parallax=0.86343425512313843
+ tag_init_success=0
+init_success=0
+Reconsturct failed line 213 parallax=0.76872217655181885
+ tag_init_success=0
+init_success=0
+Reconsturct failed line 213 parallax=0.50045967102050781
+ tag_init_success=0
+init_success=0
+Reconsturct failed line 213 parallax=0.5521385669708252
+ tag_init_success=0
+init_success=0
+Reconsturct failed line 213 parallax=0.99622571468353271
+ tag_init_success=0
+init_success=0
+Reconsturct failed line 213 parallax=0.43476271629333496
+ tag_init_success=0
+init_success=0
+ tag_init_success=1
+First KF:61; Map init KF:7
+New Map created with 117 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 31
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 280
+mnInitialFrameId = 272
+285 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+Reconsturct failed line 213 parallax=0.39712852239608765
+ tag_init_success=0
+init_success=0
+Reconsturct failed line 213 parallax=0.97538352012634277
+ tag_init_success=0
+init_success=0
+ tag_init_success=1
+First KF:63; Map init KF:61
+New Map created with 186 points
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 12
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 288
+mnInitialFrameId = 284
+449 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=1
+First KF:107; Map init KF:63
+New Map created with 235 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 49
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 450
+mnInitialFrameId = 448
+456 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+Reconsturct failed line 213 parallax=0.86682695150375366
+ tag_init_success=0
+init_success=0
+ tag_init_success=1
+First KF:109; Map init KF:107
+New Map created with 125 points
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 13
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 458
+mnInitialFrameId = 455
+656 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:164; Map init KF:109
+New Map created with 266 points
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 12
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 661
+mnInitialFrameId = 655
+734 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 6430 time_since_init_frame0.30020000000000024
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 6095 time_since_init_frame0.30020000000000024
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 6460 time_since_init_frame0.30019899999999922
+init_success=1
+First KF:178; Map init KF:164
+New Map created with 299 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 39
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 768
+mnInitialFrameId = 733
+771 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=1
+First KF:180; Map init KF:178
+New Map created with 364 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 31
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 772
+mnInitialFrameId = 770
+775 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 6570 time_since_init_frame0.30020100000000127
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 6242 time_since_init_frame0.30020000000000024
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 6058 time_since_init_frame0.30020499999999828
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:182; Map init KF:180
+New Map created with 329 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 37
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 810
+mnInitialFrameId = 774
+815 Frames set to lost
+tracking 26.8 ms median, 79.2 ms p95, 146.1 ms max; 547 frames over their period; fed at 20.1 frames/s
+lost frames 575 of 2268 fed (2268 in the sequence)
+Shutdown
+mpLocalMapper is not finished
+mpLoopCloser is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+mpLocalMapper is not finished
+Starting to write the save binary file
+End to write save binary file
+
+Saving camera trajectory to <root>/.work/map/pi-2026-11-16_episode_000128/mapping/trajectory.csv ...
+There are 1 maps in the atlas
+  Map 0 has 15 KFs
+
+CSV camera trajectory saved!
+
+UMIPROC_SUMMARY {"format":"umiproc.slam_summary.v2","exit_code":0,"error":null,"frames_total":2268,"frames_fed":2268,"lost_frames":575,"not_tracking_frames":541,"stopped_early":false,"stop_reason":null,"state_counts":{"1":541,"2":1693,"3":34},"maps":[{"id":0,"keyframes":15,"map_points":889,"imu_initialized":true,"inertial_ba1":false,"inertial_ba2":false}],"t0_ns":2104577913000,"map_removed":false,"pacing":{"track_ms":{"median":26.831,"p95":79.236,"max":146.128},"frames_over_period":547,"feed_rate_hz":20.120,"recording_rate_hz":29.980,"feed_wall_s":112.726},"options":{"vocabulary":"~/ORB_SLAM3_umi/Vocabulary/ORBvoc.txt","setting":"<root>/.work/map/pi-2026-11-16_episode_000128/orbslam3_settings.yaml","sequence":"<root>/.work/map/pi-2026-11-16_episode_000128/euroc","output_trajectory_csv":"<root>/.work/map/pi-2026-11-16_episode_000128/mapping/trajectory.csv","load_map":null,"save_map":"<root>/.work/map/pi-2026-11-16_episode_000128/map_atlas.osa","mask_img":"<root>/.work/map/pi-2026-11-16_episode_000128/slam_mask.png","max_lost_frames":-1,"aruco_dict_id":0,"init_tag_id":13,"init_tag_size":0.159999996,"realtime":true}}

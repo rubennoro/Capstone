@@ -1,0 +1,822 @@
+frames 733, IMU samples 2576, t0_ns 13676390000, save_map /work/map120_r1.osa, mask /work/umi_mask_1280x960.png
+
+ORB-SLAM3 Copyright (C) 2017-2020 Carlos Campos, Richard Elvira, Juan J. Gómez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+ORB-SLAM2 Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+This program comes with ABSOLUTELY NO WARRANTY;
+This is free software, and you are welcome to redistribute it
+under certain conditions. See LICENSE.txt.
+
+Input sensor was set to: Monocular-Inertial
+Loading settings from /data/pi-2026-11-15_episode_000120/processed/slam/work/orbslam3_settings.yaml
+	-Loaded camera 1
+Camera.newHeight optional parameter does not exist...
+Camera.newWidth optional parameter does not exist...
+	-Loaded image info
+	-Loaded IMU calibration
+	-Loaded ORB settings
+Viewer.imageViewScale optional parameter does not exist...
+	-Loaded viewer settings
+System.LoadAtlasFromFile optional parameter does not exist...
+System.SaveAtlasToFile optional parameter does not exist...
+	-Loaded Atlas settings
+System.thFarPoints optional parameter does not exist...
+	-Loaded misc parameters
+----------------------------------
+SLAM settings: 
+	-Camera 1 parameters (Kannala-Brandt): [ 572.9 572.9 639.5 479.5 0.02 -0.005 0.001 0 ]
+	-Original image size: [ 1280 , 960 ]
+	-Current image size: [ 1280 , 960 ]
+	-Sequence FPS: 30
+	-Gyro noise: 6.6e-05
+	-Accelerometer noise: 0.0007
+	-Gyro walk: 2e-06
+	-Accelerometer walk: 0.0001
+	-IMU frequency: 104.9
+	-Features per image: 1500
+	-ORB scale factor: 1.2
+	-ORB number of scales: 8
+	-Initial FAST threshold: 20
+	-Min FAST threshold: 7
+
+
+Loading ORB Vocabulary. This could take a while...
+Vocabulary loaded!
+
+Initialization of Atlas from scratch 
+Creation of new map with id: 0
+Creation of new map with last KF id: 0
+There are 1 cameras in the atlas
+Camera 0 is fisheye
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1165 time_since_init_frame0.30020000000000002
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1135 time_since_init_frame0.30020399999999997
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1120 time_since_init_frame0.30019700000000016
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1108 time_since_init_frame0.30020200000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1074 time_since_init_frame0.30020800000000003
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1053 time_since_init_frame0.30019599999999991
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1135 time_since_init_frame0.30019899999999966
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1009 time_since_init_frame0.30020399999999992
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1415 time_since_init_frame0.30020800000000003
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1852 time_since_init_frame0.30021699999999996
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 2142 time_since_init_frame0.30019799999999996
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1479 time_since_init_frame0.30022000000000038
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1027 time_since_init_frame0.3002009999999995
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1428 time_since_init_frame0.30020000000000024
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1166 time_since_init_frame0.30020000000000024
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1384 time_since_init_frame0.30020199999999964
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 2057 time_since_init_frame0.30020300000000066
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1703 time_since_init_frame0.30020299999999978
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1160 time_since_init_frame0.30020399999999992
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1445 time_since_init_frame0.30020199999999964
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1459 time_since_init_frame0.30019600000000057
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1804 time_since_init_frame0.30020299999999889
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:0; Map init KF:0
+New Map created with 97 points
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 12
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 248
+mnInitialFrameId = 0
+365 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3075 time_since_init_frame0.3002040000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 2983 time_since_init_frame0.30020399999999903
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:26; Map init KF:0
+New Map created with 106 points
+start VIBA 1
+TrackLocalMap() mnMatchesInliers<15 && mpAtlas->isImuInitialized() = 7
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+end VIBA 1
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 393
+mnInitialFrameId = 364
+556 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3382 time_since_init_frame0.30020000000000024
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3666 time_since_init_frame0.3002040000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3528 time_since_init_frame0.30020499999999828
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3642 time_since_init_frame0.3002040000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 3481 time_since_init_frame0.3002040000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:66; Map init KF:26
+New Map created with 176 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 39
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 618
+mnInitialFrameId = 555
+626 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:68; Map init KF:66
+New Map created with 194 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 41
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 628
+mnInitialFrameId = 625
+634 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=1
+First KF:70; Map init KF:68
+New Map created with 139 points
+TrackLocalMap() mnMatchesInliers<50 && !mpAtlas->isImuInitialized() = 45
+Fail to track local map!
+IMU is not or recently initialized. Reseting active map...
+SYSTEM-> Reseting active map in monocular case
+LM: Active map reset recieved
+LM: Active map reset, waiting...
+LM: Reseting current map in Local Mapping...
+LM: End reseting Local Mapping...
+LM: Reset free the mutex
+LM: Active map reset, Done!!!
+mnFirstFrameId = 638
+mnInitialFrameId = 633
+685 Frames set to lost
+line 1873 keyframes 0MapPoints0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: nmatches 46
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 977 time_since_init_frame0.3002040000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1045 time_since_init_frame0.3002040000000008
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+Failed to init: n_keypoints 1053 time_since_init_frame0.30020500000000183
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+init_success=0
+ tag_init_success=0
+lost frames 397 of 733 fed (733 in the sequence)
+Shutdown
+mpLocalMapper is not finished
+mpLoopCloser is not finished
+Starting to write the save binary file
+End to write save binary file
+
+Saving camera trajectory to /work/map120_r1.csv ...
+There are 0 maps in the atlas
+No keyframes in any map: wrote the header only to /work/map120_r1.csv
+
+UMIPROC_SUMMARY {"format":"umiproc.slam_summary.v1","exit_code":0,"error":null,"frames_total":733,"frames_fed":733,"lost_frames":397,"not_tracking_frames":392,"stopped_early":false,"stop_reason":null,"state_counts":{"1":392,"2":336,"3":5},"maps":[],"t0_ns":13676390000,"map_removed":false,"options":{"vocabulary":"/fork/Vocabulary/ORBvoc.txt","setting":"/data/pi-2026-11-15_episode_000120/processed/slam/work/orbslam3_settings.yaml","sequence":"/data/pi-2026-11-15_episode_000120/processed/slam/work","output_trajectory_csv":"/work/map120_r1.csv","load_map":null,"save_map":"/work/map120_r1.osa","mask_img":"/work/umi_mask_1280x960.png","max_lost_frames":-1,"aruco_dict_id":0,"init_tag_id":13,"init_tag_size":0.159999996,"realtime":true}}
