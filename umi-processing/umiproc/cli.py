@@ -1,0 +1,52 @@
+"""``umiproc`` command line. Each command lives in its own module with ``add_arguments(parser)`` and
+``run(args) -> int`` (the exit code); a module that does not exist yet makes its command print "not implemented yet".
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib
+import sys
+
+# (command, module, one-line help), in the order of a session (docs/DESIGN.md "Commands")
+COMMANDS = [
+    ("lens-board", "umiproc.lens.board", "write the printable ChArUco board PDF for the lens calibration"),
+    ("lens-calibrate", "umiproc.lens.calibrate", "fit the IMX219 fisheye lens model from a board recording"),
+    ("map", "umiproc.map.cli", "build and check the session map from a mapping recording (creates the task folder)"),
+    ("calibrate", "umiproc.calibrate.cli", "fit the gripper range from a gripper calibration recording"),
+    ("run", "umiproc.run.cli", "localize and check a range of demo recordings against the folder's map"),
+    ("status", "umiproc.status", "show a task folder: map, calibration, episodes, failed, waiting"),
+]
+
+
+def _load(module: str):
+    try:
+        return importlib.import_module(module)
+    except ModuleNotFoundError as e:
+        if e.name and module.startswith(e.name):      # the command's own module is missing, not a dependency
+            return None
+        raise
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="umiproc", description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name, module, help_text in COMMANDS:
+        p = sub.add_parser(name, help=help_text, description=help_text)
+        mod = _load(module)
+        if mod is None:
+            p.set_defaults(_run=lambda args, _n=name: _not_implemented(_n))
+        else:
+            mod.add_arguments(p)
+            p.set_defaults(_run=mod.run)
+    return parser
+
+
+def _not_implemented(name: str) -> int:
+    print(f"umiproc {name}: not implemented yet", file=sys.stderr)
+    return 2
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args._run(args) or 0)

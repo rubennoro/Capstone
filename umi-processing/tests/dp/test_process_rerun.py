@@ -1,0 +1,161 @@
+"""Re-runs: skipping by inputs_hash, --force, a rig change re-running only the affected stages, --episode N,
+and the fatal (exit 1) setup errors."""
+
+import json
+import shutil
+
+import numpy as np
+import pytest
+
+from umiproc.dp.files import load_status
+from umiproc.dp.process import run_process
+from umiproc.dp.report import STAGE_NAMES as STAGES
+from umiproc.dp.stages.geometry import SlamStage
+from test_process_common import (N_DEMOS, TASK, copy_root, fast_rig_dict, processed_root, quiet, task_dir,
+                                 task_zip, template_root, write_rig)
+
+
+@pytest.fixture
+def root(tmp_path_factory, tmp_path):
+    return copy_root(processed_root(tmp_path_factory)[0], tmp_path / "root")
+
+
+def _starts(root):
+    return {k: {s: r["t_start"] for s, r in load_status(task_dir(root) / f"episode_{k}" / "processed").items()}
+            for k in range(N_DEMOS)}
+
+
+def _calib_start(root):
+    p = task_dir(root) / "calibration" / "cal_episode_000000" / "processed" / "status.json"
+    return json.loads(p.read_text())["gripper_range"]["t_start"]
+
+
+def test_second_run_skips_everything(root):
+    before, cal = _starts(root), _calib_start(root)
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.exit_code == 0
+    assert res.ran == {f"episode_{k}": [] for k in range(N_DEMOS)}
+    assert _starts(root) == before and _calib_start(root) == cal
+    assert res.report["calibration"]["ran"] is False
+    assert res.report["duration_s"] < 5                    # nothing to do
+
+
+def test_force_reruns_everything(root):
+    before, cal = _starts(root), _calib_start(root)
+    res = run_process(root, TASK, slam="oracle", force=True, log=quiet)
+    assert res.exit_code == 0
+    assert res.ran == {f"episode_{k}": list(STAGES) for k in range(N_DEMOS)}
+    after = _starts(root)
+    assert all(after[k][s] > before[k][s] for k in after for s in STAGES)
+    assert _calib_start(root) > cal and res.report["calibration"]["ran"] is True
+
+
+def test_world_offset_change_reruns_pose_and_later(root):
+    pos0 = task_zip(root).data["gripper_right_eef_pos"][:]
+    before = _starts(root)
+    d = fast_rig_dict()
+    d["world_offset"] = {"translation_m": [0.5, -0.2, 0.1], "yaw_deg": 75.0}
+    write_rig(root, d)
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.exit_code == 0
+    later = ["pose", "validate", "images", "export"]
+    assert res.ran == {f"episode_{k}": later for k in range(N_DEMOS)}
+    after = _starts(root)
+    for k in range(N_DEMOS):
+        for s in STAGES:
+            assert (after[k][s] > before[k][s]) == (s in later), (k, s)
+    pos1 = task_zip(root).data["gripper_right_eef_pos"][:]
+    assert pos1.shape == pos0.shape and np.abs(pos1 - pos0).max() > 0.1
+    # relative motion is unchanged (the offset is a left-multiplied rigid transform)
+    assert np.allclose(np.linalg.norm(np.diff(pos1, axis=0), axis=1), np.linalg.norm(np.diff(pos0, axis=0), axis=1),
+                       atol=1e-5)
+
+
+def test_slam_mask_reruns_slam_and_later(root):
+    """A slam_mask added to the rig re-runs slam and what depends on it (the oracle ignores images, but the mask is
+    in the slam hash); check, grid, width and the calibration stay. Its ``source`` note re-runs nothing."""
+    before, cal = _starts(root), _calib_start(root)
+    d = fast_rig_dict()                                       # ultrawide 410x308
+    d["cameras"]["ultrawide"]["slam_mask"] = {"source": "test", "polygons": [[[0, 250], [410, 250], [410, 308],
+                                                                              [0, 308]]]}
+    write_rig(root, d)
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.exit_code == 0 and res.report["calibration"]["ran"] is False and _calib_start(root) == cal
+    later = ["slam", "pose", "validate", "images", "export"]
+    assert res.ran == {f"episode_{k}": later for k in range(N_DEMOS)}
+    after = _starts(root)
+    for k in range(N_DEMOS):
+        for s in STAGES:
+            assert (after[k][s] > before[k][s]) == (s in later), (k, s)
+    assert res.report["totals"]["exported"] == N_DEMOS
+    res = run_process(root, TASK, slam="oracle", log=quiet)                  # nothing changed: nothing to do
+    assert res.ran == {f"episode_{k}": [] for k in range(N_DEMOS)} and res.report["calibration"]["ran"] is False
+    d["cameras"]["ultrawide"]["slam_mask"]["source"] = "another note"
+    write_rig(root, d)
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.ran == {f"episode_{k}": [] for k in range(N_DEMOS)} and _starts(root) == after
+
+
+def test_label_change_reruns_images_and_export_only(root):
+    import yaml
+
+    ty = task_dir(root) / "task.yaml"
+    d = yaml.safe_load(ty.read_text())
+    d["label"] = "eraser_lift"
+    ty.write_text(yaml.safe_dump(d))
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.exit_code == 0
+    assert res.ran == {f"episode_{k}": ["images", "export"] for k in range(N_DEMOS)}
+    rb = task_zip(root)
+    assert rb.meta["task_names"][:].tolist() == ["eraser_lift"] * N_DEMOS
+
+
+def test_single_episode(root):
+    before = _starts(root)
+    res = run_process(root, TASK, episode=1, force=True, slam="oracle", log=quiet)
+    assert res.exit_code == 0 and res.ran == {"episode_1": list(STAGES)}
+    after = _starts(root)
+    assert after[0] == before[0] and after[2] == before[2] and after[1]["check"] > before[1]["check"]
+    assert res.report["totals"]["exported"] == N_DEMOS and len(res.report["episodes"]) == N_DEMOS
+
+
+def test_single_episode_missing(root):
+    res = run_process(root, TASK, episode=7, slam="oracle", log=quiet)
+    assert res.exit_code == 1 and "episode_7" in res.error and res.report is None
+
+
+def test_fatal_setup_errors(tmp_path_factory, tmp_path, capsys):
+    import os
+
+    from umiproc.dp.paths import data_root
+    from umiproc.dp.process import cli_process
+
+    root = copy_root(template_root(tmp_path_factory), tmp_path / "root")
+    os.environ["DATAPROC_ROOT"] = str(root.path)
+    try:
+        assert cli_process(data_root(), "other", slam="oracle") == 1
+        assert "run intake first" in capsys.readouterr().err
+        assert not (root.tasks / "other").exists()
+        (root.rigs / "rig_v1_fast.yaml").rename(root.rigs / "moved.yaml")
+        assert cli_process(data_root(), TASK, slam="oracle") == 1
+        assert "rig_v1_fast.yaml is missing" in capsys.readouterr().err
+        assert not (task_dir(root) / "output").exists() and not (task_dir(root) / "episode_0" / "processed").exists()
+        (root.rigs / "moved.yaml").rename(root.rigs / "rig_v1_fast.yaml")
+        (task_dir(root) / "task.yaml").unlink()
+        assert cli_process(data_root(), TASK, slam="oracle") == 1
+        assert "task.yaml is missing" in capsys.readouterr().err
+    finally:
+        del os.environ["DATAPROC_ROOT"]
+
+
+def test_status_json_records(root):
+    st = load_status(task_dir(root) / "episode_0" / "processed")
+    for s in STAGES:
+        r = st[s]
+        assert r["status"] == "done" and len(r["inputs_hash"]) == 64 and r["t_end"] >= r["t_start"]
+        assert r["version"] == (SlamStage.version if s == "slam" else 1) and r["reason"] is None and r["reasons"] == [] and isinstance(r["outputs"], dict)
+    assert st["export"]["outputs"]["n_steps"] == 150
+    assert len({st[s]["inputs_hash"] for s in STAGES}) == len(STAGES)
+    shutil.rmtree(task_dir(root) / "episode_0" / "processed")          # lost processed/: everything reruns
+    res = run_process(root, TASK, slam="oracle", log=quiet)
+    assert res.ran["episode_0"] == list(STAGES) and res.ran["episode_1"] == []

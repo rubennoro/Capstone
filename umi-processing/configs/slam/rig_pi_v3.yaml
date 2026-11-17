@@ -1,0 +1,28 @@
+# umiproc SLAM settings for rig_pi_v3 (configs/rigs/rig_pi_v3.yaml), used on top of the rig file. docs/DESIGN.md "SLAM".
+# The sensor values themselves (lens, camera->IMU, time offset, IMU noise) are in the rig file and the optional lens file.
+schema: umiproc.slam.v1
+rig: rig_pi_v3
+
+mask:                                                 # UMI's mechanism: these pixels are set to 0 in every frame fed to
+  # ORB-SLAM3 (mapping AND localization; native/umi_slam --mask_img), never in the frames on disk, tag widths or training
+  # images. The gripper parts that never move in the ultrawide image: fingers + tags at every opening, the held-object
+  # zone between the fingers, housing/board/fan/LED. Pixel edges at 1280x960 (0 <= x <= 1280, 0 <= y <= 960); two halves
+  # sharing the edge x=671. The notch (x 580-762, top y=462) fits the eraser as held in episodes 61 and 117: a taller or
+  # higher-held object needs it raised. Re-trace after remounting the camera or changing the fingers.
+  source: "traced 2026-11-16 from episode_000115/000060 (fully open and closed) and 000117/000061 (eraser held), >= 12 px margin"
+  resolution: [1280, 960]
+  polygons:
+    - [[176, 960], [178, 905], [190, 860], [204, 828], [240, 784], [270, 758], [380, 624], [432, 614], [500, 558], [578, 514], [580, 462], [671, 462], [671, 960]]
+    - [[671, 462], [762, 462], [762, 524], [830, 558], [910, 606], [968, 614], [1064, 733], [1150, 728], [1204, 760], [1254, 866], [1280, 936], [1280, 960], [671, 960]]
+
+table_tag:                                            # UMI's table tag (umi example/calibration/aruco_config.yaml): the
+  dictionary: DICT_4X4_50                             # fork's tag-based initialisation fallback while mapping, and map
+  id: 13                                              # check M5. Our finger tags are ids 0/1 of the same dictionary.
+  size_m: 0.16
+
+orb:                                                  # ORBextractor.* (as the dataproc orbslam3 backend wrote them)
+  n_features: 1500
+  scale_factor: 1.2
+  n_levels: 8
+  ini_th_fast: 20
+  min_th_fast: 7
