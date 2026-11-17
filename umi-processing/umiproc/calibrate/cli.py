@@ -1,5 +1,5 @@
 """``umiproc calibrate TASK_FOLDER EPISODE_DIR [--source /data/incoming] [--root DIR]``: the gripper opening range of
-a session folder (:mod:`umiproc.calibrate.gripper`; DIRECTIONS.md section 5). Progress on stdout, the result block
+a session folder (:mod:`umiproc.calibrate.gripper`; DIRECTIONS.md section 4). Progress on stdout, the result block
 on stdout (pass) or stderr (fail). Exit codes: 0 passed; 1 failed (nothing recorded, the recording can be run
 again); 2 the command could not run on this input."""
 
@@ -86,7 +86,7 @@ def format_outcome(o: CalibrateOutcome, source: Path) -> str:
                          f"(or fix the cause) and run `umiproc calibrate {o.folder} <episode_dir>` again")
     else:
         src = "" if Path(source) == Path("/data/incoming") else f" --source {source}"
-        lines += ["", "Next: the demos (DIRECTIONS.md sections 4-5):",
+        lines += ["", "Next: the rest of the demos (DIRECTIONS.md section 5):",
                   f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>{src}",
                   "  (demos already localized and waiting in .staging/ are finished by any run of this folder)"]
     return "\n".join(lines)

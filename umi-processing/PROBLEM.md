@@ -79,7 +79,8 @@ masked out of the SLAM images exactly the way UMI masks it.
   training data. For example, the map must be a single map with the IMU fully initialised, the mapping clip must
   re-localize in it, scale and gravity must agree with the IMU, and the table tag must come out flat and steady.
 
-The commands follow the session: `umiproc map`, then `umiproc calibrate`, then `umiproc run` (DIRECTIONS.md).
+The commands follow the session: `umiproc map`, then `umiproc run` on 2–3 test demos to verify the map, then
+`umiproc calibrate`, then `umiproc run` on the rest (DIRECTIONS.md).
 
 ## 5. The added piece: the lens model
 

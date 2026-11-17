@@ -1,5 +1,5 @@
 """``umiproc run TASK_FOLDER START_DIR END_DIR``: every demonstration in the range, one at a time, localized against
-the folder's map (docs/DESIGN.md "The session", "Checks -> run", "Episodes"; DIRECTIONS.md sections 4-5).
+the folder's map (docs/DESIGN.md "The session", "Checks -> run", "Episodes"; DIRECTIONS.md sections 3 and 5).
 
 Steps, all under ``<root>/.run.lock``:
 

@@ -110,7 +110,7 @@ Running status between working sessions. Update it at the end of each conversati
 ## Next time
 
 0. **umi-processing** (follow `umi-processing/TODO.md`; the user runs the real commands on the Jetson):
-   - User: pull on the Jetson, Python env (DIRECTIONS §0), SLAM build (§2.1, first aarch64 build), a **passing lens
+   - User: pull on the Jetson, Python env (DIRECTIONS 0.2), SLAM build (0.3, first aarch64 build), a **passing lens
      calibration** (§1: a flat board, the board out at the image edges/corners/lower left), `--apply`, `status`.
    - Then a map that passes M1–M5 (re-run clip 128 with the real lens, or a new mapping clip), and the comparisons
      (IMU noise 1× vs 10×; patches with/without 0007–0009).

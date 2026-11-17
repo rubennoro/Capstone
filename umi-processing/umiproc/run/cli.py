@@ -1,6 +1,6 @@
 """``umiproc run TASK_FOLDER START_DIR END_DIR [--source /data/incoming] [--root DIR] [--retry-failed]
 [--dry-run]``: every demonstration in the range localized against the folder's map, checked, and finished into
-``episode_N`` folders (:mod:`umiproc.run.command`; DIRECTIONS.md sections 4-5). Progress and the summary on stdout,
+``episode_N`` folders (:mod:`umiproc.run.command`; DIRECTIONS.md sections 3 and 5). Progress and the summary on stdout,
 errors on stderr. Exit codes: 0 done (also with failed recordings: they are listed), 3 some wait for the gripper
 calibration, 2 the command could not run (nothing changed), 1 an unexpected error stopped it."""
 
@@ -92,7 +92,7 @@ def format_summary(root, res: RunResult) -> str:
         lines.append(f"  stopped: {res.error}")
     hl = _hint_lines(res.by_state(FAILED) + res.by_state(EPISODE))
     if hl:
-        lines += ["", "what the reasons mean and what to change (DIRECTIONS.md section 4):"] + hl
+        lines += ["", "what the reasons mean and what to change (DIRECTIONS.md section 3.7):"] + hl
     lines.append("")
     try:
         lines.append(format_folder_status(folder_status(Path(root), plan.folder)))

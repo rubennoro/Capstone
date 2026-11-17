@@ -90,7 +90,8 @@ def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
                                  "umiproc_slam.log") if p.is_file()]
         lines.append(f"  report: {o.where / REPORT_NAME}" + (f"; SLAM logs: {', '.join(logs)}" if logs else ""))
     if o.passed:
-        lines += ["", "Next: record the gripper calibration clip, then `umiproc calibrate` (DIRECTIONS.md §5)."]
+        lines += ["", "Next: remove the table tag, record 2-3 test demos of the task, then run them against the map "
+                  "(DIRECTIONS.md section 3.3-3.5):", f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>"]
     elif o.exit_code == EXIT_FAILED and o.checks:
         lines.append(f"  nothing was attached and {map_dir} was not taken: change what the hints say and run "
                      f"`umiproc map {task} {map_dir}` again (or record a new mapping clip)")

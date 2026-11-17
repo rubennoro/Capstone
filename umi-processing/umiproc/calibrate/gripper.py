@@ -1,5 +1,5 @@
 """``umiproc calibrate``: the gripper opening range of a session folder, from its gripper calibration recording
-(docs/DESIGN.md "The session" step 2; DIRECTIONS.md section 5).
+(docs/DESIGN.md "The session" step 2; DIRECTIONS.md section 4).
 
 The copied dataproc method (``umiproc.dp.stages.calibration.fit_calibration``: contract check, rig consistency, the
 finger tags ``aruco.left_id``/``right_id`` (DICT_4X4_50 ids 0/1) on every ultrawide frame remapped to the virtual
