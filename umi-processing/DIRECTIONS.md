@@ -3,6 +3,7 @@
 Step-by-step procedures for the Pi 5 rig, in the order you do them. Each section is added once its commands exist
 (docs/DESIGN.md "Build order"). Commands run on the Jetson unless a section says otherwise.
 
+0. Python environment (once per machine)
 1. Lens calibration (optional, about 1 minute of recording)
 2. Jetson setup
 3. Prove the environment: the map
@@ -16,10 +17,10 @@ Do these in order; each step has a check that tells you it passed before you go 
 | # | Do | Where | Passed when |
 |---|---|---|---|
 | 1 | Get the code: `cd <repo> && git fetch && git checkout rnoro/data-work && git pull` | Jetson | `git log --oneline -1` shows the newest umi-processing commit |
-| 2 | Python environment (section 2.2, about 5 min) | Jetson | `umiproc --help` lists `lens-board`, `lens-calibrate`, …, and the check tests pass |
+| 2 | Python environment (section 0, about 5 min) | Jetson | `umiproc --help` lists `lens-board`, `lens-calibrate`, …, and the check tests pass |
 | 3 | Start the SLAM build (section 2.1, about an hour) **inside `tmux`**, and let it run while you do step 4 | Jetson | it ends with `== done` |
 | 4 | **Lens calibration** (section 1): print the board, tape it to cardboard, record about 60 s on the Pi, run `umiproc lens-calibrate`, repeat until every check passes, then `--apply` | Pi + Jetson | `lens-calibrate` prints no `FAIL`, and `--apply` installs `~/data/umi/rigs/rig_pi_v3.lens.yaml` |
-| 5 | `umiproc status` (section 2.4) | Jetson | lens file: calibrated; umiproc_slam and vocabulary: found |
+| 5 | `umiproc status` (section 2.3) | Jetson | lens file: calibrated; umiproc_slam and vocabulary: found |
 | 6 | A collection session: map, then gripper calibration, then demos | Pi + Jetson | sections 3–5 (`umiproc map` is being finished; it comes with the next update of this branch) |
 
 **Do step 4 before any mapping.** The lens model matters more than anything else for SLAM on this rig: on the first
@@ -30,6 +31,44 @@ initialised. Lens calibration needs only step 2, not the SLAM build.
 `tmux` in one line: `tmux new -s build`, run the command, detach with `Ctrl-b` then `d`, come back with
 `tmux attach -t build`. A long command keeps running even if your ssh connection drops.
 
+## 0. Python environment (once per machine, about 5 minutes)
+
+Every `umiproc` command, including the lens calibration in section 1, runs in this environment. It is all section 1
+needs; the SLAM build (section 2.1) is only needed from the map on.
+
+umiproc has its own environment and never imports dataproc, so don't install it into `~/envs/env_dataproc`. On the
+Jetson, first make sure Python can make environments:
+
+```bash
+sudo apt install python3-venv python3-pip
+```
+
+Then:
+
+```bash
+python3 --version                                   # 3.10 or newer
+python3 -m venv ~/envs/env_umiproc
+source ~/envs/env_umiproc/bin/activate              # in every new terminal
+unset PYTHONPATH                                    # also in every new terminal, if ROS is set up in your shell
+pip install --upgrade pip
+pip install -e <repo>/umi-processing[test]
+umiproc --help                                      # lens-board, lens-calibrate, map, calibrate, run, status
+```
+
+Check the install (a minute or two; it must end with `passed`, no `failed`):
+
+```bash
+cd <repo>/umi-processing
+env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_umiproc_*.py tests/test_lens_*.py tests/test_slam_*.py -m "not slow"
+```
+
+**In every new terminal**, before any `umiproc` command:
+
+```bash
+source ~/envs/env_umiproc/bin/activate
+unset PYTHONPATH
+```
+
 ## 1. Lens calibration
 
 **Why:** it measures how the ultrawide (IMX219, 160°) lens bends light, so SLAM uses the real lens instead of the
@@ -39,8 +78,7 @@ to make SLAM fail (see "Start here"). About 1 minute of recording, then 1–2 mi
 
 **What you need:** a printer, something rigid and flat to glue the board to (foam board, a clipboard, a flat piece
 of wood or acrylic), glue (spray adhesive or a glue stick), a ruler, a small piece of tape, and a well-lit spot.
-The commands need `umiproc` installed: section 2.2 (the Python environment) only, about 5 minutes; "Start here"
-gives the order.
+The commands need the Python environment from section 0 (about 5 minutes, once); "Start here" gives the order.
 
 ### Print and check the board
 
@@ -137,11 +175,11 @@ nominal one.
 
 ### Process it (on the Jetson)
 
-This needs the Python environment from section 2.2 (once per Jetson; the SLAM build is not needed). In every new
+This needs the Python environment from section 0 (once per Jetson; the SLAM build is not needed). In every new
 terminal, turn it on first:
 
 ```bash
-source ~/envs/env_umiproc/bin/activate     # the environment made in section 2.2
+source ~/envs/env_umiproc/bin/activate     # the environment made in section 0
 unset PYTHONPATH                          # if ROS is set up in this shell, its Python packages must not leak in
 umiproc --help                            # check: lists lens-board, lens-calibrate, ...
 ```
@@ -226,36 +264,16 @@ sudo apt install build-essential cmake git libeigen3-dev libgl1-mesa-dev libopen
 - On a failure it prints the end of the failing step's log; all logs are in `~/ORB_SLAM3_umi/umiproc_build/logs/`.
 - Build it on the machine that runs it (it is compiled for that machine's processor).
 
-### 2.2 Python environment
-
-umiproc has its own environment and never imports dataproc, so don't install it into `~/envs/env_dataproc`:
+**Check** that the SLAM program runs and reads umiproc's settings file (about 30 s):
 
 ```bash
-python3 --version                                   # 3.10 or newer
-python3 -m venv ~/envs/env_umiproc
-source ~/envs/env_umiproc/bin/activate              # in every new terminal
-unset PYTHONPATH                                    # also in every new terminal, if ROS is set up in your shell
-pip install --upgrade pip
-pip install -e <repo>/umi-processing[test]
-umiproc --help                                      # lens-board, lens-calibrate, map, calibrate, run, status
-```
-
-Check the install (a minute or two):
-
-```bash
-cd <repo>/umi-processing
-env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_umiproc_*.py tests/test_lens_*.py tests/test_slam_*.py -m "not slow"
-```
-
-Then check that the SLAM program from 2.1 runs and reads umiproc's settings file (about 30 s):
-
-```bash
+cd <repo>/umi-processing     # with the environment from section 0 turned on
 env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_umiproc_slam_inputs.py -m slow
 ```
 
-It must say `passed`, not `skipped` (skipped means the SLAM program or vocabulary was not found: see 2.1).
+It must say `passed`, not `skipped` (skipped means the SLAM program or vocabulary was not found: see above).
 
-### 2.3 The data root
+### 2.2 The data root
 
 - umiproc writes everything under **`~/data/umi/`**; the first command that takes a recording creates it. Leave
   `UMIPROC_ROOT` unset.
@@ -270,13 +288,13 @@ It must say `passed`, not `skipped` (skipped means the SLAM program or vocabular
 - Every map and episode records the values it was made with, so changing them makes the maps and episodes out of
   date.
 
-### 2.4 Check: `umiproc status`
+### 2.3 Check: `umiproc status`
 
 ```bash
 umiproc status
 ```
 
-On a fresh Jetson after 2.1–2.2 it shows:
+On a fresh Jetson after sections 0 and 2.1 it shows:
 
 ```
 data root: /home/<you>/data/umi (from the default)
