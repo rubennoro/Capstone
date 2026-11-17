@@ -16,6 +16,7 @@ relocalized               ``INIT_RELOCALIZE success!`` then ``pKFCur->mTimeStamp
                           (frame time in s since t0) and ``pKFcur->mnId<id>``
 viba_start / viba_end     ``start VIBA 1`` ``end VIBA 1`` ``start VIBA 2`` ``end VIBA 2``      LocalMapping.cc Run
 stopped_lost              ``Lost tracking on N >= M frames. Stopping.``                      umiproc_slam
+local_map_failed          ``Fail to track local map!``                                      Tracking.cc Track
 ========================  ================================================================  ===========================
 
 The first IMU initialisation prints nothing; ``SlamSummary.maps`` (System::MapSummary after shutdown) says whether
@@ -58,6 +59,7 @@ _RELOC_KF = re.compile(r"^pKFcur->mnId(\d+)\s*$")
 _VIBA = re.compile(r"^(start|end) VIBA ([12])\s*$")
 _STOPPED = re.compile(r"^Lost tracking on (\d+) >= (\d+) frames\. Stopping\.\s*$")
 _RELOC_FAILED = "Relocalization() failed."
+_LOCAL_MAP_FAILED = "Fail to track local map!"
 _RELOC_LOOKAHEAD = 20          # lines after "INIT_RELOCALIZE success!" searched for its time and keyframe id
 
 
@@ -117,7 +119,7 @@ class SlamSummary:
 @dataclass(frozen=True)
 class SlamEvent:
     kind: str                    # map_created | map_initialized | map_reset | relocalized | viba_start | viba_end |
-                                 # stopped_lost
+                                 # stopped_lost | local_map_failed
     line: int                    # 1-based line number in the log
     detail: dict = field(default_factory=dict)
 
@@ -259,6 +261,8 @@ def parse_events(text: str) -> tuple[tuple[SlamEvent, ...], int]:
         elif ln == _RESET:
             events.append(SlamEvent("map_reset", i + 1, {"reason": reset_reason}))
             reset_reason = None
+        elif ln == _LOCAL_MAP_FAILED:
+            events.append(SlamEvent("local_map_failed", i + 1))
         elif ln == _RELOC:
             detail: dict = {"t_s": None, "keyframe_id": None}
             for nxt in lines[i + 1:i + 1 + _RELOC_LOOKAHEAD]:

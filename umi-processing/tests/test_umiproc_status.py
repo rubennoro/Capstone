@@ -62,6 +62,9 @@ def session(tmp_path_factory):
     return root, m, d
 
 
+INC = "map INCOMPLETE (no report.json: an interrupted map)"
+
+
 def test_root_summary(session):
     root, m, d = session
     before = tree_digest(root.path)
@@ -73,9 +76,10 @@ def test_root_summary(session):
     assert 'lens file:     none, so SLAM uses the rig file\'s nominal lens model ("nominal, uncalibrated")' in out
     assert "umiproc_slam:" in out and "vocabulary:" in out
     assert "recordings taken (pi_sources.csv): 2 map, 1 calibration, 3 demonstration" in out
-    assert ("block_raise: label block_raise, map yes, gripper calibration no, 1 episode, 1 waiting, 1 failed"
+    # the session's map recordings were taken without `umiproc map` (no map next to raw/): shown as incomplete
+    assert (f"block_raise: label block_raise, {INC}, gripper calibration no, 1 episode, 1 waiting, 1 failed"
             in out)
-    assert "block_raise_2: label block_raise, map yes, gripper calibration no, 0 episodes" in out
+    assert f"block_raise_2: label block_raise, {INC}, gripper calibration no, 0 episodes" in out
 
 
 def test_folder_details(session):
@@ -85,7 +89,8 @@ def test_folder_details(session):
     assert code == 0, err
     assert tree_digest(root.path) == before
     assert f"task folder {m.task_dir} (label block_raise, rig rig_pi_v3" in out
-    assert f"map:                  yes (map/{m.pi_name})" in out
+    assert f"map:                  map/{m.pi_name}: INCOMPLETE: the recording was taken but its map was not" in out
+    assert "record a new mapping clip (it creates a new session folder)" in out and "move the folder" not in out
     assert "gripper calibration:  no" in out
     assert "episodes:             1" in out and "episode_1" in out and "exported" in out and "287" in out
     assert f"{d[0].pi_name}: waiting for the gripper calibration" in out
@@ -114,7 +119,7 @@ def test_gripper_calibration_and_lens_shown(tmp_path, session):
     assert ("lens file:     rig_pi_v3.lens.yaml: calibrated 2026-11-16T18:00:00Z from "
             "pi-2026-11-16_episode_000123") in out
     assert "differs from the repo's" in out and "imu.noise.gyroscope_random_walk" in out
-    assert "block_raise: label block_raise, map yes, gripper calibration yes" in out
+    assert f"block_raise: label block_raise, {INC}, gripper calibration yes" in out
     code, out, _ = _status("block_raise", "--root", str(copy))
     assert "gripper calibration:  yes, gripper_range.json" in out
     assert f"{d[0].pi_name}: not finished" in out

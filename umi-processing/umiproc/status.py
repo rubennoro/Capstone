@@ -6,6 +6,10 @@ changes anything (docs/DESIGN.md "Where it runs and the data root").
   recordings taken so far by kind (``pi_sources.csv``); leftovers in ``incoming/``; one line per task folder.
 * With a task folder (its name, e.g. ``block_raise_2``, or its path): its map, its gripper calibration, its
   episodes, the recordings waiting in ``.staging/`` and why, and the ``failed/`` ones with their reasons.
+
+The map (:mod:`umiproc.map.stored`): whether it passed, when, its fingerprint's short hash, and whether the current
+data-root files and SLAM build still give that fingerprint (else **out of date**: re-run the map, then every
+episode). The root view also lists the failed maps kept in ``maps_failed/``.
 """
 
 from __future__ import annotations
@@ -66,7 +70,7 @@ def root_status(root: Path, rig_id: str) -> dict:
 
     root = Path(root)
     st = {"root": root, "exists": root.is_dir(), "rig": _rig_section(root, rig_id), "slam": _slam_program(),
-          "kinds": {}, "statuses": {}, "incoming": [], "quarantine": 0, "folders": []}
+          "kinds": {}, "statuses": {}, "incoming": [], "quarantine": 0, "folders": [], "failed_maps": []}
     if not st["exists"]:
         return st
     st["kinds"] = count_by_kind(root)
@@ -78,7 +82,11 @@ def root_status(root: Path, rig_id: str) -> dict:
     q = root / "quarantine"
     if q.is_dir():
         st["quarantine"] = sum(1 for p in q.iterdir() if not p.name.startswith("."))
-    st["folders"] = [folder_status(root, d.name) for d in task_folders(root)]
+    cache: dict = {}
+    st["folders"] = [folder_status(root, d.name, _fingerprints=cache) for d in task_folders(root)]
+    from umiproc.map.stored import failed_maps
+
+    st["failed_maps"] = failed_maps(root)
     return st
 
 
@@ -94,7 +102,39 @@ def _staging_reason(entry: Path, has_gripper: bool) -> str:
     return "not finished (a run was interrupted; the next `umiproc run` picks it up)"
 
 
-def folder_status(root: Path, folder: str) -> dict:
+def _current_fingerprint(root: Path, rig_id: str | None, cache: dict) -> tuple[str | None, dict | None, str | None]:
+    """``(hash, record, why not)`` of the fingerprint a map would get now (cached per rig)."""
+    from umiproc.map.stored import current_fingerprint
+
+    if rig_id not in cache:
+        try:
+            h, rec = current_fingerprint(root, rig_id)
+            cache[rig_id] = (h, rec, None)
+        except Exception as e:  # noqa: BLE001 - any reason the current one cannot be made is shown as such
+            cache[rig_id] = (None, None, str(e))
+    return cache[rig_id]
+
+
+def _map_section(root: Path, d: Path, rig_id: str | None, cache: dict) -> list[dict]:
+    from umiproc.map.stored import fingerprint_differences, read_map
+
+    out = []
+    for m in read_map(d):
+        info = dict(m)
+        info["up_to_date"], info["differences"], info["cannot_compare"] = None, [], None
+        if m["complete"] and m["fingerprint_hash"]:
+            h, rec, why = _current_fingerprint(root, rig_id, cache)
+            if h is None:
+                info["cannot_compare"] = why
+            else:
+                info["up_to_date"] = h == m["fingerprint_hash"]
+                if not info["up_to_date"]:
+                    info["differences"] = fingerprint_differences(m["record"], rec)
+        out.append(info)
+    return out
+
+
+def folder_status(root: Path, folder: str, *, _fingerprints: dict | None = None) -> dict:
     """One task folder (read only). ``problem`` is set when the folder is not a usable task folder."""
     from umiproc.dp.config import ConfigError, load_task_config
     from umiproc.dp.files import load_status
@@ -107,6 +147,7 @@ def folder_status(root: Path, folder: str) -> dict:
 
     d = Path(root) / "tasks" / folder
     st = {"folder": folder, "dir": d, "problem": None, "label": None, "rig": None, "created": None, "maps": [],
+          "map_info": [],
           "gripper_range": False, "calibrations": [], "episodes": [], "staging": [], "failed": [],
           "report": (d / "report.json").is_file()}
     if not d.is_dir():
@@ -124,6 +165,7 @@ def folder_status(root: Path, folder: str) -> dict:
         ledger = []
     pi = {r["slot"]: r.get("pi_name") or "" for r in ledger}
     st["maps"] = [p.name for p in map_slots(d)]
+    st["map_info"] = _map_section(Path(root), d, st["rig"], {} if _fingerprints is None else _fingerprints)
     st["gripper_range"] = (d / GRIPPER_RANGE_FILE).is_file()
     cal = d / CALIBRATION_DIR
     if cal.is_dir():
@@ -150,13 +192,60 @@ def _plural(n: int, noun: str) -> str:
 def _folder_line(f: dict) -> str:
     if f["problem"]:
         return f"  {f['folder']}: not a usable task folder ({f['problem']})"
-    parts = [f"label {f['label']}", "map " + ("yes" if f["maps"] else "no"),
+    parts = [f"label {f['label']}", "map " + (_map_word(f["map_info"]) if f["maps"] else "no"),
              "gripper calibration " + ("yes" if f["gripper_range"] else "no"), _plural(len(f["episodes"]), "episode")]
     if f["staging"]:
         parts.append(f"{len(f['staging'])} waiting")
     if f["failed"]:
         parts.append(f"{len(f['failed'])} failed")
     return f"  {f['folder']}: " + ", ".join(parts)
+
+
+def _map_word(infos: list[dict]) -> str:
+    if not infos:
+        return "no"
+    m = infos[-1]
+    if not m["complete"]:
+        return "INCOMPLETE (no report.json: an interrupted map)"
+    word = "passed" if m["passed"] else "FAILED"
+    if m["up_to_date"] is False:
+        word += ", OUT OF DATE"
+    elif m["up_to_date"] is None and m.get("cannot_compare"):
+        word += ", up to date: cannot tell"
+    return word
+
+
+def _map_lines(infos: list[dict]) -> list[str]:
+    if not infos:
+        return ["  map:                  no (`umiproc map` makes it when it creates the folder)"]
+    out = []
+    for m in infos:
+        head = f"  map:                  map/{m['pi_name']}"
+        if not m["complete"]:
+            out.append(head + ": INCOMPLETE: the recording was taken but its map was not finished (an interrupted "
+                       "`umiproc map`). The clip is in the ledger, so `umiproc map` on it again stops with \"already "
+                       "taken\": record a new mapping clip (it creates a new session folder)")
+            if m.get("work_report"):
+                out.append(f"                        its map is still in {m['work_report'].parent}: it can be moved "
+                           "into this folder by hand before the next `umiproc map` clears it (DIRECTIONS.md section "
+                           "3, \"An interrupted map\")")
+            continue
+        checks = ", ".join(f"{k} {'ok' if v else 'FAILED'}" for k, v in m["checks"].items())
+        out.append(head + f": {'passed' if m['passed'] else 'FAILED'} ({checks}), made {m['created_utc']}")
+        b, v = m.get("build") or {}, m.get("vio_inflation") or {}
+        out.append(f"                        fingerprint {str(m['fingerprint_hash'])[:12]}: SLAM build "
+                   f"{b.get('binary')} (patches {b.get('patches_label')}), IMU vio_inflation "
+                   f"{v.get('noise_density')}/{v.get('random_walk')}")
+        if m["up_to_date"] is True:
+            out.append("                        up to date (the current rig files and SLAM build give the same "
+                       "fingerprint)")
+        elif m["up_to_date"] is False:
+            out.append("                        OUT OF DATE: the current settings or SLAM build differ in "
+                       + ", ".join(m["differences"][:8]) + "; re-run the map (a new session folder), then every "
+                       "episode")
+        else:
+            out.append(f"                        up to date: cannot tell ({m.get('cannot_compare')})")
+    return out
 
 
 def format_root_status(st: dict, source: str) -> str:
@@ -207,6 +296,14 @@ def format_root_status(st: dict, source: str) -> str:
     lines += ["", "task folders (tasks/):" if st["folders"] else "task folders (tasks/): none yet (`umiproc map` "
                                                                     "creates one per session)"]
     lines += [_folder_line(f) for f in st["folders"]]
+    fm = st.get("failed_maps") or []
+    if fm:
+        lines += ["", f"failed maps (maps_failed/, newest first; nothing was taken, each can be run again):"]
+        for x in fm[:5]:
+            why = x["error"] or (", ".join(x["failed"]) + " failed" if x["failed"] else "see report.json")
+            lines.append(f"  {x['pi_name']} at {x['when']}: {why} ({x['dir']}/report.json)")
+        if len(fm) > 5:
+            lines.append(f"  ... and {len(fm) - 5} older")
     return "\n".join(lines)
 
 
@@ -218,8 +315,7 @@ def format_folder_status(f: dict) -> str:
     lines = [f"task folder {f['dir']} (label {f['label']}, rig {f['rig']}, created {f['created']})"]
     if f["problem"]:
         lines.append(f"  PROBLEM: {f['problem']}")
-    lines.append("  map:                  " + (f"yes ({', '.join('map/' + m for m in f['maps'])})" if f["maps"]
-                                              else "no (`umiproc map` makes it when it creates the folder)"))
+    lines += _map_lines(f["map_info"])
     if f["gripper_range"]:
         cal = f" (from calibration/{f['calibrations'][-1]})" if f["calibrations"] else ""
         lines.append(f"  gripper calibration:  yes, gripper_range.json{cal}")

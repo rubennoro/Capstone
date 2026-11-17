@@ -65,10 +65,19 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
   incoming/<pi_name>/         a recording converted to the copied raw format, while a command checks it; empty between
                               commands (a leftover stops the next command until it is moved away)
   quarantine/<pi_name>/       a converted recording the copied intake refused (validation, duplicate), with reason.json
+  maps_failed/<pi_name>/<UTC>/  a failed map's report.json, logs, CSVs, settings, mask, fingerprint, tag detections
+                              (no frames; no atlas, except for a map that passed every check but that intake did not
+                              take); nothing else records a failed map
+  .work/map/<pi_name>/        umiproc map's work folder (EuRoC frames, SLAM runs); removed at the end, cleared by the
+                              next map after a crash
   tasks/TASK/                 TASK, TASK_2, ... (task.yaml label stays TASK)
     task.yaml                 label, rig, created
     episodes.csv              the folder's ledger: one row per slot (slot, pi_name, ..., kind), append-only
-    map/<pi_name>/raw/        the map recording (exactly one per folder; step 2 adds the map next to raw/)
+    map/<pi_name>/raw/        the map recording (exactly one per folder)
+    map/<pi_name>/            next to raw/ (umiproc map, only when every check passed): map_atlas.osa,
+                              tx_slam_tag.json, mapping/ and relocalize/ (trajectory.csv, .t0_ns, umiproc_slam.log),
+                              orbslam3_settings.yaml, slam_mask.png, slam_fingerprint.json, tag_detections.json,
+                              report.json (moved in last: a map folder without it is an interrupted map)
     calibration/<pi_name>/raw/  the gripper calibration recording
     gripper_range.json        the gripper calibration's result
     .staging/<pi_name>/       a demonstration being processed, or waiting for the gripper calibration
@@ -221,8 +230,62 @@ Every SLAM run (map and localization) gets the same two files, written from the 
 | M1 | the mapping run ends with exactly one map that has keyframes |
 | M2 | the IMU is fully initialised (both of ORB-SLAM3's inertial refinement stages finished) |
 | M3 | the mapping clip, re-localized against the saved map (as UMI's `03` does): relocalized within 0.5 s and ≥ 95 % of frames visually tracked (state OK) |
-| M4 | the copied gravity and metric-scale checks pass on that re-localized trajectory; speed ≤ 3 m/s |
-| M5 | tag 13: ≥ 20 sightings passing UMI's filters (keyframes only, 0.3–2 m, centre within 0.6·H/2 of the centre of OUR 1280×960 image), position spread ≤ 1 cm, tag normal within 5° of gravity |
+| M4 | the copied gravity and metric-scale checks pass on that re-localized trajectory; the SLAM orientation agrees with gravity throughout (every 2.5 s window's mean specific force in the SLAM world within 3° of the clip's mean, ≥ 4 windows); speed ≤ 3 m/s |
+| M5 | tag 13: ≥ 20 sightings passing UMI's filters (keyframes only, 0.3–2 m, centre within 0.6·H/2 of the centre of OUR 1280×960 image), position spread ≤ 1 cm per axis, the sightings' median tag normal within 5° of gravity |
+
+How `map` computes them (`umiproc/map/`; DIRECTIONS.md §3 for the user's side):
+
+- **Runs** (UMI `02_create_map.py`, `03_batch_slam.py` for `map*`): the copied `write_euroc` with the effective rig
+  (native 1280x960, no mask in the frames, IMU not decimated); the mapping run `--save_map --mask_img --init_tag_id 13
+  --init_tag_size 0.16 --aruco_dict_id` (from the SLAM config's table tag), real time; then the same EuRoC folder
+  `--load_map --mask_img --max_lost_frames 30`, real time, without tag options (umiproc_slam then passes tag id -1 to
+  the fork). UMI's `03` run keeps `gopro_slam`'s tag defaults (id 13, 0.16 m), and a localization run that loses the
+  loaded map can start a new map through `MonocularInitialization`, whose tag fallback would then use it
+  (`Tracking.cc:2213-2237`); with -1 that fallback never finds a tag, and `--max_lost_frames 30` stops the run long
+  before a new map would matter. The re-localization runs whenever the mapping run saved a map with keyframes, also
+  when M1/M2 failed, so a failed map reports every check it can.
+- **M1, M2** from the mapping run's `UMIPROC_SUMMARY` (exit 0, `maps_with_keyframes`, the map saved; that map's
+  `imu_initialized`, `inertial_ba1`, `inertial_ba2`). A run killed by a signal names it in M1's hint (e.g. `SIGSEGV`,
+  exit -11: not a recording problem, read the log). Their hints change when the mapping run reset its map ≥ 5 times
+  and at least half of the dropped maps tracked ≤ 15 frames (0.5 s; counted from the mapping CSV's per-frame states,
+  else from the log: "Fail to track local map!" right after "New Map created"): most likely the camera model (lens
+  calibration) or the camera–IMU geometry, not the recording, and no "record longer" (seen on real clip 128 with the
+  nominal lens: 34 resets, 20 of the 34 dropped maps lost within 8 frames). **M3** on the re-localized CSV: the first visually tracked frame
+  (state OK, not lost) ≤ 0.5 s after the first frame, and tracked frames / **all** frames of times.txt ≥ 95 % (frames
+  never fed after a stop at 30 lost count as lost). **M4**: the visually tracked rows as `T_W_imu = T_W_cam ·
+  T_imu_cam⁻¹` through the copied `finalize_trajectory` (gravity alignment, then `gravity_check` and `scale_check`;
+  after the alignment the gravity angle is ~0 by construction, so it informs through |g|, as in the copy). The
+  orientation sub-check (`orientation_consistency`) tests what that angle cannot: the IMU samples between tracked
+  frames ≤ 0.2 s apart, rotated into the SLAM world (`R_W_imu · f`), are averaged per 2.5 s window of the tracked span
+  (a window counts when its samples cover ≥ half of it) and compared with their mean over the whole span; the largest
+  angle must be ≤ 3° with ≥ 4 windows (else "not enough tracked span"); the max, median and window count are
+  reported. A camera–IMU rotation or lens error makes the estimated gravity turn with the rig, a bending map makes it
+  drift; a consistent trajectory stays within the hand's mean acceleration over 2.5 s (≤ ~1.4°) plus an
+  accelerometer bias seen from different orientations (20 mg ≈ 1.2°). 3° is the copied gravity check's own angle
+  limit. The speed is the camera's between consecutive visually tracked frames. **M5** (`umiproc/map/tag.py`, UMI's `cv_util.py`
+  detection and `calibrate_slam_tag.py` filters and aggregation): tag 13 detected in every ultrawide frame (default
+  detector parameters, subpixel corners, the effective fisheye model, `solvePnP` as UMI's OpenCV 4.7
+  `estimatePoseSingleMarkers`), sightings = posed keyframe rows of the re-localized CSV (UMI's `~is_lost &
+  is_keyframe`), 0.3–2 m, centre within 288 px of (640, 480); geometric median, strict 0.9 quantile, the kept
+  sighting nearest the mean is `tx_slam_tag`. The spread limit applies to each axis' std (ddof 0) of the kept
+  positions, as UMI prints it; the 3-D `|std_xyz|` is reported too. The normal judged is the median normal of the kept
+  sightings (geometric median of their z axes, renormalised; one sighting's rotation is noisier than its position),
+  against the world's up = the re-localized trajectory's mean specific force in the SLAM world (the copied
+  `gravity_align` estimate); the chosen `tx_slam_tag` sighting's normal is reported too.
+- **Diagnostics** in `report.json` (never judged): the copied `time_offset_check` and `motion_check`, both runs'
+  pacing (a warning below 90 % of the recording's frame rate), keyframes, frames with the tag, lens provenance,
+  `vio_inflation`, the build (binary, patches, library).
+- **Pass / fail**: a pass writes `report.json` (with the folder and slot) into the work folder, takes the recording
+  (`take(MAP, task=TASK)`, both ledgers), moves the map next to `raw/` and moves `report.json` in last (`os.replace`).
+  An intake error or quarantine at that point keeps the report, logs and atlas in `maps_failed/` (exit 2). A pass
+  interrupted after `take()` leaves an INCOMPLETE slot (`status`: record a new mapping clip; the clip is taken), with
+  the map still in `.work/map/<pi_name>/` after a hard kill (manual recovery: DIRECTIONS.md §3). A failed map records **nothing** (no `pi_sources.csv` row, no folder): the staged copy is removed and the report goes
+  to `maps_failed/`, so the same clip can be run again (A/B variants, or after fixing a setting). A recording the copied
+  intake would refuse (validation, duplicate) is found before SLAM and taken as `quarantined`, as the copy does.
+  Exit codes: 0 pass, 1 a check failed, 2 cannot run on this input.
+- **A/B variants**: one data root per variant (`UMIPROC_ROOT=~/data/umi_ab/<variant>`, DIRECTIONS.md §3), so a root
+  never holds two variants; every report prints and stores the build (patches) and `vio_inflation`, and `status`
+  flags a map whose fingerprint differs from the current files and build as out of date.
 
 ### `run`: UMI's rules, converted to the same time at our 30 fps (UMI counts frames at 60 fps)
 
@@ -282,6 +345,9 @@ Apart from the import rewrite and the repo paths:
   docstrings of `pi_adapter.py`, `pi_intake.py`, `package/build.py`).
 - `tests/dp/`: `$DATAPROC_ROOT` became `$UMIPROC_ROOT`; `conftest.py` points `$UMIPROC_ROOT` at a temporary folder
   for the whole session and removes `$DATAPROC_ROOT`, so no copied test can reach a real root.
+
+Step 2 (`umiproc map`) changed nothing in the copy (it calls `write_euroc`, `finalize_trajectory`, the intake's
+validation and `DuplicateIndex` as they are).
 
 Known failures inherited from `e69b4b1` (they fail in `data-processing/` too, after its "remove hard cap on calibration"
 change): `tests/dp/calibrate/test_calibrate_task.py::{test_opening_out_of_tolerance_only_warns,
