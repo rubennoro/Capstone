@@ -39,7 +39,8 @@ to make SLAM fail (see "Start here"). About 1 minute of recording, then 1–2 mi
 
 **What you need:** a printer, something rigid and flat to glue the board to (foam board, a clipboard, a flat piece
 of wood or acrylic), glue (spray adhesive or a glue stick), a ruler, a small piece of tape, and a well-lit spot.
-The commands need `umiproc` installed (section 2).
+The commands need `umiproc` installed: section 2.2 (the Python environment) only, about 5 minutes; "Start here"
+gives the order.
 
 ### Print and check the board
 
@@ -136,12 +137,23 @@ nominal one.
 
 ### Process it (on the Jetson)
 
-Find the recording's directory name (the newest one in `/data/incoming`) and run the calibration on it:
+This needs the Python environment from section 2.2 (once per Jetson; the SLAM build is not needed). In every new
+terminal, turn it on first:
+
+```bash
+source ~/envs/env_umiproc/bin/activate     # the environment made in section 2.2
+unset PYTHONPATH                          # if ROS is set up in this shell, its Python packages must not leak in
+umiproc --help                            # check: lists lens-board, lens-calibrate, ...
+```
+
+Then find the recording's directory name (the newest one in `/data/incoming`) and run the calibration on it:
 
 ```bash
 ls -t /data/incoming | head -3                 # newest first, e.g. episode_000123
 umiproc lens-calibrate episode_000123
 ```
+
+(On another computer, add `--source DIR` for where the recordings are, e.g. `--source ~/Downloads/data/incoming`.)
 
 It checks the recording (complete, every file matches its manifest hash, the IMX219 at 1280x960). It then finds
 the board in every frame, keeps the still frames, picks up to 60 varied views (every 5th one is held back to test the
@@ -222,6 +234,7 @@ umiproc has its own environment and never imports dataproc, so don't install it 
 python3 --version                                   # 3.10 or newer
 python3 -m venv ~/envs/env_umiproc
 source ~/envs/env_umiproc/bin/activate              # in every new terminal
+unset PYTHONPATH                                    # also in every new terminal, if ROS is set up in your shell
 pip install --upgrade pip
 pip install -e <repo>/umi-processing[test]
 umiproc --help                                      # lens-board, lens-calibrate, map, calibrate, run, status
