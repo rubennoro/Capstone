@@ -19,7 +19,7 @@ from umiproc.dp.pi_adapter import converted_name, inspect_source
 from umiproc.dp.pi_format import write_pi_manifest
 from umiproc.lens import calibrate, lensfile, synth
 from umiproc.paths import repo_config
-from umiproc.slam_config import load_slam_config, mask_keep
+from umiproc.slam.config import load_slam_config, mask_keep
 
 PI_NAME = "episode_000900"
 

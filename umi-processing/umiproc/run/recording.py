@@ -86,7 +86,7 @@ class Session:
     label: str
     rig_id: str
     sensors: object                 # umiproc.sensors.SensorValues
-    inputs: object                  # umiproc.slam_inputs.SlamInputs (settings, mask, fingerprint)
+    inputs: object                  # umiproc.slam.inputs.SlamInputs (settings, mask, fingerprint)
     map_pi_name: str
     atlas: Path
     tx_slam_tag: np.ndarray

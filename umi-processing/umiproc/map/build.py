@@ -163,7 +163,7 @@ def build_map(root, task: str, map_dir: str, *, source: Path = Path("/data/incom
     from umiproc.recordings import RecordingError, discard, inspect_recording, session_lock, stage
     from umiproc.sensors import RigFilesError, SensorError, load_sensors, recording_mismatches
     from umiproc.slam.runner import default_binary, default_vocabulary
-    from umiproc.slam_inputs import SlamBuildError, write_slam_inputs
+    from umiproc.slam.inputs import SlamBuildError, write_slam_inputs
 
     try:
         validate_name(task)

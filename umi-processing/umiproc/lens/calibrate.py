@@ -202,7 +202,7 @@ def _load_configs(root: Path, rig_id: str, log=print):
     differences printed), else the repo's files (``lens-calibrate`` copies nothing; the first ``map`` does)."""
     from umiproc.dp.config import ConfigError, load_rig
     from umiproc.sensors import RigFilesError, ensure_rig_files
-    from umiproc.slam_config import SlamConfigError, load_slam_config
+    from umiproc.slam.config import SlamConfigError, load_slam_config
 
     try:
         files = ensure_rig_files(root, rig_id, log=log, copy_missing=False)
@@ -394,7 +394,7 @@ def calibrate_recording(episode: Path, rig, slam, max_views: int = DEFAULT_MAX_V
     """Run steps 1-5 on one recording (``src``: its :class:`PiSource`, inspected by the caller)."""
     from umiproc.dp.pi_adapter import converted_name, inspect_source
     from umiproc.lens import board as lens_board
-    from umiproc.slam_config import mask_keep
+    from umiproc.slam.config import mask_keep
 
     t_start = time.monotonic()
     if src is None:

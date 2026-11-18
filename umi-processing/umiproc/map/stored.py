@@ -54,9 +54,9 @@ def current_fingerprint(root: Path, rig_id: str, binary=None) -> tuple[str, dict
     """``(hash, record)`` of the fingerprint a ``map`` run would store now. The settings file and mask are written to
     a temporary folder outside the root (the hash depends on their bytes, not where they are). Raises the errors of
     :func:`umiproc.sensors.load_sensors` (``ensure=False``: nothing is copied) and
-    :class:`umiproc.slam_inputs.SlamBuildError`."""
+    :class:`umiproc.slam.inputs.SlamBuildError`."""
     from umiproc.sensors import load_sensors
-    from umiproc.slam_inputs import write_slam_inputs
+    from umiproc.slam.inputs import write_slam_inputs
 
     sensors = load_sensors(Path(root), rig_id, log=lambda *a, **k: None, ensure=False)
     with tempfile.TemporaryDirectory(prefix="umiproc-fp-") as tmp:

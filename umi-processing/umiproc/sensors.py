@@ -4,7 +4,7 @@
 The processing never reads the repo's ``configs/`` directly: it reads the data-root copies in ``<root>/rigs/``::
 
     rigs/<rig>.yaml        copy of configs/rigs/<rig>.yaml   (schema dataproc.rig.v1; umiproc.dp.config.load_rig)
-    rigs/<rig>.slam.yaml   copy of configs/slam/<rig>.yaml   (schema umiproc.slam.v1; umiproc.slam_config)
+    rigs/<rig>.slam.yaml   copy of configs/slam/<rig>.yaml   (schema umiproc.slam.v1; umiproc.slam.config)
     rigs/<rig>.lens.yaml   optional, written by `umiproc lens-calibrate --apply` (schema umiproc.lens.v1)
 
 :func:`ensure_rig_files` copies a missing rig file or SLAM config from the repo (never overwrites) and checks an
@@ -259,7 +259,7 @@ class SensorValues:
     rig_id: str
     rig: object                      # umiproc.dp.config.RigConfig, lens applied
     nominal_rig: object              # umiproc.dp.config.RigConfig, as in the rig file
-    slam: object                     # umiproc.slam_config.SlamConfig
+    slam: object                     # umiproc.slam.config.SlamConfig
     lens: object | None              # umiproc.lens.lensfile.LensFile
     imu_rate_hz: float
     rig_path: Path
@@ -395,11 +395,11 @@ def load_sensors(root: Path, rig_id: str = DEFAULT_RIG, log: Callable = print, *
 
     Raises :class:`RigFilesError` (files) or :class:`SensorError` (they load but do not fit: SLAM config or lens
     file for another rig or resolution, a rig gripper mask, a time offset that is not 0, an IMU with no known
-    rate). ``umiproc.dp.config.ConfigError`` / ``umiproc.slam_config.SlamConfigError`` /
+    rate). ``umiproc.dp.config.ConfigError`` / ``umiproc.slam.config.SlamConfigError`` /
     ``umiproc.lens.lensfile.LensFileError`` are raised as :class:`SensorError` with the file's own message."""
     from umiproc.dp.config import ConfigError, load_rig
     from umiproc.lens.lensfile import LensFileError, load_lens
-    from umiproc.slam_config import SlamConfigError, load_slam_config
+    from umiproc.slam.config import SlamConfigError, load_slam_config
 
     root = Path(root)
     files = (ensure_rig_files(root, rig_id, log) if ensure else check_rig_files(root, rig_id))

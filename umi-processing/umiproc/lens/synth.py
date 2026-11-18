@@ -279,7 +279,7 @@ def make_recording(dst: Path, model=None, poses=None, *, keep=None, hold: int = 
     Returns the truth: model, poses, the frame index of each pose's first held frame, and the frame count.
     """
     from umiproc.paths import repo_config
-    from umiproc.slam_config import load_slam_config, mask_keep
+    from umiproc.slam.config import load_slam_config, mask_keep
 
     model = model or truth_model()
     if keep is None:

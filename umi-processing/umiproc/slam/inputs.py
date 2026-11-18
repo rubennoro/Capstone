@@ -41,7 +41,7 @@ Viewer.*                       real   required by the parser although no viewer 
 
 No file paths go into the settings file, so its hash does not depend on where the data root is.
 
-**Mask** (:func:`mask_png`): the SLAM config's polygons drawn by :func:`umiproc.slam_config.mask_keep` at the
+**Mask** (:func:`mask_png`): the SLAM config's polygons drawn by :func:`umiproc.slam.config.mask_keep` at the
 mask's resolution (1280x960), written as an 8-bit grey PNG with **255 = masked**, 0 = kept (the front-end sets the
 nonzero pixels to 0 in every frame it feeds, ``im.setTo(0, mask)``, as UMI's ``gopro_slam.cc``).
 
@@ -134,7 +134,7 @@ def orbslam3_settings_text(sensors) -> str:
         "%YAML:1.0",
         "---",
         "# ORB-SLAM3 settings for UMI's fork (cheng-chi/ORB_SLAM3 b741dca + umi-processing/native/patches), written by",
-        "# umiproc.slam_inputs from the data-root rig file, SLAM config and lens file. Do not edit: change those.",
+        "# umiproc.slam.inputs from the data-root rig file, SLAM config and lens file. Do not edit: change those.",
         f"# rig {sensors.rig_id}; ultrawide {cam.sensor} {w}x{h} @ {_real(cam.fps)} fps; lens: {lens_line}",
         'File.version: "1.0"',
         "",
@@ -185,7 +185,7 @@ def write_orbslam3_settings(sensors, path) -> Path:
 
 def mask_png(slam_cfg) -> np.ndarray:
     """The front-end's mask image: uint8 ``(H, W)`` at the mask's resolution, **255 = masked**, 0 = kept."""
-    from umiproc.slam_config import mask_keep
+    from umiproc.slam.config import mask_keep
 
     keep = mask_keep(slam_cfg)
     return np.where(keep == 0, 255, 0).astype(np.uint8)

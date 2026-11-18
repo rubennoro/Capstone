@@ -1,4 +1,4 @@
-"""umiproc.slam_inputs: the ORB-SLAM3 settings file (every key the fork's Settings parser needs, with the type it
+"""umiproc.slam.inputs: the ORB-SLAM3 settings file (every key the fork's Settings parser needs, with the type it
 accepts, and the values from the effective sensors), the gripper mask PNG (pixel-identical to the one used in the
 2026-11-16 experiments), and the fingerprint.
 
@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import yaml
 
-from umiproc import slam_inputs as SI
+from umiproc.slam import inputs as SI
 from umiproc.sensors import ensure_rig_files, load_sensors
 from umiproc.paths import rig_file, rig_lens_file, rig_slam_file
 from umiproc.lens.lensfile import dump_lens, lens_document
@@ -481,7 +481,7 @@ def test_the_forks_parser_reads_it(sensors, tmp_path):
 
 
 def test_build_info_hash_ignores_only_the_built_time(tmp_path):
-    from umiproc.slam_inputs import build_info_sha256
+    from umiproc.slam.inputs import build_info_sha256
 
     body = "fork x b741dca\npatch 0123456789abcdef 0001-a.patch\nlibrary /x/libORB_SLAM3.so\n"
     a, b, c = tmp_path / "a", tmp_path / "b", tmp_path / "c"

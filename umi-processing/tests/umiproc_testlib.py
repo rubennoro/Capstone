@@ -72,7 +72,7 @@ def fake_slam_build(base: Path, monkeypatch, patches=("0001-a.patch", "0002-b.pa
     selected with ``$UMIPROC_SLAM_BINARY`` / ``$ORB_SLAM3_UMI_DIR``; ``ldd`` is replaced by "the binary loads the
     library". The stand-in exits 99, except ``--help``, which names ``--save_points`` unless ``save_points=False``
     (an older build: :func:`umiproc.slam.runner.supports_save_points`). Returns the binary."""
-    from umiproc import slam_inputs as SI
+    from umiproc.slam import inputs as SI
 
     out, lib = base / "umiproc_build", base / "lib" / "libORB_SLAM3.so"
     out.mkdir(parents=True, exist_ok=True)

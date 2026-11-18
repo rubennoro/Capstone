@@ -88,8 +88,8 @@ from umiproc.dp import paths as dp_paths
 from umiproc.cli import main as umiproc_main
 from umiproc.dp.cli import main as dp_main
 from umiproc.sensors import ensure_rig_files, load_sensors
-from umiproc import slam_inputs as SI
-from umiproc.slam_inputs import write_slam_inputs
+from umiproc.slam import inputs as SI
+from umiproc.slam.inputs import write_slam_inputs
 
 home = Path(os.environ["HOME"])
 out = {"default": str(paths.data_root()), "dp_default": str(dp_paths.data_root().path)}

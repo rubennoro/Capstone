@@ -244,7 +244,7 @@ def run_range(root, folder: str, start: str, end: str, *, source: Path = Path("/
     from umiproc.map.stored import current_fingerprint
     from umiproc.recordings import RecordingError, session_lock
     from umiproc.slam.runner import default_binary, default_vocabulary
-    from umiproc.slam_inputs import SlamBuildError
+    from umiproc.slam.inputs import SlamBuildError
 
     try:
         validate_name(folder, "task folder")
@@ -297,7 +297,7 @@ def _run_locked(r, folder, start, end, source, retry_failed, log, runner, binary
     from umiproc.dp.run.staging import finish_interrupted
     from umiproc.run.recording import RecordingProcessor, Session, finish_interrupted_pieces
     from umiproc.sensors import RigFilesError, SensorError, load_sensors
-    from umiproc.slam_inputs import SlamBuildError, write_slam_inputs
+    from umiproc.slam.inputs import SlamBuildError, write_slam_inputs
 
     t0 = time.time()
     task_dir, task = _check_folder(r, folder)

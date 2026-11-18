@@ -15,7 +15,7 @@
   rendering of the board (where every corner's true position is known) and :func:`detect_frame` subtracts it; the
   measured value is reported, and anything that is neither 0 nor 0.5 px stops the calibration.
 * **Mask**: corners inside the gripper mask (``configs/slam/<rig>.yaml``, drawn by
-  :func:`umiproc.slam_config.mask_keep`) are dropped: the fingers and the held object move there, and the mask was
+  :func:`umiproc.slam.config.mask_keep`) are dropped: the fingers and the held object move there, and the mask was
   traced with a >= 12 px margin around them. So are corners within :data:`EDGE_PX` of the image border (their
   refinement window would leave the image). A frame is usable with >= :data:`MIN_CORNERS` corners left.
 * **Motion filter** (:func:`still_flags`): a frame is kept only if its corners moved at most :data:`STILL_PX`

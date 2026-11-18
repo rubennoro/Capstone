@@ -120,7 +120,7 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
   sets, `meta.json imu.odr_hz`). Refused: a lens file for another rig, camera, sensor or resolution, and a SLAM config
   whose mask resolution is not the ultrawide's. The effective rig is the one every stage uses (SLAM, tags, images).
 
-### SLAM inputs (`umiproc/slam_inputs.py`)
+### SLAM inputs (`umiproc/slam/inputs.py`)
 
 Every SLAM run (map and localization) gets the same two files, written from the effective sensor values:
 

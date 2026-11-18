@@ -1,4 +1,4 @@
-"""umiproc.slam_config: loading configs/slam/rig_pi_v3.yaml, validation errors that name the field, mask_keep."""
+"""umiproc.slam.config: loading configs/slam/rig_pi_v3.yaml, validation errors that name the field, mask_keep."""
 
 import copy
 
@@ -8,7 +8,7 @@ import yaml
 
 from umiproc.dp.slam.mask import keep_mask
 from umiproc.paths import repo_config
-from umiproc.slam_config import SlamConfigError, load_slam_config, mask_keep, parse_slam_config
+from umiproc.slam.config import SlamConfigError, load_slam_config, mask_keep, parse_slam_config
 
 REPO_FILE = repo_config("slam", "rig_pi_v3.yaml")
 
