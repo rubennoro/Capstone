@@ -17,7 +17,8 @@ __all__ = ["MapInfo", "read_map", "current_fingerprint", "fingerprint_difference
 
 class MapInfo(dict):
     """``pi_name``, ``dir``, ``complete`` (report.json there), ``passed``, ``created_utc``, ``fingerprint_hash``,
-    ``checks`` ({id: passed}), ``build`` and ``vio_inflation`` (from the report), ``record`` (the stored
+    ``checks`` ({id: passed}), ``warnings`` (ids of the checks that only warned), ``build`` and ``vio_inflation`` (from
+    the report), ``record`` (the stored
     fingerprint record or None), ``work_report`` (for an incomplete map: ``<root>/.work/map/<pi_name>/report.json``
     when an interrupted pass left it there, else None)."""
 
@@ -35,7 +36,7 @@ def read_map(task_dir: Path) -> list[MapInfo]:
         fp = read_json(slot / FINGERPRINT_NAME)
         work_report = root / WORK_DIR / "map" / slot.name / REPORT_NAME
         info = MapInfo(pi_name=slot.name, dir=slot, complete=isinstance(rep, dict), passed=None, created_utc=None,
-                       fingerprint_hash=None, checks={}, build=None, vio_inflation=None,
+                       fingerprint_hash=None, checks={}, warnings=[], build=None, vio_inflation=None,
                        record=fp.get("record") if isinstance(fp, dict) else None,
                        work_report=work_report if not isinstance(rep, dict) and work_report.is_file() else None)
         if isinstance(rep, dict):
@@ -43,6 +44,7 @@ def read_map(task_dir: Path) -> list[MapInfo]:
             info.update(passed=rep.get("passed"), created_utc=rep.get("created_utc"),
                         fingerprint_hash=rep.get("fingerprint_hash"),
                         checks={c.get("id"): c.get("passed") for c in rep.get("checks", [])},
+                        warnings=list(rep.get("warnings") or []),
                         build=d.get("build"), vio_inflation=d.get("vio_inflation"))
         out.append(info)
     return out
@@ -90,7 +92,8 @@ def failed_maps(root: Path) -> list[dict]:
     for rec in sorted(p for p in base.iterdir() if p.is_dir()):
         for run in sorted((p for p in rec.iterdir() if p.is_dir()), reverse=True):
             rep = read_json(run / REPORT_NAME, {}) or {}
-            failed = [c.get("id") for c in rep.get("checks", []) if c.get("passed") is not True]
+            failed = [c.get("id") for c in rep.get("checks", [])
+                      if c.get("passed") is not True and c.get("blocking", True)]
             out.append({"pi_name": rec.name, "when": run.name, "dir": run, "failed": failed,
                         "error": "unexpected error" if rep.get("error") else None})
     out.sort(key=lambda d: d["when"], reverse=True)

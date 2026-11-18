@@ -20,8 +20,10 @@ Steps:
 4. **Fit** (:func:`umiproc.lens.fit.fit_fisheye`): ``cv2.fisheye.calibrate`` (Kannala-Brandt k1..k4 = ORB-SLAM3's
    KannalaBrandt8 = the rig's ``fisheye-equidistant``, re-verified numerically on every run) from the nominal K;
    ill-conditioned views (``CALIB_CHECK_COND``) and outlier views are removed and the fit repeated.
-5. **Checks**, each reported with its value and pass/fail (limits are the constants below); every check but (f) is
-   a hard limit:
+5. **Checks**, each reported with its value and whether it is within its limit (the constants below). **Every
+   check only warns** (:data:`WARNING_CHECKS`; UMI has no lens gate): a fit is always written and installable,
+   labelled with the checks outside their limits. Only "no fit" (too few views, OpenCV gave up) and an internal
+   disagreement between the three model implementations stop it:
 
    ====  ==============================================================================================
    (a)   >= 25 fit views
@@ -30,8 +32,7 @@ Steps:
    (d)   radial coverage: the 10th-farthest fit corner from the principal point is at >= 85 % of the largest
          radius any pixel outside the mask has (corners near the image's outer edge, plural)
    (e)   angular coverage: in a 3 x 3 grid, every cell that is >= 50 % outside the mask holds >= 20 fit corners
-   (f)   fx and fy within +-10 % of the rig's nominal: a **warning** only (the nominal is unmeasured): reported
-         and printed, but it never blocks ``lens.yaml`` or ``--apply``
+   (f)   fx and fy within +-10 % of the rig's nominal (the nominal is unmeasured)
    (g)   principal point within 40 px of the image centre ((W-1)/2, (H-1)/2)
    (h)   field of view: twice the field angle of each visible top image corner (outer pixel edge) is within
          140-180 deg (a ~160 deg diagonal lens)
@@ -42,15 +43,15 @@ Steps:
    result): ``report.json`` (every check, value and limit, the views used, held
    out and removed, frame statistics, settings) and ``coverage.png`` (a frame with every used corner, the mask
    outline, the 3 x 3 grid with its counts and the 85 % radius) after every run that got as far as the corners;
-   ``lens.yaml`` (:mod:`umiproc.lens.lensfile`) only when every check passed (a stale one is removed otherwise).
-   "Every check passed" means every hard check: a warning-only check ((f)) is printed as ``WARN`` and listed in
-   ``report.json``'s ``warnings``, but never blocks.
-7. ``--apply`` (only when every check passed): copy ``lens.yaml`` to ``<root>/rigs/<rig>.lens.yaml``, renaming an
+   ``lens.yaml`` (:mod:`umiproc.lens.lensfile`) whenever there is a fit (a stale one is removed otherwise). A check
+   outside its limit is printed as ``WARN``, listed in ``report.json``'s ``warnings`` and in ``lens.yaml``'s
+   ``metrics.checks_outside_limits`` (``umiproc status`` shows them), but never blocks.
+7. ``--apply`` (whenever there is a fit): copy ``lens.yaml`` to ``<root>/rigs/<rig>.lens.yaml``, renaming an
    existing different one to ``.bak-<UTC timestamp>``. Without ``--apply`` the exact command that applies it is
    printed (the same command plus ``--apply``: it repeats the calibration, which is deterministic, and applies it).
 
-Exit codes: 0 = every check passed; 1 = a check failed or the input is unusable (the message says which check and
-what to record differently).
+Exit codes: 0 = a lens was fitted and written (possibly with warnings); 1 = no lens (no fit, or the input is
+unusable; the message says why and what to record differently).
 """
 
 from __future__ import annotations
@@ -95,9 +96,11 @@ PRINCIPAL_POINT_MAX_PX = 40.0       # (g)
 FOV_RANGE_DEG = (140.0, 180.0)      # (h)
 MIN_VIEWS_TO_FIT = 5                # fewer selected fit views: no fit is attempted (check (a) fails)
 REPORT_SCHEMA = "umiproc.lens_report.v1"
-#: Checks that only warn: computed, reported and printed, but they never block lens.yaml or --apply. (f): the
-#: nominal focal length it compares with is the rig file's unmeasured value.
-WARNING_CHECKS = frozenset({"f"})
+#: Checks that only warn: computed, reported and printed, but they never block lens.yaml or --apply. Since
+#: 2026-11-17 (branch rnoro/data-work-auto) that is every check, as UMI has no lens gate at all: a fit is always
+#: written and installable, labelled with the checks outside their limits, and the map and the test demos judge it.
+#: Only "no fit" and an internal model disagreement still fail.
+WARNING_CHECKS = frozenset("abcdefgh")
 CELL_NAMES = (("top-left", "top", "top-right"), ("left", "centre", "right"),
               ("bottom-left", "bottom", "bottom-right"))
 
@@ -568,11 +571,13 @@ def coverage_image(cal: Calibration) -> np.ndarray:
         colour = (60, 220, 60) if v.role == "fit" else (230, 220, 40)
         for u, w in v.uv:
             cv2.circle(img, (int(round(u * 4)), int(round(w * 4))), 8, colour, -1, cv2.LINE_AA, shift=2)
-    status = ("ALL CHECKS PASSED" if cal.passed else
-              "FAILED: " + ", ".join(c.id for c in cal.checks if c.blocking and not c.passed))
     warned = [c.id for c in cal.checks if c.warned]
-    if warned:
-        status += "  warning: " + ", ".join(warned)
+    if not cal.passed:
+        status = "NO LENS: " + (cal.report.get("fit_error") or "the fit failed")
+    elif warned:
+        status = "LENS WRITTEN, outside limits: " + ", ".join(warned)
+    else:
+        status = "ALL CHECKS WITHIN LIMITS"
     cv2.putText(img, f"{cal.report['source']['pi_name']}  fit corners green, held-out cyan, mask red, "
                      f"{RADIAL_FRACTION:.0%} radius magenta   {status}", (10, H - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                 (255, 255, 255), 1, cv2.LINE_AA)
@@ -595,6 +600,7 @@ def write_outputs(cal: Calibration, out_dir: Path) -> dict:
     if cal.passed:
         metrics = {METRIC_KEYS[c.id]: c.value for c in cal.checks}
         metrics["held_out_views"] = rep["selection"]["held_out"]
+        metrics["checks_outside_limits"] = list(rep["warnings"])      # [] when every check was within its limit
         doc = lens_document(rig_id=rep["rig"]["rig_id"], sensor=SENSOR, resolution=cal.size,
                             intrinsics=rep["fit"]["intrinsics"], distortion=rep["fit"]["distortion"], date=rep["date"],
                             source={k: rep["source"][k] for k in ("episode_dir", "pi_name", "manifest_sha256",
@@ -620,8 +626,8 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--max-views", type=int, default=DEFAULT_MAX_VIEWS, metavar="N",
                    help=f"most views to select, every 5th held out (default {DEFAULT_MAX_VIEWS})")
     p.add_argument("--apply", action="store_true",
-                   help="when every check passes, install the result as <root>/rigs/<rig>.lens.yaml (backs up an "
-                        "existing one)")
+                   help="when a lens was fitted (checks outside their limits only warn), install it as "
+                        "<root>/rigs/<rig>.lens.yaml (backs up an existing one)")
 
 
 def _apply_command(args, root: Path) -> str:
@@ -683,24 +689,24 @@ def run(args) -> int:
               f"({rep['model_agreement']}); do not use this result and report it")
     written = [paths["report"], paths["coverage"]] + ([paths["lens"]] if cal.passed else [])
     print("wrote " + ", ".join(str(p) for p in written))
-    for c in cal.checks:
-        if c.warned:
-            print(f"WARNING ({c.id}) {c.name}: {c.detail}. {c.hint}")
-            print(f"  ({c.id}) is a warning only: the nominal value it compares with is the rig file's, unmeasured; "
-                  "it does not block lens.yaml or --apply.")
     if not cal.passed:
-        failed = [c for c in cal.checks if c.blocking and not c.passed and c.evaluated]
-        skipped = [c for c in cal.checks if c.blocking and not c.evaluated]
-        print("FAILED: " + ", ".join(f"({c.id}) {c.name}" for c in failed)
-              + (f"; not evaluated: {', '.join(f'({c.id})' for c in skipped)}" if skipped else ""))
-        for c in failed:
-            if c.hint:
+        why = rep["fit_error"] or "cv2.fisheye and ORB-SLAM3's KannalaBrandt8 disagree (see above)"
+        print(f"NO LENS: {why}. Nothing to install.")
+        for c in cal.checks:
+            if not c.passed and c.evaluated and c.hint:
                 print(f"  ({c.id}) {c.hint}")
         print(f"see {paths['coverage']} for where the corners were. Record the board again (DIRECTIONS.md section 1); "
               "the processing keeps using the lens model it had.")
         return 1
-    print("all checks passed." if not rep["warnings"] else
-          "all checks passed (with the warning above).")
+    warned = [c for c in cal.checks if c.warned]
+    if warned:
+        print("lens written, with checks outside their limits (warnings, they do not block lens.yaml or --apply):")
+        for c in warned:
+            print(f"  WARN ({c.id}) {c.name}: {c.detail}" + (f". To improve it: {c.hint}" if c.hint else ""))
+        print(f"  see {paths['coverage']}. The map's checks and the test demos (DIRECTIONS.md section 3) show whether "
+              "it is good enough; a better recording later simply replaces it.")
+    else:
+        print("every check within its limit.")
     dest = rig_lens_file(root, rig.rig_id)
     if not args.apply:
         print(f"to use it, install it as {dest} with:\n  {_apply_command(args, root)}")

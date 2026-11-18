@@ -234,6 +234,12 @@ Every SLAM run (map and localization) gets the same two files, written from the 
 
 ### `map` (UMI has none; a failed map attaches nothing and prints which check failed and what to change)
 
+Since 2026-11-17 (branch `rnoro/data-work-auto`, the user's decision): only **M1** and **M5's sightings** block
+(`umiproc.map.checks.BLOCKING`); M2, M3, M4 and M5's spread and tilt are warnings (printed, in the report's
+`warnings`, the folder is created anyway); the test demos (DIRECTIONS.md section 3) are the gate, as in UMI. Likewise
+`lens-calibrate` has no pass/fail: checks (a)–(h) all warn, any fit is written and `--apply` installs it
+(`metrics.checks_outside_limits` in the lens file); only no fit at all fails.
+
 | # | Check |
 |---|---|
 | M1 | the mapping run ends with exactly one map that has keyframes |

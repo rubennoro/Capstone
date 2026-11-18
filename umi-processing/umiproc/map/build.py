@@ -11,7 +11,9 @@ UMI's recipe (``umi_repo/scripts_slam_pipeline``):
 * ``05_run_calibrations.py:26-46`` + ``scripts/calibrate_slam_tag.py``: the table tag's pose in the map from that
   re-localized trajectory's keyframes (:mod:`umiproc.map.tag`), written as ``tx_slam_tag.json``.
 
-Then the checks M1-M5 (:mod:`umiproc.map.checks`; UMI has none).
+Then the checks M1-M5 (:mod:`umiproc.map.checks`; UMI has none). Only M1 and M5's sightings **block**
+(:data:`umiproc.map.checks.BLOCKING`); M2, M3, M4 and M5's spread and tilt are **warnings**: printed, listed in the
+report's ``warnings``, and the folder is created anyway. The test demos (DIRECTIONS.md section 3) are the real gate.
 
 Steps, all under ``<root>/.run.lock``:
 
@@ -26,11 +28,11 @@ Steps, all under ``<root>/.run.lock``:
 3. Work folder ``<root>/.work/map/<pi_name>/``: the EuRoC folder (copied ``write_euroc``, native 1280x960, no mask
    in the frames), the table-tag detections in every frame (same decode), the mapping run, the re-localization run,
    the checks.
-4. **Pass** (every check passed): ``report.json`` (with the folder and slot) is written into the work folder, then
+4. **Pass** (every blocking check passed; warnings allowed): ``report.json`` (with the folder and slot) is written into the work folder, then
    ``take(MAP, task=TASK)`` creates ``tasks/TASK`` (``TASK_2``, ... when taken) with the recording in
    ``map/<pi_name>/raw``; the map is moved next to it (:data:`MAP_FILES`), ``report.json`` last (``os.replace``). If
    intake raises or quarantines it, the report, logs and atlas go to ``maps_failed/`` (exit 2).
-5. **Fail**: the staged copy is removed and nothing is recorded anywhere (no task folder, no ``pi_sources.csv`` row,
+5. **Fail** (a blocking check failed): the staged copy is removed and nothing is recorded anywhere (no task folder, no ``pi_sources.csv`` row,
    no ``episodes.csv`` row), so the same recording can be run again (another build, another IMU setting, or after
    fixing a cause outside the recording). The report and logs are kept in
    ``<root>/maps_failed/<pi_name>/<UTC time>/`` (without the atlas and the EuRoC frames).
@@ -38,8 +40,8 @@ Steps, all under ``<root>/.run.lock``:
    ssh session without tmux) after ``take()`` leaves the map files and ``report.json`` there until the next ``map``
    clears it (manual recovery: DIRECTIONS.md section 3, "An interrupted map"); Ctrl-C runs the clean-up.
 
-Exit codes (:data:`EXIT_OK`, :data:`EXIT_FAILED`, :data:`EXIT_INPUT`): 0 every check passed; 1 a check failed (or an
-unexpected error); 2 the command could not run on this input (bad name, recording missing / still syncing / already
+Exit codes (:data:`EXIT_OK`, :data:`EXIT_FAILED`, :data:`EXIT_INPUT`): 0 the map was attached (possibly with
+warnings); 1 a blocking check failed (or an unexpected error); 2 the command could not run on this input (bad name, recording missing / still syncing / already
 taken / not this rig's settings / refused by intake, rig files, SLAM build missing, another command running).
 """
 
@@ -250,8 +252,9 @@ def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path,
                           message=f"unexpected error (traceback in {where / REPORT_NAME}):\n{tb}")
     report["duration_s"] = round(time.time() - started, 1)
     checks = results["checks"]
-    passed = all(c.ok for c in checks)
+    passed = not any(c.failed for c in checks)          # only blocking checks stop it; the others are warnings
     report["passed"] = passed
+    report["warnings"] = [c.id for c in checks if c.warned]
     if results.get("tag_pose") is not None:
         write_json(work / TAG_POSE_NAME, results["tag_pose"])
 
@@ -262,7 +265,7 @@ def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path,
         return MapOutcome(False, EXIT_FAILED, pi_name, where=where, checks=checks, report=report,
                           message=f"the map of {src.path} failed: nothing was attached and {src.name} was not "
                                   "taken (it can be run again)")
-    # Every check passed. report.json goes into the work folder first (with the folder and slot intake will use), so
+    # Every blocking check passed. report.json goes into the work folder first (with the folder and slot intake will use), so
     # a pass interrupted after take() leaves it in .work/map/<pi_name>/ with the map (DIRECTIONS.md section 3, "An
     # interrupted map"); then take(), the map files, and report.json last (os.replace: the slot is complete exactly
     # when report.json appears in it).
@@ -279,14 +282,14 @@ def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path,
         report.update(passed=False, folder=None, slot=None, intake_error=f"{type(e).__name__}: {e}")
         _keep_failed(work, where, report, keep_atlas=True)
         return MapOutcome(False, EXIT_INPUT, pi_name, where=where, checks=checks, report=report,
-                          message=f"every check passed, but intake did not take {pi_name}: {e} (the map and report "
+                          message=f"the map passed, but intake did not take {pi_name}: {e} (the map and report "
                                   f"are kept in {where})")
     if taken.status != "ingested":
         where = failed_map_dir(r.path, pi_name)
         report.update(passed=False, folder=None, slot=None, intake_refused=list(taken.reasons))
         _keep_failed(work, where, report, keep_atlas=True)
         return MapOutcome(False, EXIT_INPUT, pi_name, where=where, checks=checks, report=report,
-                          message=f"every check passed, but intake quarantined {pi_name} ({', '.join(taken.reasons)})"
+                          message=f"the map passed, but intake quarantined {pi_name} ({', '.join(taken.reasons)})"
                                   f": {taken.quarantine_dir}")
     dest = taken.slot_dir
     report.update(folder=taken.folder, slot=taken.slot)
@@ -297,7 +300,8 @@ def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path,
     os.replace(work / REPORT_NAME, dest / REPORT_NAME)    # last: a map folder with report.json is complete
     return MapOutcome(True, EXIT_OK, pi_name, folder=taken.folder, task_dir=taken.task_dir, where=dest,
                       checks=checks, report=report,
-                      message=f"map OK: tasks/{taken.folder} created (label {task}) with the map in {taken.slot}")
+                      message=f"map OK: tasks/{taken.folder} created (label {task}) with the map in {taken.slot}"
+                              + (f" (warnings: {', '.join(report['warnings'])})" if report["warnings"] else ""))
 
 
 def _keep_failed(work: Path, where: Path, report: dict, keep_atlas: bool = False) -> None:

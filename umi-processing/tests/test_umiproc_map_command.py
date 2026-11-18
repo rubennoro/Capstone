@@ -96,10 +96,11 @@ def test_two_runs_with_umis_options(env):
 def test_a_failed_map_attaches_nothing_and_can_run_again(env):
     root, src = env["root"], env["src"]
     before = tree_digest(src)
-    o, _ = _map(env)                                      # stationary fake trajectory: M4 (scale), M5 (no tag) fail
+    o, _ = _map(env)                         # stationary fake trajectory: M4 (scale) warns, M5 (no tag) blocks
     assert (o.passed, o.exit_code) == (False, B.EXIT_FAILED)
     assert [c.id for c in o.checks] == ["M1", "M2", "M3", "M4", "M5"]
     assert [c.ok for c in o.checks] == [True, True, True, False, False]
+    assert [c.id for c in o.checks if c.failed] == ["M5"] and [c.id for c in o.checks if c.warned] == ["M4"]
     assert o.checks[3].values["scale_status"] == "scale_unobservable"
     assert o.checks[3].values["orientation_windows"] == 0 and o.checks[3].values["orientation_ok"] is False
     assert "not enough tracked span" in o.checks[3].values["orientation"]["reason"]
@@ -111,6 +112,7 @@ def test_a_failed_map_attaches_nothing_and_can_run_again(env):
     rep = json.loads((where / B.REPORT_NAME).read_text())
     assert rep["passed"] is False and rep["kept_in"] == str(where)
     assert [c["id"] for c in rep["checks"] if c["passed"] is not True] == ["M4", "M5"]
+    assert rep["warnings"] == ["M4"] and [c["id"] for c in rep["checks"] if c["blocking"]] == ["M1", "M5"]
     for c in rep["checks"]:
         assert c["limits"] and c["message"]
     names = sorted(p.name for p in where.iterdir())
@@ -128,7 +130,7 @@ def test_a_failed_map_attaches_nothing_and_can_run_again(env):
     st = root_status(root.path, RIG)
     assert len(st["failed_maps"]) == 2
     text = format_root_status(st, "test")
-    assert "failed maps" in text and "M4, M5 failed" in text
+    assert "failed maps" in text and "M5 failed" in text and "M4, M5" not in text     # only what blocked
 
 
 def test_no_map_with_keyframes_skips_the_relocalization(env):
@@ -210,6 +212,35 @@ def test_the_effective_lens_is_used_everywhere(env, monkeypatch):
     fp = json.loads((where / B.FINGERPRINT_NAME).read_text())["record"]
     assert fp["sensors"]["ultrawide"]["lens"]["provenance"] == "calibrated"
     assert o.report["diagnostics"]["lens"]["provenance"] == "calibrated"
+
+
+def test_warnings_do_not_block_the_map(env, monkeypatch):
+    """M2, M3, M4 and M5's spread/tilt only warn: the folder is created, the report lists the warnings, and status
+    and the CLI say so. Only M1 and M5's sightings block."""
+    monkeypatch.setattr(C, "check_m4", lambda *a, **k: C.CheckResult("M4", False, {}, "scale off (test)", ["h4"]))
+    monkeypatch.setattr(C, "check_m5", lambda *a, **k: C.CheckResult("M5", False, {"sightings": 30},
+                                                                     "spread 2 cm (test)", ["h5"], blocking=False))
+    root = env["root"]
+    o, _ = _map(env)
+    assert (o.passed, o.exit_code, o.folder) == (True, B.EXIT_OK, "block_raise")
+    assert [c.id for c in o.checks if c.warned] == ["M4", "M5"] and not any(c.failed for c in o.checks)
+    rep = json.loads((o.where / B.REPORT_NAME).read_text())
+    assert rep["passed"] is True and rep["warnings"] == ["M4", "M5"]
+    assert "warnings: M4, M5" in o.message
+    f = folder_status(root.path, "block_raise")
+    assert f["map_info"][0]["warnings"] == ["M4", "M5"]
+    text = format_folder_status(f)
+    assert "M4 warning" in text and "M5 warning" in text and "FAILED" not in text
+    assert "map passed with warnings (M4, M5)" in format_root_status(root_status(root.path, RIG), "test")
+    out = __import__("umiproc.map.cli", fromlist=["format_outcome"]).format_outcome(o, "block_raise", "episode_000001")
+    assert "map: PASSED" in out and "(warnings: M4, M5;" in out and "M4 WARN" in out and "M5 WARN" in out
+    assert "to improve it (a warning, it does not block)" in out
+
+
+def test_blocking_defaults():
+    assert C.BLOCKING == {"M1": True, "M2": False, "M3": False, "M4": False, "M5": True}
+    assert C.not_evaluated("M5", "x").failed and C.not_evaluated("M4", "x").warned
+    assert C.not_evaluated("M2", "x").warned and not C.not_evaluated("M2", "x").failed
 
 
 # --------------------------------------------------------------------------------------------- input errors

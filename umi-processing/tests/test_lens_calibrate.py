@@ -88,7 +88,7 @@ def test_exit_code_and_outputs(calibrated, recording):
     d = _out(root, recording[0] / PI_NAME)
     assert [p.name for p in (root / "lens").iterdir()] == [d.name]
     assert {p.name for p in d.iterdir()} == {"lens.yaml", "report.json", "coverage.png"}
-    assert "all checks passed" in out
+    assert "every check within its limit" in out
     for cid in "abcdefgh":
         assert f"PASS ({cid})" in out
     assert not (root / "rigs").exists()                         # nothing applied without --apply
@@ -126,7 +126,7 @@ def test_report(calibrated, recording):
     assert rep["schema"] == "umiproc.lens_report.v1" and rep["passed"] is True
     checks = {c["id"]: c for c in rep["checks"]}
     assert sorted(checks) == list("abcdefgh") and all(c["passed"] and c["evaluated"] for c in checks.values())
-    assert rep["warnings"] == [] and [cid for cid, c in checks.items() if not c["blocking"]] == ["f"]
+    assert rep["warnings"] == [] and not any(c["blocking"] for c in checks.values())      # every check only warns
     assert checks["a"]["value"] >= 25
     assert checks["b"]["value"] <= 0.5 and checks["c"]["value"] <= 0.6
     assert checks["d"]["value"] >= 0.85
@@ -144,7 +144,7 @@ def test_report(calibrated, recording):
     assert not cells["bottom"]["checked"] and cells["bottom-left"]["checked"]
     lf = lensfile.load_lens(_out(root, src / PI_NAME) / "lens.yaml")
     assert lf.source["manifest_sha256"] == rep["source"]["manifest_sha256"]
-    assert lf.metrics["fit_views"] == checks["a"]["value"]
+    assert lf.metrics["fit_views"] == checks["a"]["value"] and lf.metrics["checks_outside_limits"] == []
     assert [lf.model.fx, lf.model.fy, lf.model.cx, lf.model.cy] == rep["fit"]["intrinsics"]
 
 
@@ -177,23 +177,26 @@ def test_focal_length_check_only_warns(recording, tmp_path, monkeypatch):
     code, out, err = _run(["lens-calibrate", PI_NAME, "--source", str(src), "--root", str(tmp_path), "--apply"])
     assert code == 0, out + err
     assert "WARN (f) focal length vs nominal" in out and "FAIL" not in out
-    assert "WARNING (f) focal length vs nominal" in out and "unmeasured" in out
-    assert "all checks passed (with the warning above)" in out and "applied" in out
+    assert "lens written, with checks outside their limits" in out and "applied" in out
     d = _out(tmp_path, src / PI_NAME)
     rep = json.loads((d / "report.json").read_text())
     f = [c for c in rep["checks"] if c["id"] == "f"][0]
     assert rep["passed"] is True and rep["warnings"] == ["f"]
     assert f["passed"] is False and f["evaluated"] is True and f["blocking"] is False and f["hint"]
     assert (d / "lens.yaml").read_bytes() == (tmp_path / "rigs" / "rig_pi_v3.lens.yaml").read_bytes()
-    assert lensfile.load_lens(d / "lens.yaml").metrics["focal_deviation"] == f["value"]
+    lf = lensfile.load_lens(d / "lens.yaml")
+    assert lf.metrics["focal_deviation"] == f["value"] and lf.metrics["checks_outside_limits"] == ["f"]
 
 
 def test_check_status_words():
+    """Every check only warns (UMI has no lens gate): WARN, never FAIL."""
     assert calibrate.Check("f", 0.2, "x", False).line().startswith("WARN (f)")
     assert calibrate.Check("f", None, "x", False, evaluated=False).line().startswith("WARN (not evaluated) (f)")
-    assert calibrate.Check("g", 50.0, "x", False).line().startswith("FAIL (g)")
-    assert calibrate.Check("f", 0.2, "x", False).warned and not calibrate.Check("g", 50.0, "x", False).warned
+    assert calibrate.Check("g", 50.0, "x", False).line().startswith("WARN (g)")
+    assert calibrate.Check("g", 50.0, "x", True).line().startswith("PASS (g)")
+    assert calibrate.Check("f", 0.2, "x", False).warned and calibrate.Check("g", 50.0, "x", False).warned
     assert not calibrate.Check("f", None, "x", False, evaluated=False).warned
+    assert all(not calibrate.Check(cid, 0, "x", False).blocking for cid in "abcdefgh")
 
 
 @pytest.fixture(scope="module")
@@ -205,21 +208,22 @@ def few_views(tmp_path_factory, keep):
     return src
 
 
-def test_too_few_views_fails_check_a(few_views, tmp_path):
-    stale = _out(tmp_path, few_views / "episode_000901") / "lens.yaml"
-    stale.parent.mkdir(parents=True)
-    stale.write_text("from an earlier run\n")
+def test_too_few_views_only_warns(few_views, tmp_path):
+    """Fewer than 25 fit views (but enough for a fit): (a) is a warning; lens.yaml is written, labelled with it, and
+    --apply installs it."""
+    d = _out(tmp_path, few_views / "episode_000901")
     code, out, err = _run(["lens-calibrate", "episode_000901", "--source", str(few_views), "--apply"],
                           env_root=tmp_path)
-    assert code == 1
-    assert "FAIL (a) fit views" in out and "FAILED: (a) fit views" in out
-    assert "pause" in out                                     # what to record differently
-    rep = json.loads((stale.parent / "report.json").read_text())
+    assert code == 0, out + err
+    assert "WARN (a) fit views" in out and "FAIL" not in out
+    assert "pause" in out                                     # what to record differently, as a hint
+    rep = json.loads((d / "report.json").read_text())
     a = [c for c in rep["checks"] if c["id"] == "a"][0]
-    assert rep["passed"] is False and a["passed"] is False and a["value"] < 25 and a["hint"]
-    assert (stale.parent / "coverage.png").is_file()
-    assert not stale.exists()                                 # no lens.yaml next to a failed report
-    assert not (tmp_path / "rigs").exists()                   # --apply does nothing when a check fails
+    assert rep["passed"] is True and "a" in rep["warnings"] and a["passed"] is False and a["value"] < 25 and a["hint"]
+    lf = lensfile.load_lens(d / "lens.yaml")
+    assert "a" in lf.metrics["checks_outside_limits"]
+    installed = tmp_path / "rigs" / "rig_pi_v3.lens.yaml"
+    assert installed.read_bytes() == (d / "lens.yaml").read_bytes() and "applied" in out
 
 
 # --------------------------------------------------------------------------------------------- bad input
@@ -230,13 +234,19 @@ def _tiny(src, name="episode_000902", size=(1280, 960), n=4):
 
 
 def test_no_board_in_view(tmp_path):
+    """No fit at all: the one case that still fails (exit 1, no lens.yaml, a stale one removed, --apply does
+    nothing)."""
     _tiny(tmp_path / "in")
+    stale = _out(tmp_path / "root", tmp_path / "in" / "episode_000902") / "lens.yaml"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("from an earlier run\n")
     code, out, _ = _run(["lens-calibrate", "episode_000902", "--source", str(tmp_path / "in"), "--root",
-                         str(tmp_path / "root")])
-    assert code == 1 and "FAIL (a)" in out and "no fit" in out
-    rep = json.loads((_out(tmp_path / "root", tmp_path / "in" / "episode_000902") / "report.json").read_text())
-    assert rep["fit"] is None and rep["frames"]["with_board"] == 0
+                         str(tmp_path / "root"), "--apply"])
+    assert code == 1 and "WARN (a)" in out and "no fit" in out and "NO LENS" in out
+    rep = json.loads((stale.parent / "report.json").read_text())
+    assert rep["fit"] is None and rep["frames"]["with_board"] == 0 and rep["passed"] is False
     assert not all(c["evaluated"] for c in rep["checks"])
+    assert not stale.exists() and not (tmp_path / "root" / "rigs").exists()
 
 
 def test_a_reused_pi_episode_number_gets_its_own_folder(tmp_path):

@@ -2,6 +2,10 @@
 what to change in the recording. Pure functions of the SLAM runs' outputs, so every boundary is testable without the
 native binary.
 
+Only M1 and M5's sightings **block** the map (:data:`BLOCKING`); M2, M3, M4 and M5's spread and tilt limits are
+**warnings**: printed with their hints and stored in the report, but the task folder is still created. The test demos
+(DIRECTIONS.md section 3) then show whether the map works, as in UMI, which judges no map at all.
+
 ==  ==========================================================================================  =====================
 #   passes when                                                                                 computed from
 ==  ==========================================================================================  =====================
@@ -51,7 +55,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-__all__ = ["CheckResult", "M3_MAX_RELOCALIZE_S", "M3_MIN_TRACKED_FRACTION", "M4_MAX_SPEED_MPS", "M4_WINDOW_S",
+__all__ = ["BLOCKING", "CheckResult", "M3_MAX_RELOCALIZE_S", "M3_MIN_TRACKED_FRACTION", "M4_MAX_SPEED_MPS", "M4_WINDOW_S",
            "M4_MAX_WINDOW_DEG", "M4_MIN_WINDOWS", "M5_MIN_SIGHTINGS", "M5_MAX_SPREAD_M", "M5_MAX_NORMAL_DEG",
            "RELOCALIZE_MAX_LOST_FRAMES", "PACING_MIN_FRACTION", "EARLY_RESET_MAX_FRAMES", "EARLY_RESETS_MIN", "LIMITS",
            "check_m1", "check_m2", "check_m3", "check_m4", "check_m5", "not_evaluated", "max_speed",
@@ -104,16 +108,30 @@ _SCAN_HINT = ("scan the workspace slowly for at least 30 s without stopping: rea
               "turning on the spot), no fast moves, never a blank view (a plain wall, the ceiling, the lens covered)")
 
 
+#: Whether a check outside its limit stops the map (:attr:`CheckResult.blocking`; branch rnoro/data-work-auto,
+#: 2026-11-17). UMI judges no map at all; the test demos (DIRECTIONS.md section 3) are the gate. Only what keeps the
+#: data correct still blocks: M1 (one map: demos and the table tag in the same coordinates) and M5's sightings (a
+#: table pose to exist; :func:`check_m5` sets it per result: its spread and tilt limits only warn). M2-M4 warn.
+BLOCKING = {"M1": True, "M2": False, "M3": False, "M4": False, "M5": True}
+
+
 @dataclass
 class CheckResult:
-    """One check: ``passed`` (None = could not be evaluated, which counts as failed), its values and limits, a
-    one-line ``message`` (value against limit) and, when it failed, ``hints`` (what to change in the recording)."""
+    """One check: ``passed`` (None = could not be evaluated, which counts as not passed), its values and limits, a
+    one-line ``message`` (value against limit) and, when it did not pass, ``hints`` (what to change in the
+    recording). ``blocking``: whether not passing stops the map (default :data:`BLOCKING`); a non-blocking check that
+    did not pass is a **warning** (:attr:`warned`)."""
 
     id: str
     passed: bool | None
     values: dict = field(default_factory=dict)
     message: str = ""
     hints: list[str] = field(default_factory=list)
+    blocking: bool | None = None
+
+    def __post_init__(self):
+        if self.blocking is None:
+            self.blocking = BLOCKING[self.id]
 
     @property
     def title(self) -> str:
@@ -123,9 +141,20 @@ class CheckResult:
     def ok(self) -> bool:
         return self.passed is True
 
+    @property
+    def failed(self) -> bool:
+        """Did not pass and blocks the map."""
+        return not self.ok and self.blocking
+
+    @property
+    def warned(self) -> bool:
+        """Did not pass, but only warns."""
+        return not self.ok and not self.blocking
+
     def to_json(self) -> dict:
-        return {"id": self.id, "title": self.title, "passed": self.passed, "values": _jsonable(self.values),
-                "limits": LIMITS[self.id], "message": self.message, "hints": list(self.hints)}
+        return {"id": self.id, "title": self.title, "passed": self.passed, "blocking": bool(self.blocking),
+                "values": _jsonable(self.values), "limits": LIMITS[self.id], "message": self.message,
+                "hints": list(self.hints)}
 
 
 def _jsonable(x):
@@ -574,6 +603,8 @@ def check_m5(stats, agg: dict | None, up: np.ndarray | None, frames_with_tag: in
               f"; the chosen sighting's {values['chosen_normal_to_up_deg']:.1f} deg") + ")")
     if ok_n and ok_spread and ok_normal:
         return CheckResult("M5", True, values, msg)
+    # blocks only without a usable table pose (too few sightings); the spread and tilt limits only warn
+    blocking = not ok_n or agg is None
     if not ok_n:
         st = stats
         if frames_with_tag == 0:
@@ -603,7 +634,7 @@ def check_m5(stats, agg: dict | None, up: np.ndarray | None, frames_with_tag: in
         else:
             hints.append(f"the tag is tilted {normal:.1f} deg from level (the median of its views): tape it flat on "
                          "a level table; if it is flat, the map's gravity is off (see M4)")
-    return CheckResult("M5", False, values, msg, hints)
+    return CheckResult("M5", False, values, msg, hints, blocking=blocking)
 
 
 # --------------------------------------------------------------------------------------------- diagnostics

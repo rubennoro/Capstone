@@ -1,9 +1,10 @@
 """``umiproc map TASK MAP_DIR [--source /data/incoming] [--root DIR] [--rig rig_pi_v3]``: build and check the
-session map from a mapping recording; creates the task folder only when every check passed (DIRECTIONS.md §3,
-:mod:`umiproc.map.build`). Progress on stdout, the result block on stdout (pass) or stderr (fail).
+session map from a mapping recording; creates the task folder unless a blocking check (M1, M5's sightings) failed;
+the other checks only warn (DIRECTIONS.md §3, :mod:`umiproc.map.build`). Progress on stdout, the result block on
+stdout (pass) or stderr (fail).
 
-Exit codes: 0 every check passed; 1 a check failed (nothing created; the recording can be run again); 2 the command
-could not run on this input (the message says why; nothing created).
+Exit codes: 0 the map was attached (possibly with warnings); 1 a blocking check failed (nothing created; the
+recording can be run again); 2 the command could not run on this input (the message says why; nothing created).
 """
 
 from __future__ import annotations
@@ -69,17 +70,25 @@ def _diagnostic_lines(rep: dict) -> list[str]:
 def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
     rep = o.report or {}
     lines = []
+    warned = [c.id for c in o.checks if c.warned]
     if o.passed:
-        lines.append(f"map: PASSED -> tasks/{o.folder} (label {task}), map in {o.where}")
+        lines.append(f"map: PASSED -> tasks/{o.folder} (label {task}), map in {o.where}"
+                     + (f" (warnings: {', '.join(warned)}; the test demos will show whether they matter)"
+                        if warned else ""))
     else:
-        failed = [c.id for c in o.checks if not c.ok]
+        failed = [c.id for c in o.checks if c.failed]
         lines.append(f"map: FAILED for {map_dir}" + (f" ({o.pi_name})" if o.pi_name else "") +
                      (f": {', '.join(failed)} failed" if failed else "") + f" - {o.message}")
     for c in o.checks:
-        state = "PASS" if c.ok else ("n/a " if c.passed is None else "FAIL")
+        if c.ok:
+            state = "PASS"
+        elif c.passed is None:
+            state = "n/a "
+        else:
+            state = "WARN" if c.warned else "FAIL"
         lines.append(f"  {c.id} {state}  {c.title}: {c.message}")
         if not c.ok and c.hints:
-            lines.append("       what to change:")
+            lines.append("       what to change:" if c.failed else "       to improve it (a warning, it does not block):")
             lines += [f"         - {h}" for h in c.hints]
     if rep.get("diagnostics"):
         lines.append("  diagnostics (reported, not checked):")

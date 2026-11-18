@@ -490,4 +490,18 @@ def test_every_check_reports_json():
               C.check_m5(_stats(20), _agg([0, 0, 0]), UP, 1, 1)):
         d = c.to_json()
         json.dumps(d)
-        assert set(d) == {"id", "title", "passed", "values", "limits", "message", "hints"}
+        assert set(d) == {"id", "title", "passed", "blocking", "values", "limits", "message", "hints"}
+
+
+def test_m5_blocks_only_without_enough_sightings():
+    """M5's sightings block the map (no table pose without them); its spread and tilt limits only warn."""
+    few = C.check_m5(_stats(5), _agg([0, 0, 0]), UP, 5, 100)
+    assert not few.ok and few.failed and not few.warned
+    none = C.check_m5(_stats(0), None, UP, 0, 100)
+    assert none.failed
+    spread = C.check_m5(_stats(30), _agg([0.02, 0, 0]), UP, 30, 100)
+    assert not spread.ok and spread.warned and not spread.failed
+    tilt = C.check_m5(_stats(30), _agg([0, 0, 0], normal_deg=10.0), UP, 30, 100)
+    assert not tilt.ok and tilt.warned
+    good = C.check_m5(_stats(30), _agg([0, 0, 0]), UP, 30, 100)
+    assert good.ok and not good.warned and not good.failed

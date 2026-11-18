@@ -264,6 +264,8 @@ def _map_word(infos: list[dict]) -> str:
     if not m["complete"]:
         return "INCOMPLETE (no report.json: an interrupted map)"
     word = "passed" if m["passed"] else "FAILED"
+    if m["passed"] and m.get("warnings"):
+        word += f" with warnings ({', '.join(m['warnings'])})"
     if m["up_to_date"] is False:
         word += ", OUT OF DATE"
     elif m["up_to_date"] is None and m.get("cannot_compare"):
@@ -286,7 +288,9 @@ def _map_lines(infos: list[dict]) -> list[str]:
                            "into this folder by hand before the next `umiproc map` clears it (DIRECTIONS.md section "
                            "3, \"An interrupted map\")")
             continue
-        checks = ", ".join(f"{k} {'ok' if v else 'FAILED'}" for k, v in m["checks"].items())
+        warned = set(m.get("warnings") or [])
+        checks = ", ".join(f"{k} {'ok' if v else ('warning' if k in warned else 'FAILED')}"
+                           for k, v in m["checks"].items())
         out.append(head + f": {'passed' if m['passed'] else 'FAILED'} ({checks}), made {m['created_utc']}")
         b, v = m.get("build") or {}, m.get("vio_inflation") or {}
         out.append(f"                        fingerprint {str(m['fingerprint_hash'])[:12]}: SLAM build "
@@ -319,8 +323,11 @@ def format_root_status(st: dict, source: str) -> str:
                      "uncalibrated\"); optional: DIRECTIONS.md section 1")
     elif rs["lens"] is not None:
         src = rs["lens"].source or {}
+        outside = (rs["lens"].metrics or {}).get("checks_outside_limits") or []
         lines.append(f"  {'lens file:':15s}{rs['lens_path'].name}: calibrated {rs['lens'].date}"
-                     + (f" from {src.get('pi_name') or src.get('episode_dir')}" if src else ""))
+                     + (f" from {src.get('pi_name') or src.get('episode_dir')}" if src else "")
+                     + (f"; checks outside their limits: {', '.join(outside)} (see the calibration's report.json)"
+                        if outside else ""))
     else:
         lines.append(f"  {'lens file:':15s}{rs['lens_path'].name}: cannot be used")
     if rs["problem"]:

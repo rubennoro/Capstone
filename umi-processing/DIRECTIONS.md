@@ -22,7 +22,7 @@ Do these in order; each step has a check that tells you it passed before you go 
 | 1 | Get the code (0.1) | Jetson | `git log --oneline -1` shows the newest umi-processing commit |
 | 2 | Python environment (0.2, about 5 min) | Jetson | `umiproc --help` lists `lens-board`, `lens-calibrate`, …, and the check tests pass |
 | 3 | Start the SLAM build (0.3, about an hour) **inside `tmux`**, and let it run while you do step 4 | Jetson | it ends with `== done`, and the slow check passes |
-| 4 | **Lens calibration** (section 1): print the board, glue it to something rigid, record about 60 s on the Pi, run `umiproc lens-calibrate`, repeat until every check passes, then `--apply` | Pi + Jetson | `lens-calibrate` prints no `FAIL`, and `--apply` installs `~/data/umi/rigs/rig_pi_v3.lens.yaml` |
+| 4 | **Lens calibration** (section 1): print the board, glue it to something rigid, record about 60 s on the Pi, run `umiproc lens-calibrate ... --apply` (there is no pass/fail: any fit is installed, with warnings) | Pi + Jetson | `--apply` prints `applied` and installs `~/data/umi/rigs/rig_pi_v3.lens.yaml` |
 | 5 | `umiproc status` (0.5) | Jetson | lens file: calibrated; umiproc_slam and vocabulary: found |
 | 6 | A collection session (sections 2–5): verify the map with a few task demos, then gripper calibration, then the rest of the demos | Pi + Jetson | `umiproc status <folder>` lists the episodes |
 
@@ -286,14 +286,18 @@ that reuses the number never overwrites this one; the last lines printed give th
 - `report.json`: every check with its value and limit, and the frames and views used.
 - `coverage.png`: a frame with every corner used (green: fit, cyan: held back), the gripper mask (red), the 3 x 3
   grid with the corner count of each cell, and the circle that check (d) needs corners beyond (magenta).
-- `lens.yaml`: the measured lens. Only written when every check passed.
+- `lens.yaml`: the measured lens. Written whenever there is a fit.
 
-It ends with exit code 0 when every check passed, 1 otherwise. A failure names the failed check and says what to
-record differently. Every check is a hard limit except (f), which only warns (see the table).
+**There is no pass/fail** (as in UMI, which has no lens step at all): every check below only **warns**. A check
+outside its limit prints `WARN` with what to record differently, and is listed in `report.json`'s `warnings` and in
+`lens.yaml` (`metrics.checks_outside_limits`; `umiproc status` shows them). The lens is still written and `--apply`
+still installs it. The map's checks and the test demos (section 3) then show whether it is good enough; a better
+recording later simply replaces it. Exit code 0 when a lens was written, 1 only when there is **no fit at all**
+(the board was too rarely seen: `NO LENS`).
 
 ### Reading the checks
 
-| Check | What it means | If it fails |
+| Check (all warnings) | What it means | If it warns, to improve it |
 |---|---|---|
 | (a) fit views ≥ 25 | enough distinct, still views of the board went into the fit | record longer and pause at each pose; the message says whether the board was too rarely seen (closer, face the lens, more light, focus) or the frames were moving (slower, longer pauses) |
 | (b) fit RMS ≤ 0.5 px | the corners agree with one lens model | flatten the board (glue it to something rigid), move more slowly, lock the focus, avoid glare |
@@ -306,8 +310,8 @@ record differently. Every check is a hard limit except (f), which only warns (se
 
 ### Use it: `--apply`
 
-When every check passed, the last lines show the command that installs the result, which is the same command
-plus `--apply`:
+Whenever there is a fit (warnings or not), the last lines show the command that installs it, which is the same
+command plus `--apply`. Or run with `--apply` straight away:
 
 ```bash
 umiproc lens-calibrate episode_000123 --apply
@@ -315,7 +319,7 @@ umiproc lens-calibrate episode_000123 --apply
 
 It repeats the calibration (same result) and copies `lens.yaml` to `~/data/umi/rigs/rig_pi_v3.lens.yaml`, the lens
 file the processing reads. A lens file already there is kept as `rig_pi_v3.lens.yaml.bak-<UTC time>`. `--apply`
-does nothing when a check failed. Apply it before you record a session's map, not in the middle of a session: maps
+always installs the fit, whatever the warnings; it does nothing only when there is no fit. Apply it before you record a session's map, not in the middle of a session: maps
 and episodes record the lens they were made with. Then `umiproc status` (0.5) shows `lens file: … calibrated`.
 
 ### When to redo it
@@ -434,10 +438,14 @@ umiproc map block_raise episode_000130
 - The first lines say which SLAM build (and its patches), which IMU setting (`vio_inflation`) and which lens
   (`calibrated` or `nominal, uncalibrated`) it uses, and the settings' fingerprint. **Check that it says
   `lens calibrated`.**
-- It ends with one line per check (`PASS`, `FAIL`, or `n/a` when an earlier failure made it impossible to judge),
-  the diagnostics, and where the report is.
+- It ends with one line per check (`PASS`, `WARN`, `FAIL`, or `n/a` when an earlier failure made it impossible to
+  judge), the diagnostics, and where the report is.
+- **Only two things block the map**: M1 (SLAM ended with exactly one map) and M5's sightings (at least 20 views of
+  tag 13, so the table's pose exists). Everything else (M2, M3, M4, and M5's spread and tilt) only **warns**: it is
+  printed with how to improve it and listed in `report.json`'s `warnings`, and the folder is created anyway, as UMI
+  does (it judges no map). The test demos (3.3–3.5) are the real check.
 
-Exit code 0: every check passed. 1: a check failed. 2: it could not run on this recording (the message says why:
+Exit code 0: the map was attached (possibly with warnings). 1: M1 or M5's sightings failed. 2: it could not run on this recording (the message says why:
 not there or still syncing, already taken, not this rig's camera/IMU settings, rig files or SLAM build missing,
 another umiproc command running).
 
@@ -447,11 +455,11 @@ another umiproc command running).
 (every check's values and limits, the diagnostics). **Next: remove the table tag (carefully, nothing else moves) and
 go on to 3.3.**
 
-**When it fails:** nothing is created and the recording is not marked as taken, so it can be run again. The report
+**When it fails** (M1 or M5's sightings): nothing is created and the recording is not marked as taken, so it can be run again. The report
 and the SLAM logs are kept in `~/data/umi/maps_failed/<pi_name>/<UTC time>/` (the last lines printed give the
-folder; `umiproc status` lists the recent ones). Each failed check prints **what to change** (see 3.6): usually
+folder; `umiproc status` lists the recent ones). The failed check prints **what to change** (see 3.6): usually
 record a new mapping clip following the hints (the tag is still in place), then run `umiproc map` on the new one. If
-every check passed but intake refused the recording (exit 2, "intake did not take"), the map, its report and the logs
+the map passed but intake refused the recording (exit 2, "intake did not take"), the map, its report and the logs
 are kept in `maps_failed/` too.
 
 ### 3.3 Record 2–3 test demos
@@ -525,7 +533,7 @@ roots and only reads `/data/incoming`, so it can run after the session; it does 
 
 ### 3.6 Reading the map checks
 
-| Check | Passes when | If it fails, change this in the recording |
+| Check | Passes when (M1 and M5's sightings block; the rest only warn) | If it fails or warns, change this in the recording |
 |---|---|---|
 | M1 one map | SLAM ends with exactly one map that has keyframes (it never lost the map and started over) | "never initialised": the tag fully in view and sharp at the start, more light, more texture. "lost every map" or "2 maps": the start still above the tag, then slow motions; no fast moves, no blank views; keep it tracked from start to end. "crashed (SIGSEGV, exit -11)" or "did not finish": not the recording; send the mapping log. A hint naming the **camera model** (the map was reset ≥ 5 times, most new maps lost within 0.5 s of starting): not the recording either; calibrate the lens (section 1) and check the rig file's camera–IMU geometry (`T_imu_cam`) |
 | M2 IMU initialised | the IMU is initialised and both IMU refinements finished (VIBA 1 after ~5 s, VIBA 2 after ~15 s of tracking) | record longer (≥ 30 s), with continuous tracking and real translation in every direction (up/down, side to side, forward/back), not only rotation. If the hint names the **camera model** (as in M1), a longer clip will not help: lens calibration (section 1), camera–IMU geometry |
