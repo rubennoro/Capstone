@@ -11,7 +11,7 @@ import pytest  # noqa: E402
 
 @pytest.fixture(autouse=True, scope="session")
 def _analysis_in_tmp(tmp_path_factory):
-    """No test writes into the real ~/data/analysis (umiproc.analysis), module-scoped fixtures included."""
+    """No test writes into the real ~/data/analysis (umiproc.lens.analysis_copy), module-scoped fixtures included."""
     mp = pytest.MonkeyPatch()
     mp.setenv("UMIPROC_ANALYSIS", str(tmp_path_factory.mktemp("analysis")))
     yield
