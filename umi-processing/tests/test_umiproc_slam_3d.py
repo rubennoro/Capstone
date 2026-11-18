@@ -5,10 +5,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from umiproc.cli import build_parser
 from umiproc.slam.trajectory_csv import CSV_HEADER
 from umiproc.viz import slam_3d as V
+from umiproc.viz import slam_3d_images as I
 
 T0 = 1_000_000_000_000
 DT = 33_333_000
@@ -97,3 +99,132 @@ def test_page_without_points_and_cli(tmp_path, capsys):
     assert "no map_points.csv" in capsys.readouterr().out
     args = build_parser().parse_args(["slam-3d", str(tmp_path), "--points", str(tmp_path / "missing.csv")])
     assert args._run(args) == 2
+
+
+# --------------------------------------------------------------------------------------------- declutter
+
+def _pts_payload(tmp_path, filters):
+    _write_trajectory(tmp_path)
+    _write_export(tmp_path)
+    out, lines = V.make_page(tmp_path, filters=filters)
+    return _payload(out.read_text()), lines
+
+
+def test_parse_near():
+    assert V.parse_near("1.5") == (1.5, None) and V.parse_near("0.4m") == (None, 0.4)
+    assert V.parse_near("0") == (None, None)
+    with pytest.raises(ValueError):
+        V.parse_near("-1")
+
+
+def test_filters_min_obs_near_box(tmp_path):
+    d, lines = _pts_payload(tmp_path, V.Filters())                 # defaults: min obs 3, near 1 x the path size
+    assert len(d["points"]["xyz"]) == 3                            # every point stays in the file
+    assert d["hidden_by"]["min_obs"] == 1 and d["filters"]["min_obs"] == 3   # obs 2
+    assert d["extent"] == pytest.approx(0.5, abs=1e-3)             # path x 0.1..0.5 and the keyframes 0..0.3
+    # point 2 (0.2, 0.5, 1.1) is ~1.2 from the nearest camera position: farther than 1 x 0.5
+    assert d["hidden_by"]["near"] == 3 and d["hidden_points"] == 3
+    cams = [[0.1 * k, 0, 0] for k in range(1, 6)] + [[0, 0, 0], [0.3, 0, 0]]
+    assert d["points"]["dist"][1] == pytest.approx(min(np.linalg.norm(np.subtract([0.2, 0.5, 1.1], c)) for c in cams),
+                                                   abs=1e-3)
+    assert any("hidden by: fewer than 3 observations 1" in ln for ln in lines)
+    d, _ = _pts_payload(tmp_path, V.Filters(min_obs=0, near=None, outliers=False))
+    assert d["hidden_points"] == 0 and d["filters"]["near"] is None
+    d, _ = _pts_payload(tmp_path, V.Filters(min_obs=0, near=None, near_m=1.15))    # distances 1.12, 1.21, 0.99
+    assert d["hidden_by"]["near"] == 1 and d["filters"]["near"] == pytest.approx(2.3)   # 1.15 m / 0.5
+    d, _ = _pts_payload(tmp_path, V.Filters(min_obs=0, near=None, box=10.0))
+    assert d["hidden_by"]["box"] == 0
+    d, _ = _pts_payload(tmp_path, V.Filters(min_obs=0, near=None, box=0.1))
+    assert d["hidden_by"]["box"] == 3                              # all ~1 m off the path's box
+
+
+def test_cli_filter_flags(tmp_path):
+    _write_trajectory(tmp_path)
+    _write_export(tmp_path)
+    args = build_parser().parse_args(["slam-3d", str(tmp_path), "--out", str(tmp_path / "x.html"), "--min-obs",
+                                      "5", "--near", "0.5m", "--box", "0.2", "--show-outliers", "--no-images"])
+    assert args._run(args) == 0
+    f = _payload((tmp_path / "x.html").read_text())["filters"]
+    assert f == {"min_obs": 5, "near": pytest.approx(1.0), "box": 0.2, "outliers": False}
+
+
+# --------------------------------------------------------------------------------------------- image colours
+
+CAM = I.Camera(fx=30.0, fy=30.0, cx=32.0, cy=24.0, k=(0.01, -0.002, 0.0, 0.0), width=64, height=48)
+
+
+def test_project_matches_cv2_fisheye():
+    import cv2
+
+    rng = np.random.default_rng(0)
+    pts = rng.uniform([-1, -1, 0.5], [1, 1, 3], (50, 3))
+    T = V._poses(np.array([[0.1, -0.2, 0.3]]), Rotation.from_rotvec([0.1, 0.2, -0.05]).as_quat()[None])[0]
+    uv, front, d = I.project(CAM, T, pts)
+    Tc = np.linalg.inv(T)
+    K = np.array([[CAM.fx, 0, CAM.cx], [0, CAM.fy, CAM.cy], [0, 0, 1]])
+    ref, _ = cv2.fisheye.projectPoints(pts[front].reshape(-1, 1, 3), cv2.Rodrigues(Tc[:3, :3])[0], Tc[:3, 3], K,
+                                       np.array(CAM.k))
+    assert uv[front] == pytest.approx(ref.reshape(-1, 2), abs=1e-6)
+    assert d == pytest.approx(np.linalg.norm(pts - T[:3, 3], axis=1))
+
+
+def test_colours_from_a_synthetic_camera():
+    img = np.zeros((24, 32, 3), np.uint8)                           # at half the camera's size
+    img[:, :16] = (200, 0, 0)                                       # left half red, right half blue
+    img[:, 16:] = (0, 0, 200)
+    green = np.full((48, 64, 3), (0, 180, 0), np.uint8)
+    mask = np.zeros((48, 64), np.uint8)
+    mask[36:] = 255                                                 # the gripper: the bottom quarter
+    T = np.tile(np.eye(4), (3, 1, 1))
+    T[2, :3, 3] = [0.0, 0.0, -3.0]                                  # keyframe 2: same view, 3 m farther back
+    pts = np.array([[-0.5, 0, 1], [0.5, 0, 1], [0, 0.6, 1], [0, 0, -4], [-0.4, -0.1, 1]])
+    # keyframe 0: red/blue; keyframe 1: no image; keyframe 2: green (farther away)
+    rgb, dist = I.sample_colours(CAM, T, pts, {0: img, 2: green}, mask)
+    assert np.isnan(rgb[:, 1]).all() and np.isinf(dist[:, 1]).all()
+    col, views = I.point_colours(rgb, dist, n_views=1)
+    assert col[0].tolist() == [200, 0, 0] and col[1].tolist() == [0, 0, 200]      # the nearer keyframe 0
+    assert views[2] == 1 and col[2].tolist() == [0, 180, 0]        # on the mask in 0, not in 2 (farther away)
+    assert views[3] == 0                                           # behind every camera
+    col, views = I.point_colours(rgb, dist, n_views=5)
+    assert views[0] == 2 and col[0].tolist() == [100, 90, 0]       # median of red and green
+
+
+def _write_recording(root: Path, n: int = 8) -> Path:
+    import cv2
+
+    rec = root / "raw"
+    rec.mkdir()
+    (rec / "meta.json").write_text(json.dumps({"cameras": {"cam1": {"role": "ultrawide"}}}))
+    w = cv2.VideoWriter(str(rec / "cam1.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, (64, 48))
+    for k in range(n):
+        w.write(np.full((48, 64, 3), (200, 40, 40) if k == 4 else (40, 40, 200), np.uint8))   # BGR: 4 blue, else red
+    w.release()
+    (rec / "cam1_frames.csv").write_text("frame_idx,t_ns\n" + "".join(f"{k},{T0 + k * DT}\n" for k in range(n)))
+    (root / "orbslam3_settings.yaml").write_text(
+        '%YAML:1.0\n---\nCamera.type: "KannalaBrandt8"\nCamera1.fx: 30.0\nCamera1.fy: 30.0\nCamera1.cx: 32.0\n'
+        "Camera1.cy: 24.0\nCamera1.k1: 0.0\nCamera1.k2: 0.0\nCamera1.k3: 0.0\nCamera1.k4: 0.0\nCamera.width: 64\n"
+        "Camera.height: 48\n")
+    return rec
+
+
+def test_page_with_photos(tmp_path):
+    run = tmp_path / "mapping"
+    run.mkdir()
+    _write_trajectory(run)
+    _write_export(run)
+    rec = _write_recording(tmp_path)
+    assert I.read_camera(tmp_path / "orbslam3_settings.yaml").fx == 30.0
+    out, lines = V.make_page(run, recording=rec, settings=tmp_path / "orbslam3_settings.yaml", thumb_width=32,
+                             filters=V.Filters(min_obs=0, near=None))
+    d = _payload(out.read_text())
+    th = d["keyframes"]["thumb"]
+    assert len(th) == 2 and all(t.startswith("data:image/jpeg;base64,") for t in th)
+    assert d["keyframes"]["frame"] == [1, 4]
+    rgb = d["points"]["rgb"]
+    assert len(rgb) == 3 and all(c is not None for c in rgb)
+    for c in rgb:                                                 # the median of frame 1 (red) and 4 (blue)
+        r, g, b = (int(c[i:i + 2], 16) for i in (1, 3, 5))
+        assert abs(r - 120) < 25 and g < 70 and abs(b - 120) < 25
+    assert any("photos: 2 of 2 keyframes" in ln for ln in lines)
+    out, lines = V.make_page(run, recording=tmp_path / "nothing", settings=tmp_path / "orbslam3_settings.yaml")
+    assert _payload(out.read_text())["points"]["rgb"] is None and any("no photos" in ln for ln in lines)

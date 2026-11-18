@@ -388,9 +388,17 @@ a timeline. `--run relocalize` shows the second run (check M3), `--run mapping_f
 umiproc slam-3d <FOLDER>
 ```
 
-Writes `slam_3d.html`. Open it in a browser (it needs internet the first time). It shows the map's 3-D points, the
-keyframes as small cameras, and the camera path coloured by time, with a slider to move along it. The axes are real
-metres only when M4's scale passed. `--run mapping_full` shows the whole clip's run.
+Writes `slam_3d.html` (about 2 MB). Open it in a browser (it needs internet the first time). It shows the map's 3-D
+points in their real colours (taken from the keyframe photos), the keyframes as small cameras, and the camera path
+coloured by time, with a slider to move along it. Beside the plot is the photo of the last keyframe at or before the
+slider's frame (that keyframe is drawn in orange). Hover over a keyframe to see its photo, click it to move the slider
+there. The axes are real metres only when M4's scale passed. `--run mapping_full` shows the whole clip's run.
+
+Points far from the work area are hidden by default; the bar at the top changes this and shows how many points each
+rule hides. The defaults are `--min-obs 3` (hide points seen by fewer than 3 keyframes) and `--near 1` (hide points
+farther from the camera path than 1 x the path's size, the largest side of its bounding box). `--near 0.5m` sets a
+distance instead, and `--near 0` turns the rule off. `--box 0.5` also hides points outside the path's box grown by
+0.5 x its size. `--show-outliers` keeps the far outliers, and `--no-images` skips the photos.
 
 **What to look for:** the border mostly green; at each red stretch, what the camera saw (blank wall, fast swing,
 hand); the points form the table and objects; the path covers where the demos will go.
