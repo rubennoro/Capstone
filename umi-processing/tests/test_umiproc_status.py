@@ -15,7 +15,7 @@ from umiproc.dp.stages.calibration import GRIPPER_RANGE_FILE
 from umiproc.lens.lensfile import dump_lens, lens_document
 from umiproc.paths import rig_file, rig_lens_file
 from umiproc.sensors import ensure_rig_files
-from umiproc_testlib import pi_recording, tree_digest
+from umiproc_testlib import next_lines, pi_recording, tree_digest
 
 RIG = "rig_pi_v3"
 quiet = lambda *a, **k: None  # noqa: E731
@@ -101,8 +101,10 @@ def test_folder_details(session):
     assert (f"{d[0].pi_name}: localized against map/{m.pi_name}, 1 piece(s) passed every pose check: waiting for "
             "the gripper calibration") in out
     assert f"{d[1].pi_name}: slam: too_many_lost_frames" in out
+    line, cmds = next_lines(out)                                           # an incomplete map: a new mapping clip
+    assert "section 4.8" in line and cmds == [f"umiproc map block_raise <MAP_EPISODE> --root {root.path}"]
     code2, out2, _ = _status(str(m.task_dir), env_root=root.path)         # a path works too
-    assert code2 == 0 and out2 == out
+    assert code2 == 0 and out2 == out.replace(f" --root {root.path}", "")
 
 
 def test_gripper_calibration_and_lens_shown(tmp_path, session):
@@ -162,6 +164,9 @@ def test_the_calibration_shown_is_the_one_run_uses(tmp_path, session):
 def test_empty_and_missing_roots(tmp_path):
     code, out, _ = _status("--root", str(tmp_path / "nothing"))
     assert code == 0 and "does not exist yet" in out and "not there yet" in out
+    line, cmds = next_lines(out)                                           # no lens yet: the lens calibration
+    assert "section 2)" in line and cmds == ["umiproc lens-board",
+                                             f"umiproc lens-calibrate <LENS_EPISODE> --root {tmp_path / 'nothing'}"]
     assert not (tmp_path / "nothing").exists()
     (tmp_path / "empty").mkdir()
     code, out, _ = _status("--root", str(tmp_path / "empty"))
@@ -194,3 +199,37 @@ def test_a_rig_copy_the_processing_refuses_is_shown(tmp_path):
     rig_file(tmp_path, RIG).write_text(yaml.safe_dump(d0, sort_keys=False))
     code, out, _ = _status("--root", str(tmp_path))
     assert code == 0 and "PROBLEM:" in out and "no gripper section" in out
+
+
+def _folder(**kw):
+    m = {"complete": True, "up_to_date": True}
+    return {"folder": "block_raise_2", "label": "block_raise", "map_info": [m], "gripper_range": False,
+            "episodes": [], "staging": [], **kw}
+
+
+@pytest.mark.parametrize("state, section, cmds", [
+    ({}, "5", ["umiproc run block_raise_2 <FIRST_TEST_DEMO> <LAST_TEST_DEMO>"]),
+    ({"staging": [{"pi_name": "x"}]}, "6", ["umiproc calibrate block_raise_2 <GRIPPER_EPISODE>"]),
+    ({"gripper_range": True, "staging": [{"pi_name": "x"}]}, "7.2", ["umiproc run block_raise_2 <FIRST_DEMO> <LAST_DEMO>"]),
+    ({"gripper_range": True, "episodes": [{}]}, "7.2, 8.2",
+     ["umiproc run block_raise_2 <FIRST_DEMO> <LAST_DEMO>",
+      "rsync -av --exclude .staging <jetson>:data/umi/tasks/block_raise_2/ ~/Capstone/data/block_raise_2/"]),
+    ({"map_info": [{"complete": True, "up_to_date": False}]}, "4.8", ["umiproc map block_raise <MAP_EPISODE>"]),
+])
+def test_next_step_of_a_folder(state, section, cmds):
+    from umiproc.paths import DEFAULT_ROOT
+    from umiproc.status import next_folder
+
+    line, got = next_lines(next_folder(_folder(**state), DEFAULT_ROOT, []))
+    assert f"(DIRECTIONS.md section {section})" in line and got == cmds
+
+
+def test_next_step_of_the_root_with_a_lens(tmp_path, monkeypatch):
+    from umiproc.status import next_root
+
+    st = {"rig": {"lens_path": tmp_path / "l.yaml", "lens": object()}, "slam": {"binary_ok": True, "vocabulary_ok": True}}
+    line, cmds = next_lines(next_root(st, []))
+    assert "section 4)" in line and cmds == ["umiproc map <TASK> <MAP_EPISODE>"]
+    st["slam"]["binary_ok"] = False
+    line, cmds = next_lines(next_root(st, []))
+    assert "section 1.3" in line and cmds == ["~/Capstone/umi-processing/native/build.sh"]

@@ -22,7 +22,7 @@ from umiproc.run import command as RC
 from umiproc.run import pieces as RP
 from umiproc.run.recording import EPISODE, FAILED, LOCALIZE_FILE, PIECE_FILE, SKIPPED, WAITING
 from umiproc.status import folder_status, format_folder_status
-from umiproc_testlib import (FakeSlam, clone_session, fake_finger_tags, motion_T_W_cam, session_template, tree_digest,
+from umiproc_testlib import (FakeSlam, clone_session, fake_finger_tags, motion_T_W_cam, next_lines, session_template, tree_digest,
                              tx_slam_tag_example)
 
 quiet = lambda *a, **k: None  # noqa: E731
@@ -608,6 +608,9 @@ def test_dry_run_and_the_cli(env, capsys):
     rc = umicli.main(["run", env["folder"], "episode_000001", "episode_000002", "--dry-run"] + base)
     out = capsys.readouterr().out
     assert rc == 0 and "episode_000001: take" in out and "up to date" in out and "nothing was changed" in out
+    line, cmds = next_lines(out)                               # the same command without --dry-run
+    assert "section 5.2" in line and cmds == [f"umiproc run {env['folder']} episode_000001 episode_000002 "
+                                              f"--source {env['src']} --root {root}"]
     assert not (env["root"].tasks / env["folder"] / ".staging").exists()
     rc = umicli.main(["run", "nope", "episode_000001", "episode_000002"] + base)
     assert rc == 2 and "nothing was changed" in capsys.readouterr().err
@@ -615,6 +618,30 @@ def test_dry_run_and_the_cli(env, capsys):
     rc = umicli.main(["run", env["folder"], "episode_000001", "episode_000001"] + base)
     out = capsys.readouterr().out
     assert rc == 0 and "failed (slam: slam_error)" in out and "slam_error: not a recording problem" in out
+    line, cmds = next_lines(out)                               # nothing waits; slam_error is worth a retry
+    assert "section 5.4" in line and cmds == [
+        f"umiproc run {env['folder']} <FIRST_TEST_DEMO> <LAST_TEST_DEMO> --source {env['src']} --root {root}",
+        f"umiproc run {env['folder']} episode_000001 episode_000001 --source {env['src']} --root {root} "
+        "--retry-failed"]
+
+
+def test_next_step_after_a_run(env):
+    """Waiting demos: the gripper calibration is next; with it: the folder's status (then more demos or the copy)."""
+    from types import SimpleNamespace
+
+    from umiproc.run.cli import next_block
+
+    root, folder = env["root"].path, env["folder"]
+    args = SimpleNamespace(source=str(env["src"]), root=str(root), start="episode_000001", end="episode_000002",
+                           retry_failed=False, dry_run=False)
+    res, _ = _run(env, end="episode_000002")
+    line, cmds = next_lines(next_block(root, res, args))
+    assert line.startswith("Next: record the gripper calibration clip") and "section 6)" in line
+    assert cmds == [f"umiproc calibrate {folder} <GRIPPER_EPISODE> --source {env['src']} --root {root}"]
+    _calibrate(env)
+    res, _ = _run(env, end="episode_000002")
+    line, cmds = next_lines(next_block(root, res, args))
+    assert "section 7.3" in line and "copy it to the laptop" in line and cmds == [f"umiproc status {folder} --root {root}"]
 
 
 def test_the_effective_rig_reaches_the_copied_stages(env):

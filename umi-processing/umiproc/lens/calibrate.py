@@ -645,6 +645,10 @@ def _apply_command(args, root: Path) -> str:
     return shlex.join(parts + ["--apply"])
 
 
+def _rig_flag(args) -> list[str]:
+    return ["--rig", args.rig] if args.rig != DEFAULT_RIG else []
+
+
 def _err(msg: str) -> int:
     print(f"umiproc lens-calibrate: {msg}", file=sys.stderr)
     return 1
@@ -653,6 +657,7 @@ def _err(msg: str) -> int:
 def run(args) -> int:
     from umiproc.dp.pi_adapter import converted_name, inspect_source
     from umiproc.lens.lensfile import apply_lens
+    from umiproc.next_step import block, carried, command
     from umiproc.paths import data_root, lens_dir, rig_lens_file
 
     if args.max_views < MIN_VIEWS_TO_FIT:
@@ -701,8 +706,9 @@ def run(args) -> int:
         for c in cal.checks:
             if not c.passed and c.evaluated and c.hint:
                 print(f"  ({c.id}) {c.hint}")
-        print(f"see {paths['coverage']} for where the corners were. Record the board again (DIRECTIONS.md section 2.2); "
-              "the processing keeps using the lens model it had.")
+        print(f"see {paths['coverage']} for where the corners were; the processing keeps using the lens model it had.")
+        print(block("record the board again (a flat board, out to the image edges), then process it", "2.2",
+                    command("umiproc", "lens-calibrate", "<LENS_EPISODE>", *carried(args), *_rig_flag(args))))
         return 1
     warned = [c for c in cal.checks if c.warned]
     if warned:
@@ -715,11 +721,13 @@ def run(args) -> int:
         print("every check within its limit.")
     dest = rig_lens_file(root, rig.rig_id)
     if not args.apply:
-        print(f"to use it, install it as {dest} with:\n  {_apply_command(args, root)}")
+        print(block(f"install it as {dest}", "2.5", _apply_command(args, root)))
         return 0
     dest, backup, changed = apply_lens(paths["lens"], dest)
     if not changed:
         print(f"{dest} already holds exactly this lens file; nothing changed")
     else:
         print(f"applied: {dest}" + (f" (the previous one is now {backup})" if backup else ""))
+    print(block("check that `lens file:` says calibrated", "1.5",
+                command("umiproc", "status", *carried(args, source=False), *_rig_flag(args))))
     return 0

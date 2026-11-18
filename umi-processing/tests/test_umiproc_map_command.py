@@ -18,7 +18,7 @@ from umiproc.map import build as B
 from umiproc.map import checks as C
 from umiproc.paths import rig_file, rig_lens_file
 from umiproc.status import folder_status, format_folder_status, format_root_status, root_status
-from umiproc_testlib import FakeSlam, fake_slam_build, pi_map_recording, pi_recording, tree_digest
+from umiproc_testlib import FakeSlam, fake_slam_build, next_lines, pi_map_recording, pi_recording, tree_digest
 
 RIG = "rig_pi_v3"
 quiet = lambda *a, **k: None  # noqa: E731
@@ -148,6 +148,9 @@ def test_a_failed_map_attaches_nothing_and_can_run_again(env):
     assert len(st["failed_maps"]) == 2
     text = format_root_status(st, "test")
     assert "failed maps" in text and "M1 failed" in text
+    line, cmds = next_lines(format_outcome_text(o2))      # look at the failed run, then a new mapping clip
+    assert "section 4.7" in line and cmds == [f"umiproc slam-video {o2.where / B.MAPPING_DIR}",
+                                              "umiproc map block_raise <MAP_EPISODE>"]
 
 
 def test_no_map_with_keyframes_skips_the_relocalization(env):
@@ -309,6 +312,9 @@ def test_cli_exit_codes_and_messages(env, capsys):
     assert "map: FAILED for episode_000001" in out.err and "M1 FAIL" in out.err and "did not finish" in out.err
     assert "M2 n/a" in out.err and "what to change" in out.err and "nothing was attached" in out.err
     assert "maps_failed" in out.err and "SLAM build:" in out.err and "noise_density 1.0" in out.err
+    line, cmds = next_lines(out.err)                      # the run did not finish: no run to look at
+    assert "section 4.7" in line and cmds == [f"umiproc map block_raise <MAP_EPISODE> --source {env['src']} "
+                                              f"--root {env['root'].path}"]
     assert f"map: data root {env['root'].path} (from --root)" in out.out
     rc = umicli.main(["map", "block_raise", "episode_000042", "--source", str(env["src"]),
                       "--root", str(env["root"].path)])
@@ -574,6 +580,10 @@ def test_map_stores_the_map_points_and_draws_nothing(env, monkeypatch, tmp_path,
                         str(env["root"].path)]) == 0
     out = capsys.readouterr().out
     assert "analysis copy" not in out and "figures:" not in out and "umiproc slam-3d block_raise" in out
+    line, cmds = next_lines(out)
+    r = env["root"].path
+    assert "section 4.6" in line and "table tag" in line
+    assert cmds == [f"umiproc slam-video block_raise --root {r}", f"umiproc slam-3d block_raise --root {r}"]
     assert not (tmp_path / "an").exists()                          # no ~/data/analysis copy
     d = env["root"].tasks / "block_raise" / "map"
     (slot,) = list(d.iterdir())

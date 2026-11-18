@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from umiproc.cli import main
+from umiproc_testlib import next_lines
 from umiproc.lens import board
 
 HAVE_POPPLER = shutil.which("pdfinfo") is not None and shutil.which("pdftoppm") is not None
@@ -110,7 +111,10 @@ def test_default_output_name(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert main(["lens-board"]) == 0
     assert (tmp_path / "umiproc_lens_board.pdf").read_bytes() == board.board_pdf("letter")
-    assert "letter landscape" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "letter landscape" in out
+    line, cmds = next_lines(out)
+    assert "section 2.2" in line and cmds == ["umiproc lens-calibrate <LENS_EPISODE>"]
 
 
 def test_unwritable_output(tmp_path, capsys):

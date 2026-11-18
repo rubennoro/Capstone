@@ -19,7 +19,8 @@ import os
 import sys
 from pathlib import Path
 
-__all__ = ["root_status", "folder_status", "format_root_status", "format_folder_status", "add_arguments", "run"]
+__all__ = ["root_status", "folder_status", "format_root_status", "format_folder_status", "next_root", "next_folder",
+           "add_arguments", "run"]
 
 
 # --------------------------------------------------------------------------------------------- gathering
@@ -425,6 +426,44 @@ def format_folder_status(f: dict) -> str:
     return "\n".join(lines)
 
 
+# --------------------------------------------------------------------------------------------- next step
+
+def next_root(st: dict, flags: list[str]) -> str:
+    """The ``Next:`` block of the root view: the lens calibration, the SLAM build, or a new session's map."""
+    from umiproc.next_step import block, command
+
+    rs, sp = st["rig"], st["slam"]
+    if rs["lens_path"] is None or rs["lens"] is None:
+        return block("calibrate the lens: print the board, record it on the Pi, process the recording", "2",
+                     "umiproc lens-board", command("umiproc", "lens-calibrate", "<LENS_EPISODE>", *flags))
+    if not (sp["binary_ok"] and sp["vocabulary_ok"]):
+        return block("build SLAM (about 1 hour, in tmux)", "1.3", "~/Capstone/umi-processing/native/build.sh")
+    return block("start a session: record the mapping clip and map it", "4",
+                 command("umiproc", "map", "<TASK>", "<MAP_EPISODE>", *flags))
+
+
+def next_folder(f: dict, root: Path, flags: list[str]) -> str:
+    """The ``Next:`` block of a task folder, by its state (DIRECTIONS.md sections 4.8, 5, 6, 7, 8.2)."""
+    from umiproc.next_step import block, command, copy_command
+
+    name = f["folder"]
+    m = f["map_info"][-1] if f["map_info"] else None
+    if m is None or not m["complete"] or m["up_to_date"] is False:
+        return block("this folder's map cannot be used: record a new mapping clip (a new session folder)", "4.8",
+                     command("umiproc", "map", f["label"] or "<TASK>", "<MAP_EPISODE>", *flags))
+    if not f["gripper_range"]:
+        if not f["episodes"] and not f["staging"]:
+            return block("record 2-3 test demos and run them against the map", "5",
+                         command("umiproc", "run", name, "<FIRST_TEST_DEMO>", "<LAST_TEST_DEMO>", *flags))
+        return block("record the gripper calibration clip and run it", "6",
+                     command("umiproc", "calibrate", name, "<GRIPPER_EPISODE>", *flags))
+    run = command("umiproc", "run", name, "<FIRST_DEMO>", "<LAST_DEMO>", *flags)
+    if f["staging"]:
+        return block("run the next demos; this also finishes the ones waiting", "7.2", run)
+    return block("record and run more demos or, after the session, copy the folder to the laptop", "7.2, 8.2", run,
+                 copy_command(root, name))
+
+
 # --------------------------------------------------------------------------------------------- command
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
@@ -439,6 +478,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
 
 def run(args) -> int:
     from umiproc.dp.paths import DataRoot, resolve_task
+    from umiproc.sensors import DEFAULT_RIG
     from umiproc.paths import data_root
 
     try:
@@ -446,8 +486,13 @@ def run(args) -> int:
     except ValueError as e:
         print(f"umiproc status: {e}", file=sys.stderr)
         return 1
+    from umiproc.next_step import carried
+
+    flags = carried(args, source=False)
     if args.folder is None:
-        print(format_root_status(root_status(root, args.rig), _root_source(args.root)))
+        st = root_status(root, args.rig)
+        print(format_root_status(st, _root_source(args.root)))
+        print(next_root(st, flags + (["--rig", args.rig] if args.rig != DEFAULT_RIG else [])))
         return 0
     try:
         ref = resolve_task(args.folder, DataRoot(root))
@@ -456,4 +501,7 @@ def run(args) -> int:
         return 1
     f = folder_status(root, ref.folder)
     print(format_folder_status(f))
-    return 1 if f["label"] is None else 0
+    if f["label"] is None:
+        return 1
+    print(next_folder(f, root, flags))
+    return 0

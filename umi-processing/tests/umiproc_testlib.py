@@ -498,3 +498,17 @@ def clone_session(template: dict, tmp_path: Path, monkeypatch) -> dict:
     binary = fake_slam_build(base / "fork", monkeypatch)
     return {"root": DataRoot(tmp_path / "root"), "src": tmp_path / "src", "folder": template["folder"],
             "binary": binary, "tmp": tmp_path}
+
+
+def next_lines(text: str) -> tuple[str, list[str]]:
+    """The ``Next:`` block a command's output ends with: ``(the Next: line, [the commands])``. Checks the format: a
+    blank line before it, then only the commands, indented by 2 spaces, at most 2."""
+    lines = text.rstrip("\n").splitlines()
+    starts = [k for k, ln in enumerate(lines) if ln.startswith("Next: ")]
+    assert starts, f"no Next: line in\n{text}"
+    i = starts[-1]
+    assert i > 0 and lines[i - 1] == "", lines[i - 1:i + 1]
+    assert "(DIRECTIONS.md section " in lines[i] and lines[i].endswith(")"), lines[i]
+    cmds = lines[i + 1:]
+    assert len(cmds) <= 2 and all(c.startswith("  ") and not c.startswith("   ") for c in cmds), cmds
+    return lines[i], [c[2:] for c in cmds]

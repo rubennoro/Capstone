@@ -425,6 +425,19 @@ def run(args) -> int:
         return 2
     print("\n".join(lines))
     print(f"wrote {out}")
+    from umiproc.next_step import block, carried, command
+    from umiproc.viz.target import report_of
+
+    rep = report_of(t)
+    folder = t.folder or (rep.get("folder") if rep.get("passed") else None)      # a passed map's slot, by path
+    if folder:
+        print(block("remove the table tag, record 2-3 test demos and run them against the map", "5",
+                    command("umiproc", "run", folder, "<FIRST_TEST_DEMO>", "<LAST_TEST_DEMO>",
+                            *carried(args, source=False))))
+    else:
+        task = rep.get("task") or "<TASK>"
+        print(block("with the table tag still in place, record a new mapping clip and map it", "4.7",
+                    command("umiproc", "map", task, "<MAP_EPISODE>", *carried(args, source=False))))
     return 0
 
 

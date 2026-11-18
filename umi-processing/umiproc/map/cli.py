@@ -88,7 +88,11 @@ def _first_map_line(fm: dict) -> str:
             f"{fm['full_run']['log'].split('/')[0]}/)")
 
 
-def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
+def format_outcome(o: MapOutcome, task: str, map_dir: str, *, root_flags=(), source_flags=()) -> str:
+    """The result block, ending with the ``Next:`` block (``root_flags``/``source_flags``: the carried-over
+    ``--root``/``--source``)."""
+    from umiproc.next_step import block, command
+
     rep = o.report or {}
     lines = []
     warned = [c.id for c in o.checks if c.warned]
@@ -122,17 +126,19 @@ def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
         logs = [str(p) for p in (o.where / MAPPING_DIR / "umiproc_slam.log", o.where / RELOCALIZE_DIR /
                                  "umiproc_slam.log") if p.is_file()]
         lines.append(f"  report: {o.where / REPORT_NAME}" + (f"; SLAM logs: {', '.join(logs)}" if logs else ""))
-        what = o.folder if o.passed and o.folder else str(o.where)
-        if (o.where / MAPPING_DIR).is_dir():
-            lines.append(f"  to look at the runs: umiproc slam-video {what} [--run all], umiproc slam-3d {what} "
-                         "(into " + (f"tasks/{o.folder}/analysis/" if o.passed and o.folder else
-                                     f"{o.where / 'analysis'}/") + ")")
     if o.passed:
-        lines += ["", "Next: remove the table tag, record 2-3 test demos of the task, then run them against the map "
-                  "(DIRECTIONS.md section 5):", f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>"]
-    elif o.exit_code == EXIT_FAILED and o.checks:
-        lines.append(f"  nothing was attached and {map_dir} was not taken: change what the hints say and run "
-                     f"`umiproc map {task} {map_dir}` again (or record a new mapping clip)")
+        lines.append(block("remove the table tag and look at the map; then record 2-3 test demos", "4.6",
+                           command("umiproc", "slam-video", o.folder, *root_flags),
+                           command("umiproc", "slam-3d", o.folder, *root_flags)))
+    elif o.exit_code == EXIT_FAILED:
+        if o.checks:
+            lines.append(f"  nothing was attached and {map_dir} was not taken (it can be run again)")
+        run_dir = o.where / MAPPING_DIR if o.where is not None else None
+        look = ([command("umiproc", "slam-video", str(run_dir))]
+                if run_dir is not None and (run_dir / "trajectory.csv").is_file() else [])
+        lines.append(block(("look at the failed run, then " if look else "") + "record a new mapping clip with the "
+                           "table tag still in place, following the hints", "4.7", *look,
+                           command("umiproc", "map", task, "<MAP_EPISODE>", *source_flags, *root_flags)))
     return "\n".join(lines)
 
 
@@ -160,7 +166,10 @@ def run(args) -> int:
     except Exception:  # noqa: BLE001 - unexpected: traceback, exit 1
         traceback.print_exc()
         return EXIT_FAILED
-    text = format_outcome(o, args.task, args.map_dir)
+    from umiproc.next_step import carried
+
+    text = format_outcome(o, args.task, args.map_dir, root_flags=carried(args, source=False),
+                          source_flags=carried(args, root=False))
     sys.stdout.flush()
     print(text, file=sys.stdout if o.passed else sys.stderr, flush=True)
     return o.exit_code

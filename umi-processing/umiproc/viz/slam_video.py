@@ -286,4 +286,14 @@ def run(args) -> int:
             print(f"wrote {fig}")
         else:
             print(f"slam-video: no {figure_name(t.run)} ({fig})")
+    if rc == 0:
+        from umiproc.next_step import block, carried, command
+
+        t = targets[0]
+        run = ["--run", "mapping_full"] if args.run == "mapping_full" else []
+        if t.folder:
+            print(block("look at the map in 3-D", "4.6",
+                        command("umiproc", "slam-3d", t.folder, *run, *carried(args, source=False))))
+        else:
+            print(block("look at the run in 3-D", "4.7", command("umiproc", "slam-3d", args.target, *run)))
     return rc

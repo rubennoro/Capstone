@@ -1,7 +1,7 @@
 # umiproc: directions
 
 How to turn the Pi rig's recordings into training episodes. Read top to bottom, copy the commands as you go.
-Commands run on the Jetson unless a step says otherwise. Why it works this way: [PROBLEM.md](PROBLEM.md). Real recordings that worked or not, and why: [COLLECTION.md](COLLECTION.md). Design
+Commands run on the Jetson unless a step says otherwise. Every command ends with a `Next:` line naming the next step. Why it works this way: [PROBLEM.md](PROBLEM.md). Real recordings that worked or not, and why: [COLLECTION.md](COLLECTION.md). Design
 details: [docs/DESIGN.md](docs/DESIGN.md).
 
 Words used below:
@@ -327,8 +327,8 @@ umiproc map <TASK> <MAP_EPISODE>
 ### 4.3 Read the result
 
 The output has one line per check M1–M5: `PASS`, `WARN`, `FAIL`, or `n/a` (could not be judged). Each warning comes
-with what to change. Then a few numbers that are reported but not judged, the report's path, and the commands to look
-at the map.
+with what to change. Then a few numbers that are reported but not judged, the report's path, and a `Next:` line with the commands
+to look at the map.
 
 - **Only M1 stops the map.** M2–M5 only warn: the folder is still created. The test demos (section 5) show whether
   the warnings matter.

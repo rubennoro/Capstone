@@ -47,8 +47,14 @@ def hints(o: CalibrateOutcome) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def format_outcome(o: CalibrateOutcome, source: Path) -> str:
+def format_outcome(o: CalibrateOutcome, source: Path, flags=None) -> str:
+    """The result block, ending with the ``Next:`` block (``flags``: the carried-over ``--source``/``--root``;
+    default: ``--source`` when ``source`` is not the default)."""
     from umiproc.dp.calibrate.diagnostics import format_stats
+    from umiproc.next_step import block, carried, command
+
+    if flags is None:
+        flags = carried(SimpleNamespace(source=source, root=None))
 
     fit = o.fit
     lines = []
@@ -82,13 +88,12 @@ def format_outcome(o: CalibrateOutcome, source: Path) -> str:
             lines.append("  what to change:")
             lines += [f"    - {x}" for x in h]
         if o.exit_code == EXIT_FAILED:
-            lines.append(f"  nothing was recorded and {o.source_name} was not taken: record a new calibration clip "
-                         f"(or fix the cause) and run `umiproc calibrate {o.folder} <episode_dir>` again")
+            lines.append(f"  nothing was recorded and {o.source_name} was not taken (it can be run again)")
+            lines.append(block("record the gripper calibration clip again, following the hints, and run it", "6",
+                               command("umiproc", "calibrate", o.folder, "<GRIPPER_EPISODE>", *flags)))
     else:
-        src = "" if Path(source) == Path("/data/incoming") else f" --source {source}"
-        lines += ["", "Next: the rest of the demos (DIRECTIONS.md section 7):",
-                  f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>{src}",
-                  "  (demos already localized and waiting in .staging/ are finished by any run of this folder)"]
+        lines.append(block("record the rest of the demos and run them; this also finishes the waiting test demos",
+                           "7", command("umiproc", "run", o.folder, "<FIRST_DEMO>", "<LAST_DEMO>", *flags)))
     return "\n".join(lines)
 
 
@@ -116,5 +121,7 @@ def run(args) -> int:
         traceback.print_exc()
         return EXIT_FAILED
     sys.stdout.flush()
-    print(format_outcome(o, Path(args.source)), file=sys.stdout if o.passed else sys.stderr, flush=True)
+    from umiproc.next_step import carried
+
+    print(format_outcome(o, Path(args.source), carried(args)), file=sys.stdout if o.passed else sys.stderr, flush=True)
     return o.exit_code

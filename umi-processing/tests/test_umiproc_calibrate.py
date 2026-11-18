@@ -12,7 +12,7 @@ from umiproc.calibrate import gripper as G
 from umiproc.calibrate.cli import format_outcome
 from umiproc.paths import rig_lens_file
 from umiproc.status import folder_status, format_folder_status
-from umiproc_testlib import clone_session, fake_finger_tags, session_template, tree_digest
+from umiproc_testlib import clone_session, fake_finger_tags, next_lines, session_template, tree_digest
 
 quiet = lambda *a, **k: None  # noqa: E731
 
@@ -101,6 +101,8 @@ def test_below_80_percent_fails_and_records_nothing(env, monkeypatch):
     text = format_outcome(o, src)
     assert "calibrate: FAILED" in text and "UMI's finger-tag rule FAIL" in text and "the right one" in text
     assert "nothing was recorded" in text
+    line, cmds = next_lines(text)
+    assert "section 6" in line and cmds == [f"umiproc calibrate {env['folder']} <GRIPPER_EPISODE> --source {src}"]
     # fixed: the same recording passes now (nothing was taken)
     fake_finger_tags(monkeypatch)
     assert _cal(env).passed
@@ -174,3 +176,6 @@ def test_cli(env, monkeypatch, capsys):
     rc = umicli.main(["calibrate", env["folder"], "episode_000001", "--source", str(env["src"]), "--root", root])
     out = capsys.readouterr().out
     assert rc == 0 and "calibrate: PASSED" in out
+    line, cmds = next_lines(out)
+    assert "section 7)" in line and cmds == [f"umiproc run {env['folder']} <FIRST_DEMO> <LAST_DEMO> --source "
+                                             f"{env['src']} --root {root}"]

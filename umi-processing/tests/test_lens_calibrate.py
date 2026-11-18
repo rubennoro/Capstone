@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from umiproc.cli import main
+from umiproc_testlib import next_lines
 from umiproc.dp.pi_adapter import converted_name, inspect_source
 from umiproc.dp.pi_format import write_pi_manifest
 from umiproc.lens import calibrate, lensfile, synth
@@ -95,6 +96,8 @@ def test_exit_code_and_outputs(calibrated, recording):
     cmd = out.strip().splitlines()[-1].strip()
     assert cmd.startswith(f"umiproc lens-calibrate {PI_NAME} --source ") and cmd.endswith(" --apply")
     assert "--root" not in cmd or str(root) in cmd
+    line, cmds = next_lines(out)
+    assert "section 2.5" in line and cmds == [cmd] and "to use it" not in out
 
 
 def _model(path):
@@ -166,6 +169,8 @@ def test_apply_installs_and_backs_up(recording, tmp_path):
     backups = sorted(rigs.glob("rig_pi_v3.lens.yaml.bak-*"))
     assert len(backups) == 1 and backups[0].read_text() == "old lens file\n"
     assert "applied" in out and backups[0].name in out
+    line, cmds = next_lines(out)
+    assert "section 1.5" in line and cmds == [f"umiproc status --root {tmp_path}"]
     assert lensfile.load_lens(old).provenance == "measured"
 
 
@@ -243,6 +248,9 @@ def test_no_board_in_view(tmp_path):
     code, out, _ = _run(["lens-calibrate", "episode_000902", "--source", str(tmp_path / "in"), "--root",
                          str(tmp_path / "root"), "--apply"])
     assert code == 1 and "WARN (a)" in out and "no fit" in out and "NO LENS" in out
+    line, cmds = next_lines(out)
+    assert "section 2.2" in line and cmds == [f"umiproc lens-calibrate <LENS_EPISODE> --source {tmp_path / 'in'} "
+                                              f"--root {tmp_path / 'root'}"]
     rep = json.loads((stale.parent / "report.json").read_text())
     assert rep["fit"] is None and rep["frames"]["with_board"] == 0 and rep["passed"] is False
     assert not all(c["evaluated"] for c in rep["checks"])

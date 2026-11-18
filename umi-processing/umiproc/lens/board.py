@@ -242,4 +242,8 @@ def run(args) -> int:
           f"{SQUARE_MM:.1f} mm (board {bw:.0f} x {bh:.0f} mm), markers {MARKER_MM:.1f} mm")
     print(f"print it at 100 % / actual size, then measure: one square must be {SQUARE_MM:.1f} mm and the scale bar "
           "100 mm (DIRECTIONS.md section 2.1)")
+    from umiproc.next_step import block
+
+    print(block("glue the print flat on a rigid backing, record the board on the Pi, then process the recording",
+                "2.2", "umiproc lens-calibrate <LENS_EPISODE>"))
     return 0

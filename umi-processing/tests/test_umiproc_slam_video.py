@@ -14,7 +14,7 @@ from umiproc.map import build as B
 from umiproc.viz import slam_3d as S3
 from umiproc.viz import slam_video as SV
 from umiproc.viz import target as T
-from umiproc_testlib import FakeSlam, fake_slam_build
+from umiproc_testlib import FakeSlam, fake_slam_build, next_lines
 from test_umiproc_map_command import TWO_MAPS, _map, _pass_m4_m5, _two_piece_fake, env, env40  # noqa: F401 - fixtures
 
 
@@ -65,6 +65,8 @@ def test_video_and_figure_of_each_run_by_folder_name(first_map_folder, capsys):
         p.unlink()
     assert umicli.main(["slam-video", o.folder] + _root(env)) == 0
     assert sorted(p.name for p in an.iterdir()) == sorted([SV.video_name("mapping"), SV.figure_name("mapping")])
+    line, cmds = next_lines(capsys.readouterr().out)
+    assert "section 4.6" in line and cmds == [f"umiproc slam-3d {o.folder} --root {env['root'].path}"]
 
 
 def test_render_counts_and_explicit_recording(first_map_folder, tmp_path):
@@ -93,6 +95,9 @@ def test_3d_page_by_folder_name(first_map_folder, capsys):
     assert len(_page_data(an / "slam_3d_mapping_full.html")["frames"]) > len(d["frames"])
     text = capsys.readouterr().out
     assert f"wrote {an / S3.HTML_NAME}" in text and "20 points" in text
+    line, cmds = next_lines(text)                              # then the test demos
+    assert "section 5)" in line and cmds == [f"umiproc run {o.folder} <FIRST_TEST_DEMO> <LAST_TEST_DEMO> --root "
+                                             f"{env['root'].path}"]
     with pytest.raises(SystemExit):                                                        # not a choice
         umicli.main(["slam-3d", o.folder, "--run", "relocalize"] + _root(env))
 
@@ -116,7 +121,11 @@ def test_run_dir_fallback_for_a_failed_map(env, capsys):
     assert umicli.main(["slam-video", str(run)]) == 0           # the recording from the report's source
     assert _frames(o.where / T.ANALYSIS_DIR / SV.video_name(B.MAPPING_DIR))[0] == o.report["runs"]["mapping"][
         "frames_fed"]
+    line, cmds = next_lines(capsys.readouterr().out)
+    assert "section 4.7" in line and cmds == [f"umiproc slam-3d {run}"]
     assert umicli.main(["slam-3d", str(run)]) == 0
+    line, cmds = next_lines(capsys.readouterr().out)           # no task folder: a new mapping clip
+    assert "section 4.7" in line and cmds == ["umiproc map block_raise <MAP_EPISODE>"]
     assert len(_page_data(o.where / T.ANALYSIS_DIR / S3.HTML_NAME)["points"]["xyz"]) == 20
     # the map attempt folder itself, with --run
     assert umicli.main(["slam-video", str(o.where), "--run", "relocalize"]) == 0
