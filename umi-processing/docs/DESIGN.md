@@ -196,6 +196,7 @@ Every SLAM run (map and localization) gets the same two files, written from the 
   | 0009 | every relocalization shifted the map's keyframe times again (−6.4 → −13.1 → −23.8 s); now only the first does |
   | 0010 | upstream bug: when Tracking started a new map while LocalMapping still had keyframes of the old one queued, their new points went into the new map; its first IMU initialisation (FullInertialBA) then dereferenced a NULL keyframe vertex (the SIGSEGV of map run 128). Points now go to their keyframe's map |
   | 0011 | upstream bug: an IMU initialisation (VIBA 1/2) that ends after Tracking started a new map forced Tracking to OK on the empty new map (SearchByBoW(NULL), SIGSEGV). Now only if the map being initialised is still current |
+  | 0012 | `System::GetAtlas()`, read only (the map export `--save_points` for `umiproc slam-3d`; a build without it refuses that option) |
 
   0007–0009 were checked mechanically on demo recordings only (each removes its symptom; no crash or regression in
   the earlier runs); their effect on pose quality is judged on the first real mapping session (user, 2026-11-16),
@@ -246,8 +247,10 @@ states, `checks.map_pieces`; the first piece tracking ≥ 16 frames, so maps dro
 skipped) and the mapping run, re-localization and M1–M5 run again on the cut clip (times.txt shortened, same frames).
 The whole clip's run stays in `mapping_full/`; the cut is in `report.json` (`first_map`), not in the SLAM fingerprint
 (the fingerprint is the SLAM inputs a demo shares with its map). The cut is found automatically, never a given time.
-Without the flag, a multi-map M1 names the first piece and suggests the flag. Every run folder gets `slam_run.png`
-(plot-run's figure, so matplotlib is a dependency now); `umiproc slam-video RUN_DIR` renders a run as an MP4 on demand.
+Without the flag, a multi-map M1 names the first piece and suggests the flag. `map` draws nothing (2026-11-18): its
+mapping run(s) store the map export (`--save_points`, when the build has it) and `umiproc slam-video FOLDER` /
+`umiproc slam-3d FOLDER` write the MP4 + plot-run figure / the 3-D page into `tasks/<folder>/analysis/` on demand (a
+run folder in `maps_failed/` writes into its `analysis/` next to it).
 
 | # | Check |
 |---|---|

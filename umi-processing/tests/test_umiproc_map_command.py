@@ -74,6 +74,9 @@ def test_two_runs_with_umis_options(env):
         == ("13", 0.16, "0")
     assert opt(reloc, "--load_map") == opt(mapping, "--save_map") and opt(reloc, "--save_map") is None
     assert opt(reloc, "--max_lost_frames") == "30" and opt(reloc, "--init_tag_id") is None
+    assert Path(opt(mapping, "--save_points")) == Path(opt(mapping, "--output_trajectory_csv")).with_name(
+        B.POINTS_NAME) and Path(opt(mapping, "--save_points")).parent.name == B.MAPPING_DIR
+    assert opt(reloc, "--save_points") is None
     for cmd in (mapping, reloc):
         assert opt(cmd, "--mask_img").endswith("slam_mask.png") and "--no_realtime" not in cmd
         assert opt(cmd, "--setting").endswith("orbslam3_settings.yaml")
@@ -93,44 +96,58 @@ def test_two_runs_with_umis_options(env):
 
 # --------------------------------------------------------------------------------------------- failing
 
-def test_a_failed_map_attaches_nothing_and_can_run_again(env):
-    root, src = env["root"], env["src"]
-    before = tree_digest(src)
-    o, _ = _map(env)                         # stationary fake trajectory: M4 (scale) warns, M5 (no tag) blocks
-    assert (o.passed, o.exit_code) == (False, B.EXIT_FAILED)
+def test_a_map_without_any_tag_sighting_is_attached_without_a_tag_pose(env):
+    """M4 (scale) and M5 (no tag at all) only warn: the folder is created, without tx_slam_tag.json (run refuses it)."""
+    o, _ = _map(env)                         # stationary fake trajectory: M4 (scale) warns, M5 (no tag) warns
+    assert (o.passed, o.exit_code, o.folder) == (True, B.EXIT_OK, "block_raise")
     assert [c.id for c in o.checks] == ["M1", "M2", "M3", "M4", "M5"]
     assert [c.ok for c in o.checks] == [True, True, True, False, False]
-    assert [c.id for c in o.checks if c.failed] == ["M5"] and [c.id for c in o.checks if c.warned] == ["M4"]
+    assert not any(c.failed for c in o.checks) and [c.id for c in o.checks if c.warned] == ["M4", "M5"]
     assert o.checks[3].values["scale_status"] == "scale_unobservable"
     assert o.checks[3].values["orientation_windows"] == 0 and o.checks[3].values["orientation_ok"] is False
     assert "not enough tracked span" in o.checks[3].values["orientation"]["reason"]
     assert o.checks[4].values["frames_with_tag"] == 0 and "never detected" in o.checks[4].hints[0]
+    assert any("umiproc run` refuses" in h for h in o.checks[4].hints)
+    assert not (o.where / B.TAG_POSE_NAME).exists() and (o.where / B.ATLAS_NAME).is_file()
+    rep = json.loads((o.where / B.REPORT_NAME).read_text())
+    assert rep["passed"] is True and rep["warnings"] == ["M4", "M5"]
+    assert [c["id"] for c in rep["checks"] if c["blocking"]] == ["M1"]
+
+
+def test_a_failed_map_attaches_nothing_and_can_run_again(env):
+    root, src = env["root"], env["src"]
+    before = tree_digest(src)
+    fake = FakeSlam(maps=lambda mapping: TWO_MAPS)    # two maps, also after the automatic cut: M1 blocks
+    o, _ = _map(env, runner=fake)
+    assert (o.passed, o.exit_code) == (False, B.EXIT_FAILED)
+    assert [c.id for c in o.checks] == ["M1", "M2", "M3", "M4", "M5"]
+    assert [c.id for c in o.checks if c.failed] == ["M1"] and "maps with keyframes" in o.checks[0].message
+    assert len(fake.calls) == 3 and o.report["longest_map"]["applied"]       # whole clip, cut clip, re-localization
     _nothing_taken(root)
     assert tree_digest(src) == before
     where = o.where
     assert where.parent == root.path / B.FAILED_DIR / o.pi_name
     rep = json.loads((where / B.REPORT_NAME).read_text())
     assert rep["passed"] is False and rep["kept_in"] == str(where)
-    assert [c["id"] for c in rep["checks"] if c["passed"] is not True] == ["M4", "M5"]
-    assert rep["warnings"] == ["M4"] and [c["id"] for c in rep["checks"] if c["blocking"]] == ["M1", "M5"]
+    assert [c["id"] for c in rep["checks"] if c["blocking"]] == ["M1"]
     for c in rep["checks"]:
         assert c["limits"] and c["message"]
     names = sorted(p.name for p in where.iterdir())
     assert B.ATLAS_NAME not in names                      # no atlas, no frames
-    assert {B.MAPPING_DIR, B.RELOCALIZE_DIR, "orbslam3_settings.yaml", "slam_mask.png", B.FINGERPRINT_NAME,
+    assert {B.MAPPING_DIR, B.MAPPING_FULL_DIR, "orbslam3_settings.yaml", "slam_mask.png", B.FINGERPRINT_NAME,
             B.TAG_DETECTIONS_NAME, B.REPORT_NAME} <= set(names)
-    assert (where / B.MAPPING_DIR / "trajectory.csv").is_file() and (where / B.RELOCALIZE_DIR /
-                                                                       "trajectory.csv.t0_ns").is_file()
+    assert (where / B.MAPPING_DIR / "trajectory.csv").is_file()
+    assert not list(where.rglob("slam_run*.png")) and not list(where.rglob("*.html"))     # map draws nothing
     fp = json.loads((where / B.FINGERPRINT_NAME).read_text())
     assert fp["hash"] == rep["fingerprint_hash"]
     # the same recording again (A/B): runs again, kept separately
-    o2, _ = _map(env)
+    o2, _ = _map(env, runner=FakeSlam(maps=lambda mapping: TWO_MAPS))
     assert o2.exit_code == B.EXIT_FAILED and o2.where != where and o2.where.parent == where.parent
     _nothing_taken(root)
     st = root_status(root.path, RIG)
     assert len(st["failed_maps"]) == 2
     text = format_root_status(st, "test")
-    assert "failed maps" in text and "M5 failed" in text and "M4, M5" not in text     # only what blocked
+    assert "failed maps" in text and "M1 failed" in text
 
 
 def test_no_map_with_keyframes_skips_the_relocalization(env):
@@ -238,8 +255,8 @@ def test_warnings_do_not_block_the_map(env, monkeypatch):
 
 
 def test_blocking_defaults():
-    assert C.BLOCKING == {"M1": True, "M2": False, "M3": False, "M4": False, "M5": True}
-    assert C.not_evaluated("M5", "x").failed and C.not_evaluated("M4", "x").warned
+    assert C.BLOCKING == {"M1": True, "M2": False, "M3": False, "M4": False, "M5": False}
+    assert C.not_evaluated("M5", "x").warned and C.not_evaluated("M4", "x").warned
     assert C.not_evaluated("M2", "x").warned and not C.not_evaluated("M2", "x").failed
 
 
@@ -424,7 +441,7 @@ def test_first_map_cuts_the_clip_after_the_first_piece_and_maps_it_again(env40, 
     o, _ = _map(env40, name="episode_000002", runner=spy, first_map=True)
     assert len(fake.calls) == 3                           # whole clip, cut clip, re-localization of the cut clip
     (seq_full, t_full), (seq_cut, t_cut), (seq_rel, t_rel) = seen
-    assert seq_full.name == "euroc" and seq_cut.name == seq_rel.name == "euroc_first_map"
+    assert seq_full.name == "euroc" and seq_cut.name == seq_rel.name == B.CUT_EUROC_DIR
     assert len(t_full) >= 30 and t_cut == t_rel == t_full[:22]          # fed frames 0-21: the piece's last tracked
     assert "--save_map" in fake.calls[1] and "--load_map" in fake.calls[2]
     assert o.passed and o.checks[0].ok
@@ -438,11 +455,13 @@ def test_first_map_cuts_the_clip_after_the_first_piece_and_maps_it_again(env40, 
     assert o.report["runs"]["mapping"]["frames_fed"] == 22 and o.report["diagnostics"]["frames"] == 22
     d = o.where
     assert (d / B.MAPPING_FULL_DIR / "trajectory.csv").is_file() and (d / B.ATLAS_NAME).is_file()
-    assert sorted(p.parent.name for p in d.glob(f"*/{B.RUN_PNG_NAME}")) == sorted(
-        [B.MAPPING_DIR, B.MAPPING_FULL_DIR, B.RELOCALIZE_DIR])
+    assert ["--save_points" in c for c in fake.calls] == [True, True, False]      # the mapping runs only
+    assert (d / B.MAPPING_FULL_DIR / B.POINTS_NAME).is_file() and (d / B.MAPPING_DIR / B.POINTS_NAME).is_file()
+    assert not list(d.rglob("slam_run*.png")) and not list(d.rglob("*.html"))      # map draws nothing
     assert not (env40["root"].path / B.WORK_DIR).exists()
     text = format_outcome_text(o)
-    assert "--first-map: the whole clip gave 2 maps" in text and "22 of" in text and "figures:" in text
+    assert "--first-map: the whole clip gave 2 maps" in text and "22 of" in text and "figures:" not in text
+    assert "umiproc slam-video block_raise" in text and "umiproc slam-3d block_raise" in text
 
 
 def format_outcome_text(o):
@@ -460,21 +479,72 @@ def test_first_map_cut_that_still_gives_two_maps_fails_and_keeps_both_runs(env40
     _nothing_taken(env40["root"])
 
 
-def test_without_the_flag_m1_names_the_first_piece(env40):
-    fake = FakeSlam(state=lambda k, n, mapping: _full_states(k) if mapping else 2, maps=lambda mapping: TWO_MAPS)
-    o, _ = _map(env40, name="episode_000002", runner=fake)
-    assert len(fake.calls) == 2 and o.exit_code == B.EXIT_FAILED
-    hint = o.checks[0].hints[-1]
-    assert "first map piece tracked" in hint and "fed frames 2-21" in hint and "--first-map" in hint
-    assert o.report["first_map"] is None and not (o.where / B.MAPPING_FULL_DIR).exists()
-
-
 def test_first_map_with_one_map_cuts_nothing(env40, monkeypatch):
     _pass_m4_m5(monkeypatch)
     o, fake = _map(env40, name="episode_000002", first_map=True)
     assert len(fake.calls) == 2 and o.passed
-    assert o.report["first_map"] == {"applied": False, "reason": "the whole clip gave one map (or none): nothing to cut"}
+    assert o.report["first_map"] == {"applied": False, "mode": "first",
+                                     "reason": "the whole clip gave one map (or none): nothing to cut"}
     assert not (o.where / B.MAPPING_FULL_DIR).exists()
+
+
+def _long_second_states(k):
+    """Initialising, a first piece tracked on fed frames 2-17 (16 frames), a reset at 18, then a longer second piece
+    from frame 22 to the end (the clip's frames 22-59)."""
+    if k < 2:
+        return 1
+    if k < 18:
+        return 2
+    return 0 if k == 18 else (1 if k < 22 else 2)
+
+
+@pytest.fixture
+def env60(env):
+    pi_map_recording(env["src"], 4, n_frames=60)
+    return env
+
+
+@pytest.mark.parametrize("flag", [False, True])
+def test_several_maps_are_cut_to_the_longest_piece_by_default(env60, monkeypatch, flag):
+    """No flag needed: the whole clip gave two maps, so the longest piece is picked (--longest-map only names it)."""
+    _pass_m4_m5(monkeypatch)
+    seen, holder = [], {}
+
+    def state(k, n, mapping):
+        return _long_second_states(k) if len(holder["f"].calls) == 1 else (1 if k < 2 else 2)
+
+    holder["f"] = fake = FakeSlam(state=state, maps=lambda mapping: TWO_MAPS if len(holder["f"].calls) == 1
+                                  else ONE_MAP)
+
+    def spy(cmd, cwd, log_path, timeout_s):
+        seen.append(_times(cmd))
+        return fake(cmd, cwd, log_path, timeout_s)
+
+    o, _ = _map(env60, name="episode_000004", runner=spy, **({"longest_map": True} if flag else {}))
+    assert len(fake.calls) == 3 and o.passed and o.report["first_map"] is None
+    (seq_full, t_full), (seq_cut, t_cut), (seq_rel, t_rel) = seen
+    assert seq_cut.name == seq_rel.name == B.CUT_EUROC_DIR
+    n = len(t_full)
+    assert t_cut == t_rel == t_full[18:]                 # from right after the first piece (ends at 17) to the end
+    lm = o.report["longest_map"]
+    assert (lm["applied"], lm["mode"], lm["start_frame"], lm["frames"]) == (True, "longest", 18, n - 18)
+    assert (lm["piece"]["first_tracked"], lm["piece"]["last_tracked"], lm["piece"]["tracked"]) == (22, n - 1, n - 22)
+    assert lm["start_s"] == pytest.approx((t_full[18] - t_full[0]) / 1e9, abs=1e-3)
+    assert "longest map (automatic): the whole clip gave 2 maps" in format_outcome_text(o)
+
+
+def test_a_longest_piece_that_still_gives_two_maps_fails_m1(env60):
+    fake = FakeSlam(state=lambda k, n, mapping: _long_second_states(k) if mapping else 2, maps=lambda mapping: TWO_MAPS)
+    o, _ = _map(env60, name="episode_000004", runner=fake)
+    assert len(fake.calls) == 3 and o.exit_code == B.EXIT_FAILED and o.checks[0].failed   # whole, cut, re-localize
+    assert o.report["longest_map"]["applied"]
+    assert "even the longest map piece alone" in " ".join(o.checks[0].hints)
+    _nothing_taken(env60["root"])
+
+
+def test_first_and_longest_map_exclude_each_other(env):
+    with pytest.raises(B.MapInputError, match="exclude each other"):
+        _map(env, first_map=True, longest_map=True)
 
 
 def test_cli_passes_first_map(env40, monkeypatch, capsys):
@@ -488,3 +558,39 @@ def test_cli_passes_first_map(env40, monkeypatch, capsys):
     assert umicli.main(["map", "block_raise", "episode_000002", "--source", str(env40["src"]), "--root",
                         str(env40["root"].path), "--first-map"]) == B.EXIT_INPUT
     assert seen["first_map"] is True
+
+
+# --------------------------------------------------------------------------------------------- map points
+
+def test_map_stores_the_map_points_and_draws_nothing(env, monkeypatch, tmp_path, capsys):
+    from umiproc.viz import slam_3d
+
+    assert B.POINTS_NAME == slam_3d.POINTS_NAME
+    monkeypatch.setenv("UMIPROC_ANALYSIS", str(tmp_path / "an"))
+    _pass_m4_m5(monkeypatch)
+    monkeypatch.setattr("umiproc.map.cli.build_map",
+                        lambda root, task, map_dir, **kw: _map(env, name=map_dir)[0])
+    assert umicli.main(["map", "block_raise", "episode_000001", "--source", str(env["src"]), "--root",
+                        str(env["root"].path)]) == 0
+    out = capsys.readouterr().out
+    assert "analysis copy" not in out and "figures:" not in out and "umiproc slam-3d block_raise" in out
+    assert not (tmp_path / "an").exists()                          # no ~/data/analysis copy
+    d = env["root"].tasks / "block_raise" / "map"
+    (slot,) = list(d.iterdir())
+    for name in (B.POINTS_NAME, "map_points_keyframes.csv", "map_points_meta.json"):
+        assert (slot / B.MAPPING_DIR / name).is_file(), name
+    assert not list(slot.rglob("slam_run*.png")) and not list(slot.rglob("*.html"))
+    assert not (slot / B.RELOCALIZE_DIR / B.POINTS_NAME).exists()
+    assert not (env["root"].tasks / "block_raise" / "analysis").exists()
+
+
+def test_an_older_build_without_save_points_stores_no_points(env, monkeypatch):
+    lines = []
+    _pass_m4_m5(monkeypatch)
+    fake_slam_build(env["tmp"] / "fork_old", monkeypatch, save_points=False)
+    fake = FakeSlam()
+    o = B.build_map(env["root"], "block_raise", "episode_000001", source=env["src"], rig_id=RIG,
+                    log=lambda *a, **k: lines.append(" ".join(map(str, a))), runner=fake)
+    assert o.passed and not any("--save_points" in c for c in fake.calls)
+    assert any("no --save_points" in ln for ln in lines)
+    assert not (o.where / B.MAPPING_DIR / B.POINTS_NAME).exists()

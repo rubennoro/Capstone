@@ -56,8 +56,9 @@
 //   <CSV stem>_keyframes.csv  id,frame_id,timestamp,x,y,z,q_x,q_y,q_z,q_w   T_W_cam of every keyframe not bad
 //   <CSV stem>_meta.json      the map id, the counts, imu_initialized, up_W (ORB-SLAM3's gravity-aligned +z in W
 //                             once the IMU is initialised, else null) and T_W_orbworld (row-major 4x4)
-// No map with a keyframe: the two CSVs are header-only and "map_id" is null. The library does not expose the atlas,
-// so it is read through System::mpAtlas with the explicit-instantiation access idiom (no library change).
+// No map with a keyframe: the two CSVs are header-only and "map_id" is null. The atlas is read through
+// System::GetAtlas() (patch 0012); built against a fork without it (a PATCHES_UPTO variant below 0012), --save_points
+// is refused at start (exit 1).
 // --max_frames N feeds only the first N frames (0 with --load_map and --save_points: export a saved map as it is).
 //
 // Exit 0; 3 when --max_lost_frames was reached (the trajectory is still saved, unlike gopro_slam); 1 on bad input or
@@ -88,17 +89,12 @@
 
 namespace {
 
-// System::mpAtlas is private and the library has no accessor; an explicit instantiation may name a private member
-// ([temp.explicit]), which this uses to read it without changing (and rebuilding) libORB_SLAM3.
-template <typename Tag, typename Tag::type M>
-struct PrivateAccess {
-    friend typename Tag::type Get(Tag) { return M; }
-};
-struct SystemAtlas {
-    using type = ORB_SLAM3::Atlas *ORB_SLAM3::System::*;
-    friend type Get(SystemAtlas);
-};
-template struct PrivateAccess<SystemAtlas, &ORB_SLAM3::System::mpAtlas>;
+#ifdef UMIPROC_SYSTEM_GET_ATLAS                 // patch 0012
+constexpr bool kHaveGetAtlas = true;
+#else
+constexpr bool kHaveGetAtlas = false;
+#endif
+const char kNoGetAtlas[] = "--save_points needs patch 0012 (System::GetAtlas), which this build of the fork lacks";
 
 // "path/x.csv" + "_keyframes.csv" -> "path/x_keyframes.csv" (a path without ".csv" keeps its whole name)
 std::string Sibling(const std::string &csv, const std::string &suffix) {
@@ -234,7 +230,13 @@ struct Options {
 // The map export (see the header comment). "" when written, else what went wrong.
 std::string SaveMapPoints(ORB_SLAM3::System &slam, const std::string &csv, size_t &n_points, size_t &n_keyframes) {
     n_points = n_keyframes = 0;
-    ORB_SLAM3::Atlas *atlas = slam.*Get(SystemAtlas());
+#ifdef UMIPROC_SYSTEM_GET_ATLAS
+    ORB_SLAM3::Atlas *atlas = slam.GetAtlas();
+#else                                           // unreachable: main refuses --save_points first
+    (void)slam;
+    ORB_SLAM3::Atlas *atlas = nullptr;
+    if (atlas == nullptr) return kNoGetAtlas;
+#endif
     ORB_SLAM3::Map *best = nullptr;               // as System::SaveTrajectoryCSV: the first with the most keyframes
     size_t best_kfs = 0;
     for (ORB_SLAM3::Map *m : atlas->GetAllMaps()) {
@@ -401,6 +403,8 @@ int main(int argc, char **argv) {
         PrintSummary(s, o);
         return 1;
     };
+    if (!o.save_points.empty() && !kHaveGetAtlas)
+        return fail(kNoGetAtlas);
 
     std::vector<int64_t> t_cam;
     std::vector<int64_t> t_imu;

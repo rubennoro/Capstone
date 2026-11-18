@@ -66,10 +66,12 @@ def pi_map_recording(source: Path, number: int, *, n_frames: int = 24, seed: int
         _fx.IMU_HZ = old[1]
 
 
-def fake_slam_build(base: Path, monkeypatch, patches=("0001-a.patch", "0002-b.patch")) -> Path:
+def fake_slam_build(base: Path, monkeypatch, patches=("0001-a.patch", "0002-b.patch"), save_points: bool = True
+                    ) -> Path:
     """A native/build.sh-like build under ``base`` (executable stand-in binary, ``BUILD_INFO``, library, vocabulary),
     selected with ``$UMIPROC_SLAM_BINARY`` / ``$ORB_SLAM3_UMI_DIR``; ``ldd`` is replaced by "the binary loads the
-    library". Returns the binary."""
+    library". The stand-in exits 99, except ``--help``, which names ``--save_points`` unless ``save_points=False``
+    (an older build: :func:`umiproc.slam.runner.supports_save_points`). Returns the binary."""
     from umiproc import slam_inputs as SI
 
     out, lib = base / "umiproc_build", base / "lib" / "libORB_SLAM3.so"
@@ -78,7 +80,9 @@ def fake_slam_build(base: Path, monkeypatch, patches=("0001-a.patch", "0002-b.pa
     (base / "Vocabulary").mkdir(exist_ok=True)
     (base / "Vocabulary" / "ORBvoc.txt").write_text("voc")
     binary = out / "umiproc_slam"
-    binary.write_text("#!/bin/sh\nexit 99\n")
+    opts = "  --save_points TEXT\\n" if save_points else ""
+    binary.write_text(f'#!/bin/sh\nif [ "$1" = --help ]; then printf "Options:\\n  --save_map TEXT\\n{opts}"; exit 0; fi\n'
+                      "exit 99\n")
     binary.chmod(0o755)
     lib.write_bytes(b"lib")
     lines = ["fork https://github.com/cheng-chi/ORB_SLAM3.git b741dca", f"library {lib}"]
@@ -93,7 +97,8 @@ def fake_slam_build(base: Path, monkeypatch, patches=("0001-a.patch", "0002-b.pa
 
 class FakeSlam:
     """Stands in for umiproc_slam (``runner=`` of run_umi_slam): for every call writes the trajectory CSV (one row per
-    times.txt line), its ``.t0_ns``, a log ending in ``UMIPROC_SUMMARY`` and, for ``--save_map``, an atlas.
+    times.txt line), its ``.t0_ns``, a log ending in ``UMIPROC_SUMMARY``, for ``--save_map`` an atlas and, for
+    ``--save_points``, a small map export (points, keyframes = the CSV's keyframe rows, meta) as the front-end does.
 
     ``pose(k, n) -> (x, y, z, qx, qy, qz, qw)`` and ``state(k, n, mapping)`` / ``keyframe(k)`` shape the rows;
     ``maps(mapping)`` the summary's maps."""
@@ -106,6 +111,25 @@ class FakeSlam:
                                                "inertial_ba1": True, "inertial_ba2": True}])
         self.rc = rc
         self.calls = []
+
+    def _write_points(self, pts: Path, times, t0: int, n: int) -> None:
+        import json
+
+        stem = pts.name[:-4]
+        pts.write_text("id,x,y,z,observations\n" + "".join(
+            f"{i},{0.1 * (i % 5) - 0.2:.6f},{0.3 + 0.01 * i:.6f},{0.5 + 0.02 * (i // 5):.6f},{2 + i % 4}\n"
+            for i in range(20)))
+        kfs = []
+        for k, t in enumerate(times):
+            if self.state(k, n, True) == 2 and self.keyframe(k):
+                x, y, z, qx, qy, qz, qw = self.pose(k, n)
+                kfs.append(f"{len(kfs)},{k},{(t - t0) / 1e9:.6f},{x},{y},{z},{qx},{qy},{qz},{qw}\n")
+        pts.with_name(stem + "_keyframes.csv").write_text("id,frame_id,timestamp,x,y,z,q_x,q_y,q_z,q_w\n" +
+                                                          "".join(kfs))
+        pts.with_name(stem + "_meta.json").write_text(json.dumps(
+            {"format": "umiproc.map_points.v1", "map_id": 0, "keyframes": len(kfs), "map_points": 20,
+             "bad_map_points": 0, "first_keyframe_id": 0, "imu_initialized": True, "up_W": [0.0, -1.0, 0.0],
+             "T_W_orbworld": None}))
 
     def __call__(self, cmd, cwd, log_path, timeout_s):
         import json
@@ -130,6 +154,8 @@ class FakeSlam:
         Path(str(out) + ".t0_ns").write_text(f"{t0}\n")
         if mapping and self.rc == 0:
             Path(args[args.index("--save_map") + 1]).write_bytes(b"atlas")
+        if "--save_points" in args and self.rc == 0:
+            self._write_points(Path(args[args.index("--save_points") + 1]), times, t0, n)
         summary = {"format": "umiproc.slam_summary.v2", "exit_code": self.rc, "error": None, "frames_total": n,
                    "frames_fed": n, "lost_frames": n - n_ok, "not_tracking_frames": n - n_ok, "stopped_early": False,
                    "stop_reason": None, "state_counts": {"2": n_ok}, "maps": self.maps(mapping), "t0_ns": t0,
@@ -356,10 +382,10 @@ def tx_slam_tag_example():
 
 
 def session_folder(root, source: Path, monkeypatch, *, task: str = "block_raise", number: int = 900,
-                   tx_slam_tag=None) -> str:
-    """A task folder with a map that passed (``umiproc map`` with :class:`FakeSlam`, checks M4/M5 made to pass) and a
-    ``tx_slam_tag.json`` (the fake map run sees no tag, so it is written here). Needs :func:`fake_slam_build`.
-    Returns the folder name."""
+                   tx_slam_tag=None, n_frames: int = 24, runner=None, **map_kw) -> str:
+    """A task folder with a map that passed (``umiproc map`` with :class:`FakeSlam` or ``runner``, checks M4/M5 made
+    to pass; ``map_kw`` e.g. ``first_map=True``) and a ``tx_slam_tag.json`` (the fake map run sees no tag, so it is
+    written here). Needs :func:`fake_slam_build`. Returns the folder name."""
     import json
 
     from umiproc.map import build as B
@@ -368,9 +394,9 @@ def session_folder(root, source: Path, monkeypatch, *, task: str = "block_raise"
     with monkeypatch.context() as m:
         m.setattr(C, "check_m4", lambda *a, **k: C.CheckResult("M4", True, {}, "ok (test)"))
         m.setattr(C, "check_m5", lambda *a, **k: C.CheckResult("M5", True, {}, "ok (test)"))
-        pi_map_recording(source, number)
+        pi_map_recording(source, number, n_frames=n_frames)
         o = B.build_map(root, task, f"episode_{number:06d}", source=source, rig_id="rig_pi_v3",
-                        log=lambda *a, **k: None, runner=FakeSlam())
+                        log=lambda *a, **k: None, runner=runner or FakeSlam(), **map_kw)
     assert o.passed, o.message
     T = tx_slam_tag_example() if tx_slam_tag is None else tx_slam_tag
     (o.where / B.TAG_POSE_NAME).write_text(json.dumps({"tx_slam_tag": [list(map(float, r)) for r in T]}))

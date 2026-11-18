@@ -109,6 +109,10 @@ def the_map(task_dir: Path) -> MapRef:
     if m["passed"] is not True:
         raise RunInputError(f"the map of {task_dir.name} (map/{m['pi_name']}) did not pass its checks", "map")
     d = m["dir"]
+    if not (d / TAG_POSE_NAME).is_file():
+        raise RunInputError(f"the map of {task_dir.name} (map/{m['pi_name']}) has no table-tag pose ({TAG_POSE_NAME}: "
+                            "M5 saw tag 13 in no keyframe), so episodes cannot be put in the table's frame: map again "
+                            "with tag 13 lying flat in view (a new mapping clip makes a new session folder)", "map")
     for f in (ATLAS_NAME, TAG_POSE_NAME, FINGERPRINT_NAME):
         if not (d / f).is_file():
             raise RunInputError(f"the map of {task_dir.name} has no {f} ({d}): it cannot be used", "map")

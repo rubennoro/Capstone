@@ -2,9 +2,13 @@
 what to change in the recording. Pure functions of the SLAM runs' outputs, so every boundary is testable without the
 native binary.
 
-Only M1 and M5's sightings **block** the map (:data:`BLOCKING`); M2, M3, M4 and M5's spread and tilt limits are
-**warnings**: printed with their hints and stored in the report, but the task folder is still created. The test demos
-(DIRECTIONS.md section 3) then show whether the map works, as in UMI, which judges no map at all.
+No quality limit stops the map (2026-11-18, the user's decision): every check is a **warning** (printed with its
+hints and stored in the report) and the task folder is still created, as in UMI, which judges no map at all; the test
+demos (DIRECTIONS.md section 3) show whether it works. Only what leaves nothing usable to attach still stops it
+(:data:`BLOCKING`): M1 without exactly one saved map with keyframes (none: nothing to attach; several: ``umiproc map`` then
+picks one by itself, the longest map piece, and maps and checks only that part of the clip; M1 blocks only when even
+that gives no single map). M5 only warns, even without a single tag sighting (2026-11-18): the map is then
+attached without ``tx_slam_tag.json`` and ``umiproc run`` refuses that folder up front.
 
 ==  ==========================================================================================  =====================
 #   passes when                                                                                 computed from
@@ -63,7 +67,7 @@ __all__ = ["BLOCKING", "CheckResult", "M3_MAX_RELOCALIZE_S", "M3_MIN_TRACKED_FRA
            "check_m1", "check_m2", "check_m3", "check_m4", "check_m5", "not_evaluated", "max_speed",
            "lost_stretches", "the_map", "pacing_warnings", "imu_trajectory", "up_direction",
            "orientation_consistency", "init_resets", "tracked_frames_before_restart", "FIRST_MAP_MIN_TRACKED",
-           "MapPiece", "map_pieces", "first_map_piece"]
+           "MapPiece", "map_pieces", "first_map_piece", "longest_map_piece"]
 
 M3_MAX_RELOCALIZE_S = 0.5
 M3_MIN_TRACKED_FRACTION = 0.95
@@ -111,11 +115,11 @@ _SCAN_HINT = ("scan the workspace slowly for at least 30 s without stopping: rea
               "turning on the spot), no fast moves, never a blank view (a plain wall, the ceiling, the lens covered)")
 
 
-#: Whether a check outside its limit stops the map (:attr:`CheckResult.blocking`; branch rnoro/data-work-auto,
-#: 2026-11-17). UMI judges no map at all; the test demos (DIRECTIONS.md section 3) are the gate. Only what keeps the
-#: data correct still blocks: M1 (one map: demos and the table tag in the same coordinates) and M5's sightings (a
-#: table pose to exist; :func:`check_m5` sets it per result: its spread and tilt limits only warn). M2-M4 warn.
-BLOCKING = {"M1": True, "M2": False, "M3": False, "M4": False, "M5": True}
+#: Whether a check that did not pass stops the map (:attr:`CheckResult.blocking`; branch rnoro/data-work-auto). UMI
+#: judges no map at all; the test demos (DIRECTIONS.md section 3) are the gate. Only "nothing usable to attach" blocks:
+#: M1 (no saved map, or several maps even after the automatic cut to the longest map piece). M2-M5 warn (M5 without any tag
+#: sighting too, 2026-11-18: no tx_slam_tag.json then, and ``umiproc run`` refuses the folder).
+BLOCKING = {"M1": True, "M2": False, "M3": False, "M4": False, "M5": False}
 
 
 @dataclass
@@ -259,6 +263,20 @@ def first_map_piece(states, min_tracked: int = FIRST_MAP_MIN_TRACKED) -> MapPiec
     """The first piece that tracked at least ``min_tracked`` frames (maps dropped right after initialising are
     skipped), or None."""
     return next((p for p in map_pieces(states) if p.tracked >= min_tracked), None)
+
+
+def longest_map_piece(states, min_tracked: int = FIRST_MAP_MIN_TRACKED) -> tuple[MapPiece, int] | None:
+    """``umiproc map``'s automatic pick when the clip gave several maps (``--longest-map``): the piece that tracked the most frames (the earlier one on a tie; at least
+    ``min_tracked``), and the fed frame to start a cut clip at: right after the previous piece's last frame (0 for the
+    first piece), so the cut clip holds the frames SLAM initialised this map from. None without such a piece."""
+    pieces = map_pieces(states)
+    best = None
+    for i, p in enumerate(pieces):
+        if p.tracked >= min_tracked and (best is None or p.tracked > pieces[best].tracked):
+            best = i
+    if best is None:
+        return None
+    return pieces[best], (pieces[best - 1].end + 1 if best > 0 else 0)
 
 
 def init_resets(log, states=None) -> dict:
@@ -654,8 +672,7 @@ def check_m5(stats, agg: dict | None, up: np.ndarray | None, frames_with_tag: in
               f"; the chosen sighting's {values['chosen_normal_to_up_deg']:.1f} deg") + ")")
     if ok_n and ok_spread and ok_normal:
         return CheckResult("M5", True, values, msg)
-    # blocks only without a usable table pose (too few sightings); the spread and tilt limits only warn
-    blocking = not ok_n or agg is None
+    # never blocks (2026-11-18): without any sighting there is no table pose (no tx_slam_tag.json; run refuses)
     if not ok_n:
         st = stats
         if frames_with_tag == 0:
@@ -685,7 +702,10 @@ def check_m5(stats, agg: dict | None, up: np.ndarray | None, frames_with_tag: in
         else:
             hints.append(f"the tag is tilted {normal:.1f} deg from level (the median of its views): tape it flat on "
                          "a level table; if it is flat, the map's gravity is off (see M4)")
-    return CheckResult("M5", False, values, msg, hints, blocking=blocking)
+    if agg is None:
+        hints.append("without any sighting the map has no table-tag pose (no tx_slam_tag.json): `umiproc run` refuses "
+                     "this folder; map again with tag 13 in view")
+    return CheckResult("M5", False, values, msg, hints)
 
 
 # --------------------------------------------------------------------------------------------- diagnostics

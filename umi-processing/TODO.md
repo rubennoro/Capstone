@@ -30,7 +30,7 @@ How to do each step: [DIRECTIONS.md](DIRECTIONS.md). Tick items off here as they
 - [ ] **Jetson speed:** read the `pacing` lines of the map report. If the Jetson tracks slower than 30 frames/s
       (the laptop managed about 20–23), decide what to do (max power mode `sudo nvpmodel -m 0`, fewer ORB features, …).
 - [ ] **Comparisons on the first passing mapping clip** (DIRECTIONS Appendix A, one data root each): IMU noise 1× vs 10×;
-      patches 0001–0011 vs without 0007–0009; record the outcome and the chosen defaults in docs/DESIGN.md.
+      patches 0001–0012 vs without 0007–0009; record the outcome and the chosen defaults in docs/DESIGN.md.
 
 ## 3. Build: step 3, `calibrate` and `run`
 

@@ -46,9 +46,20 @@ than one map with keyframes (SLAM lost tracking and started a new map), its per-
 (:data:`umiproc.map.checks.FIRST_MAP_MIN_TRACKED` frames) ends at its last tracked frame. The clip is cut there (the
 same EuRoC frames, times.txt shortened) and the mapping run, the re-localization and every check run again on the cut
 clip; the whole clip's run is kept in ``mapping_full/``. The cut is in ``report.json`` (``first_map``), not in the
-SLAM fingerprint (that is the SLAM inputs, which a demo must share with the map). Without the flag, M1's hint names
-where the first piece ended. Every run folder also gets ``slam_run.png`` (``umiproc plot-run``'s figure; skipped
-without matplotlib), and ``umiproc slam-video`` renders a run as a video.
+SLAM fingerprint (that is the SLAM inputs, which a demo must share with the map).
+
+**Longest map piece: the default** (2026-11-18, the user's decision). Without ``--first-map``, a clip whose whole run
+ends with several maps is cut to the piece that tracked the most frames (:func:`umiproc.map.checks.longest_map_piece`)
+by itself, no flag needed: the fed frames from right after the previous piece's last frame (where SLAM began
+initialising this map; 0 for the first piece) to the piece's last tracked frame, mapped and checked again like the
+``--first-map`` cut; the cut is in ``report.json`` (``longest_map``). ``--longest-map`` only names this default. M1
+still blocks when even the cut clip gives no single map (its hint says to record a new mapping clip).
+
+**Map points.** The mapping run(s) (``mapping/``, and ``mapping_full/`` with ``--first-map`` / ``--longest-map``) pass
+``--save_points <run>/map_points.csv`` when the build has it (:func:`umiproc.slam.runner.supports_save_points`, its
+``--help`` asked once; an older build: no points, logged), so the map's points, keyframes and meta are stored with the
+run for ``umiproc slam-3d`` (the EuRoC folder is deleted). ``map`` draws nothing itself (2026-11-18): figures, videos
+and the 3-D page come from ``umiproc slam-video FOLDER`` and ``umiproc slam-3d FOLDER`` into ``tasks/<folder>/analysis/``.
 
 Exit codes (:data:`EXIT_OK`, :data:`EXIT_FAILED`, :data:`EXIT_INPUT`): 0 the map was attached (possibly with
 warnings); 1 a blocking check failed (or an unexpected error); 2 the command could not run on this input (bad name, recording missing / still syncing / already
@@ -71,7 +82,7 @@ import numpy as np
 from umiproc.map import checks as C
 
 __all__ = ["EXIT_OK", "EXIT_FAILED", "EXIT_INPUT", "REPORT_FORMAT", "REPORT_NAME", "ATLAS_NAME", "TAG_POSE_NAME",
-           "TAG_DETECTIONS_NAME", "FINGERPRINT_NAME", "MAPPING_DIR", "RELOCALIZE_DIR", "MAPPING_FULL_DIR", "RUN_PNG_NAME",
+           "TAG_DETECTIONS_NAME", "FINGERPRINT_NAME", "MAPPING_DIR", "RELOCALIZE_DIR", "MAPPING_FULL_DIR", "POINTS_NAME",
            "FAILED_DIR", "WORK_DIR",
            "MAP_FILES", "MapInputError", "MapOutcome", "build_map", "failed_map_dir", "patches_label"]
 
@@ -85,8 +96,10 @@ FINGERPRINT_NAME = "slam_fingerprint.json"
 MAPPING_DIR, RELOCALIZE_DIR = "mapping", "relocalize"
 #: ``--first-map``: the whole clip's mapping run, kept when the clip was cut to its first map piece
 MAPPING_FULL_DIR = "mapping_full"
-#: The figure ``map`` writes into each run folder (:mod:`umiproc.viz.slam_run`; skipped without matplotlib)
-RUN_PNG_NAME = "slam_run.png"
+#: the cut clip's EuRoC folder (a times.txt and a link to the whole clip's frames and IMU)
+CUT_EUROC_DIR = "euroc_cut"
+#: The map export (``--save_points``) stored in the mapping run folder(s), for :mod:`umiproc.viz.slam_3d`
+POINTS_NAME = "map_points.csv"
 FAILED_DIR = "maps_failed"
 WORK_DIR = ".work"
 #: What a passed map leaves next to ``raw/`` in ``map/<pi_name>/`` (a failed one: the same without the atlas).
@@ -141,11 +154,11 @@ def failed_map_dir(root: Path, pi_name: str, now: float | None = None) -> Path:
 
 def build_map(root, task: str, map_dir: str, *, source: Path = Path("/data/incoming"), rig_id: str = "rig_pi_v3",
               log: Callable = print, runner=None, binary=None, vocabulary=None, timeout_s: float | None = None,
-              first_map: bool = False) -> MapOutcome:
+              first_map: bool = False, longest_map: bool = False) -> MapOutcome:
     """``umiproc map TASK MAP_DIR`` (module docstring). Raises :class:`MapInputError` (exit 2) when it cannot run;
     returns the :class:`MapOutcome` otherwise. ``runner``/``binary``/``vocabulary``/``timeout_s`` go to
     :func:`umiproc.slam.runner.run_umi_slam` (tests inject a fake runner). ``first_map``: ``--first-map`` (module
-    docstring, "First map piece")."""
+    docstring, "First map piece"); ``longest_map``: ``--longest-map`` (the same, with the longest piece)."""
     from umiproc.dp.paths import DataRoot, validate_episode_dir_name, validate_name
     from umiproc.recordings import RecordingError, discard, inspect_recording, session_lock, stage
     from umiproc.sensors import RigFilesError, SensorError, load_sensors, recording_mismatches
@@ -156,6 +169,8 @@ def build_map(root, task: str, map_dir: str, *, source: Path = Path("/data/incom
         validate_name(task)
         validate_name(rig_id, "rig id")
         validate_episode_dir_name(map_dir)
+        if first_map and longest_map:
+            raise ValueError("--first-map and --longest-map exclude each other: pick one")
     except ValueError as e:
         raise MapInputError(str(e)) from None
     r = root if isinstance(root, DataRoot) else DataRoot(Path(root))
@@ -202,7 +217,7 @@ def build_map(root, task: str, map_dir: str, *, source: Path = Path("/data/incom
             try:
                 return _process(r, task, src, staged, sensors, inputs, work, source=Path(source), log=log,
                                 runner=runner, binary=binary, vocabulary=vocabulary, timeout_s=timeout_s,
-                                first_map=first_map)
+                                first_map=first_map, longest_map=longest_map)
             finally:
                 discard(staged)                              # gone already when intake took it
         finally:
@@ -241,7 +256,7 @@ def _intake_refusals(r, staged) -> tuple[list[str], dict]:
 
 
 def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path, log, runner, binary, vocabulary,
-             timeout_s, first_map: bool = False) -> MapOutcome:
+             timeout_s, first_map: bool = False, longest_map: bool = False) -> MapOutcome:
     from umiproc.dp.files import write_json
     from umiproc.recordings import MAP, RecordingError, take
 
@@ -259,7 +274,7 @@ def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path,
     try:
         report, results = _run_and_check(r, task, src, staged, sensors, inputs, work, log=log, runner=runner,
                                          binary=binary, vocabulary=vocabulary, timeout_s=timeout_s,
-                                         first_map=first_map)
+                                         first_map=first_map, longest_map=longest_map)
     except Exception:  # noqa: BLE001 - keep what there is, then fail (exit 1); the recording stays untaken
         tb = traceback.format_exc()
         where = failed_map_dir(r.path, pi_name)
@@ -370,13 +385,14 @@ def _run_info(res) -> dict:
 
 
 def _run_and_check(r, task, src, staged, sensors, inputs, work: Path, *, log, runner, binary, vocabulary,
-                   timeout_s, first_map: bool = False) -> tuple[dict, dict]:
+                   timeout_s, first_map: bool = False, longest_map: bool = False) -> tuple[dict, dict]:
     import cv2
 
     from umiproc.dp.raw_episode import RawEpisode
     from umiproc.dp.slam.base import SlamError, finalize_trajectory, imu_samples, ultrawide_times_ns
     from umiproc.dp.slam.orbslam3 import write_euroc
     from umiproc.map.tag import TableTagDetector, aggregate_sightings, collect_sightings
+    from umiproc.slam import runner as slam_runner
     from umiproc.slam.runner import run_umi_slam
     from umiproc.slam.trajectory_csv import TrajectoryCsvError, read_times
 
@@ -410,11 +426,16 @@ def _run_and_check(r, task, src, staged, sensors, inputs, work: Path, *, log, ru
 
     # 2. mapping run (02_create_map.py)
     atlas = work / ATLAS_NAME
+    with_points = slam_runner.supports_save_points(binary)
+    if not with_points:
+        log("map: this SLAM build has no --save_points (built before it): no map points are stored, so "
+            "`umiproc slam-3d` will show the camera path only (rebuild with native/build.sh for the points)")
 
     def mapping_run(seq: Path, n: int):
         log(f"map: mapping run (frames fed in real time: about {n / 30:.0f} s or more)")
         res = run_umi_slam(seq, inputs.settings, work / MAPPING_DIR, save_map=atlas, init_tag_id=tag.id,
-                           init_tag_size=tag.size_m, aruco_dict_id=int(getattr(cv2.aruco, tag.dictionary)), **slam_kw)
+                           init_tag_size=tag.size_m, aruco_dict_id=int(getattr(cv2.aruco, tag.dictionary)),
+                           save_points=work / MAPPING_DIR / POINTS_NAME if with_points else None, **slam_kw)
         states = None                                     # per-frame states: how long each dropped map tracked
         if res.summary is not None:
             try:
@@ -424,43 +445,52 @@ def _run_and_check(r, task, src, staged, sensors, inputs, work: Path, *, log, ru
         return res, states, C.init_resets(res.log, states)
 
     m, m_states, early = mapping_run(euroc, len(times))
-    times_full = times
     runs: dict = {}
     first = _first_piece_info(m, m_states, times)         # None: one map (or none), nothing to cut
+    # Several maps: pick one automatically (the longest piece; --first-map: the first), no flag needed
+    mode = "first" if first_map else "longest"
+    flag = "--first-map" if first_map else ("--longest-map" if longest_map else "longest map (automatic)")
+    key = "piece" if mode == "first" else "longest"
     cut = None
-    if first is not None and first_map and first.get("piece") is not None:
-        # --first-map: keep the whole clip's run, then map and check only the clip up to the first piece's end
-        n_cut = first["piece"]["last_tracked"] + 1
+    if first is not None and first.get(key) is not None:
+        # keep the whole clip's run, then map and check only the chosen piece's part of the clip
+        piece = first[key]
+        n_start = 0 if mode == "first" else int(first["longest_start"])
+        n_end = piece["last_tracked"] + 1
+        n_cut = n_end - n_start
         os.replace(work / MAPPING_DIR, work / MAPPING_FULL_DIR)
         atlas.unlink(missing_ok=True)
         runs["mapping_full"] = _run_info(m)
         runs["mapping_full"]["init_resets"] = early
-        cut = {**first, "applied": True, "frames": n_cut, "frames_full": int(len(times)),
-               "end_s": first["piece"]["last_tracked_s"],
+        t_full_s = (np.asarray(times, dtype=np.int64) - int(times[0])) / 1e9
+        cut = {**first, "applied": True, "mode": mode, "piece": piece, "start_frame": n_start, "frames": n_cut,
+               "frames_full": int(len(times)), "start_s": round(float(t_full_s[n_start]), 3),
+               "end_s": piece["last_tracked_s"],
                "full_run": {"maps_with_keyframes": first["maps_with_keyframes"], "log": f"{MAPPING_FULL_DIR}/"
                             f"{m.log_path.name}"}}
-        log(f"map: --first-map: the whole clip gave {first['maps_with_keyframes']} maps with keyframes; the first map "
-            f"piece tracked {first['piece']['first_tracked_s']:.2f}-{first['piece']['last_tracked_s']:.2f} s, so the "
-            f"clip is cut after fed frame {n_cut - 1} ({cut['end_s']:.2f} s, {n_cut} of {len(times)} frames) and "
-            "mapped again")
-        euroc = _cut_sequence(euroc, work / "euroc_first_map", n_cut)
-        times, frame_of_row = times[:n_cut], frame_of_row[:n_cut]
+        what = "first" if mode == "first" else "longest"
+        log(f"map: {flag}: the whole clip gave {first['maps_with_keyframes']} maps with keyframes; the {what} map "
+            f"piece tracked {piece['first_tracked_s']:.2f}-{piece['last_tracked_s']:.2f} s ({piece['tracked']} "
+            f"frames), so the clip is cut to fed frames {n_start}-{n_end - 1} ({cut['start_s']:.2f}-{cut['end_s']:.2f}"
+            f" s, {n_cut} of {len(times)} frames) and mapped again")
+        euroc = _cut_sequence(euroc, work / CUT_EUROC_DIR, n_end, start=n_start)
+        times, frame_of_row = times[n_start:n_end], frame_of_row[n_start:n_end]
         n_tag = sum(1 for i in frame_of_row if int(i) in detector.detections)
         log(f"map: tag {tag.id} detected in {n_tag} of the {n_cut} frames kept")
         m, m_states, early = mapping_run(euroc, n_cut)
-    elif first_map:
-        cut = {**(first or {}), "applied": False,
+    elif first is not None or first_map or longest_map:     # several maps but no usable piece, or an explicit flag
+        cut = {**(first or {}), "applied": False, "mode": mode,
                "reason": ("the whole clip gave one map (or none): nothing to cut" if first is None else
                           f"no map piece tracked >= {C.FIRST_MAP_MIN_TRACKED} frames")}
-        log(f"map: --first-map: not cut ({cut['reason']})")
+        log(f"map: {flag}: not cut ({cut['reason']})")
     checks = [C.check_m1(m.returncode, m.timed_out, m.summary, m.log, m.map_saved, early),
               C.check_m2(m.summary, early)]
-    if first is not None and not first_map and first.get("piece") is not None and not checks[0].ok:
-        p = first["piece"]
+    if cut and cut.get("applied") and not checks[0].ok:
+        p_ = cut["piece"]
         checks[0].hints.append(
-            f"the first map piece tracked {p['first_tracked_s']:.2f}-{p['last_tracked_s']:.2f} s (fed frames "
-            f"{p['first_tracked']}-{p['last_tracked']}) before SLAM started a new map: run `umiproc map` again with "
-            "--first-map to map and check only the clip up to there (the demos must then stay in what that part saw)")
+            f"even the {'first' if mode == 'first' else 'longest'} map piece alone ({p_['first_tracked_s']:.2f}-"
+            f"{p_['last_tracked_s']:.2f} s of the whole clip) did not give one map: record a new mapping clip"
+            + (" (or run it again without that flag: the longest piece is then picked)" if mode == "first" else ""))
     runs["mapping"] = _run_info(m)
     runs["mapping"]["init_resets"] = early
     diag: dict = {}
@@ -529,8 +559,6 @@ def _run_and_check(r, task, src, staged, sensors, inputs, work: Path, *, log, ru
         tag_frames=n_tag, frames=int(len(times)),
         euroc={k: v for k, v in prep.items() if k != "t_cam_ns"},
         warnings=warnings)
-    _write_run_pngs(work, staged.pi_name, {MAPPING_FULL_DIR: times_full, MAPPING_DIR: times, RELOCALIZE_DIR: times},
-                    log)
     report = {"format": REPORT_FORMAT, "task": task, "pi_name": staged.pi_name, "source": str(src.path),
               "source_manifest_sha256": src.manifest_sha256, "rig_id": sensors.rig_id,
               "created_utc": _utc(time.time()), "fingerprint_hash": inputs.fingerprint_hash,
@@ -539,9 +567,9 @@ def _run_and_check(r, task, src, staged, sensors, inputs, work: Path, *, log, ru
                         "mapping_log": f"{MAPPING_DIR}/{m.log_path.name}",
                         "relocalize_log": f"{RELOCALIZE_DIR}/umiproc_slam.log" if rel is not None else None,
                         "mapping_full_log": cut["full_run"]["log"] if cut and cut.get("applied") else None},
-              "first_map": cut}
+              "first_map": cut if first_map else None, "longest_map": None if first_map else cut}
     (work / FINGERPRINT_NAME).write_text(_dumps({"hash": inputs.fingerprint_hash, "record": fp}))
-    shutil.rmtree(work / "euroc_first_map", ignore_errors=True)   # only a times.txt and a link
+    shutil.rmtree(work / CUT_EUROC_DIR, ignore_errors=True)   # only a times.txt and a link
     shutil.rmtree(work / "euroc", ignore_errors=True)      # ~400 KB per grey PNG, ~1.4 GB for 2 min; a re-run rebuilds
     return report, {"checks": checks, "tag_pose": results_tag}
 
@@ -555,42 +583,21 @@ def _first_piece_info(m, states, times) -> dict | None:
     t_s = (np.asarray(times, dtype=np.int64) - int(times[0])) / 1e9
     pieces = C.map_pieces(states)
     piece = C.first_map_piece(states)
+    longest = C.longest_map_piece(states)
     return {"maps_with_keyframes": len(m.summary.maps_with_keyframes), "min_tracked": C.FIRST_MAP_MIN_TRACKED,
-            "pieces": [p.to_json(t_s) for p in pieces], "piece": None if piece is None else piece.to_json(t_s)}
+            "pieces": [p.to_json(t_s) for p in pieces], "piece": None if piece is None else piece.to_json(t_s),
+            "longest": None if longest is None else longest[0].to_json(t_s),
+            "longest_start": None if longest is None else int(longest[1])}
 
 
-def _cut_sequence(euroc: Path, out: Path, n: int) -> Path:
-    """A EuRoC folder with only the first ``n`` lines of ``euroc``'s times.txt (umiproc_slam feeds exactly those);
-    frames and IMU are ``euroc``'s (``mav0`` is a link)."""
+def _cut_sequence(euroc: Path, out: Path, n: int, start: int = 0) -> Path:
+    """A EuRoC folder with only lines ``start`` to ``n - 1`` of ``euroc``'s times.txt (umiproc_slam feeds exactly
+    those, its IMU from one sample before the first); frames and IMU are ``euroc``'s (``mav0`` is a link)."""
     out.mkdir()
     lines = [ln for ln in (euroc / "times.txt").read_text().splitlines() if ln.strip() and not ln.startswith("#")]
-    (out / "times.txt").write_text("\n".join(lines[:n]) + "\n")
+    (out / "times.txt").write_text("\n".join(lines[start:n]) + "\n")
     (out / "mav0").symlink_to((euroc / "mav0").resolve(), target_is_directory=True)
     return out
-
-
-def _write_run_pngs(work: Path, pi_name: str, times_of: dict, log) -> None:
-    """``slam_run.png`` (``umiproc plot-run``'s figure) in every run folder of ``times_of`` ({folder: the fed frames'
-    times}); a missing matplotlib or a figure that cannot be drawn is logged, never fails the map."""
-    from types import SimpleNamespace
-
-    try:
-        import matplotlib  # noqa: F401
-    except ModuleNotFoundError:
-        log("map: no slam_run.png figures (matplotlib is missing: pip install -e umi-processing)")
-        return
-    from umiproc.viz.slam_run import PlotRunError, make_figure
-
-    for name, times in times_of.items():
-        d = work / name
-        if not (d / "trajectory.csv").is_file():
-            continue
-        args = SimpleNamespace(csv=str(d / "trajectory.csv"), log=str(d / "umiproc_slam.log"), video=None,
-                               frames=None, title=f"{pi_name}: {name} run", out=str(d / RUN_PNG_NAME))
-        try:
-            make_figure(args, times=times)
-        except (PlotRunError, OSError, ValueError) as e:
-            log(f"map: no {name}/{RUN_PNG_NAME} ({e})")
 
 
 def _tag_record(stats, agg, up, tag, sensors) -> dict:

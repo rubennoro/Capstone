@@ -76,3 +76,20 @@ def test_command_writes_png(tmp_path):
     out = tmp_path / "fig.png"
     assert main(["plot-run", "--csv", str(csv_path), "--log", str(log_path), "--out", str(out)]) == 0
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_times_from_csv_column_pins_frame_0_to_t0(tmp_path):
+    """Frame 0 not posed and the first posed rows a little off the nominal period: row 0 is t0 exactly (else
+    read_fork_csv refuses the times), the frames before the first posed row lie between."""
+    csv_path = tmp_path / "trajectory.csv"
+    period = 33_340_000                                           # the real period, not DT
+    lines = [",".join(CSV_HEADER), "0,0.000000,1,true,false,0,0,0,0,0,0,0", "1,0.000000,1,true,false,0,0,0,0,0,0,0"]
+    for k in range(2, 6):
+        lines.append(f"{k},{k * period / 1e9:.6f},2,false,false,0,0,0,0,0,0,1")
+    csv_path.write_text("\n".join(lines) + "\n")
+    Path(str(csv_path) + ".t0_ns").write_text(f"{T0}\n")
+    t = V.times_from_csv_column(csv_path, T0, 6, DT)
+    assert t[0] == T0 and t[1] == T0 + period and t[5] == T0 + 5 * period
+    assert np.all(np.diff(t) > 0)
+    tr = read_fork_csv(csv_path, t, frames_fed=6)
+    assert tr.n_frames == 6 and tr.posed.tolist() == [False, False, True, True, True, True]

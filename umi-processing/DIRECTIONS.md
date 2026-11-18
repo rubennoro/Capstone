@@ -440,56 +440,78 @@ umiproc map block_raise episode_000130
   `lens calibrated`.**
 - It ends with one line per check (`PASS`, `WARN`, `FAIL`, or `n/a` when an earlier failure made it impossible to
   judge), the diagnostics, and where the report is.
-- **Only two things block the map**: M1 (SLAM ended with exactly one map) and M5's sightings (at least 20 views of
-  tag 13, so the table's pose exists). Everything else (M2, M3, M4, and M5's spread and tilt) only **warns**: it is
-  printed with how to improve it and listed in `report.json`'s `warnings`, and the folder is created anyway, as UMI
-  does (it judges no map). The test demos (3.3–3.5) are the real check.
+- **No quality check stops the map.** M2–M5 only **warn**: each is printed with how to improve it and listed in
+  `report.json`'s `warnings`, and the folder is created anyway, as UMI does (it judges no map). The test demos
+  (3.3–3.5) are the real check.
+- **Several maps are handled by themselves.** If SLAM lost tracking and started a new map, `map` picks the longest
+  map piece, cuts the clip to it and maps and checks that part again (see below). No flag needed.
+- It only stops when there is nothing to attach: no saved map at all, or several maps even after that cut (M1).
 
-Exit code 0: the map was attached (possibly with warnings). 1: M1 or M5's sightings failed. 2: it could not run on this recording (the message says why:
+Exit code 0: the map was attached (possibly with warnings). 1: M1 failed (no single map). 2: it could not run on this recording (the message says why:
 not there or still syncing, already taken, not this rig's camera/IMU settings, rig files or SLAM build missing,
 another umiproc command running).
 
 **When it passes:** `~/data/umi/tasks/block_raise/map/<pi_name>/` holds the recording (`raw/`), the map
-(`map_atlas.osa`), the table tag's pose in the map (`tx_slam_tag.json`), both SLAM runs (`mapping/`,
-`relocalize/`: trajectory, log), the settings, mask and fingerprint used, the tag detections, and `report.json`
+(`map_atlas.osa`), the table tag's pose in the map (`tx_slam_tag.json`; missing when M5 saw the tag in no keyframe,
+and `umiproc run` then refuses the folder: map again with the tag in view), both SLAM runs (`mapping/` with the
+map's points, `relocalize/`: trajectory, log; `mapping_full/` when the clip was cut), the settings, mask and fingerprint used, the tag detections, and `report.json`
 (every check's values and limits, the diagnostics). **Next: remove the table tag (carefully, nothing else moves) and
 go on to 3.3.**
 
-**When it fails** (M1 or M5's sightings): nothing is created and the recording is not marked as taken, so it can be run again. The report
+**When it fails** (M1): nothing is created and the recording is not marked as taken, so it can be run again. The report
 and the SLAM logs are kept in `~/data/umi/maps_failed/<pi_name>/<UTC time>/` (the last lines printed give the
 folder; `umiproc status` lists the recent ones). The failed check prints **what to change** (see 3.6): usually
 record a new mapping clip following the hints (the tag is still in place), then run `umiproc map` on the new one. If
 the map passed but intake refused the recording (exit 2, "intake did not take"), the map, its report and the logs
 are kept in `maps_failed/` too.
 
-**When M1 fails with several maps: `--first-map`.** SLAM lost tracking partway and started a new map. M1's last hint
-says how long the first map piece tracked (e.g. `1.37-31.69 s`). To keep only that part:
+**Several maps: the longest one is picked by itself.** When SLAM loses tracking partway, it starts a new map, so the
+whole clip ends with several maps. Plain `umiproc map block_raise episode_000130` then picks the **longest map
+piece** (the one that tracked the most frames), cuts the clip to it (from where SLAM started that map to its last
+tracked frame, found from the run, not a fixed time), and runs the mapping, the re-localization and every check again
+on that part. The cut is printed (`longest map (automatic): ... checked only the longest map piece: N of M frames,
+a-b s`) and kept in `report.json` (`longest_map`); the whole clip's run is kept in `mapping_full/`. It then takes
+about 5 times the clip's length. The demos must stay in the part of the workspace the cut clip saw. (`--longest-map`
+names this default; it is never needed.)
+
+To keep the **first** map piece instead (the clip from its start, with the table tag, up to where tracking was first
+lost), add `--first-map`:
 
 ```bash
 umiproc map block_raise episode_000130 --first-map
 ```
 
-It maps the whole clip; if that ends with more than one map, it cuts the clip after the first map piece's last
-tracked frame (found from the run, not a fixed time) and runs the mapping, the re-localization and every check again
-on the cut clip. The cut is printed (`--first-map: ... checked only the clip up to ...`) and kept in `report.json`
-(`first_map`); the whole clip's run is kept in `mapping_full/`. It takes about 5 times the clip's length. The demos
-must then stay in the part of the workspace the cut clip saw.
+**Looking at a run.** `map` only runs SLAM and the checks; it draws nothing. Its mapping run(s) store the map's
+points (`mapping/map_points.csv` + `_keyframes.csv` + `_meta.json`; a SLAM build from before patch 0012 stores none,
+`map` says so). To look at a folder's map afterwards, by the task folder's name (as `run` and `status` take it):
 
-**Looking at a run.** Every run folder (`mapping/`, `relocalize/`, `mapping_full/`) gets `slam_run.png` (the tracking
-timeline, the path, the numbers). For a video of a run (each fed frame with its tracking state, the path from above,
-the timeline; ~1 minute per minute of clip on the laptop):
+```bash
+umiproc slam-video <folder>              # --run mapping (default) | relocalize | mapping_full | all
+umiproc slam-3d <folder>                 # --run mapping (default) | mapping_full
+```
+
+Both write into `~/data/umi/tasks/<folder>/analysis/` and print the path. `slam-video` writes `slam_video_<run>.mp4`
+(each fed frame with its tracking state, the path from above, the timeline; ~1 minute per minute of clip on the
+laptop; play it with VLC) and `slam_run_<run>.png` (the tracking timeline, the path, the numbers); it reads the frames
+from the map's `raw/` copy (`--recording DIR` for another). `slam-3d` writes `slam_3d.html` (`slam_3d_mapping_full.html`
+for that run): open it in a browser (it needs internet once, for plotly). It shows the map's points (coloured by height
+or by observations), its keyframes as small camera frustums and the camera path coloured by time, with a slider that
+moves a camera along it; without stored points, the path only. Up is gravity once the IMU initialised. The axes are
+metres only when M4's scale check passed.
+
+A failed map has no task folder: give its run folder instead, and the output goes next to it, into
+`maps_failed/<pi_name>/<UTC time>/analysis/`:
 
 ```bash
 umiproc slam-video ~/data/umi/maps_failed/<pi_name>/<UTC time>/mapping
+umiproc slam-3d ~/data/umi/maps_failed/<pi_name>/<UTC time>/mapping
 ```
 
-It finds the recording from the map's `report.json` (pass `--recording DIR` if it moved). Play it with VLC.
+(The recording then comes from `report.json`'s `source`; pass `--recording DIR` if it moved.)
 
-**The analysis folder.** Every `map` (passed or failed) also copies what to look at into
-`~/data/analysis/mapping/<episode>/<UTC>_<passed|failed>[_first_map]/` (report, tag pose, what `map` printed in
-`map_output.txt`, the run folders with their figures), and `slam-video` writes its video into that folder's run by
-default (`--out` to choose). `lens-calibrate` copies its results to `~/data/analysis/lens_calibration/<episode>/`.
-Another folder: `export UMIPROC_ANALYSIS=~/Downloads/data/analysis` (the laptop).
+**The analysis folder.** `lens-calibrate` copies its results to `~/data/analysis/lens_calibration/<episode>/` (another
+folder: `export UMIPROC_ANALYSIS=~/Downloads/data/analysis`, the laptop). A map's figures, video and 3-D page are in
+its task folder's `analysis/` (above); `map` no longer copies anything to `~/data/analysis`.
 
 ### 3.3 Record 2–3 test demos
 
@@ -800,7 +822,7 @@ is not the first, delete only its folder.
 
 ## Appendix A: The A/B comparison (first real session only)
 
-The first passing mapping clip is run in three variants (docs/DESIGN.md "SLAM"): all fixes (patches 0001–0011) with
+The first passing mapping clip is run in three variants (docs/DESIGN.md "SLAM"): all fixes (patches 0001–0012) with
 the datasheet IMU noise; the 0001–0006 build (note: it also lacks the crash fixes 0010–0011, so it can crash when a
 second map starts; rerun it if it does); and the IMU noise ×10. Each variant gets **its own data root**, so a variant
 never mixes with another (a root holds one variant's maps and nothing else) and the same clip can be taken in each.
@@ -852,7 +874,7 @@ setup_variant p0006_infl1  ~/ORB_SLAM3_umi/umiproc_build_0006/umiproc_slam 1.0
 setup_variant p0009_infl10 ~/ORB_SLAM3_umi/umiproc_build/umiproc_slam      10.0
 ```
 
-Each must end with its `NAME: SLAM binary … (11 patches)` (6 for `p0006_infl1`) line and no `STOP`. Then run the
+Each must end with its `NAME: SLAM binary … (12 patches)` (6 for `p0006_infl1`) line and no `STOP`. Then run the
 three, with the clip's name (here `episode_000130`). Commands 1 and 3 remove `UMIPROC_SLAM_BINARY`, so a value left
 over in the terminal cannot silently run them with the 0006 build:
 
@@ -869,7 +891,7 @@ env -u UMIPROC_SLAM_BINARY UMIPROC_ROOT=$AB/p0009_infl10 \
 ```
 
 - Check the first lines of each output. The one starting `map: <pi_name>: SLAM build` reads
-  `SLAM build /home/<you>/ORB_SLAM3_umi/umiproc_build/umiproc_slam (patches 0001-0011 (11 patches)); IMU vio_inflation
+  `SLAM build /home/<you>/ORB_SLAM3_umi/umiproc_build/umiproc_slam (patches 0001-0012 (12 patches)); IMU vio_inflation
   noise_density 1, random_walk 1; lens calibrated; fingerprint …` for 1;
   `…/umiproc_build_0006/umiproc_slam (patches 0001-0006 (6 patches))` for 2; `noise_density 10, random_walk 10`
   only for 3; the same `lens …` in all three. The diagnostics at the end repeat them (`SLAM build: …`,

@@ -516,15 +516,24 @@ def test_every_check_reports_json():
         assert set(d) == {"id", "title", "passed", "blocking", "values", "limits", "message", "hints"}
 
 
-def test_m5_blocks_only_without_enough_sightings():
-    """M5's sightings block the map (no table pose without them); its spread and tilt limits only warn."""
+def test_m5_never_blocks():
+    """M5 only warns, even without a single sighting (then there is no table pose and `run` refuses the folder)."""
     few = C.check_m5(_stats(5), _agg([0, 0, 0]), UP, 5, 100)
-    assert not few.ok and few.failed and not few.warned
+    assert not few.ok and few.warned and not few.failed
     none = C.check_m5(_stats(0), None, UP, 0, 100)
-    assert none.failed
+    assert not none.ok and none.warned and not none.failed and "run" in " ".join(none.hints)
     spread = C.check_m5(_stats(30), _agg([0.02, 0, 0]), UP, 30, 100)
     assert not spread.ok and spread.warned and not spread.failed
     tilt = C.check_m5(_stats(30), _agg([0, 0, 0], normal_deg=10.0), UP, 30, 100)
     assert not tilt.ok and tilt.warned
     good = C.check_m5(_stats(30), _agg([0, 0, 0]), UP, 30, 100)
     assert good.ok and not good.warned and not good.failed
+
+
+def test_longest_map_piece():
+    st = [1, 1] + [2] * 16 + [0, 1, 1, 1] + [2] * 38
+    piece, start = C.longest_map_piece(st)
+    assert (piece.first_tracked, piece.last_tracked, piece.tracked, start) == (22, 59, 38, 18)
+    piece, start = C.longest_map_piece([1, 1] + [2] * 30 + [0, 1] + [2] * 20)
+    assert (piece.first_tracked, piece.tracked, start) == (2, 30, 0)          # the first piece: start at 0
+    assert C.longest_map_piece([1, 2, 2, 0, 1, 2]) is None                     # nothing tracked long enough

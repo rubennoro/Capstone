@@ -1,4 +1,10 @@
-"""``umiproc slam-3d RUN_DIR [--points CSV] [--out HTML]``: a 3-D view of one ``umiproc_slam`` run as one HTML file.
+"""``umiproc slam-3d FOLDER [--run mapping|mapping_full] [--root DIR] [--points CSV] [--out HTML]``: a 3-D view of
+one ``umiproc_slam`` run as one HTML file.
+
+``FOLDER`` is a task folder's name (its map's run ``--run``, default ``mapping``) or an existing run folder (e.g.
+``maps_failed/<pi_name>/<UTC>/mapping``; :mod:`umiproc.viz.target`). Written: ``analysis/slam_3d.html`` in the task
+folder (``analysis/slam_3d_<run>.html`` for another run; ``<RUN_DIR>/../analysis/`` for a run folder). The axes are
+metres only as far as the map's scale is right (``map``'s check M4).
 
 Shows, in the trajectory CSV's world W (the camera frame of the saved map's first keyframe), turned so that up is up:
 
@@ -7,15 +13,16 @@ Shows, in the trajectory CSV's world W (the camera frame of the saved map's firs
 * the run's camera path (``trajectory.csv``: every posed frame), coloured by time, broken where nothing was posed;
 * a slider (and a play button) that moves a camera frustum along the path, with the frame, time and state.
 
-The map files are written by the front-end's ``--save_points RUN_DIR/map_points.csv`` (``native/umi_slam``): next
-to the CSV, ``<stem>_keyframes.csv`` and ``<stem>_meta.json`` (``up_W``: gravity up in W once the IMU is initialised).
+The map files are written by the front-end's ``--save_points RUN_DIR/map_points.csv`` (``native/umi_slam``; ``umiproc
+map`` passes it to its mapping runs when the build has it): next to the CSV, ``<stem>_keyframes.csv`` and ``<stem>_meta.json`` (``up_W``: gravity up in W once the IMU is initialised).
 Without ``up_W``, up is the first keyframe's -y (the camera's up). A saved atlas can be exported without re-running
 SLAM: ``umiproc_slam ... --load_map MAP.osa --max_frames 0 --save_points OUT.csv``; its world is then the mapping
 run's (``--points OUT.csv`` with the mapping run folder). With no map files the view shows the path only.
 
 The page loads plotly.js from a CDN (it needs internet once to show); the data are embedded. Points farther than
 ``OUTLIER_FACTOR`` times the 2-98 % spread outside it are left out of the view (the count is printed and shown).
-Default output: ``RUN_DIR/slam_3d.html``. Exit codes: 0 written; 2 the inputs cannot be read.
+Frame times: ``--times``, else the recording's frames CSV (the map's ``raw/``), else estimated from the CSV's
+timestamp column. Exit codes: 0 written; 2 the inputs cannot be read.
 """
 
 from __future__ import annotations
@@ -34,7 +41,7 @@ from umiproc.slam.log import STATE_NAMES, read_log
 from umiproc.slam.trajectory_csv import TrajectoryCsvError, read_fork_csv, read_times
 from umiproc.viz.slam_run import PlotRunError, count_rows, read_t0_ns, times_from_csv_column
 
-__all__ = ["HTML_NAME", "POINTS_NAME", "MapExport", "Slam3dError", "read_map_export", "scene_rotation",
+__all__ = ["HTML_NAME", "POINTS_NAME", "page_name", "MapExport", "Slam3dError", "read_map_export", "scene_rotation",
            "build_payload", "write_html", "add_arguments", "run"]
 
 HTML_NAME = "slam_3d.html"
@@ -319,9 +326,10 @@ def write_html(path: str | Path, payload: dict) -> Path:
     return out
 
 
-def _read_trajectory(csv_path: Path, log_path: Path | None, times_txt: Path | None = None):
-    """The run's trajectory, or None when it fed no frame. Frame times: ``times_txt`` (exact), else estimated from
-    the CSV's timestamp column (:func:`umiproc.viz.slam_run.times_from_csv_column`), frame 0 pinned to t0."""
+def _read_trajectory(csv_path: Path, log_path: Path | None, times_txt=None):
+    """The run's trajectory, or None when it fed no frame. Frame times: ``times_txt`` (exact: a times.txt path or the
+    fed frames' times in ns), else estimated from the CSV's timestamp column
+    (:func:`umiproc.viz.slam_run.times_from_csv_column`)."""
     try:
         summary = read_log(log_path).summary if log_path is not None else None
     except ValueError as e:                  # SlamLogError
@@ -331,20 +339,22 @@ def _read_trajectory(csv_path: Path, log_path: Path | None, times_txt: Path | No
     if n == 0:
         return None
     try:
-        if times_txt is not None:
+        if isinstance(times_txt, (str, Path)):
             times = read_times(times_txt)
+        elif times_txt is not None:
+            times = np.asarray(times_txt, dtype=np.int64)[:n]
         else:
             rate = summary.pacing.recording_rate_hz if summary is not None and summary.pacing is not None else 30.0
             times = times_from_csv_column(csv_path, t0, n, 1e9 / (rate or 30.0))
-            times[0] = t0                    # the estimate is off by a few ms when frame 0 was not posed
         return read_fork_csv(csv_path, times, t0_ns=t0, frames_fed=n)
     except TrajectoryCsvError as e:
         raise Slam3dError(str(e)) from e
 
 
 def make_page(run_dir: str | Path, *, points: str | Path | None = None, out: str | Path | None = None,
-              title: str | None = None, times: str | Path | None = None) -> tuple[Path, list[str]]:
-    """Write the page for ``run_dir``; returns (path, the lines to print)."""
+              title: str | None = None, times=None) -> tuple[Path, list[str]]:
+    """Write the page for ``run_dir``; returns (path, the lines to print). ``times``: a times.txt path or an array of
+    the fed frames' times in ns (default: estimated from the CSV)."""
     run_dir = Path(run_dir)
     csv_path = run_dir / "trajectory.csv"
     if not csv_path.is_file():
@@ -352,7 +362,7 @@ def make_page(run_dir: str | Path, *, points: str | Path | None = None, out: str
     log_path = run_dir / "umiproc_slam.log"
     try:
         traj = _read_trajectory(csv_path, log_path if log_path.is_file() else None,
-                                Path(times) if times is not None else None)
+                                Path(times) if isinstance(times, str) else times)
     except PlotRunError as e:
         raise Slam3dError(str(e)) from e
     pts_path = Path(points) if points is not None else run_dir / POINTS_NAME
@@ -375,19 +385,42 @@ def make_page(run_dir: str | Path, *, points: str | Path | None = None, out: str
     return write_html(Path(out) if out is not None else run_dir / HTML_NAME, payload), lines
 
 
+def page_name(run: str) -> str:
+    return HTML_NAME if run == "mapping" else f"slam_3d_{run}.html"
+
+
 def add_arguments(p) -> None:
-    p.add_argument("run_dir", help="the run folder (trajectory.csv + .t0_ns, umiproc_slam.log, map_points.csv)")
+    p.add_argument("target", metavar="FOLDER", help="a task folder's name (under <root>/tasks/: its map's run), or a "
+                                                    "run folder (trajectory.csv + .t0_ns, umiproc_slam.log, "
+                                                    "map_points.csv)")
+    p.add_argument("--run", choices=("mapping", "mapping_full"), default="mapping",
+                   help="which run of the folder's map (default mapping)")
+    p.add_argument("--root", default=None, metavar="DIR", help="data root (default $UMIPROC_ROOT or ~/data/umi)")
     p.add_argument("--points", help=f"the map export to show (default RUN_DIR/{POINTS_NAME}; its _keyframes.csv and "
                                     "_meta.json next to it)")
-    p.add_argument("--times", help="the run's times.txt (exact frame times; default: estimated from the CSV)")
+    p.add_argument("--times", help="the run's times.txt (exact frame times; default: from the map's raw/ recording, "
+                                   "else estimated from the CSV)")
     p.add_argument("--title", help="the page's title")
-    p.add_argument("--out", help=f"the HTML to write (default RUN_DIR/{HTML_NAME})")
+    p.add_argument("--out", help=f"the HTML to write (default <folder>/analysis/{HTML_NAME})")
 
 
 def run(args) -> int:
+    from umiproc.viz.target import resolve, run_times
+
     try:
-        out, lines = make_page(args.run_dir, points=args.points, out=args.out, title=args.title, times=args.times)
-    except (Slam3dError, PlotRunError, OSError) as e:
+        t = resolve(args.target, args.run, root=args.root)
+        times = args.times
+        if times is None:
+            csv_path = t.run_dir / "trajectory.csv"
+            log_path = t.run_dir / "umiproc_slam.log"
+            summary = read_log(log_path).summary if log_path.is_file() else None
+            n = summary.frames_fed if summary is not None else count_rows(csv_path)
+            times = run_times(t, n, read_t0_ns(csv_path)) if n else None
+        out = Path(args.out).expanduser() if args.out else t.analysis / page_name(t.run)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        title = args.title or (f"{t.folder}: {t.run} run" if t.folder else None)
+        out, lines = make_page(t.run_dir, points=args.points, out=out, title=title, times=times)
+    except (Slam3dError, PlotRunError, OSError, ValueError) as e:
         print(f"umiproc slam-3d: {e}", file=sys.stderr)
         return 2
     print("\n".join(lines))

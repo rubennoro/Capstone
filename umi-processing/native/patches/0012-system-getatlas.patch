@@ -1,0 +1,25 @@
+umiproc patch 0012: read-only System::GetAtlas()
+
+What: a public inline System::GetAtlas() returning the atlas pointer (System keeps owning it), and the macro
+UMIPROC_SYSTEM_GET_ATLAS so a front-end can tell a build that has it. umiproc_slam --save_points reads the biggest
+map's points and keyframes through it after Shutdown().
+Why: System keeps the atlas private (mpAtlas) and the fork has no accessor; the front-end's earlier prototype read
+the private member with the explicit-instantiation access idiom, which this replaces.
+Behaviour change: none (header only; nothing in the library calls it).
+
+diff --git a/include/System.h b/include/System.h
+index 5cc4b95..f92f95e 100644
+--- a/include/System.h
++++ b/include/System.h
+@@ -213,6 +213,11 @@ public:
+     float GetImageScale();
+     bool isLoadingMap();
+ 
++    // umiproc patch 0012: read-only access to the atlas (its maps, keyframes and map points), for umiproc_slam's map
++    // export. Call it after Shutdown(), when no thread changes the atlas any more; the System keeps owning it.
++#define UMIPROC_SYSTEM_GET_ATLAS 1
++    Atlas* GetAtlas() const { return mpAtlas; }
++
+ private:
+ 
+     void SaveAtlas(int type);

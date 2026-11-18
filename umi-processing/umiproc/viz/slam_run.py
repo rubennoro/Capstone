@@ -81,7 +81,9 @@ def times_from_frames_csv(frames_csv: str | Path, t0_ns: int, n: int) -> tuple[n
 def times_from_csv_column(csv_path: str | Path, t0_ns: int, n: int, period_ns: float = DEFAULT_PERIOD_NS
                           ) -> np.ndarray:
     """Frame times estimated from the CSV's timestamp column: exact (1 us) on the rows with ``is_lost`` false and a
-    new timestamp, interpolated by frame index in between, extrapolated at ``period_ns`` outside."""
+    new timestamp, interpolated by frame index in between, extrapolated at ``period_ns`` after the last. Row 0 is
+    ``t0_ns`` exactly (the column's origin is frame 0's time, posed or not), so frames before the first posed row are
+    interpolated from it (:func:`umiproc.slam.read_fork_csv` refuses times whose first is not ``t0_ns``)."""
     idx, ts, prev = [], [], None
     with open(csv_path, newline="") as f:
         reader = csv.reader(f)
@@ -95,9 +97,12 @@ def times_from_csv_column(csv_path: str | Path, t0_ns: int, n: int, period_ns: f
     k = np.arange(n, dtype=np.float64)
     if not idx:
         return (t0_ns + np.rint(k * period_ns)).astype(np.int64)
+    if idx[0] != 0:
+        idx.insert(0, 0)
+        ts.insert(0, 0.0)
     ia, ta = np.asarray(idx, float), np.asarray(ts, float)
+    ta[0] = 0.0                                   # frame 0 is t0 by definition
     t = np.interp(k, ia, ta)
-    t[k < ia[0]] = ta[0] - (ia[0] - k[k < ia[0]]) * period_ns
     t[k > ia[-1]] = ta[-1] + (k[k > ia[-1]] - ia[-1]) * period_ns
     return (t0_ns + np.rint(t)).astype(np.int64)
 

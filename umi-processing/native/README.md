@@ -6,7 +6,7 @@ at `b741dca`, built natively (no Docker) on the laptop and the Jetson. This fold
 | Path | What |
 |---|---|
 | `build.sh` | clones and pins the fork, applies `patches/`, builds everything (laptop and Jetson) |
-| `patches/0001…0011-*.patch` | our fixes to the fork, applied in order (each file starts with what, why and the behaviour change) |
+| `patches/0001…0012-*.patch` | our fixes to the fork, applied in order (each file starts with what, why and the behaviour change) |
 | `umi_slam/umiproc_slam.cc` | the front-end: runs the fork on a umiproc EuRoC folder (the header comment documents it) |
 | `umi_slam/CMakeLists.txt` | builds the front-end against the fork |
 
@@ -15,7 +15,7 @@ reads the trajectory.
 
 ## The patches
 
-All eleven apply with `git apply` to a clean `b741dca`, in order. Each one also applies (or reverse-applies) on its
+All twelve apply with `git apply` to a clean `b741dca`, in order. Each one also applies (or reverse-applies) on its
 own, which is how `build.sh` tells "not yet applied" from "already applied".
 
 | # | File | Fix | Behaviour change |
@@ -31,6 +31,7 @@ own, which is how `build.sh` tells "not yet applied" from "already applied".
 | 0009 | Tracking.cc, Tracking.h | The loaded map's keyframe times were shifted on every relocalization, the run's own keyframes included. That made the CSV's `is_keyframe` stop matching and inflated LocalMapping's `mTinit` (VIBA 2 ran inside a 12 s demo). Now they are shifted only on the first relocalization. | Localization runs that relocalize more than once |
 | 0010 | LocalMapping.cc | When Tracking starts a new map while LocalMapping still has keyframes of the old map queued, the points triangulated from them went into the NEW map (`mpAtlas->GetCurrentMap()`), with observations only in the old one. The new map's first IMU initialisation (`FullInertialBA`) then dereferenced a NULL keyframe vertex: the SIGSEGV of the episode-128 map run. Points now go to their keyframe's map. | Only keyframes processed after a new map was started |
 | 0011 | LocalMapping.cc | `InitializeIMU` (VIBA 1/2, seconds long) ended with `mpTracker->mState = OK` unconditionally. If Tracking had started a new map meanwhile, that forced it to track an empty map with no reference keyframe (`SearchByBoW(NULL)`, SIGSEGV; seen once under gdb on episode 128). Now only if the atlas's current map is still the one being initialised. | Only when a new map is started during an IMU initialisation |
+| 0012 | System.h | Adds a read-only inline `System::GetAtlas()` (and the macro `UMIPROC_SYSTEM_GET_ATLAS`): the atlas pointer, for `umiproc_slam --save_points` after `Shutdown()`. It replaces the front-end's earlier read of the private `mpAtlas` through the explicit-instantiation access idiom. A front-end built against a variant without it refuses `--save_points` (exit 1). | None |
 
 0001 and 0009 are exported with 1 line of context, because 0009 adds lines right after 0001's.
 
@@ -167,10 +168,10 @@ $B/umiproc_build/umiproc_slam -v $B/Vocabulary/ORBvoc.txt -s SEQ2/orbslam3_setti
     -o OUT2/trajectory.csv --load_map OUT/map.osa --mask_img mask.png                                    # localize
 ```
 
-`--save_points OUT/map_points.csv` also writes the saved map's points, keyframes (`map_points_keyframes.csv`) and
-`map_points_meta.json` (gravity up) in the trajectory's world, for `umiproc slam-3d`; with `--load_map` and
-`--max_frames 0` it exports a saved atlas without feeding a frame (the header comment of `umiproc_slam.cc` has the
-format).
+`--save_points OUT/map_points.csv` (needs patch 0012) also writes the saved map's points, keyframes
+(`map_points_keyframes.csv`) and `map_points_meta.json` (gravity up) in the trajectory's world, for `umiproc slam-3d`;
+with `--load_map` and `--max_frames 0` it exports a saved atlas without feeding a frame (the header comment of
+`umiproc_slam.cc` has the format).
 
 The last line of the output is `UMIPROC_SUMMARY {json}` (format `umiproc.slam_summary.v2`). Its `pacing` object
 says whether the machine kept up with the camera: `track_ms` (median, p95, max of the per-frame tracking time),

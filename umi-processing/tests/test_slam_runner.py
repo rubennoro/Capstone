@@ -252,3 +252,36 @@ def test_variant_binary_from_the_environment(monkeypatch, env):
     fake = FakeRunner()
     res = run_umi_slam(env["seq"], env["settings"], env["work"], runner=fake)
     assert res.command[0] == str(variant) and res.command[res.command.index("--vocabulary") + 1] == str(env["voc"])
+
+
+def test_save_points_passed_and_old_export_cleared(env):
+    from umiproc.slam.runner import points_files
+
+    env["work"].mkdir()
+    pts = env["work"] / "map_points.csv"
+    olds = points_files(pts)
+    assert [p.name for p in olds] == ["map_points.csv", "map_points_keyframes.csv", "map_points_meta.json"]
+    for p in olds:
+        p.write_text("old")
+    fake = FakeRunner()
+    _run(env, fake, save_points=pts)
+    cmd = fake.calls[0][0]
+    assert cmd[cmd.index("--save_points") + 1] == str(pts.resolve()) and not any(p.exists() for p in olds)
+    fake = FakeRunner()
+    _run(env, fake)
+    assert "--save_points" not in fake.calls[0][0]
+    with pytest.raises(SlamRunError, match="map points"):
+        _run(env, FakeRunner(), save_points=env["tmp"] / "nowhere" / "p.csv")
+
+
+def test_supports_save_points_asks_the_help_once(env, tmp_path):
+    from umiproc.slam.runner import supports_save_points
+
+    b = env["binary"]
+    count = tmp_path / "count"
+    b.write_text(f'#!/bin/sh\necho x >> {count}\n[ "$1" = --help ] && echo "  --save_points TEXT"\nexit 0\n')
+    assert supports_save_points(b) and supports_save_points(b)
+    assert count.read_text().count("x") == 1                      # cached per binary file
+    b.write_text('#!/bin/sh\necho "  --save_map TEXT"\nexit 99\n')  # an older build (another size: asked again)
+    assert not supports_save_points(b)
+    assert not supports_save_points(tmp_path / "missing")

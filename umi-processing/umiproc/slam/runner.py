@@ -8,8 +8,11 @@ another build, e.g. the patches-0001-0006 variant ``~/ORB_SLAM3_umi/umiproc_buil
 writes to its current directory lands there), stdout and stderr go to one log file in it, and every path on its
 command line is absolute.
 
-Outputs are cleared before the run (trajectory CSV, its ``.t0_ns``, the log, and the ``save_map`` file), so a crash
-cannot leave an older result looking current; after a run that did not exit 0 (including a timeout or a crash) the
+``save_points=`` passes ``--save_points PATH`` (the saved map's points, keyframes and meta JSON for ``umiproc slam-3d``);
+builds older than that option do not know it: :func:`supports_save_points` asks the binary's ``--help`` once.
+
+Outputs are cleared before the run (trajectory CSV, its ``.t0_ns``, the log, the ``save_map`` file and the
+``save_points`` files), so a crash cannot leave an older result looking current; after a run that did not exit 0 (including a timeout or a crash) the
 ``save_map`` file is removed, as umiproc_slam itself does on its own non-zero exits.
 """
 
@@ -53,6 +56,36 @@ def default_binary() -> Path:
 
 def default_vocabulary() -> Path:
     return default_fork_dir() / "Vocabulary" / "ORBvoc.txt"
+
+
+POINTS_SIBLINGS = ("_keyframes.csv", "_meta.json")     # written next to the --save_points CSV
+_SAVE_POINTS_SUPPORT: dict = {}
+
+
+def points_files(save_points: str | Path) -> tuple[Path, ...]:
+    """The ``--save_points`` CSV and the two files the front-end writes next to it."""
+    p = Path(save_points)
+    stem = p.name[:-4] if p.name.endswith(".csv") and len(p.name) > 4 else p.name
+    return (p,) + tuple(p.with_name(stem + s) for s in POINTS_SIBLINGS)
+
+
+def supports_save_points(binary: str | Path, timeout_s: float = 20.0) -> bool:
+    """Whether this umiproc_slam build knows ``--save_points`` (its ``--help`` names it). Asked once per binary file
+    (path, size, mtime); False when the binary cannot be run."""
+    b = Path(binary)
+    try:
+        st = b.stat()
+    except OSError:
+        return False
+    key = (str(b.resolve()), st.st_size, st.st_mtime_ns)
+    if key not in _SAVE_POINTS_SUPPORT:
+        try:
+            r = subprocess.run([str(b), "--help"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               timeout=timeout_s, check=False)
+            _SAVE_POINTS_SUPPORT[key] = b"--save_points" in r.stdout
+        except (OSError, subprocess.SubprocessError):
+            _SAVE_POINTS_SUPPORT[key] = False
+    return _SAVE_POINTS_SUPPORT[key]
 
 
 def subprocess_runner(cmd: Sequence[str], cwd: Path, log_path: Path, timeout_s: float) -> int:
@@ -99,7 +132,7 @@ def build_command(binary: Path, vocabulary: Path, settings: Path, sequence_dir: 
                   load_map: Path | None = None, save_map: Path | None = None, mask_img: Path | None = None,
                   max_lost_frames: int | None = None, init_tag_id: int | None = None,
                   init_tag_size: float | None = None, aruco_dict_id: int | None = None,
-                  realtime: bool = True) -> list[str]:
+                  realtime: bool = True, save_points: Path | None = None) -> list[str]:
     cmd = [str(binary), "--vocabulary", str(vocabulary), "--setting", str(settings), "--sequence", str(sequence_dir),
            "--output_trajectory_csv", str(trajectory_csv)]
     if load_map is not None:
@@ -116,6 +149,8 @@ def build_command(binary: Path, vocabulary: Path, settings: Path, sequence_dir: 
         cmd += ["--init_tag_id", str(int(init_tag_id))]
     if init_tag_size is not None:
         cmd += ["--init_tag_size", repr(float(init_tag_size))]
+    if save_points is not None:
+        cmd += ["--save_points", str(save_points)]
     if not realtime:
         cmd.append("--no_realtime")
     return cmd
@@ -140,8 +175,10 @@ def run_umi_slam(sequence_dir: str | Path, settings: str | Path, work_dir: str |
                  init_tag_id: int | None = None, init_tag_size: float | None = None,
                  aruco_dict_id: int | None = None, realtime: bool = True, trajectory_name: str = TRAJECTORY_NAME,
                  log_name: str = LOG_NAME, binary: str | Path | None = None, vocabulary: str | Path | None = None,
-                 timeout_s: float | None = None, runner: Runner | None = None) -> SlamRunResult:
+                 timeout_s: float | None = None, runner: Runner | None = None,
+                 save_points: str | Path | None = None) -> SlamRunResult:
     """Run umiproc_slam once. Mapping: ``save_map=``, ``init_tag_id=13``; localization: ``load_map=``.
+    ``save_points``: ``--save_points`` (only for builds that have it: :func:`supports_save_points`).
 
     ``timeout_s`` default: 3 s per second of video + 300 s. ``runner`` replaces the subprocess call (tests).
     """
@@ -167,11 +204,15 @@ def run_umi_slam(sequence_dir: str | Path, settings: str | Path, work_dir: str |
     work_dir.mkdir(parents=True, exist_ok=True)
     if save is not None and not save.parent.is_dir():
         raise SlamRunError(f"folder for the map does not exist: {save.parent}")
+    points = Path(save_points).expanduser().resolve() if save_points is not None else None
+    if points is not None and not points.parent.is_dir():
+        raise SlamRunError(f"folder for the map points does not exist: {points.parent}")
 
     trajectory_csv = work_dir / trajectory_name
     t0_path = Path(str(trajectory_csv) + ".t0_ns")
     log_path = work_dir / log_name
-    for p in (trajectory_csv, t0_path, log_path) + ((save,) if save is not None else ()):
+    for p in (trajectory_csv, t0_path, log_path) + ((save,) if save is not None else ()) + \
+            (points_files(points) if points is not None else ()):
         _unlink(p)
 
     if timeout_s is None:
@@ -181,7 +222,8 @@ def run_umi_slam(sequence_dir: str | Path, settings: str | Path, work_dir: str |
 
     cmd = build_command(binary, vocabulary, settings, sequence_dir, trajectory_csv, load_map=load, save_map=save,
                         mask_img=mask, max_lost_frames=max_lost_frames, init_tag_id=init_tag_id,
-                        init_tag_size=init_tag_size, aruco_dict_id=aruco_dict_id, realtime=realtime)
+                        init_tag_size=init_tag_size, aruco_dict_id=aruco_dict_id, realtime=realtime,
+                        save_points=points)
     run = runner or subprocess_runner
     start = time.monotonic()
     timed_out = False

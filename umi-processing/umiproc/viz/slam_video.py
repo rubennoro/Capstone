@@ -1,8 +1,10 @@
-"""``umiproc slam-video RUN_DIR [--recording DIR] [--out MP4] [--speed X]``: a video of one ``umiproc_slam`` run.
+"""``umiproc slam-video FOLDER [--run mapping|relocalize|mapping_full|all] [--root DIR] [--recording DIR] [--speed X]``:
+a video of a map's ``umiproc_slam`` run, and its ``plot-run`` figure.
 
-``RUN_DIR`` is a run folder of a map (``mapping/``, ``relocalize/``, ``mapping_full/`` in ``map/<pi_name>/`` or
-``maps_failed/<pi_name>/<UTC>/``) or any folder with the run's ``trajectory.csv`` (+ ``.t0_ns``) and
-``umiproc_slam.log``. Every fed frame becomes one video frame:
+``FOLDER`` is a task folder's name (its map's run ``--run``, default ``mapping``) or an existing run folder (e.g.
+``maps_failed/<pi_name>/<UTC>/mapping``; :mod:`umiproc.viz.target`). Written: ``analysis/slam_video_<run>.mp4`` and
+``analysis/slam_run_<run>.png`` in the task folder (``<RUN_DIR>/../analysis/`` for a run folder). Every fed frame
+becomes one video frame:
 
 * left: the ultrawide frame fed to SLAM, the gripper mask tinted red (``slam_mask.png`` next to the run folder), in a
   border of the tracking colour (:mod:`umiproc.viz.slam_run`'s: green tracked in the saved map, amber tracked in a
@@ -12,12 +14,9 @@
 * bottom: the whole run's timeline with a cursor; white ticks where SLAM started a new map, and for a
   ``mapping_full/`` run of ``map --first-map`` a magenta tick where the clip was cut.
 
-The recording: ``--recording`` (the Pi recording folder: ``meta.json``, the IMX219's MP4 and its ``<stem>_frames.csv``),
-else the ``source`` in the map's ``report.json`` (the folder in ``/data/incoming`` the map was made from). Written
-with OpenCV's ``mp4v`` codec (VLC and most players; a browser may not play it).
-
-Default output: the map's analysis folder (:mod:`umiproc.analysis`, ``~/data/analysis`` or ``$UMIPROC_ANALYSIS``),
-``<analysis>/mapping/<episode>/<map attempt>/<run>/slam_run.mp4``.
+The recording: ``--recording`` (a recording folder: ``meta.json``, the IMX219's MP4 and its ``<stem>_frames.csv``),
+else the map's ``raw/`` copy, else the ``source`` in the map's ``report.json`` (the folder in ``/data/incoming`` the
+map was made from). Written with OpenCV's ``mp4v`` codec (VLC and most players; a browser may not play it).
 
 Exit codes: 0 written; 2 the inputs cannot be read or do not fit together.
 """
@@ -32,10 +31,19 @@ import numpy as np
 
 from umiproc.viz.slam_run import (CAT_COLORS, CAT_LATER_MAP, CAT_NOT_TRACKING, CAT_SAVED_MAP, PlotRunError, classify,
                                   read_t0_ns, times_from_frames_csv)
+from umiproc.viz.target import RUNS, resolve_runs, ultrawide_video
 
-__all__ = ["VIDEO_NAME", "find_recording", "ultrawide_video", "render", "add_arguments", "run"]
+__all__ = ["video_name", "figure_name", "render", "add_arguments", "run"]
 
-VIDEO_NAME = "slam_run.mp4"
+
+def video_name(run: str) -> str:
+    return f"slam_video_{run}.mp4"
+
+
+def figure_name(run: str) -> str:
+    return f"slam_run_{run}.png"
+
+
 W_IMG, H_IMG, W_MAP, H_TL, H_HDR = 800, 600, 600, 60, 40
 CUT_COLOR = (255, 0, 255)
 
@@ -57,43 +65,14 @@ def _report(run_dir: Path) -> dict:
     return rep if isinstance(rep, dict) else {}
 
 
-def find_recording(run_dir: Path, recording: str | Path | None) -> Path:
-    """``recording``, else the map report's ``source``."""
-    if recording is not None:
-        return Path(recording).expanduser()
-    src = _report(run_dir).get("source")
-    if not src:
-        raise PlotRunError(f"no report.json with a source next to {run_dir}: pass --recording (the Pi recording "
-                           "folder)")
-    if not Path(src).is_dir():
-        raise PlotRunError(f"the map's recording {src} is not there any more: pass --recording")
-    return Path(src)
-
-
-def ultrawide_video(recording: Path) -> tuple[Path, Path]:
-    """``(mp4, frames csv)`` of the IMX219 (the ultrawide) in a Pi recording, from its ``meta.json``."""
-    from umiproc.dp.pi_adapter import PiEpisodeError, _camera_roles
-
-    try:
-        meta = json.loads((recording / "meta.json").read_text())
-        cam = _camera_roles(meta)["ultrawide"]
-    except (OSError, ValueError, KeyError, PiEpisodeError) as e:
-        raise PlotRunError(f"cannot find the ultrawide camera in {recording / 'meta.json'}: {e}") from e
-    video = recording / cam["file"]
-    frames = recording / f"{video.stem}_frames.csv"
-    for p in (video, frames):
-        if not p.is_file():
-            raise PlotRunError(f"{p} is missing")
-    return video, frames
-
-
 def _cut_frame(run_dir: Path) -> int | None:
-    """For ``mapping_full/`` of a ``--first-map`` map: the last fed frame kept."""
+    """For ``mapping_full/`` of a ``--first-map`` / ``--longest-map`` map: the last fed frame kept."""
     from umiproc.map.build import MAPPING_FULL_DIR
 
-    fm = _report(run_dir).get("first_map") or {}
+    rep = _report(run_dir)
+    fm = rep.get("first_map") or rep.get("longest_map") or {}
     if run_dir.name == MAPPING_FULL_DIR and fm.get("applied"):
-        return int(fm["frames"]) - 1
+        return int(fm.get("start_frame") or 0) + int(fm["frames"]) - 1
     return None
 
 
@@ -162,7 +141,7 @@ def render(run_dir: Path, recording: Path, out: Path, *, title: str | None = Non
               "white: a new map starts")
     if cut is not None:
         cv2.line(tl, (int(xk[cut]), 2), (int(xk[cut]), 42), CUT_COLOR, 3)
-        legend += "   magenta: --first-map cut"
+        legend += "   magenta: where the clip was cut (--first-map / --longest-map)"
     cv2.putText(tl, legend, (10, 54), font, 0.42, (200, 200, 200), 1)
 
     bg = np.full((H_IMG, W_MAP, 3), 20, np.uint8)     # the whole saved-map path in grey
@@ -213,7 +192,7 @@ def render(run_dir: Path, recording: Path, out: Path, *, title: str | None = Non
                 if traj.is_keyframe[k] and ok[k]:
                     cv2.putText(img, "KEYFRAME", (W_IMG - 150, 40), font, 0.8, (255, 255, 0), 2)
                 if cut is not None and k > cut:
-                    cv2.putText(img, "after the --first-map cut", (20, H_IMG - 20), font, 0.7, CUT_COLOR, 2)
+                    cv2.putText(img, "after the cut (--first-map / --longest-map)", (20, H_IMG - 20), font, 0.7, CUT_COLOR, 2)
 
                 if ok[k]:
                     p = to_px(k)
@@ -244,47 +223,67 @@ def render(run_dir: Path, recording: Path, out: Path, *, title: str | None = Non
             "not_tracking": int((cat == CAT_NOT_TRACKING).sum()), "new_maps": int(new_map.sum()), "cut": cut}
 
 
-def default_out(run_dir: Path) -> Path:
-    """Next to the map's analysis copy (:func:`umiproc.analysis.map_analysis_dir`) when the run belongs to a map,
-    else ``RUN_DIR/slam_run.mp4``."""
-    from umiproc.analysis import map_analysis_dir
-
-    rep = _report(run_dir)
-    if not rep.get("source"):
-        return run_dir / VIDEO_NAME
-    return map_analysis_dir(rep) / run_dir.name / VIDEO_NAME
-
-
 def add_arguments(p) -> None:
-    p.add_argument("run_dir", metavar="RUN_DIR", help="a SLAM run folder: mapping/, relocalize/ or mapping_full/ of a "
-                                                      "map (trajectory.csv + umiproc_slam.log)")
-    p.add_argument("--recording", metavar="DIR", help="the Pi recording folder the run was made from (default: the "
-                                                      "map report's source)")
-    p.add_argument("--out", help=f"the MP4 to write (default: <analysis>/mapping/<episode>/<map attempt>/<run>/"
-                                 f"{VIDEO_NAME}, the analysis folder being ~/data/analysis or $UMIPROC_ANALYSIS; "
-                                 f"RUN_DIR/{VIDEO_NAME} for a run outside a map)")
+    p.add_argument("target", metavar="FOLDER", help="a task folder's name (under <root>/tasks/: its map's runs), or a "
+                                                    "run folder (e.g. maps_failed/<pi_name>/<UTC>/mapping)")
+    p.add_argument("--run", choices=RUNS + ("all",), default="mapping",
+                   help="which run of the folder's map (default mapping; all: every run there)")
+    p.add_argument("--root", default=None, metavar="DIR", help="data root (default $UMIPROC_ROOT or ~/data/umi)")
+    p.add_argument("--recording", metavar="DIR", help="the recording folder the run was made from (default: the map's "
+                                                      "raw/, else the report's source)")
     p.add_argument("--title", help="the title line (default: the run folder)")
     p.add_argument("--speed", type=float, default=1.0, help="playback speed (default 1.0: real time at 30 fps)")
 
 
+def _figure(run_dir: Path, out: Path, times, title: str) -> Path | str:
+    """plot-run's figure of the run; a reason string when it cannot be drawn."""
+    from types import SimpleNamespace
+
+    try:
+        import matplotlib  # noqa: F401
+    except ModuleNotFoundError:
+        return "matplotlib is missing: pip install -e umi-processing"
+    from umiproc.viz.slam_run import make_figure
+
+    args = SimpleNamespace(csv=str(run_dir / "trajectory.csv"), log=str(run_dir / "umiproc_slam.log"), video=None,
+                           frames=None, title=title, out=str(out))
+    try:
+        return make_figure(args, times=times)[0]
+    except (PlotRunError, OSError, ValueError) as e:
+        return str(e)
+
+
 def run(args) -> int:
-    run_dir = Path(args.run_dir).expanduser()
-    if not run_dir.is_dir():
-        print(f"umiproc slam-video: {run_dir} is not a folder", file=sys.stderr)
-        return 2
+    from umiproc.viz.target import find_recording, run_times
+
     if not args.speed > 0:
         print("umiproc slam-video: --speed must be > 0", file=sys.stderr)
         return 2
-    out = Path(args.out).expanduser() if args.out else default_out(run_dir)
     try:
-        recording = find_recording(run_dir, args.recording)
-        print(f"slam-video: {run_dir} with the ultrawide video of {recording} ...", flush=True)
-        st = render(run_dir, recording, out, title=args.title, speed=args.speed, mask=run_dir.parent / "slam_mask.png")
-    except (PlotRunError, OSError) as e:
+        targets = resolve_runs(args.target, args.run, root=args.root)
+    except PlotRunError as e:
         print(f"umiproc slam-video: {e}", file=sys.stderr)
         return 2
-    print(f"slam-video: {st['frames']} frames at {st['fps']:g} fps: tracked in the saved map {st['saved_map']}, in a "
-          f"later map {st['later_map']}, not tracking {st['not_tracking']}; new maps started {st['new_maps']}"
-          + (f"; --first-map cut after fed frame {st['cut']}" if st["cut"] is not None else ""))
-    print(f"wrote {out}")
-    return 0
+    rc = 0
+    for t in targets:
+        out = t.analysis / video_name(t.run)
+        title = args.title or (f"{t.folder}: {t.run} run" if t.folder else f"{t.map_dir.name}/{t.run}")
+        try:
+            recording = find_recording(t, args.recording)
+            print(f"slam-video: {t.run_dir} with the ultrawide video of {recording} ...", flush=True)
+            st = render(t.run_dir, recording, out, title=title, speed=args.speed, mask=t.map_dir / "slam_mask.png")
+        except (PlotRunError, OSError) as e:
+            print(f"umiproc slam-video: {t.run_dir}: {e}", file=sys.stderr)
+            rc = 2
+            continue
+        print(f"slam-video: {st['frames']} frames at {st['fps']:g} fps: tracked in the saved map {st['saved_map']}, "
+              f"in a later map {st['later_map']}, not tracking {st['not_tracking']}; new maps started {st['new_maps']}"
+              + (f"; cut after fed frame {st['cut']}" if st["cut"] is not None else ""))
+        print(f"wrote {out}")
+        times = run_times(t, st["frames"], read_t0_ns(t.run_dir / "trajectory.csv"), args.recording)
+        fig = _figure(t.run_dir, t.analysis / figure_name(t.run), times, title)
+        if isinstance(fig, Path):
+            print(f"wrote {fig}")
+        else:
+            print(f"slam-video: no {figure_name(t.run)} ({fig})")
+    return rc

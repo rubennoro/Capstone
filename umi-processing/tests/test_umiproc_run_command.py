@@ -487,6 +487,56 @@ def test_an_out_of_date_map_is_refused_and_nothing_changes(env):
     assert not (env["root"].tasks / env["folder"] / ".staging").exists()
 
 
+def test_a_map_without_a_table_tag_pose_is_refused_up_front(env):
+    """M5 only warns: a map that never saw the tag is attached without tx_slam_tag.json; run refuses it at once."""
+    slot = next((env["root"].tasks / env["folder"] / "map").iterdir())
+    (slot / "tx_slam_tag.json").unlink()
+    before = _digest(env)
+    for dry in (False, True):
+        with pytest.raises(RC.RunInputError, match="no table-tag pose") as e:
+            _run(env, dry_run=dry)
+        assert e.value.code == "map" and "tag 13" in str(e.value)
+    assert _digest(env) == before
+
+
+@pytest.mark.parametrize("first_map", [True, False])
+def test_run_on_a_folder_whose_map_was_cut(tmp_path, monkeypatch, first_map):
+    """A cut map (the clip cut to one map piece, mapping_full/ kept; --first-map, or by default the longest piece,
+    which here starts mid-clip) is used by run like any other: atlas, tag pose, fingerprint and report.passed."""
+    from umiproc.dp.paths import DataRoot
+    from umiproc_testlib import fake_slam_build, pi_demo_recording, session_folder
+
+    two = [{"id": 0, "keyframes": 8, "map_points": 200, "imu_initialized": True, "inertial_ba1": True,
+            "inertial_ba2": True},
+           {"id": 1, "keyframes": 4, "map_points": 90, "imu_initialized": False, "inertial_ba1": False,
+            "inertial_ba2": False}]
+    holder = {}
+
+    def state(k, n, mapping):                   # whole clip: a first piece on frames 2-21, a longer one from 27
+        if len(holder["f"].calls) > 1:
+            return 1 if k < 2 else 2
+        return 1 if k < 2 else 2 if k < 22 else 3 if k < 24 else 0 if k == 24 else 1 if k < 27 else 2
+
+    holder["f"] = FakeSlam(state=state, maps=lambda mapping: two if len(holder["f"].calls) == 1 else two[:1])
+    src = tmp_path / "src"
+    src.mkdir()
+    fake_slam_build(tmp_path / "fork", monkeypatch)
+    root = DataRoot(tmp_path / "root")
+    folder = session_folder(root, src, monkeypatch, n_frames=60, runner=holder["f"], first_map=first_map)
+    slot = next((root.tasks / folder / "map").iterdir())
+    rep = json.loads((slot / "report.json").read_text())
+    cut = rep["first_map" if first_map else "longest_map"]
+    assert rep["passed"] and cut["applied"] and (slot / "mapping_full" / "trajectory.csv").is_file()
+    assert cut["start_frame"] == (0 if first_map else 24) and len(holder["f"].calls) == 3
+    pi_demo_recording(src, 1)
+    fake_finger_tags(monkeypatch)
+    env = {"root": root, "folder": folder, "src": src}
+    res, slam = _run(env)
+    assert res.exit_code == RC.EXIT_WAITING and res.map.pi_name == slot.name
+    assert _opt(slam.calls[0], "--load_map").endswith(f"{slot.name}/map_atlas.osa")
+    assert np.allclose(res.map.tx_slam_tag, tx_slam_tag_example())
+
+
 def _digest(env):
     d = tree_digest(env["root"].path)
     return {k: v for k, v in d.items() if not k.startswith(".run.lock")}
