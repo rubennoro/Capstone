@@ -21,6 +21,8 @@ COMMANDS = [
     ("status", "umiproc.status", "show the data root (rig files, SLAM program, recordings, task folders) or one "
                                  "task folder (map, gripper calibration, episodes, waiting, failed)"),
     ("plot-run", "umiproc.viz.slam_run", "plot one SLAM run (trajectory CSV + log): tracking timeline, path, frames"),
+    ("slam-video", "umiproc.viz.slam_video", "a video of one SLAM run: the fed frames with their tracking state, the "
+                                             "path from above, the timeline"),
 ]
 
 

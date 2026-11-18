@@ -462,6 +462,29 @@ record a new mapping clip following the hints (the tag is still in place), then 
 the map passed but intake refused the recording (exit 2, "intake did not take"), the map, its report and the logs
 are kept in `maps_failed/` too.
 
+**When M1 fails with several maps: `--first-map`.** SLAM lost tracking partway and started a new map. M1's last hint
+says how long the first map piece tracked (e.g. `1.37-31.69 s`). To keep only that part:
+
+```bash
+umiproc map block_raise episode_000130 --first-map
+```
+
+It maps the whole clip; if that ends with more than one map, it cuts the clip after the first map piece's last
+tracked frame (found from the run, not a fixed time) and runs the mapping, the re-localization and every check again
+on the cut clip. The cut is printed (`--first-map: ... checked only the clip up to ...`) and kept in `report.json`
+(`first_map`); the whole clip's run is kept in `mapping_full/`. It takes about 5 times the clip's length. The demos
+must then stay in the part of the workspace the cut clip saw.
+
+**Looking at a run.** Every run folder (`mapping/`, `relocalize/`, `mapping_full/`) gets `slam_run.png` (the tracking
+timeline, the path, the numbers). For a video of a run (each fed frame with its tracking state, the path from above,
+the timeline; ~1 minute per minute of clip on the laptop):
+
+```bash
+umiproc slam-video ~/data/umi/maps_failed/<pi_name>/<UTC time>/mapping     # writes mapping/slam_run.mp4
+```
+
+It finds the recording from the map's `report.json` (pass `--recording DIR` if it moved). Play it with VLC.
+
 ### 3.3 Record 2–3 test demos
 
 With the table tag removed, record **2–3 real demos of the task**, exactly as you will record the rest: same start,

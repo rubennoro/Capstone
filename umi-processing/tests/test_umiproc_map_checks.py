@@ -105,6 +105,29 @@ def test_init_resets_on_the_real_clip_128():
     assert (e["source"], e["early"], e["suspect"]) == ("mapping log", 12, True)
 
 
+def test_map_pieces_split_where_slam_starts_a_new_map():
+    # 0-1 initialising, piece 2-7 (OK, RECENTLY_LOST, OK, ... lost), new map at 8, piece 10-12, then not tracking
+    states = [1, 1, 2, 2, 3, 2, 3, 4, 0, 1, 2, 2, 5]
+    pieces = C.map_pieces(states)
+    assert [(p.start, p.end, p.first_tracked, p.last_tracked, p.tracked) for p in pieces] == \
+        [(2, 7, 2, 5, 3), (10, 12, 10, 11, 2)]
+    assert C.first_map_piece(states, min_tracked=3) == pieces[0]
+    assert C.first_map_piece(states, min_tracked=4) is None
+    assert C.map_pieces([1, 1, 0]) == [] and C.first_map_piece([]) is None
+    t_s = np.arange(len(states)) / 10.0
+    assert pieces[1].to_json(t_s) == {"start": 10, "end": 12, "first_tracked": 10, "last_tracked": 11, "tracked": 2,
+                                      "first_tracked_s": 1.0, "last_tracked_s": 1.1}
+    assert "first_tracked_s" not in C.MapPiece(3, 4, -1, -1, 0).to_json(t_s)
+
+
+def test_first_map_piece_skips_maps_dropped_right_after_initialising():
+    _lg, states = _clip128()                              # dropped maps tracked 5, 7, 8, then 196 frames
+    p = C.first_map_piece(states)
+    assert C.FIRST_MAP_MIN_TRACKED == C.EARLY_RESET_MAX_FRAMES + 1
+    assert p.tracked == 196 and p == C.map_pieces(states)[3]
+    assert states[p.last_tracked] == 2 and all(s != 2 for s in states[p.last_tracked + 1:p.end + 1])
+
+
 def test_m1_m2_hints_point_at_the_camera_model_after_many_early_resets():
     lg, states = _clip128()
     e = C.init_resets(lg, states)

@@ -55,12 +55,15 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from umiproc.slam.log import STATE_OK
+
 __all__ = ["BLOCKING", "CheckResult", "M3_MAX_RELOCALIZE_S", "M3_MIN_TRACKED_FRACTION", "M4_MAX_SPEED_MPS", "M4_WINDOW_S",
            "M4_MAX_WINDOW_DEG", "M4_MIN_WINDOWS", "M5_MIN_SIGHTINGS", "M5_MAX_SPREAD_M", "M5_MAX_NORMAL_DEG",
            "RELOCALIZE_MAX_LOST_FRAMES", "PACING_MIN_FRACTION", "EARLY_RESET_MAX_FRAMES", "EARLY_RESETS_MIN", "LIMITS",
            "check_m1", "check_m2", "check_m3", "check_m4", "check_m5", "not_evaluated", "max_speed",
            "lost_stretches", "the_map", "pacing_warnings", "imu_trajectory", "up_direction",
-           "orientation_consistency", "init_resets", "tracked_frames_before_restart"]
+           "orientation_consistency", "init_resets", "tracked_frames_before_restart", "FIRST_MAP_MIN_TRACKED",
+           "MapPiece", "map_pieces", "first_map_piece"]
 
 M3_MAX_RELOCALIZE_S = 0.5
 M3_MIN_TRACKED_FRACTION = 0.95
@@ -208,6 +211,54 @@ def tracked_frames_before_restart(states) -> list[int]:
         else:
             cur = (0 if cur is None else cur) + int(v == 2)
     return out
+
+
+#: ``map --first-map``: a piece needs more visually tracked frames than a map dropped right after initialising
+FIRST_MAP_MIN_TRACKED = EARLY_RESET_MAX_FRAMES + 1
+
+
+@dataclass(frozen=True)
+class MapPiece:
+    """One stretch of fed frames with a map (state > NOT_INITIALIZED), between two map (re)starts."""
+
+    start: int              # first fed frame of the stretch
+    end: int                # last fed frame of the stretch
+    first_tracked: int      # first / last fed frame with state OK (-1: none)
+    last_tracked: int
+    tracked: int            # frames with state OK
+
+    def to_json(self, t_s=None) -> dict:
+        out = {"start": self.start, "end": self.end, "first_tracked": self.first_tracked,
+               "last_tracked": self.last_tracked, "tracked": self.tracked}
+        if t_s is not None and self.tracked:
+            out.update(first_tracked_s=round(float(t_s[self.first_tracked]), 3),
+                       last_tracked_s=round(float(t_s[self.last_tracked]), 3))
+        return out
+
+
+def map_pieces(states) -> list[MapPiece]:
+    """The mapping run's stretches of frames with a map, in order (the same split as
+    :func:`tracked_frames_before_restart`, the last stretch included): a new stretch starts when the state falls back
+    to NOT_INITIALIZED / NO_IMAGES_YET / SYSTEM_NOT_READY, i.e. SLAM dropped its map and started a new one."""
+    st = np.asarray(states, dtype=np.int64)
+    out: list[MapPiece] = []
+    start = None
+    for k in range(len(st) + 1):
+        inside = k < len(st) and st[k] > 1
+        if inside and start is None:
+            start = k
+        elif not inside and start is not None:
+            ok = np.flatnonzero(st[start:k] == STATE_OK) + start
+            out.append(MapPiece(start, k - 1, int(ok[0]) if len(ok) else -1, int(ok[-1]) if len(ok) else -1,
+                                int(len(ok))))
+            start = None
+    return out
+
+
+def first_map_piece(states, min_tracked: int = FIRST_MAP_MIN_TRACKED) -> MapPiece | None:
+    """The first piece that tracked at least ``min_tracked`` frames (maps dropped right after initialising are
+    skipped), or None."""
+    return next((p for p in map_pieces(states) if p.tracked >= min_tracked), None)
 
 
 def init_resets(log, states=None) -> dict:

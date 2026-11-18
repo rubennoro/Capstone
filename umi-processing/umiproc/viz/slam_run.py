@@ -349,14 +349,20 @@ def add_arguments(p) -> None:
     p.add_argument("--out", default="slam_run.png", help="the PNG to write (default ./slam_run.png)")
 
 
-def make_figure(args) -> tuple[Path, list[str]]:
+def make_figure(args, times: np.ndarray | None = None) -> tuple[Path, list[str]]:
+    """Draw ``args.out``. ``times``: the fed frames' exact times in ns (``umiproc map`` has them from times.txt);
+    without, from the video's frames CSV or the trajectory CSV's own column (module docstring)."""
     summary = read_log(args.log).summary if args.log else None
     t0 = read_t0_ns(args.csv)
     n = summary.frames_fed if summary is not None else count_rows(args.csv)
     if bool(args.video) != bool(args.frames):
         raise PlotRunError("--video and --frames go together")
     i0 = None
-    if args.video:
+    if times is not None and args.video:
+        raise PlotRunError("pass either times or --video")
+    if times is not None:
+        times = np.asarray(times, dtype=np.int64)[:n]
+    elif args.video:
         video = Path(args.video)
         times, i0 = times_from_frames_csv(video.with_name(f"{video.stem}_frames.csv"), t0, n)
     else:

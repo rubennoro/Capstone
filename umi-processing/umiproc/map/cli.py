@@ -1,4 +1,4 @@
-"""``umiproc map TASK MAP_DIR [--source /data/incoming] [--root DIR] [--rig rig_pi_v3]``: build and check the
+"""``umiproc map TASK MAP_DIR [--source /data/incoming] [--root DIR] [--rig rig_pi_v3] [--first-map]``: build and check the
 session map from a mapping recording; creates the task folder unless a blocking check (M1, M5's sightings) failed;
 the other checks only warn (DIRECTIONS.md §3, :mod:`umiproc.map.build`). Progress on stdout, the result block on
 stdout (pass) or stderr (fail).
@@ -14,8 +14,8 @@ import sys
 import traceback
 from pathlib import Path
 
-from umiproc.map.build import (EXIT_FAILED, EXIT_INPUT, MAPPING_DIR, RELOCALIZE_DIR, REPORT_NAME, MapInputError,
-                               MapOutcome, build_map)
+from umiproc.map.build import (EXIT_FAILED, EXIT_INPUT, MAPPING_DIR, RELOCALIZE_DIR, REPORT_NAME, RUN_PNG_NAME,
+                               MapInputError, MapOutcome, build_map)
 
 __all__ = ["add_arguments", "run", "format_outcome"]
 
@@ -31,6 +31,9 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
                    help="where the Pi delivers recordings (default /data/incoming; only read)")
     p.add_argument("--root", default=None, metavar="DIR", help="data root (default $UMIPROC_ROOT or ~/data/umi)")
     p.add_argument("--rig", default=DEFAULT_RIG, help=f"rig id (default {DEFAULT_RIG})")
+    p.add_argument("--first-map", action="store_true",
+                   help="when the whole clip gives more than one map, cut the clip where the first map piece stopped "
+                        "tracking and map and check only that part (the whole clip's run is kept in mapping_full/)")
 
 
 def _fmt_pacing(name: str, p: dict | None) -> str:
@@ -67,6 +70,16 @@ def _diagnostic_lines(rep: dict) -> list[str]:
     return out
 
 
+def _first_map_line(fm: dict) -> str:
+    if not fm.get("applied"):
+        return f"--first-map: not cut ({fm.get('reason')})"
+    p = fm["piece"]
+    return (f"--first-map: the whole clip gave {fm['maps_with_keyframes']} maps with keyframes; checked only the clip "
+            f"up to the first map piece's end: {fm['frames']} of {fm['frames_full']} frames, 0-{fm['end_s']:.2f} s "
+            f"(the piece tracked {p['first_tracked_s']:.2f}-{p['last_tracked_s']:.2f} s; whole-clip run in "
+            f"{fm['full_run']['log'].split('/')[0]}/)")
+
+
 def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
     rep = o.report or {}
     lines = []
@@ -90,6 +103,9 @@ def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
         if not c.ok and c.hints:
             lines.append("       what to change:" if c.failed else "       to improve it (a warning, it does not block):")
             lines += [f"         - {h}" for h in c.hints]
+    fm = rep.get("first_map")
+    if fm:
+        lines.append("  " + _first_map_line(fm))
     if rep.get("diagnostics"):
         lines.append("  diagnostics (reported, not checked):")
         lines += [f"    {x}" for x in _diagnostic_lines(rep)]
@@ -98,6 +114,9 @@ def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
         logs = [str(p) for p in (o.where / MAPPING_DIR / "umiproc_slam.log", o.where / RELOCALIZE_DIR /
                                  "umiproc_slam.log") if p.is_file()]
         lines.append(f"  report: {o.where / REPORT_NAME}" + (f"; SLAM logs: {', '.join(logs)}" if logs else ""))
+        pngs = [str(p) for p in sorted(o.where.glob(f"*/{RUN_PNG_NAME}"))]
+        if pngs:
+            lines.append(f"  figures: {', '.join(pngs)}; a video of a run: umiproc slam-video <run folder>")
     if o.passed:
         lines += ["", "Next: remove the table tag, record 2-3 test demos of the task, then run them against the map "
                   "(DIRECTIONS.md section 3.3-3.5):", f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>"]
@@ -122,7 +141,8 @@ def run(args) -> int:
 
     log(f"map: data root {root} (from {_root_source(args.root)})")
     try:
-        o = build_map(root, args.task, args.map_dir, source=Path(args.source), rig_id=args.rig, log=log)
+        o = build_map(root, args.task, args.map_dir, source=Path(args.source), rig_id=args.rig, log=log,
+                      first_map=args.first_map)
     except MapInputError as e:
         print(f"umiproc map: {e}", file=sys.stderr)
         print("  nothing was created and the recording was not taken", file=sys.stderr)

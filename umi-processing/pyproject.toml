@@ -20,11 +20,12 @@ dependencies = [
     "numcodecs==0.13.1",
     "transforms3d==0.4.2",
     "numba==0.68.1",
+    "matplotlib==3.9.2",           # map's slam_run.png figures, plot-run
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
-plot = ["matplotlib==3.9.2"]
+plot = ["matplotlib==3.9.2"]  # kept so `pip install -e umi-processing[plot]` still works
 
 [project.scripts]
 umiproc = "umiproc.cli:main"

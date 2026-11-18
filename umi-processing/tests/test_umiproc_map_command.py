@@ -365,3 +365,126 @@ def test_status_on_an_interrupted_pass(env, monkeypatch):
     with pytest.raises(B.MapInputError, match="already taken"):
         _map(env)
     assert (work / B.REPORT_NAME).is_file()                 # refused before the work folder is touched
+
+
+# --------------------------------------------------------------------------------------------- --first-map
+
+TWO_MAPS = [{"id": 0, "keyframes": 8, "map_points": 200, "imu_initialized": True, "inertial_ba1": True,
+             "inertial_ba2": True},
+            {"id": 1, "keyframes": 4, "map_points": 90, "imu_initialized": False, "inertial_ba1": False,
+             "inertial_ba2": False}]
+ONE_MAP = [TWO_MAPS[0]]
+
+
+def _full_states(k):
+    """The whole clip: initialising, the first piece tracked on fed frames 2-21, lost, a new map from frame 24."""
+    if k < 2:
+        return 1
+    if k < 22:
+        return 2
+    if k < 24:
+        return 3
+    return 0 if k == 24 else (1 if k < 27 else 2)
+
+
+def _two_piece_fake(cut_maps=ONE_MAP):
+    """A fake whose first (whole-clip) mapping run ends with two maps; later runs track from frame 2 on."""
+    holder = {}
+
+    def state(k, n, mapping):
+        return _full_states(k) if len(holder["f"].calls) == 1 else (1 if k < 2 else 2)
+
+    def maps(mapping):
+        return TWO_MAPS if len(holder["f"].calls) == 1 else cut_maps
+
+    holder["f"] = FakeSlam(state=state, maps=maps)
+    return holder["f"]
+
+
+@pytest.fixture
+def env40(env):
+    pi_map_recording(env["src"], 2, n_frames=40)
+    return env
+
+
+def _times(cmd):
+    seq = Path(cmd[cmd.index("--sequence") + 1])
+    return seq, [int(x) for x in (seq / "times.txt").read_text().split()]
+
+
+def test_first_map_cuts_the_clip_after_the_first_piece_and_maps_it_again(env40, monkeypatch):
+    _pass_m4_m5(monkeypatch)
+    seen = []
+    fake = _two_piece_fake()
+
+    def spy(cmd, cwd, log_path, timeout_s):              # the sequences, read while they still exist
+        seen.append(_times(cmd))
+        return fake(cmd, cwd, log_path, timeout_s)
+
+    o, _ = _map(env40, name="episode_000002", runner=spy, first_map=True)
+    assert len(fake.calls) == 3                           # whole clip, cut clip, re-localization of the cut clip
+    (seq_full, t_full), (seq_cut, t_cut), (seq_rel, t_rel) = seen
+    assert seq_full.name == "euroc" and seq_cut.name == seq_rel.name == "euroc_first_map"
+    assert len(t_full) >= 30 and t_cut == t_rel == t_full[:22]          # fed frames 0-21: the piece's last tracked
+    assert "--save_map" in fake.calls[1] and "--load_map" in fake.calls[2]
+    assert o.passed and o.checks[0].ok
+    fm = o.report["first_map"]
+    assert (fm["applied"], fm["frames"], fm["frames_full"], fm["maps_with_keyframes"]) == (True, 22, len(t_full), 2)
+    assert (fm["piece"]["first_tracked"], fm["piece"]["last_tracked"], fm["piece"]["tracked"]) == (2, 21, 20)
+    assert fm["end_s"] == pytest.approx((t_full[21] - t_full[0]) / 1e9, abs=1e-3)
+    assert [(p["start"], p["last_tracked"]) for p in fm["pieces"]] == [(2, 21), (27, len(t_full) - 1)]
+    assert fm["full_run"]["log"] == f"{B.MAPPING_FULL_DIR}/umiproc_slam.log"
+    assert o.report["runs"]["mapping_full"]["maps"] == TWO_MAPS and o.report["runs"]["mapping"]["maps"] == ONE_MAP
+    assert o.report["runs"]["mapping"]["frames_fed"] == 22 and o.report["diagnostics"]["frames"] == 22
+    d = o.where
+    assert (d / B.MAPPING_FULL_DIR / "trajectory.csv").is_file() and (d / B.ATLAS_NAME).is_file()
+    assert sorted(p.parent.name for p in d.glob(f"*/{B.RUN_PNG_NAME}")) == sorted(
+        [B.MAPPING_DIR, B.MAPPING_FULL_DIR, B.RELOCALIZE_DIR])
+    assert not (env40["root"].path / B.WORK_DIR).exists()
+    text = format_outcome_text(o)
+    assert "--first-map: the whole clip gave 2 maps" in text and "22 of" in text and "figures:" in text
+
+
+def format_outcome_text(o):
+    from umiproc.map.cli import format_outcome
+
+    return format_outcome(o, "block_raise", "episode_000002")
+
+
+def test_first_map_cut_that_still_gives_two_maps_fails_and_keeps_both_runs(env40):
+    fake = _two_piece_fake(cut_maps=TWO_MAPS)
+    o, _ = _map(env40, name="episode_000002", runner=fake, first_map=True)
+    assert o.exit_code == B.EXIT_FAILED and not o.checks[0].ok and o.report["first_map"]["applied"]
+    assert (o.where / B.MAPPING_FULL_DIR / "umiproc_slam.log").is_file()
+    assert not any("--first-map" in h for h in o.checks[0].hints)    # no advice to do what was done
+    _nothing_taken(env40["root"])
+
+
+def test_without_the_flag_m1_names_the_first_piece(env40):
+    fake = FakeSlam(state=lambda k, n, mapping: _full_states(k) if mapping else 2, maps=lambda mapping: TWO_MAPS)
+    o, _ = _map(env40, name="episode_000002", runner=fake)
+    assert len(fake.calls) == 2 and o.exit_code == B.EXIT_FAILED
+    hint = o.checks[0].hints[-1]
+    assert "first map piece tracked" in hint and "fed frames 2-21" in hint and "--first-map" in hint
+    assert o.report["first_map"] is None and not (o.where / B.MAPPING_FULL_DIR).exists()
+
+
+def test_first_map_with_one_map_cuts_nothing(env40, monkeypatch):
+    _pass_m4_m5(monkeypatch)
+    o, fake = _map(env40, name="episode_000002", first_map=True)
+    assert len(fake.calls) == 2 and o.passed
+    assert o.report["first_map"] == {"applied": False, "reason": "the whole clip gave one map (or none): nothing to cut"}
+    assert not (o.where / B.MAPPING_FULL_DIR).exists()
+
+
+def test_cli_passes_first_map(env40, monkeypatch, capsys):
+    seen = {}
+
+    def fake_build(root, task, map_dir, **kw):
+        seen.update(kw)
+        raise B.MapInputError("stop here")
+
+    monkeypatch.setattr("umiproc.map.cli.build_map", fake_build)
+    assert umicli.main(["map", "block_raise", "episode_000002", "--source", str(env40["src"]), "--root",
+                        str(env40["root"].path), "--first-map"]) == B.EXIT_INPUT
+    assert seen["first_map"] is True

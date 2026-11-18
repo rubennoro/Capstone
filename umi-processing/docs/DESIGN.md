@@ -240,6 +240,15 @@ Since 2026-11-17 (branch `rnoro/data-work-auto`, the user's decision): only **M1
 `lens-calibrate` has no pass/fail: checks (a)–(h) all warn, any fit is written and `--apply` installs it
 (`metrics.checks_outside_limits` in the lens file); only no fit at all fails.
 
+Since 2026-11-18 (the user's decision): **`map --first-map`**. When the whole clip's mapping run ends with more than one
+map with keyframes, the clip is cut after the first map piece's last tracked frame (pieces from the run's per-frame
+states, `checks.map_pieces`; the first piece tracking ≥ 16 frames, so maps dropped right after initialising are
+skipped) and the mapping run, re-localization and M1–M5 run again on the cut clip (times.txt shortened, same frames).
+The whole clip's run stays in `mapping_full/`; the cut is in `report.json` (`first_map`), not in the SLAM fingerprint
+(the fingerprint is the SLAM inputs a demo shares with its map). The cut is found automatically, never a given time.
+Without the flag, a multi-map M1 names the first piece and suggests the flag. Every run folder gets `slam_run.png`
+(plot-run's figure, so matplotlib is a dependency now); `umiproc slam-video RUN_DIR` renders a run as an MP4 on demand.
+
 | # | Check |
 |---|---|
 | M1 | the mapping run ends with exactly one map that has keyframes |
