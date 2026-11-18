@@ -167,6 +167,11 @@ $B/umiproc_build/umiproc_slam -v $B/Vocabulary/ORBvoc.txt -s SEQ2/orbslam3_setti
     -o OUT2/trajectory.csv --load_map OUT/map.osa --mask_img mask.png                                    # localize
 ```
 
+`--save_points OUT/map_points.csv` also writes the saved map's points, keyframes (`map_points_keyframes.csv`) and
+`map_points_meta.json` (gravity up) in the trajectory's world, for `umiproc slam-3d`; with `--load_map` and
+`--max_frames 0` it exports a saved atlas without feeding a frame (the header comment of `umiproc_slam.cc` has the
+format).
+
 The last line of the output is `UMIPROC_SUMMARY {json}` (format `umiproc.slam_summary.v2`). Its `pacing` object
 says whether the machine kept up with the camera: `track_ms` (median, p95, max of the per-frame tracking time),
 `frames_over_period` (frames whose tracking took longer than their frame period), `feed_rate_hz` against

@@ -23,6 +23,8 @@ COMMANDS = [
     ("plot-run", "umiproc.viz.slam_run", "plot one SLAM run (trajectory CSV + log): tracking timeline, path, frames"),
     ("slam-video", "umiproc.viz.slam_video", "a video of one SLAM run: the fed frames with their tracking state, the "
                                              "path from above, the timeline"),
+    ("slam-3d", "umiproc.viz.slam_3d", "a 3-D view (HTML) of one SLAM run: the map's points, its keyframes and the "
+                                       "camera path"),
 ]
 
 

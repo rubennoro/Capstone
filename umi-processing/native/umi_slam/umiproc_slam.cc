@@ -50,6 +50,16 @@
 //   lost_frames        state != OK (2) after the frame: not visually tracked (umiproc's definition of lost)
 //   not_tracking_frames LocalizeMonocular returned false (state neither OK nor RECENTLY_LOST): what --max_lost_frames
 //                      counts, as gopro_slam does
+// Map export (--save_points CSV, for umiproc slam-3d): after Shutdown, the map SaveTrajectoryCSV picks (the first
+// with the most keyframes) in the trajectory CSV's world W (the camera frame of that map's first keyframe):
+//   CSV                       id,x,y,z,observations                         every map point that is not bad
+//   <CSV stem>_keyframes.csv  id,frame_id,timestamp,x,y,z,q_x,q_y,q_z,q_w   T_W_cam of every keyframe not bad
+//   <CSV stem>_meta.json      the map id, the counts, imu_initialized, up_W (ORB-SLAM3's gravity-aligned +z in W
+//                             once the IMU is initialised, else null) and T_W_orbworld (row-major 4x4)
+// No map with a keyframe: the two CSVs are header-only and "map_id" is null. The library does not expose the atlas,
+// so it is read through System::mpAtlas with the explicit-instantiation access idiom (no library change).
+// --max_frames N feeds only the first N frames (0 with --load_map and --save_points: export a saved map as it is).
+//
 // Exit 0; 3 when --max_lost_frames was reached (the trajectory is still saved, unlike gopro_slam); 1 on bad input or
 // an unreadable frame. On a non-zero exit the --save_map file is removed, so a failed mapping run never leaves a map
 // behind.
@@ -77,6 +87,25 @@
 #include <System.h>
 
 namespace {
+
+// System::mpAtlas is private and the library has no accessor; an explicit instantiation may name a private member
+// ([temp.explicit]), which this uses to read it without changing (and rebuilding) libORB_SLAM3.
+template <typename Tag, typename Tag::type M>
+struct PrivateAccess {
+    friend typename Tag::type Get(Tag) { return M; }
+};
+struct SystemAtlas {
+    using type = ORB_SLAM3::Atlas *ORB_SLAM3::System::*;
+    friend type Get(SystemAtlas);
+};
+template struct PrivateAccess<SystemAtlas, &ORB_SLAM3::System::mpAtlas>;
+
+// "path/x.csv" + "_keyframes.csv" -> "path/x_keyframes.csv" (a path without ".csv" keeps its whole name)
+std::string Sibling(const std::string &csv, const std::string &suffix) {
+    const std::string ext = ".csv";
+    const bool has_ext = csv.size() > ext.size() && csv.compare(csv.size() - ext.size(), ext.size(), ext) == 0;
+    return (has_ext ? csv.substr(0, csv.size() - ext.size()) : csv) + suffix;
+}
 
 bool LoadTimes(const std::string &path, std::vector<int64_t> &t_ns) {
     std::ifstream f(path);
@@ -193,13 +222,85 @@ double Median(const std::vector<double> &sorted) {
 }
 
 struct Options {
-    std::string vocabulary, setting, sequence, out_csv, load_map, save_map, mask_img;
+    std::string vocabulary, setting, sequence, out_csv, load_map, save_map, mask_img, save_points;
     int max_lost_frames = -1;
+    long max_frames = -1;            // < 0: every frame
     int aruco_dict_id = cv::aruco::DICT_4X4_50;
     int init_tag_id = -1;            // -1: never found, so the fork's tag-based initialisation is off
     float init_tag_size = 0.16f;
     bool no_realtime = false;
 };
+
+// The map export (see the header comment). "" when written, else what went wrong.
+std::string SaveMapPoints(ORB_SLAM3::System &slam, const std::string &csv, size_t &n_points, size_t &n_keyframes) {
+    n_points = n_keyframes = 0;
+    ORB_SLAM3::Atlas *atlas = slam.*Get(SystemAtlas());
+    ORB_SLAM3::Map *best = nullptr;               // as System::SaveTrajectoryCSV: the first with the most keyframes
+    size_t best_kfs = 0;
+    for (ORB_SLAM3::Map *m : atlas->GetAllMaps()) {
+        const size_t k = m->GetAllKeyFrames().size();
+        if (k > best_kfs) {
+            best_kfs = k;
+            best = m;
+        }
+    }
+    const std::string kf_csv = Sibling(csv, "_keyframes.csv"), meta_json = Sibling(csv, "_meta.json");
+    std::ofstream fp(csv), fk(kf_csv), fm(meta_json);
+    if (!fp || !fk || !fm) return "cannot write " + csv + " / " + kf_csv + " / " + meta_json;
+    fp << "id,x,y,z,observations\n";
+    fk << "id,frame_id,timestamp,x,y,z,q_x,q_y,q_z,q_w\n";
+    fp << std::setprecision(9);
+    fk << std::setprecision(9);
+    fm << std::setprecision(9);
+    fm << "{\"format\":\"umiproc.map_points.v1\"";
+    if (best == nullptr) {
+        fm << ",\"map_id\":null,\"keyframes\":0,\"map_points\":0,\"bad_map_points\":0,\"imu_initialized\":false"
+           << ",\"up_W\":null,\"T_W_orbworld\":null}\n";
+    } else {
+        std::vector<ORB_SLAM3::KeyFrame *> kfs = best->GetAllKeyFrames();
+        std::sort(kfs.begin(), kfs.end(), ORB_SLAM3::KeyFrame::lId);
+        const Sophus::SE3f T_W_orb = kfs[0]->GetPose();     // W = first keyframe's camera; Tcw maps ORB world -> it
+        for (ORB_SLAM3::KeyFrame *kf : kfs) {
+            if (kf == nullptr || kf->isBad()) continue;
+            const Sophus::SE3f T = T_W_orb * kf->GetPoseInverse();
+            const Eigen::Vector3f t = T.translation();
+            const Eigen::Quaternionf q = T.unit_quaternion();
+            fk << kf->mnId << ',' << kf->mnFrameId << ',' << kf->mTimeStamp << ',' << t.x() << ',' << t.y() << ','
+               << t.z() << ',' << q.x() << ',' << q.y() << ',' << q.z() << ',' << q.w() << '\n';
+            n_keyframes++;
+        }
+        size_t bad = 0;
+        for (ORB_SLAM3::MapPoint *mp : best->GetAllMapPoints()) {
+            if (mp == nullptr || mp->isBad()) {
+                bad++;
+                continue;
+            }
+            const Eigen::Vector3f p = T_W_orb * mp->GetWorldPos();
+            fp << mp->mnId << ',' << p.x() << ',' << p.y() << ',' << p.z() << ',' << mp->Observations() << '\n';
+            n_points++;
+        }
+        const bool imu = best->isImuInitialized();
+        fm << ",\"map_id\":" << best->GetId() << ",\"keyframes\":" << n_keyframes << ",\"map_points\":" << n_points
+           << ",\"bad_map_points\":" << bad << ",\"first_keyframe_id\":" << kfs[0]->mnId
+           << ",\"imu_initialized\":" << JsonBool(imu) << ",\"up_W\":";
+        if (imu) {
+            const Eigen::Vector3f up = T_W_orb.rotationMatrix() * Eigen::Vector3f(0.f, 0.f, 1.f);
+            fm << '[' << up.x() << ',' << up.y() << ',' << up.z() << ']';
+        } else {
+            fm << "null";
+        }
+        const Eigen::Matrix4f M = T_W_orb.matrix();
+        fm << ",\"T_W_orbworld\":[";
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c) fm << (r || c ? "," : "") << M(r, c);
+        fm << "]}\n";
+    }
+    fp.flush();
+    fk.flush();
+    fm.flush();
+    if (!fp || !fk || !fm) return "cannot write " + csv + " / " + kf_csv + " / " + meta_json;
+    return "";
+}
 
 void PrintSummary(const Summary &s, const Options &o) {
     std::ostringstream j;
@@ -280,6 +381,11 @@ int main(int argc, char **argv) {
     app.add_option("--aruco_dict_id", o.aruco_dict_id);
     app.add_option("--init_tag_id", o.init_tag_id, "table tag for the fork's tag-based initialisation (-1: off)");
     app.add_option("--init_tag_size", o.init_tag_size, "its side length in m");
+    app.add_option("--save_points", o.save_points,
+                   "write the saved map's points here (CSV), its keyframes and a meta JSON next to it, in the "
+                   "trajectory's world");
+    app.add_option("--max_frames", o.max_frames, "feed only the first N frames (< 0: all; 0: none, to export a "
+                                                 "loaded map with --save_points)");
     app.add_flag("--no_realtime", o.no_realtime, "feed frames as fast as possible instead of at the recording's rate");
     try {
         app.parse(argc, argv);
@@ -356,7 +462,10 @@ int main(int argc, char **argv) {
     s.track_ms.reserve(t_cam.size());
     const auto feed_start = std::chrono::steady_clock::now();
     auto feed_end = feed_start;
-    for (size_t i = 0; i < t_cam.size(); ++i) {
+    const size_t n_feed = o.max_frames < 0 ? t_cam.size()
+                                           : std::min(t_cam.size(), static_cast<size_t>(o.max_frames));
+    if (n_feed < t_cam.size()) s.stop_reason = "max_frames";
+    for (size_t i = 0; i < n_feed; ++i) {
         const std::string png = o.sequence + "/mav0/cam0/data/" + std::to_string(t_cam[i]) + ".png";
         cv::Mat im = cv::imread(png, cv::IMREAD_GRAYSCALE);
         if (im.empty()) {
@@ -435,6 +544,20 @@ int main(int argc, char **argv) {
     SLAM.SaveTrajectoryCSV(o.out_csv);
     s.have_maps = true;
     s.maps = SLAM.MapSummary();
+    if (!o.save_points.empty()) {
+        size_t n_points = 0, n_keyframes = 0;
+        const std::string err = SaveMapPoints(SLAM, o.save_points, n_points, n_keyframes);
+        if (err.empty()) {
+            std::cout << "map export: " << n_points << " map points, " << n_keyframes << " keyframes -> "
+                      << o.save_points << std::endl;
+        } else {
+            std::cerr << err << std::endl;
+            if (rc == 0) {
+                s.error = err;
+                rc = 1;
+            }
+        }
+    }
     if (rc == 0 && !std::ifstream(o.out_csv).good()) {
         std::cerr << "no trajectory written to " << o.out_csv << std::endl;
         s.error = "no trajectory written to " + o.out_csv;
