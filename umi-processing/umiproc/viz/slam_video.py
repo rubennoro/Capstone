@@ -14,8 +14,10 @@
 
 The recording: ``--recording`` (the Pi recording folder: ``meta.json``, the IMX219's MP4 and its ``<stem>_frames.csv``),
 else the ``source`` in the map's ``report.json`` (the folder in ``/data/incoming`` the map was made from). Written
-with OpenCV's ``mp4v`` codec (VLC and most players; a browser may not play it). Default output:
-``RUN_DIR/slam_run.mp4``.
+with OpenCV's ``mp4v`` codec (VLC and most players; a browser may not play it).
+
+Default output: the map's analysis folder (:mod:`umiproc.analysis`, ``~/data/analysis`` or ``$UMIPROC_ANALYSIS``),
+``<analysis>/mapping/<episode>/<map attempt>/<run>/slam_run.mp4``.
 
 Exit codes: 0 written; 2 the inputs cannot be read or do not fit together.
 """
@@ -242,12 +244,25 @@ def render(run_dir: Path, recording: Path, out: Path, *, title: str | None = Non
             "not_tracking": int((cat == CAT_NOT_TRACKING).sum()), "new_maps": int(new_map.sum()), "cut": cut}
 
 
+def default_out(run_dir: Path) -> Path:
+    """Next to the map's analysis copy (:func:`umiproc.analysis.map_analysis_dir`) when the run belongs to a map,
+    else ``RUN_DIR/slam_run.mp4``."""
+    from umiproc.analysis import map_analysis_dir
+
+    rep = _report(run_dir)
+    if not rep.get("source"):
+        return run_dir / VIDEO_NAME
+    return map_analysis_dir(rep) / run_dir.name / VIDEO_NAME
+
+
 def add_arguments(p) -> None:
     p.add_argument("run_dir", metavar="RUN_DIR", help="a SLAM run folder: mapping/, relocalize/ or mapping_full/ of a "
                                                       "map (trajectory.csv + umiproc_slam.log)")
     p.add_argument("--recording", metavar="DIR", help="the Pi recording folder the run was made from (default: the "
                                                       "map report's source)")
-    p.add_argument("--out", help=f"the MP4 to write (default RUN_DIR/{VIDEO_NAME})")
+    p.add_argument("--out", help=f"the MP4 to write (default: <analysis>/mapping/<episode>/<map attempt>/<run>/"
+                                 f"{VIDEO_NAME}, the analysis folder being ~/data/analysis or $UMIPROC_ANALYSIS; "
+                                 f"RUN_DIR/{VIDEO_NAME} for a run outside a map)")
     p.add_argument("--title", help="the title line (default: the run folder)")
     p.add_argument("--speed", type=float, default=1.0, help="playback speed (default 1.0: real time at 30 fps)")
 
@@ -260,7 +275,7 @@ def run(args) -> int:
     if not args.speed > 0:
         print("umiproc slam-video: --speed must be > 0", file=sys.stderr)
         return 2
-    out = Path(args.out).expanduser() if args.out else run_dir / VIDEO_NAME
+    out = Path(args.out).expanduser() if args.out else default_out(run_dir)
     try:
         recording = find_recording(run_dir, args.recording)
         print(f"slam-video: {run_dir} with the ultrawide video of {recording} ...", flush=True)

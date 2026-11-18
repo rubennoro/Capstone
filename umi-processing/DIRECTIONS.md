@@ -480,10 +480,16 @@ timeline, the path, the numbers). For a video of a run (each fed frame with its 
 the timeline; ~1 minute per minute of clip on the laptop):
 
 ```bash
-umiproc slam-video ~/data/umi/maps_failed/<pi_name>/<UTC time>/mapping     # writes mapping/slam_run.mp4
+umiproc slam-video ~/data/umi/maps_failed/<pi_name>/<UTC time>/mapping
 ```
 
 It finds the recording from the map's `report.json` (pass `--recording DIR` if it moved). Play it with VLC.
+
+**The analysis folder.** Every `map` (passed or failed) also copies what to look at into
+`~/data/analysis/mapping/<episode>/<UTC>_<passed|failed>[_first_map]/` (report, tag pose, what `map` printed in
+`map_output.txt`, the run folders with their figures), and `slam-video` writes its video into that folder's run by
+default (`--out` to choose). `lens-calibrate` copies its results to `~/data/analysis/lens_calibration/<episode>/`.
+Another folder: `export UMIPROC_ANALYSIS=~/Downloads/data/analysis` (the laptop).
 
 ### 3.3 Record 2–3 test demos
 

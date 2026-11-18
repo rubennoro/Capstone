@@ -671,6 +671,12 @@ def run(args) -> int:
     except (InputError, ValueError) as e:
         return _err(str(e))
     paths = write_outputs(cal, out_dir)
+    from umiproc.analysis import export_lens
+
+    try:
+        print(f"analysis copy: {export_lens(out_dir, episode.name)}", flush=True)
+    except OSError as e:
+        print(f"no analysis copy ({e})", flush=True)
 
     rep = cal.report
     if rep["fit"]:

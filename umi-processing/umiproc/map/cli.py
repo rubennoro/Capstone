@@ -153,4 +153,12 @@ def run(args) -> int:
     text = format_outcome(o, args.task, args.map_dir)
     sys.stdout.flush()
     print(text, file=sys.stdout if o.passed else sys.stderr, flush=True)
+    if o.where is not None and o.report:
+        from umiproc.analysis import export_map
+
+        try:
+            dest = export_map(o.where, o.report, text)
+            print(f"analysis copy: {dest} (video of a run: umiproc slam-video {o.where}/mapping)", flush=True)
+        except OSError as e:
+            print(f"umiproc map: no analysis copy ({e})", file=sys.stderr, flush=True)
     return o.exit_code
