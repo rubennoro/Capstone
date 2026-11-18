@@ -348,7 +348,8 @@ def draw(out: str | Path, traj: ForkTrajectory, lines: list[str], summary: SlamS
 def add_arguments(p) -> None:
     p.add_argument("--csv", required=True, help="the run's trajectory CSV (its .t0_ns next to it)")
     p.add_argument("--log", help="the run's log with the UMIPROC_SUMMARY line (maps, keyframes, pacing)")
-    p.add_argument("--video", help="the recording's ultrawide MP4 (cam0.mp4; its cam0_frames.csv next to it)")
+    p.add_argument("--video", help="the recording's ultrawide (IMX219) MP4: cam0.mp4 in a Pi recording, cam1.mp4 in "
+                   "umiproc's raw/ copy (see meta.json); its <stem>_frames.csv next to it")
     p.add_argument("--frames", help="fed frame numbers to show under the plots, comma-separated (needs --video)")
     p.add_argument("--title", default="SLAM run", help="the figure's title")
     p.add_argument("--out", default="slam_run.png", help="the PNG to write (default ./slam_run.png)")

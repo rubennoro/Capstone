@@ -105,7 +105,7 @@ changed:
 | The nominal guess | SLAM started a map 34 times and lost each one almost immediately. No usable map. |
 | Measured from a board recording (an imperfect one that didn't pass its checks) | One map tracked for 31 s without a break, 89 keyframes, the IMU fully initialised. See [docs/figures/clip128_lens126.png](docs/figures/clip128_lens126.png). |
 
-So **lens calibration comes first** (DIRECTIONS.md section 1): print a ChArUco board (a checkerboard with small markers
+So **lens calibration comes first** (DIRECTIONS.md section 2): print a ChArUco board (a checkerboard with small markers
 in it), keep it perfectly flat (taped to cardboard, or shown on a screen), and record about a minute of it from many
 positions across the image. `umiproc lens-calibrate` fits a **fisheye** model, the kind ORB-SLAM3 uses (a standard
 lens model can't describe 160°), and only installs it if eight checks pass. Those checks cover enough views, a low

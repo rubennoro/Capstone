@@ -30,7 +30,7 @@ import yaml
 __all__ = ["LENS_SCHEMA", "LensFileError", "LensFile", "lens_document", "dump_lens", "load_lens", "apply_lens"]
 
 LENS_SCHEMA = "umiproc.lens.v1"
-_HEADER = ("# Measured ultrawide lens model (umiproc lens-calibrate; DIRECTIONS.md section 1). Do not edit: re-run\n"
+_HEADER = ("# Measured ultrawide lens model (umiproc lens-calibrate; DIRECTIONS.md section 2). Do not edit: re-run\n"
            "# the calibration instead. Schema and conventions: umiproc/lens/lensfile.py.\n")
 
 

@@ -4,7 +4,7 @@ native binary.
 
 No quality limit stops the map (2026-11-18, the user's decision): every check is a **warning** (printed with its
 hints and stored in the report) and the task folder is still created, as in UMI, which judges no map at all; the test
-demos (DIRECTIONS.md section 3) show whether it works. Only what leaves nothing usable to attach still stops it
+demos (DIRECTIONS.md section 5) show whether it works. Only what leaves nothing usable to attach still stops it
 (:data:`BLOCKING`): M1 without exactly one saved map with keyframes (none: nothing to attach; several: ``umiproc map`` then
 picks one by itself, the longest map piece, and maps and checks only that part of the clip; M1 blocks only when even
 that gives no single map). M5 only warns, even without a single tag sighting (2026-11-18): the map is then
@@ -116,7 +116,7 @@ _SCAN_HINT = ("scan the workspace slowly for at least 30 s without stopping: rea
 
 
 #: Whether a check that did not pass stops the map (:attr:`CheckResult.blocking`; branch rnoro/data-work-auto). UMI
-#: judges no map at all; the test demos (DIRECTIONS.md section 3) are the gate. Only "nothing usable to attach" blocks:
+#: judges no map at all; the test demos (DIRECTIONS.md section 5) are the gate. Only "nothing usable to attach" blocks:
 #: M1 (no saved map, or several maps even after the automatic cut to the longest map piece). M2-M5 warn (M5 without any tag
 #: sighting too, 2026-11-18: no tx_slam_tag.json then, and ``umiproc run`` refuses the folder).
 BLOCKING = {"M1": True, "M2": False, "M3": False, "M4": False, "M5": False}
@@ -320,7 +320,7 @@ def _camera_model_hint(early: dict) -> str:
               else "right after \"New Map created\"")
     return (f"SLAM reset its map {early['resets']} times, and {early['early']} of the {early['dropped_maps']} new maps "
             f"were lost {frames} (\"Fail to track local map!\": too few matches to its own fresh map). That is most "
-            "likely the camera model, not the recording: calibrate the lens (DIRECTIONS.md section 1, then "
+            "likely the camera model, not the recording: calibrate the lens (DIRECTIONS.md section 2, then "
             "`umiproc lens-calibrate ... --apply`) and check the camera-IMU geometry (cameras.ultrawide.T_imu_cam in "
             "the rig file); a longer or slower clip will not fix it. Logs: " + _LOG_HINT)
 
@@ -605,7 +605,7 @@ def check_m4(slam_result, error: str | None, speed: tuple[float | None, float | 
                          f"{M4_WINDOW_S:g} s window from {_f(o.get('max_at_s'), '.1f')} s; median "
                          f"{o['median_deg']:.1f} deg): gravity seen through SLAM turns with the rig or drifts. With a "
                          "smooth clip this is not the recording: check the camera-IMU rotation "
-                         "(cameras.ultrawide.T_imu_cam in the rig file) and the lens model (DIRECTIONS.md section 1); "
+                         "(cameras.ultrawide.T_imu_cam in the rig file) and the lens model (DIRECTIONS.md section 2); "
                          "if M3 lost tracking, the map itself may bend")
         else:
             hints.append(f"the SLAM orientation could not be compared with gravity: {o.get('reason')}; the clip must "

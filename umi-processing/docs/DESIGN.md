@@ -237,7 +237,7 @@ Every SLAM run (map and localization) gets the same two files, written from the 
 
 Since 2026-11-17 (branch `rnoro/data-work-auto`, the user's decision): only **M1** and **M5's sightings** block
 (`umiproc.map.checks.BLOCKING`); M2, M3, M4 and M5's spread and tilt are warnings (printed, in the report's
-`warnings`, the folder is created anyway); the test demos (DIRECTIONS.md section 3) are the gate, as in UMI. Likewise
+`warnings`, the folder is created anyway); the test demos (DIRECTIONS.md section 5) are the gate, as in UMI. Likewise
 `lens-calibrate` has no pass/fail: checks (a)–(h) all warn, any fit is written and `--apply` installs it
 (`metrics.checks_outside_limits` in the lens file); only no fit at all fails.
 
@@ -260,7 +260,7 @@ run folder in `maps_failed/` writes into its `analysis/` next to it).
 | M4 | the copied gravity and metric-scale checks pass on that re-localized trajectory; the SLAM orientation agrees with gravity throughout (every 2.5 s window's mean specific force in the SLAM world within 3° of the clip's mean, ≥ 4 windows); speed ≤ 3 m/s |
 | M5 | tag 13: ≥ 20 sightings passing UMI's filters (keyframes only, 0.3–2 m, centre within 0.6·H/2 of the centre of OUR 1280×960 image), position spread ≤ 1 cm per axis, the sightings' median tag normal within 5° of gravity |
 
-How `map` computes them (`umiproc/map/`; DIRECTIONS.md §3 for the user's side):
+How `map` computes them (`umiproc/map/`; DIRECTIONS.md §4 for the user's side):
 
 - **Runs** (UMI `02_create_map.py`, `03_batch_slam.py` for `map*`): the copied `write_euroc` with the effective rig
   (native 1280x960, no mask in the frames, IMU not decimated); the mapping run `--save_map --mask_img --init_tag_id 13
@@ -306,11 +306,11 @@ How `map` computes them (`umiproc/map/`; DIRECTIONS.md §3 for the user's side):
   (`take(MAP, task=TASK)`, both ledgers), moves the map next to `raw/` and moves `report.json` in last (`os.replace`).
   An intake error or quarantine at that point keeps the report, logs and atlas in `maps_failed/` (exit 2). A pass
   interrupted after `take()` leaves an INCOMPLETE slot (`status`: record a new mapping clip; the clip is taken), with
-  the map still in `.work/map/<pi_name>/` after a hard kill (manual recovery: DIRECTIONS.md §3). A failed map records **nothing** (no `pi_sources.csv` row, no folder): the staged copy is removed and the report goes
+  the map still in `.work/map/<pi_name>/` after a hard kill (manual recovery: DIRECTIONS.md §4.8). A failed map records **nothing** (no `pi_sources.csv` row, no folder): the staged copy is removed and the report goes
   to `maps_failed/`, so the same clip can be run again (A/B variants, or after fixing a setting). A recording the copied
   intake would refuse (validation, duplicate) is found before SLAM and taken as `quarantined`, as the copy does.
   Exit codes: 0 pass, 1 a check failed, 2 cannot run on this input.
-- **A/B variants**: one data root per variant (`UMIPROC_ROOT=~/data/umi_ab/<variant>`, DIRECTIONS.md §3), so a root
+- **A/B variants**: one data root per variant (`UMIPROC_ROOT=~/data/umi_ab/<variant>`, DIRECTIONS.md Appendix A), so a root
   never holds two variants; every report prints and stores the build (patches) and `vio_inflation`, and `status`
   flags a map whose fingerprint differs from the current files and build as out of date.
 
@@ -329,7 +329,7 @@ and M4's orientation check **once per demo** on all its tracked frames; the copi
 finger-tag-coverage checks on every piece; the gripper calibration is the copied method plus UMI's rule that both
 finger tags are seen in ≥ 80 % of the calibration frames.
 
-How `run` computes them (`umiproc/run/`; DIRECTIONS.md §4 for the user's side):
+How `run` computes them (`umiproc/run/`; DIRECTIONS.md §5 and §7 for the user's side):
 
 - **Localization** (UMI `03_batch_slam.py:113-123`): the copied `write_euroc` with the effective rig (native
   1280x960, unmasked frames, IMU not decimated) into `<root>/.work/run/<pi_name>/euroc` (removed after the run), then
@@ -430,7 +430,7 @@ episode_N+1/ ...     the other pieces: raw -> ../episode_N/raw (relative symlink
   a crash is reused (no gap, no second ledger row).
 - A piece's `raw` is a link to the first piece's: deleting the first piece's folder alone leaves the others
   dangling. `status` lists them ("pieces without their recording") and packaging skips them with a warning that
-  names them (DIRECTIONS.md §5).
+  names them (DIRECTIONS.md §7.4).
 - One gripper calibration per session: `run` refuses (exit 2) when the calibration would be fitted again (the
   copied `calibration_inputs_hash` changed: the rig file's `aruco`, `gripper` or ultrawide section, the lens file,
   the calibration step's version) while the folder has episodes; without episodes it is fitted again as before.
@@ -444,11 +444,11 @@ episode_N+1/ ...     the other pieces: raw -> ../episode_N/raw (relative symlink
 
 | Step | Built | DIRECTIONS.md |
 |---|---|---|
-| 0 | `lens-board`, `lens-calibrate` | §1 lens calibration (optional, 1 min) |
-| 1 | native build + patches, data root and organization, rig + SLAM config, settings, mask, fingerprint, `status` | §2 Jetson setup |
-| 2 | `map` and M1–M5 | §3 prove the environment: record a mapping clip, run `map`, read the checks |
-| 3 | `run` (UMI's rules, splitting, waiting for gripper calibration) and `calibrate` | §4 prove demos, §5 gripper calibration and finishing |
-| 4 | smoke test on existing recordings, final pass | §3–5 adjusted |
+| 0 | `lens-board`, `lens-calibrate` | §2 lens calibration (optional, 1 min) |
+| 1 | native build + patches, data root and organization, rig + SLAM config, settings, mask, fingerprint, `status` | §1 Jetson setup |
+| 2 | `map` and M1–M5 | §4 the map: record a mapping clip, run `map`, read the checks |
+| 3 | `run` (UMI's rules, splitting, waiting for gripper calibration) and `calibrate` | §5 test demos, §6 gripper calibration, §7 the rest of the demos |
+| 4 | smoke test on existing recordings, final pass | §4–7 adjusted |
 
 ## Changes to the copy
 

@@ -1,6 +1,6 @@
 """``umiproc map TASK MAP_DIR [--source /data/incoming] [--root DIR] [--rig rig_pi_v3] [--first-map | --longest-map]``: build and check the
 session map from a mapping recording; creates the task folder unless a blocking check (M1, M5's sightings) failed;
-the other checks only warn (DIRECTIONS.md §3, :mod:`umiproc.map.build`). Progress on stdout, the result block on
+the other checks only warn (DIRECTIONS.md §4, :mod:`umiproc.map.build`). Progress on stdout, the result block on
 stdout (pass) or stderr (fail).
 
 Exit codes: 0 the map was attached (possibly with warnings); 1 a blocking check failed (nothing created; the
@@ -129,7 +129,7 @@ def format_outcome(o: MapOutcome, task: str, map_dir: str) -> str:
                                      f"{o.where / 'analysis'}/") + ")")
     if o.passed:
         lines += ["", "Next: remove the table tag, record 2-3 test demos of the task, then run them against the map "
-                  "(DIRECTIONS.md section 3.3-3.5):", f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>"]
+                  "(DIRECTIONS.md section 5):", f"  umiproc run {o.folder} <first_demo_dir> <last_demo_dir>"]
     elif o.exit_code == EXIT_FAILED and o.checks:
         lines.append(f"  nothing was attached and {map_dir} was not taken: change what the hints say and run "
                      f"`umiproc map {task} {map_dir}` again (or record a new mapping clip)")

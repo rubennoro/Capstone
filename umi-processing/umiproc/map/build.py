@@ -13,7 +13,7 @@ UMI's recipe (``umi_repo/scripts_slam_pipeline``):
 
 Then the checks M1-M5 (:mod:`umiproc.map.checks`; UMI has none). Only M1 and M5's sightings **block**
 (:data:`umiproc.map.checks.BLOCKING`); M2, M3, M4 and M5's spread and tilt are **warnings**: printed, listed in the
-report's ``warnings``, and the folder is created anyway. The test demos (DIRECTIONS.md section 3) are the real gate.
+report's ``warnings``, and the folder is created anyway. The test demos (DIRECTIONS.md section 5) are the real gate.
 
 Steps, all under ``<root>/.run.lock``:
 
@@ -38,7 +38,7 @@ Steps, all under ``<root>/.run.lock``:
    ``<root>/maps_failed/<pi_name>/<UTC time>/`` (without the atlas and the EuRoC frames).
 6. The work folder is removed (a crash leaves it; the next ``map`` clears it). A hard kill (power, SIGKILL, a closed
    ssh session without tmux) after ``take()`` leaves the map files and ``report.json`` there until the next ``map``
-   clears it (manual recovery: DIRECTIONS.md section 3, "An interrupted map"); Ctrl-C runs the clean-up.
+   clears it (manual recovery: DIRECTIONS.md section 4.8, "Interrupted map"); Ctrl-C runs the clean-up.
 
 **First map piece** (``--first-map``, the user's decision 2026-11-18). When the whole clip's mapping run ends with more
 than one map with keyframes (SLAM lost tracking and started a new map), its per-frame states give the map pieces
@@ -299,8 +299,8 @@ def _process(r, task, src, staged, sensors, inputs, work: Path, *, source: Path,
                           message=f"the map of {src.path} failed: nothing was attached and {src.name} was not "
                                   "taken (it can be run again)")
     # Every blocking check passed. report.json goes into the work folder first (with the folder and slot intake will use), so
-    # a pass interrupted after take() leaves it in .work/map/<pi_name>/ with the map (DIRECTIONS.md section 3, "An
-    # interrupted map"); then take(), the map files, and report.json last (os.replace: the slot is complete exactly
+    # a pass interrupted after take() leaves it in .work/map/<pi_name>/ with the map (DIRECTIONS.md section 4.8,
+    # "Interrupted map"); then take(), the map files, and report.json last (os.replace: the slot is complete exactly
     # when report.json appears in it).
     from umiproc.dp.intake import IntakeError
     from umiproc.dp.paths import resolve_intake_target

@@ -16,7 +16,7 @@ Board poses (:func:`look_pose`): the board centre on the ray through a chosen pi
 facing the camera (its normal along that ray), then tilted about its own x and y axes and rolled about its normal.
 :func:`calibration_poses` is a recording that covers the image outside the mask (centre, edges, top corners) with
 distances 0.24-0.50 m and tilts up to 30 deg; :func:`make_recording` holds each pose for a few frames with smooth
-moves in between, as DIRECTIONS.md §1 asks of a real recording.
+moves in between, as DIRECTIONS.md §2.2 asks of a real recording.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def look_pose(model, pixel, distance_m: float, tilt_x_deg: float = 0.0, tilt_y_d
 
 
 def calibration_poses(model, keep=None, seed: int = 0, n_extra: int = 0) -> list[BoardPose]:
-    """A recording's worth of poses, as DIRECTIONS.md §1 asks a user to record: a 5 x 4 grid of directions over
+    """A recording's worth of poses, as DIRECTIONS.md §2.2 asks a user to record: a 5 x 4 grid of directions over
     the image at distances and tilts from a fixed rotating schedule (up to 30 deg), plus the edges and corners
     with the board turned to face the lens (top-left, top-right and bottom-left corner twice each, left, right and
     top edge). Directions whose pixel is masked in ``keep`` (uint8, 0 = masked) are skipped. ``n_extra`` more

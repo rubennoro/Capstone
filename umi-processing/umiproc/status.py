@@ -286,7 +286,7 @@ def _map_lines(infos: list[dict]) -> list[str]:
             if m.get("work_report"):
                 out.append(f"                        its map is still in {m['work_report'].parent}: it can be moved "
                            "into this folder by hand before the next `umiproc map` clears it (DIRECTIONS.md section "
-                           "3, \"An interrupted map\")")
+                           "4.8, \"Interrupted map\")")
             continue
         warned = set(m.get("warnings") or [])
         checks = ", ".join(f"{k} {'ok' if v else ('warning' if k in warned else 'FAILED')}"
@@ -320,7 +320,7 @@ def format_root_status(st: dict, source: str) -> str:
         lines.append(f"  {c.what + ':':15s}{c.path.name}: {c.describe()}")
     if rs["lens_path"] is None:
         lines.append(f"  {'lens file:':15s}none, so SLAM uses the rig file's nominal lens model (\"nominal, "
-                     "uncalibrated\"); optional: DIRECTIONS.md section 1")
+                     "uncalibrated\"); optional: DIRECTIONS.md section 2")
     elif rs["lens"] is not None:
         src = rs["lens"].source or {}
         outside = (rs["lens"].metrics or {}).get("checks_outside_limits") or []

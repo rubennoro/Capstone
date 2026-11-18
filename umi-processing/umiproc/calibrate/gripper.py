@@ -1,5 +1,5 @@
 """``umiproc calibrate``: the gripper opening range of a session folder, from its gripper calibration recording
-(docs/DESIGN.md "The session" step 2; DIRECTIONS.md section 4).
+(docs/DESIGN.md "The session" step 2; DIRECTIONS.md section 6).
 
 The copied dataproc method (``umiproc.dp.stages.calibration.fit_calibration``: contract check, rig consistency, the
 finger tags ``aruco.left_id``/``right_id`` (DICT_4X4_50 ids 0/1) on every ultrawide frame remapped to the virtual
@@ -99,7 +99,7 @@ def _folder(r, folder: str):
     task_dir = r.tasks / folder
     if not (task_dir / "task.yaml").is_file():
         raise CalibrateInputError(f"task folder {task_dir} does not exist (or has no task.yaml): `umiproc map` makes "
-                                  "the session's folder first (DIRECTIONS.md section 3)", "folder")
+                                  "the session's folder first (DIRECTIONS.md section 4)", "folder")
     try:
         return task_dir, load_task_config(task_dir / "task.yaml")
     except ConfigError as e:

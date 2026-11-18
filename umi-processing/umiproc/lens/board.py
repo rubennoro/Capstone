@@ -173,7 +173,7 @@ def _content(paper: str) -> bytes:
          "Glue it flat onto something rigid."),
         ("F1", 9.0, bx + 104.0, L["bar_y"] + 0.3,
          f"<- 100 mm scale bar ({PAPER_NAMES[paper]} landscape). "
-         "umiproc lens-board, DIRECTIONS.md section 1."),
+         "umiproc lens-board, DIRECTIONS.md section 2."),
     ]
     for font, size, x, y, text in lines:
         out.append(f"BT /{font} {_f(size)} Tf {_f(x * PT_PER_MM)} {_f(y * PT_PER_MM)} Td {_pdf_text(text)} Tj ET")
@@ -241,5 +241,5 @@ def run(args) -> int:
     print(f"wrote {out} ({args.paper} landscape): ChArUco {DICTIONARY}, {SQUARES[0]} x {SQUARES[1]} squares of "
           f"{SQUARE_MM:.1f} mm (board {bw:.0f} x {bh:.0f} mm), markers {MARKER_MM:.1f} mm")
     print(f"print it at 100 % / actual size, then measure: one square must be {SQUARE_MM:.1f} mm and the scale bar "
-          "100 mm (DIRECTIONS.md section 1)")
+          "100 mm (DIRECTIONS.md section 2.1)")
     return 0

@@ -421,7 +421,7 @@ def test_pieces_whose_first_piece_was_deleted_are_listed_and_not_packaged(env):
     _run(env, slam=Slam({"000001": {"lost": [18, 19]}}))
     _run(env, start="episode_000002", end="episode_000002")
     task_dir = env["root"].tasks / env["folder"]
-    shutil.rmtree(task_dir / "episode_1")                                    # against DIRECTIONS section 5
+    shutil.rmtree(task_dir / "episode_1")                                    # against DIRECTIONS section 7.4
     f = folder_status(env["root"].path, env["folder"])
     assert [e["slot"] for e in f["episodes"]] == ["episode_3"]
     assert [(x["slot"], x["raw_of"], x["piece"]) for x in f["dangling"]] == [("episode_2", "episode_1", 2)]

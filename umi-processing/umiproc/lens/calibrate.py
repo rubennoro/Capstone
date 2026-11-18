@@ -1,5 +1,5 @@
 """``umiproc lens-calibrate``: fit the ultrawide (IMX219 fisheye) lens model from a board recording, check it, and
-write it (DIRECTIONS.md §1). Optional: without it, the processing uses the rig's nominal model.
+write it (DIRECTIONS.md §2). Optional: without it, the processing uses the rig's nominal model.
 
 Steps:
 
@@ -701,7 +701,7 @@ def run(args) -> int:
         for c in cal.checks:
             if not c.passed and c.evaluated and c.hint:
                 print(f"  ({c.id}) {c.hint}")
-        print(f"see {paths['coverage']} for where the corners were. Record the board again (DIRECTIONS.md section 1); "
+        print(f"see {paths['coverage']} for where the corners were. Record the board again (DIRECTIONS.md section 2.2); "
               "the processing keeps using the lens model it had.")
         return 1
     warned = [c for c in cal.checks if c.warned]
@@ -709,7 +709,7 @@ def run(args) -> int:
         print("lens written, with checks outside their limits (warnings, they do not block lens.yaml or --apply):")
         for c in warned:
             print(f"  WARN ({c.id}) {c.name}: {c.detail}" + (f". To improve it: {c.hint}" if c.hint else ""))
-        print(f"  see {paths['coverage']}. The map's checks and the test demos (DIRECTIONS.md section 3) show whether "
+        print(f"  see {paths['coverage']}. The map's checks and the test demos (DIRECTIONS.md section 5) show whether "
               "it is good enough; a better recording later simply replaces it.")
     else:
         print("every check within its limit.")
