@@ -45,7 +45,7 @@ from pathlib import Path
 import numpy as np
 
 __all__ = ["Params", "Frame", "Inputs", "load_inputs", "select_frames", "undistort_frames", "choose_pairs",
-           "pair_depth", "merge_depths", "fuse", "voxel_thin", "drop_outliers", "write_ply", "build", "main"]
+           "pair_depth", "merge_depths", "compute_depths", "frame_votes", "fuse", "voxel_thin", "drop_outliers", "write_ply", "build", "main"]
 
 OUT_STEM = "dense_3d"
 
@@ -375,22 +375,29 @@ def check_in(f: Frame, X: np.ndarray, K: np.ndarray, agree_rel: float):
     return agree, f.rgb[vi, ui].astype(np.float32)
 
 
+def frame_votes(frames: list[Frame], i: int, p: Params):
+    """``(X_W, rgb, pixel, votes, colour_sum)`` of frame i's depth pixels (``pixel_stride`` grid): how many of the
+    ``n_check`` nearest frames agree with each point, and the sum of its own and the agreeing views' colours."""
+    K = p.K
+    X, rgb, pix = frame_points(frames[i], K, p.pixel_stride)
+    votes = np.zeros(len(X), int)
+    csum = rgb.copy()
+    for j in nearest_frames(frames, i, p.n_check):
+        agree, c = check_in(frames[j], X, K, p.agree_rel)
+        votes += agree
+        csum[agree] += c[agree]
+    return X, rgb, pix, votes, csum
+
+
 def fuse(frames: list[Frame], p: Params) -> tuple[np.ndarray, np.ndarray, dict]:
     """Points kept by the multi-view agreement test, with their mean colour over the agreeing views."""
-    K = p.K
     xs, cs = [], []
     n_raw = 0
     for i, f in enumerate(frames):
         if f.depth is None:
             continue
-        X, rgb, _ = frame_points(f, K, p.pixel_stride)
+        X, _, _, votes, csum = frame_votes(frames, i, p)
         n_raw += len(X)
-        votes = np.zeros(len(X), int)
-        csum = rgb.copy()
-        for j in nearest_frames(frames, i, p.n_check):
-            agree, c = check_in(frames[j], X, K, p.agree_rel)
-            votes += agree
-            csum[agree] += c[agree]
         keep = votes >= p.min_agree
         xs.append(X[keep])
         cs.append(csum[keep] / (votes[keep, None] + 1))
@@ -439,6 +446,29 @@ def sparse_check(X: np.ndarray, sparse: np.ndarray, obs: np.ndarray, frames: lis
             "within_1cm": round(float((d < 0.01).mean()), 3)}
 
 
+def compute_depths(inp: Inputs, p: Params, clock=None) -> tuple[list[Frame], list[tuple[int, int]], dict]:
+    """Steps 1-3: ``(frames, pairs, counts)``; the frames that got a pair have their ``depth`` map (pinhole view,
+    ``p.K``). Also used by :mod:`umiproc.viz.mesh_3d`."""
+    lap = clock.lap if clock is not None else (lambda name: None)
+    frames = select_frames(inp, p.step)
+    n_selected = len(frames)
+    frames = undistort_frames(inp, frames, p)
+    lap("decode + undistort")
+    median_depths(frames, inp.export.points, p.fov_deg / 2)
+    pairs = choose_pairs(frames, p)
+    lap("pairs")
+    mask_full = grown_mask(inp.mask_full, (inp.cam.height, inp.cam.width), p.mask_grow_px)
+    by_frame: dict[int, list[np.ndarray]] = {}
+    for i, j in pairs:
+        by_frame.setdefault(i, []).append(pair_depth(frames[i], frames[j], inp, p, mask_full))
+    for i, ds in by_frame.items():
+        frames[i].depth = merge_depths(ds, p.agree_rel)
+    lap("stereo depth")
+    counts = {"selected": n_selected, "after_blur_check": len(frames),
+              "keyframes": sum(f.keyframe for f in frames), "with_depth": len(by_frame)}
+    return frames, pairs, counts
+
+
 # ---------------------------------------------------------------------------------------------------- output
 
 
@@ -474,20 +504,7 @@ def build(folder: str, root=None, p: Params | None = None, out_dir: Path | None 
     clock = _Clock()
     inp = load_inputs(folder, root)
     clock.lap("load")
-    frames = select_frames(inp, p.step)
-    n_selected = len(frames)
-    frames = undistort_frames(inp, frames, p)
-    clock.lap("decode + undistort")
-    median_depths(frames, inp.export.points, p.fov_deg / 2)
-    pairs = choose_pairs(frames, p)
-    clock.lap("pairs")
-    mask_full = grown_mask(inp.mask_full, (inp.cam.height, inp.cam.width), p.mask_grow_px)
-    by_frame: dict[int, list[np.ndarray]] = {}
-    for i, j in pairs:
-        by_frame.setdefault(i, []).append(pair_depth(frames[i], frames[j], inp, p, mask_full))
-    for i, ds in by_frame.items():
-        frames[i].depth = merge_depths(ds, p.agree_rel)
-    clock.lap("stereo depth")
+    frames, pairs, fcount = compute_depths(inp, p, clock)
     X, C, fstats = fuse(frames, p)
     clock.lap("fusion")
     Xv, Cv, cnt = voxel_thin(X, C, p.voxel_m, p.min_voxel_samples)
@@ -502,8 +519,7 @@ def build(folder: str, root=None, p: Params | None = None, out_dir: Path | None 
         "format": "umiproc.dense_3d.v0 (experimental)", "folder": inp.folder, "map": inp.map_dir.name,
         "world": "W, the SLAM map's world (metres as far as check M4 holds); the viewer turns it gravity-up, tag at 0",
         "params": asdict(p), "K_pinhole": np.round(p.K, 3).tolist(),
-        "frames": {"selected": n_selected, "after_blur_check": len(frames),
-                   "keyframes": sum(f.keyframe for f in frames), "with_depth": len(by_frame)},
+        "frames": fcount,
         "pairs": len(pairs),
         "pair_baseline_ratio_median": round(float(np.median(
             [np.linalg.norm(frames[i].T_W_cam[:3, 3] - frames[j].T_W_cam[:3, 3]) / frames[i].median_depth

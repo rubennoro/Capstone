@@ -1,11 +1,11 @@
 """EXPERIMENTAL TRIAL (may be removed if it does not work out): the HTML viewer of :mod:`umiproc.viz.dense_3d`.
 
 One self-contained page: three.js (pinned, from jsdelivr; needs internet once) draws the dense cloud as coloured
-points, the mapping clip's camera path (colour = time), the keyframes as small frustums, the table tag as a square
+round discs of a size in millimetres (so they grow when you come closer, and close-ups do not turn into squares), the mapping clip's camera path (colour = time), the keyframes as small frustums, the table tag as a square
 and a 10 cm grid in the tag's plane. The scene is W turned so that gravity (the map export's ``up_W``, else the tag's
 normal) is +z, with the tag's centre at the origin. The points are embedded as base64: uint16 positions quantised
 over the cloud's box (< 0.1 mm steps at these sizes) and uint8 colours. ``#view=top|front|side|persp`` in the URL
-picks the first view (for headless screenshots); ``&size=N`` the point size in pixels.
+picks the first view (for headless screenshots); ``&size=N`` the disc diameter in millimetres (default 1.4 voxels).
 """
 
 from __future__ import annotations
@@ -78,6 +78,7 @@ def payload(inp, frames, X: np.ndarray, C: np.ndarray, summary: dict) -> dict:
     return {
         "title": f"{inp.folder}: dense cloud of the mapping clip (experimental)",
         "n": int(len(P)), "lo": lo.tolist(), "hi": hi.tolist(),
+        "voxel_m": float(summary.get("params", {}).get("voxel_m", 0.003)),
         "pos": _b64(q), "rgb": _b64(np.asarray(C, np.uint8)),
         "path": np.round(path, 4).tolist(), "path_t": np.round(t_s, 3).tolist(),
         "kf": np.round(_apply(T, _frustum_segments(inp.export.T_W_kf, 0.03)), 4).tolist(),
@@ -128,7 +129,7 @@ details summary { cursor: pointer; color: var(--muted); }
  <h1 id="title"></h1>
  <div class="muted">Gravity up, the table tag at the origin; the grid has 10 cm squares. Drag to orbit, right-drag
   to pan, scroll to zoom.</div>
- <label>point size <input id="size" type="range" min="0.5" max="6" step="0.25" value="1.5"><span id="sizev"></span></label>
+ <label>disc size <input id="size" type="range" min="0.5" max="12" step="0.25" value="4"><span id="sizev"></span></label>
  <label><input id="showPath" type="checkbox" checked> camera path (colour = time)</label>
  <label><input id="showKf" type="checkbox" checked> keyframes</label>
  <label><input id="showUsed" type="checkbox"> frames used for depth</label>
@@ -169,8 +170,20 @@ for (let i = 0; i < D.n; i++) for (let k = 0; k < 3; k++)
   pos[3 * i + k] = D.lo[k] + q[3 * i + k] / 65535 * (D.hi[k] - D.lo[k]);
 const geo = new THREE.BufferGeometry();
 geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-geo.setAttribute("color", new THREE.BufferAttribute(rgb, 3, true));
-const mat = new THREE.PointsMaterial({size: 1.5, sizeAttenuation: false, vertexColors: true});
+geo.setAttribute("pcol", new THREE.BufferAttribute(rgb, 3, true));
+// round discs with a metric diameter (perspective-scaled), slightly darker towards the rim (soft, no blending)
+const mat = new THREE.ShaderMaterial({
+  uniforms: {size: {value: 0.004}, scale: {value: 1}},
+  vertexShader: `attribute vec3 pcol; uniform float size; uniform float scale; varying vec3 vCol;
+    void main() { vCol = pcol; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = max(1.5, size * scale / -mv.z); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `varying vec3 vCol;
+    void main() { vec2 c = gl_PointCoord * 2.0 - 1.0; float r2 = dot(c, c); if (r2 > 1.0) discard;
+      gl_FragColor = vec4(vCol * (1.0 - 0.22 * r2 * r2), 1.0); }`,
+});
+function pointScale() {   // pixels per metre at distance 1
+  mat.uniforms.scale.value = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+}
 const cloud = new THREE.Points(geo, mat);
 scene.add(cloud);
 
@@ -227,13 +240,14 @@ function setView(v) {
 document.querySelectorAll("button[data-v]").forEach(b => b.onclick = () => setView(b.dataset.v));
 const hash = new URLSearchParams(location.hash.slice(1));
 setView(hash.get("view") || "persp");
-if (hash.get("size")) $("size").value = hash.get("size");
-function sizes() { mat.size = +$("size").value; $("sizev").textContent = $("size").value + " px"; }
+$("size").value = hash.get("size") || (1.4 * D.voxel_m * 1000).toFixed(2);
+function sizes() { mat.uniforms.size.value = +$("size").value / 1000; $("sizev").textContent = $("size").value + " mm"; }
 $("size").oninput = sizes; sizes();
 for (const [id, o] of [["showPath", path], ["showKf", kf], ["showUsed", used], ["showTag", tagGroup], ["showGrid", grid]])
   $(id).onchange = () => { o.visible = $(id).checked; };
 addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight); });
+  renderer.setSize(innerWidth, innerHeight); pointScale(); });
+pointScale();
 function scaleBar() {   // a round length that is ~120 px at the orbit target's distance
   const dist = camera.position.distanceTo(controls.target);
   const pxPerM = innerHeight / (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
@@ -245,6 +259,8 @@ function scaleBar() {   // a round length that is ~120 px at the orbit target's 
 function loop() { controls.update(); scaleBar(); renderer.render(scene, camera); requestAnimationFrame(loop); }
 loop();
 document.title = "Dense map cloud";
+window.viewer = {setView, size: mm => { $("size").value = mm; sizes(); },
+  ui: on => { $("panel").style.display = on ? "" : "none"; }};   // for scripted screenshots
 window.READY = true;
 </script>
 <script>setTimeout(() => { if (!window.READY) document.getElementById("err").style.display = "flex"; }, 15000);</script>
