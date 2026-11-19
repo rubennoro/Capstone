@@ -57,7 +57,8 @@ Each line is a step in that machine's directions. Each step has its own **Good**
 
 ## 3. A trial run (every time, once set up)
 
-The policy is `hold_still` until one is trained on this rig: the arm stays where the episode started.
+The policy is `hold_still` (the arm stays where the episode started) until you choose a trained one, once, on the
+laptop: `policy_deploy use <run folder>` (laptop directions, "A trained policy").
 
 1. **Physical:** everything in section 1 on and connected. User stop within reach.
 2. **PC, Desk:** open `https://172.16.0.2` in the PC's browser. Unlock the brakes, activate FCI, release the user stop.

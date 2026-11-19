@@ -31,8 +31,19 @@ prints nothing (if it shows `/opt/ros/...`, run `unset PYTHONPATH` first).
 >
 > Usual cycle: `h`, `c`, ..., `y` or `n`, then `h`, `c` again. `q` when done.
 
-Until a policy has been trained on data from this rig, the policy is **`hold_still`**: the arm stays at the pose where
-the episode started. It tests the cameras, the link and the timing without moving anything.
+The policy that runs is the one `policy_deploy use` last chose. **`hold_still`** (the start) keeps the arm at the pose
+where the episode started: it tests the cameras, the link and the timing without moving anything.
+
+> **Plug in a trained policy** (details: "A trained policy" below)
+>
+> ```bash
+> ~/envs/policy_deploy/bin/policy_deploy use ~/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18 --precision bf16 --diffusion-steps 8 --exec-h 12
+> ~/envs/policy_deploy/bin/policy_deploy check
+> ~/envs/policy_deploy/bin/policy_deploy run
+> ```
+>
+> Another run: the same `use` line with its folder. Back to holding still: `policy_deploy use hold_still`.
+> On the real arm `check` refuses it until `../contracts/frames.yaml` says `settled: true` (step 4 there).
 
 ---
 
@@ -200,6 +211,22 @@ on both (and rebuild on the PC).
 While homing the keys are inactive; Ctrl-C quits, the arm's user stop stops it. A refused key prints why, e.g.
 `h: end the episode first (y / n / s)` or `c: the PC is homing (its h or g key): wait for idle`.
 
+### `policy_deploy use`
+
+**When:** to choose which policy `run` runs (a trained run, or hold still). It moves nothing and needs nothing
+running; it only rewrites the `policy:` and `manager:` sections of `station.yaml` (every other line stays).
+
+```bash
+~/envs/policy_deploy/bin/policy_deploy use <run folder> [--prompt-index N] [--precision bf16] [--diffusion-steps N] [--exec-h N]
+~/envs/policy_deploy/bin/policy_deploy use hold_still
+```
+
+**Good:** the changed lines, then `policy_deploy use: station.yaml now runs <run>. Next: policy_deploy check`.
+Options not given keep their current value. Rarely needed: `--task NAME` (a dataset with several tasks),
+`--prompt-dataset FILE --prompt-split all` (demos the policy never trained on), `--station FILE`.
+
+**If not:** `policy_deploy use: FAIL <what>` and a `hint:` line; `station.yaml` is not changed.
+
 ### The link probe: `pc_probe`
 
 **When:** with `control_deploy run` on the PC and **no** `policy_deploy run` going, to check the link (once at
@@ -219,7 +246,8 @@ PASS  C2 rate: 100 Hz, 0 seq gaps, 0 t_ns repeats seen
 PASS  compare_hello: all equal
 ```
 
-`C2` about 100 Hz with few gaps; `rtt p95` a few ms on Wi-Fi (under 1 ms wired); `diff` (the two clock estimates)
+`--axes` adds three lines saying where the TCP's axes point (the check before `settled: true`, "A trained
+policy" step 4). `C2` about 100 Hz with few gaps; `rtt p95` a few ms on Wi-Fi (under 1 ms wired); `diff` (the two clock estimates)
 within a few ms. Any `FAIL` names what differs. Without the PC: `--mock` against the fake PC
 (`python -m policy_deploy.fake_pc --mock` in another terminal).
 
@@ -293,11 +321,12 @@ prints `FAIL: torch is not importable`: use the torch environment.
 
 ---
 
-## A trained policy (later)
+## A trained policy
 
-Only once a policy has been trained on data from this rig.
+Once a policy has been trained on data from this rig and fetched to the laptop (`train/fetch.sh`, into
+`~/Capstone/data/<folder>/policy/<run>/`). You never edit `station.yaml` by hand for this: `policy_deploy use` does it.
 
-1. **The torch environment** (large: several GB):
+1. **The torch environment** (once; large: several GB):
 
    ```bash
    cd ~/Capstone && unset PYTHONPATH
@@ -310,63 +339,72 @@ Only once a policy has been trained on data from this rig.
    ```
 
    Good: `~/envs/policy_deploy_torch/bin/python -c "import torch; print(torch.cuda.is_available())"` prints `True`.
-2. **`station.yaml`:** set the policy. What to set depends on the kind of checkpoint:
 
-   | Setting | Plain diffusion checkpoint | Prompting checkpoint |
-   |---|---|---|
-   | `policy: kind:` | `diffusion` | `diffusion` (the same) |
-   | `policy: checkpoint:` | the `.ckpt` | the `.ckpt` |
-   | `policy: prompt_dataset:` | leave it out | **the processed `.zarr.zip` of the demos it was trained on**, on the laptop |
-   | `manager: task_name:` | leave it out | **a task in that dataset**, e.g. `block_raise` |
-   | `manager: prompt_index:` | leave it out | **which demo of that task to show it** (default `0`, the first) |
-   | speed: `policy: precision:`, `policy: diffusion_steps:`, `manager: exec_h:` | from the timing (`policy.bench`) | the same |
+2. **Choose the policy:** give `use` the run folder. Example, the 30-demo pick policy `run_006`:
 
-   So a prompting checkpoint needs **three more lines**; everything else is identical. A prompt is not text: it is
-   one recorded demo of the task, which the model watches before each episode.
-
-   **Which kind is it?** The training run's `run_config/config.yaml` says `use_prompting: true` for a prompting
-   checkpoint. Get it wrong and the policy stops at start-up and says so: `checkpoint uses prompting ... set
-   policy.prompt_dataset`, or `policy.prompt_dataset is set but the checkpoint does not use prompting`.
-
-   Example: `run_001` (a prompting checkpoint). These two sections **replace** the `policy:` and `manager:` lines
-   already in `station.yaml` (don't add a second copy). The two paths are wherever you put the files (`~` works):
-
-   ```yaml
-   policy:
-     kind: diffusion                      # was: hold_still
-     checkpoint: "~/Capstone/results/block_raise/run_001_2026-10-05/checkpoints/best_slim_epoch=0050-val_action_mse_error_all=0.0001481.ckpt"
-     prompt_dataset: ~/franka_data/prompt_zarr/firstreal-single.zarr.zip   # prompting only
-     precision: bf16                      # needed on a 4 GB laptop GPU to keep up
-     diffusion_steps: 8                   # same
-   manager:
-     task_name: block_raise               # prompting only
-     prompt_index: 0                      # prompting only: which demo to show it (0-42)
-     exec_h: 12                           # needed to keep up, as precision
+   ```bash
+   ~/envs/policy_deploy/bin/policy_deploy use ~/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18 --precision bf16 --diffusion-steps 8 --exec-h 12
    ```
 
-   For a plain checkpoint, drop the three `# prompting only` lines. The speed lines are what `run_001` needs on an
-   RTX 3050 Ti laptop GPU (a `--mock` run: about 186 ms per inference; with the defaults, fp32, 16 steps and `exec_h` 8,
-   about 300 ms, and the arm mostly holds between steps). Measure each new checkpoint with `policy.bench`.
+   Good: it prints the lines of `station.yaml` it changed, then
+   `policy_deploy use: station.yaml now runs run_006_2026-11-18. Next: policy_deploy check`.
 
-   **What the laptop needs.** Measured with `run_001` on an RTX 3050 Ti laptop GPU (4 GB, 35 W power cap, a low-end
-   GPU); a plain checkpoint is smaller (no prompt encoder):
+   It finds everything in the run folder by itself: the checkpoint (`checkpoints/*.ckpt`), whether it is a prompting
+   checkpoint, and for one that is, the demos it trained on (`../../package/<dataset>/<dataset>.zarr.zip`) and the
+   task name in them. A prompt is not text: it is one recorded demo, shown to the policy before each episode.
 
-   | | Needed | Measured with `run_001` |
-   |---|---|---|
-   | GPU | NVIDIA with CUDA; driver 535 or newer (tested) | |
-   | GPU memory | 4 GB at least; 6 GB or more for headroom | peak with fp32 about 2.0 GB allocated / 2.2 GB reserved; with bf16 about 2.8 GB / 2.8 GB (about 3.0 GB in `nvidia-smi`): bf16 keeps extra copies of the weights |
-   | `precision: bf16` | an RTX 30-series GPU or newer; on older GPUs keep `fp32` (bf16 runs there but emulated, so it is not faster) | |
-   | Speed | a policy step that fits `exec_h` (the table in "Policy timing") | in a `--mock` run: fp32 16 steps about 300 ms, bf16 16 steps about 226 ms, bf16 8 steps about 186 ms |
-   | RAM | 16 GB | peak about 5 GB while the checkpoint loads (about 10 s) |
-   | Disk | about 10 GB | torch environment 6.1 GB, checkpoint 2.6 GB, demos 0.85 GB |
+   The three speed options are what this laptop's RTX 3050 Ti needs to keep up with these checkpoints. Give them once;
+   later `use` calls keep them. To measure a new checkpoint: `policy.bench --checkpoint <the .ckpt>` ("Policy timing").
 
-   A faster GPU (a desktop card, or a laptop GPU with a higher power limit) needs fewer of the speed settings: one
-   about twice as fast as the RTX 3050 Ti would run `run_001` at fp32 and 16 steps with `exec_h` 10–12 (an estimate from
-   the numbers above, not measured: run `policy.bench` on that machine).
-3. **On the real arm** `check` refuses it (`settled FAIL trained policy refused on the real arm`) while
-   `../contracts/frames.yaml` says `settled: false`: the robot's gripper axes are still turned 90° from training's
-   (PLAN §9), so every move would go in the wrong direction. Settling that comes first; until then use
-   `kind: hold_still`.
+   | To | Run |
+   |---|---|
+   | switch to another run (e.g. the 25-demo one) | `policy_deploy use ~/Capstone/data/PICK_TEST1/policy/run_016_2026-11-18` |
+   | show it another demo (0 is the first) | `policy_deploy use <run folder> --prompt-index 3` |
+   | go back to holding still | `policy_deploy use hold_still` |
+
+   Each session folder keeps a copy of `station.yaml`, so every trial records which policy and demo it ran.
+   If anything is missing it prints `policy_deploy use: FAIL ...` with a hint, and `station.yaml` is not changed. The
+   usual one: `no checkpoint in .../checkpoints` (the run was not fetched: `train/fetch.sh <folder> <run>`).
+
+3. **Try it without the arm (optional):** `policy_deploy run --mock` runs the chosen policy against a fake Pi and a
+   fake PC. It needs a recorded Pi episode in `station.yaml`: `frames: {mock_episode: <a folder with meta.json>}`.
+   Good: the status line's `margin` stays positive during an episode.
+
+4. **On the real arm, once: settle the gripper axes.** `check` refuses a trained policy
+   (`settled FAIL trained policy refused on the real arm`) until `../contracts/frames.yaml` says `settled: true`.
+   Set it only after both checks below pass. Only `h` moves the arm. "Right" means standing behind the robot,
+   facing the way it faces.
+
+   1. PC: `git pull`, `control_deploy run`, press `h` (home). Laptop, with `policy_deploy run` not running:
+
+      ```bash
+      ~/envs/policy_deploy/bin/python -m policy_deploy.manager.pc_probe --seconds 3 --axes
+      ```
+
+      Good: `PASS  compare_hello: all equal` (the PC has the same `frames.yaml`), then
+      `TCP x axis -> ...: to the robot's right`, `TCP y axis -> ...: back (toward the base)`, `TCP z axis -> ...: down`.
+   2. Camera: save images with the frames probe (section "The frames probe"), holding your hand to the robot's right
+      of the fingers. Good: in `ultrawide_0.png` the fingers are at the bottom and your hand is on the **right**.
+   3. Both good: set `settled: true` in `../contracts/frames.yaml`, commit, push, `git pull` on the PC and restart
+      `control_deploy run` there. Either one wrong (x "to the robot's left", or your hand on the left): **don't**
+      settle; the camera is on the other face and `F_T_TCP` needs the other rotation (PLAN §9).
+   4. First trained episode: hand on the user stop. If the first move does not head for the object, press `s`.
+
+5. **Every run after that:** the daily routine at the top (`check`, then `run`). The chosen policy stays chosen.
+
+**What the laptop needs.** Measured with `run_001` (the same model size) on an RTX 3050 Ti laptop GPU (4 GB, 35 W
+power cap, a low-end GPU):
+
+| | Needed | Measured with `run_001` |
+|---|---|---|
+| GPU | NVIDIA with CUDA; driver 535 or newer (tested) | |
+| GPU memory | 4 GB at least; 6 GB or more for headroom | peak with fp32 about 2.0 GB allocated / 2.2 GB reserved; with bf16 about 2.8 GB / 2.8 GB (about 3.0 GB in `nvidia-smi`): bf16 keeps extra copies of the weights |
+| `precision: bf16` | an RTX 30-series GPU or newer; on older GPUs keep `fp32` (bf16 runs there but emulated, so it is not faster) | |
+| Speed | a policy step that fits `exec_h` (the table in "Policy timing") | in a `--mock` run: fp32 16 steps about 300 ms, bf16 16 steps about 226 ms, bf16 8 steps about 186 ms |
+| RAM | 16 GB | peak about 5 GB while the checkpoint loads (about 10 s) |
+| Disk | about 10 GB | torch environment 6.1 GB, checkpoint 2.6 GB, demos 0.5-0.9 GB |
+
+Plugged in, on AC power: on battery or power-saver the start-up limits are missed.
 
 ---
 
@@ -407,7 +445,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy/bin/python -m pytest tests
 
 | File | What's in it |
 |---|---|
-| `station.yaml` | this laptop's settings: the Pi's address, the policy, overrides of `config/*.yaml` |
+| `station.yaml` | this laptop's settings: the Pi's address, the policy (set it with `policy_deploy use`), overrides of `config/*.yaml` |
 | `../contracts/link.yaml` | the PC's and the laptop's addresses: the same on both machines |
 
 How it is built and why: `deployment/PLAN.md` and `policy_deploy/STRUCTURE.md`.

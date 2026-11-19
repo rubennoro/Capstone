@@ -13,7 +13,8 @@ ports:                            # all on 127.0.0.1 (TOP 2.2)
   frames: 5610                    # C1
   policy: 5640                    # C4
   mock_pi: 5600                   # --mock: the fake Pi inside frames
-frames: {}                        # overrides of config/frames_process.yaml
+frames:                           # overrides of config/frames_process.yaml
+  mock_episode: ~/Downloads/data/incoming/episode_000152   # --mock only: a recorded PICK_TEST1 Pi episode
 policy:
   kind: hold_still                # hold_still until a rig-trained diffusion checkpoint exists (PLAN 1)
 manager: {}

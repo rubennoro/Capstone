@@ -11,6 +11,9 @@ printed every second; the hello reply and compare_hello. It never sends start, s
 --check runs 2 s and prints one check line per STRUCTURE.md 8.4 row and per link fact (C2 rate, RTT, clock agreement)
 for the launcher; with --json each line is {"name", "status", "detail"}. Clock agreement is judged with the map of
 link.yaml clock.estimator, as `run` judges it at start-up. It exits 0 unless it crashes.
+
+--axes (new) also prints, at the end, where the measured TCP's x, y, z axes point in the robot's base frame, in words:
+the read-only check of contracts/frames.yaml F_T_TCP before settled: true (policy_deploy/DIRECTIONS.md).
 """
 from __future__ import annotations
 
@@ -196,6 +199,22 @@ class PcProbe:
         return rows
 
 
+# The Franka base frame, seen standing behind the robot and facing the way it faces.
+_BASE_WORDS = {(0, 1): "forward (away from the base)", (0, -1): "back (toward the base)",
+               (1, 1): "to the robot's left", (1, -1): "to the robot's right", (2, 1): "up", (2, -1): "down"}
+
+
+def axes_lines(O_T_TCP) -> list[str]:
+    """One line per TCP axis: its direction in the base frame, and in words when within 25 deg of a base axis."""
+    out = []
+    for col, name in enumerate("xyz"):
+        v = [float(O_T_TCP[row][col]) for row in range(3)]
+        big = max(range(3), key=lambda i: abs(v[i]))
+        words = _BASE_WORDS[(big, 1 if v[big] > 0 else -1)] if abs(v[big]) > 0.906 else "between base axes"
+        out.append(f"TCP {name} axis -> base ({v[0]:+.2f}, {v[1]:+.2f}, {v[2]:+.2f}): {words}")
+    return out
+
+
 def emit(rows: list[PcCheck], as_json: bool, out: TextIO) -> None:
     for r in rows:
         if as_json:
@@ -213,6 +232,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--mock", action="store_true", help="expect hello mock true (and connect locally)")
     ap.add_argument("--check", action="store_true", help="2 s, then check lines for policy_deploy check")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--axes", action="store_true", help="also print where the TCP axes point (frames.yaml check)")
     a = ap.parse_args(argv)
     local = a.local or a.mock
     try:
@@ -237,6 +257,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             reply = {k: v for k, v in probe.reply.to_dict().items() if k not in ("schema", "F_T_TCP", "schemas")}
             print(f"hello reply: {reply}")
         emit(rows, a.json, sys.stdout)
+        if a.axes:
+            latest = probe.history.latest()
+            for line in (axes_lines(latest.O_T_TCP) if latest is not None else ["TCP axes: no C2 state received"]):
+                print(line)
         return 1 if any(r.status == "fail" for r in rows) else 0
     finally:
         probe.close()
