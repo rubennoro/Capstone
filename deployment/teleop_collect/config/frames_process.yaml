@@ -1,0 +1,59 @@
+# adapted from rnoro/final-deployment:deployment/policy_deploy/config/frames_process.yaml @ 2ffe641
+# changes: without select.main_spacing_ms, select.ultrawide_spacing_ms, select.tolerance_frames and probe (no image
+# selection); + record (STRUCTURE.md 3.3); server.poll_s 0.02 (R1 and U2 answer within a teleop cycle); comments name
+# teleop_collect.
+#
+# frames: every setting, with its default (STRUCTURE.md 3.3). station.yaml's `frames:` section may override any key
+# here, and nothing else. Durations in seconds unless the name says _ms or _ns. Relative paths: from
+# deployment/teleop_collect/. The Pi's address and every port are in station.yaml; nothing here may name a key of
+# deployment/contracts/*.yaml.
+rig_file: rigs/rig_pi_v2_640.yaml        # the rig as the Pi streams it: both cameras 640x480 @ 30 (rig_pi_v2 scaled)
+mock_episode: ~/Downloads/episode_000045 # the recorded Pi episode the fake Pi plays (--mock only)
+default_exposure_ns: 5000000             # used when exposure_us is 0, capped at half the rig frame period
+
+receive:
+  timeout_s: 0.1                         # wait for one C0 packet before checking the stop flag
+  recv_hwm: 60                           # C0 packets ZeroMQ may queue (2 s); beyond that it drops whole packets
+
+buffer:
+  keep_s: 1.0                            # ultrawide frames kept for finding a pair
+
+select:
+  pair_max_age_ms: 60.0                  # the pair at most this much older than its main frame (mid-exposures)
+  pair_max_lead_ms: 25.0                 # the pair at most this much newer; set from pi_collect's pair-gap report
+  pair_max_reuse: 2                      # the same ultrawide frame may pair at most this many consecutive packets
+
+health:
+  stale_s: 0.35                          # age above which a camera is stale
+  down_s: 2.0                            # age above which a camera is down
+  fps_window_s: 1.0                      # window for the measured fps
+
+clock:                                   # Pi -> laptop, one-way from t_send_ns (OneWayClockMap)
+  window_s: 60.0                         # samples older than this are forgotten
+  best_fraction: 0.3                     # least-delayed share of each 1 s slice used for offset and drift
+  drift_min_span_s: 10.0                 # the best samples must span this long before drift is fitted
+  max_drift_ppm: 500.0                   # a fitted drift above this is noise (set to 0)
+  max_sync_age_s: 10.0                   # no packet for this long -> the Pi clock is not synced (nothing recorded)
+
+server:
+  poll_s: 0.02                           # main loop period: R1 and U2 poll, ready check
+  join_timeout_s: 2.0                    # wait per thread at shutdown
+
+log:
+  stats_every_s: 10.0                    # how often the stats line (and stats.jsonl) is written
+
+record:
+  queue_max_packets: 90                  # 3 s of packets waiting for the writer; beyond that the recording fails
+  clock_log_every_s: 1.0                 # clock_pi.csv row period
+  playback_fps: 30                       # the .mkv timestamps (playback only; true times are in the CSV)
+
+mock:
+  max_seconds: 10.0                      # how much of mock_episode is loaded and looped
+  jpeg_quality: 90                       # fake JPEG quality
+  pi_clock_offset_s: 1000.0              # fake Pi clock = laptop clock + this ...
+  drift_ppm: 20.0                        # ... running this much fast
+  send_hwm: 30                           # fake Pi PUB queue, in packets (the Pi's SNDHWM)
+
+check:
+  reachable_timeout_s: 1.0               # teleop_collect check: the TCP connect to the Pi
+  subprocess_timeout_s: 10.0             # teleop_collect check: the rig-file and import subprocesses

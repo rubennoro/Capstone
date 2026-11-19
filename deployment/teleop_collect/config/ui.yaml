@@ -1,0 +1,8 @@
+# ui: every setting, with its default (STRUCTURE.md 3.3). station.yaml's `ui:` section may override any key here.
+# The HTTP port is station.yaml ports.http; the server binds 127.0.0.1 only.
+status_hz: 10            # status pushed to the page
+preview_hz: 15           # previews pulled from frames and pushed to the page
+keys_resend_ms: 50       # the page resends its key state this often while it has focus
+keys_stale_ms: 150       # the server sends "no keys" to teleop when the page is silent this long
+rpc_timeout_s: 0.5       # U1 / U2 request timeout
+open_browser: true       # teleop_collect run opens the page (also --no-browser)

@@ -1,0 +1,16 @@
+# adapted from rnoro/final-deployment:deployment/policy_deploy/config/launcher.yaml @ 2ffe641
+# changes: ready_timeout_s for this package's processes (fake_pc, frames, teleop, ui; no policy, no manager);
+# comments name teleop_collect.
+#
+# launcher: teleop_collect check | run (STRUCTURE.md 3.3, 10.1). Overridable in station.yaml's `launcher:` section.
+stop_timeout_s: 5.0           # SIGTERM, then SIGKILL after this long
+poll_s: 0.1                   # how often the launcher looks at its processes
+fake_pc: true                 # --mock: start the fake PC. false only for the cross test, where a real
+                              # franka_control --mock --local already listens on 127.0.0.1 (no effect without --mock)
+ready_timeout_s:
+  fake_pc: 10.0               # C2 and C3 bound on 127.0.0.1, first C2 published
+  frames: 30.0                # R1 and U2 answer, both cameras ok once
+  teleop: 150.0               # start-up done; startup 20 + pc_homing_wait 60 + home_s 90 cannot all happen, the
+                              # longest legal is 20 + 60 + 30 (the PC's homing timeout) + 5 = 115 s, so teleop's
+                              # own FATAL line always comes first
+  ui: 15.0                    # the page is served and U1 answered get_status once

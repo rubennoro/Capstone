@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>teleop_collect</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="banner" class="banner hidden" role="alert"></div>
+
+  <header class="bar">
+    <label class="task">
+      <span class="label">task</span>
+      <select id="task-select" aria-label="task"></select>
+    </label>
+    <button id="new-task-toggle" type="button" class="quiet">+ new task</button>
+    <form id="new-task-form" class="new-task hidden" autocomplete="off">
+      <input id="new-task-name" placeholder="name: a-z 0-9 _" pattern="[a-z0-9_]{1,64}" maxlength="64" required>
+      <input id="new-task-description" placeholder="the task in one line" maxlength="200">
+      <button type="submit">Create</button>
+      <button id="new-task-cancel" type="button" class="quiet">Cancel</button>
+    </form>
+    <span id="task-description" class="muted"></span>
+    <span class="spacer"></span>
+    <span id="mock-badge" class="badge hidden">mock PC</span>
+    <span id="link" class="badge">connecting</span>
+  </header>
+
+  <main>
+    <section class="cameras">
+      <figure class="camera">
+        <figcaption><span>main (IMX519)</span><span id="cam-main" class="muted">-</span></figcaption>
+        <div class="frame"><img id="preview-main" alt="main camera preview"></div>
+      </figure>
+      <figure class="camera">
+        <figcaption><span>ultrawide (IMX219)</span><span id="cam-ultrawide" class="muted">-</span></figcaption>
+        <div class="frame"><img id="preview-ultrawide" alt="ultrawide camera preview"></div>
+      </figure>
+    </section>
+
+    <aside class="panel" aria-label="status">
+      <div id="rec" class="rec hidden"></div>
+      <dl>
+        <dt>phase</dt><dd id="phase">-</dd>
+        <dt>arm</dt><dd id="arm">-</dd>
+        <dt>tcp</dt><dd id="tcp">-</dd>
+        <dt>grip</dt><dd id="grip">-</dd>
+        <dt>cams</dt><dd id="cams">-</dd>
+        <dt>c2</dt><dd id="c2">-</dd>
+        <dt>rtt</dt><dd id="rtt">-</dd>
+        <dt>clock</dt><dd id="clock">-</dd>
+        <dt>speed</dt><dd id="speed">-</dd>
+      </dl>
+      <div id="limit" class="limit hidden">at workspace limit</div>
+    </aside>
+  </main>
+
+  <section class="controls">
+    <div class="buttons">
+      <button id="btn-home" type="button">Home</button>
+      <button id="btn-start" type="button" class="go">Start episode</button>
+      <button id="btn-stop-episode" type="button" class="hidden">Stop episode</button>
+      <span id="save-choice" class="save hidden">
+        <button id="btn-save-success" type="button" class="go">Save: success</button>
+        <button id="btn-save-fail" type="button">Save: fail</button>
+        <button id="btn-discard" type="button" class="warn">Discard</button>
+        <button id="btn-keep" type="button" class="quiet">Keep recording</button>
+      </span>
+      <button id="btn-stop-arm" type="button" class="stop">Stop arm (Esc)</button>
+    </div>
+    <div id="hint" class="hint"></div>
+    <div id="last-action" class="muted"></div>
+    <p class="keys">
+      keys: <kbd>W</kbd>/<kbd>S</kbd> <kbd>A</kbd>/<kbd>D</kbd> <kbd>R</kbd>/<kbd>F</kbd> move ·
+      <kbd>I</kbd>/<kbd>K</kbd> <kbd>J</kbd>/<kbd>L</kbd> tilt · <kbd>U</kbd>/<kbd>O</kbd> twist ·
+      <kbd>N</kbd> close · <kbd>M</kbd> open fingers · hold <kbd>Shift</kbd> slow · <kbd>Esc</kbd> stop arm
+      <span id="keys-state" class="muted"></span>
+    </p>
+  </section>
+
+  <section class="lists">
+    <div>
+      <h2>episodes</h2>
+      <ul id="episodes" class="episodes"><li class="muted">none yet</li></ul>
+    </div>
+    <div>
+      <h2>messages</h2>
+      <ul id="messages" class="messages"></ul>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

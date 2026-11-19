@@ -1,0 +1,8 @@
+# The numeric limits of the shared contracts C2/C3 (deployment/STRUCTURE.md section 4.1).
+# Read by Python (deploy_contracts.ContractLimits, strict: exactly these keys) and by franka_control (C++, its 3 keys).
+# A value change is shared data (STRUCTURE.md 4.5): same commit on both machines, rerun
+# `python -m deploy_contracts.make_examples`; `hello` compares the PC's values with the laptop's at every start.
+rotation_tol: 1.0e-6        # C2, C3, hello: rotation part of a pose orthonormal within this; frames.yaml check
+gripper_width_max_m: 0.08   # the PC's gate (width range); the laptop policy's clipping and C4 ActionChunk check
+                            # TODO: measure the max fingertip opening with the printed fingers
+max_waypoints: 64           # C3 SetWaypoints: most waypoints in one request

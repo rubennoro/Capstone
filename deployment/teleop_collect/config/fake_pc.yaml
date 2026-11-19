@@ -1,0 +1,27 @@
+# fake_pc: the Python stand-in for franka_control under --mock (policy_deploy/STRUCTURE.md 10). station.yaml's
+# `fake_pc:` section may override any key here. It binds C2 and C3 on 127.0.0.1 with the link.yaml ports; the
+# watchdog limit, limits and F_T_TCP come from deployment/contracts/*.yaml, never from here.
+clock_offset_s: 1000.0        # fake PC clock = laptop CLOCK_MONOTONIC x (1 + drift) + this
+clock_drift_ppm: 30.0
+state_rate_hz: 100.0          # C2 broadcast rate
+state_send_hwm: 100           # C2 PUB queue
+homing_timeout_s: 30.0        # reported in hello (the PC's homing.timeout_s)
+max_lead_s: 1.5               # reported in hello and used by the fake gate (the PC's safety.max_lead_s)
+home_duration_s: 1.0          # a home move (C3 or keyboard) takes this long
+home_pose:                    # where a home move takes the TCP target, row-major 4x4, m (pointing down)
+  - [1.0, 0.0, 0.0, 0.45]
+  - [0.0, -1.0, 0.0, 0.0]
+  - [0.0, 0.0, -1.0, 0.35]
+  - [0.0, 0.0, 0.0, 1.0]
+start_pose:                   # the TCP target at start-up
+  - [1.0, 0.0, 0.0, 0.45]
+  - [0.0, -1.0, 0.0, 0.0]
+  - [0.0, 0.0, -1.0, 0.30]
+  - [0.0, 0.0, 0.0, 1.0]
+start_width_m: 0.04           # gripper width at start-up
+width_speed_m_s: 0.05         # the width moves toward the commanded width at this speed
+measured_offset_m: 0.0        # measured TCP = target + this along x (a few mm in anchor tests)
+start_mode: idle              # the first mode (subprocess tests: e.g. holding for the H2 wait)
+start_hold_s: 0.0             # with start_mode holding/running: another C3 client feeds the watchdog for this long
+                              # after start-up (a large value: an episode that stays, the H2 refusal test)
+poll_s: 0.01                  # C3 serve poll (how fast the stop flag is seen)

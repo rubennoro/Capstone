@@ -1,0 +1,21 @@
+# The laptop station file (STRUCTURE.md 3.2). One file for real and --mock runs. It may not override any key of
+# deployment/contracts/*.yaml: the PC's address, ports and timing come only from link.yaml.
+station_version: 1
+session_root: ~/teleop_collect_sessions   # logs of every run (one folder per run)
+data_root: ~/CapstoneTeleop               # the episodes: <data_root>/<task>/episode_NNN/
+mock_data_root: ~/CapstoneTeleop_mock     # the episodes of --mock runs (never mixed with the real ones)
+pi:
+  address: 192.168.50.30                  # PLACEHOLDER: the Pi's ASUS_5g address
+  port: 5555                              # fixed by the Pi
+wifi_ssid: ASUS_5g
+ports:                                    # all on 127.0.0.1
+  mock_pi: 5650                           # --mock: the fake Pi inside frames
+  r1: 5651                                # frames: R1 (teleop -> frames)
+  preview: 5652                           # frames: U2 (ui -> frames)
+  u1: 5653                                # teleop: U1 (ui -> teleop)
+  http: 8765                              # ui: the page, http://127.0.0.1:8765
+frames: {}                                # overrides of config/frames_process.yaml
+teleop: {}                                # overrides of config/teleop.yaml
+ui: {}                                    # overrides of config/ui.yaml
+fake_pc: {}                               # overrides of config/fake_pc.yaml
+launcher: {}                              # overrides of config/launcher.yaml (e.g. fake_pc: false, the cross test)

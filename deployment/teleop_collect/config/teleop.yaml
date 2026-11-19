@@ -1,0 +1,61 @@
+# teleop: every setting, with its default (STRUCTURE.md 3.3). station.yaml's `teleop:` section may override any key
+# here, and nothing else. Durations in seconds unless the name says _ms or _ns.
+# The link values (heartbeat period, C3 timeout, state stale/lost limits, the clock estimator, the PC's address and
+# ports) come only from deployment/contracts/link.yaml and may not appear here or in station.yaml.
+#
+# Worst C3 gap (PLAN 5.1), checked at start-up against the PC's hello watchdog_limit_s:
+#   heartbeat_period_s + c3_timeout_s + timeouts.health_s + link_jitter_allowance_s
+#   = 0.02 + 0.3 + 0.05 + 0.2 = 0.57 s  <  watchdog_limit_s (1.0 s)
+# Homing: timeouts.home_s must be above the PC's homing_timeout_s (hello; 30 s), so the PC answers first.
+
+motion:                                   # PLAN 5.2-5.3
+  v_max_m_s: 0.05                         # per axis, each held translation key
+  w_max_deg_s: 10.0                       # the twist, and the tilt (both tilt axes together, normalised)
+  slow_factor: 0.25                       # Shift
+  waypoints: 2                            # K
+  spacing_ms: 50                          # Delta; the lead is K x Delta = 100 ms
+  key_stale_ms: 150                       # no key state for this long = all keys released
+  state_max_age_ms: 50                    # no motion while the newest C2 is older (mapped)
+  assumed_pc_box_margin_m: 0.01           # the PC's safety.box_margin_m (fd:control_deploy/franka_control/config.yaml)
+  assumed_pc_cone_margin_deg: 2.0         # the PC's safety.cone_margin_deg
+  margin_use: 0.8                         # settings are refused if the worst step exceeds this share of a margin
+home:
+  on_start: true                          # PLAN 8: home the whole arm once at start-up
+  tolerance_rad: 0.01                     # every joint within this of the home reference
+  tolerance_m: 0.005                      # and the TCP target position within this (the fake PC reports q = 0)
+history_s: 1.0                            # length of the C2 state history
+state_recv_hwm: 1000                      # C2 subscriber queue length (every message is needed for the seq check)
+listener_poll_s: 0.02                     # C2 receive timeout (how fast the listener sees its stop flag)
+link_jitter_allowance_s: 0.2              # worst gap: allowance for uplink delay variance and local work
+health_poll_ms: 500                       # R1 get_health period, in every phase
+u1_max_per_cycle: 4                       # U1 requests served per cycle
+at_limit_hold_ms: 500                     # "at workspace limit" shown this long after gate.pulled_back rises
+messages_kept: 200                        # page messages kept in memory
+timeouts:
+  health_s: 0.05                          # R1 get_health (a term of the worst C3 gap)
+  frames_s: 4.0                           # R1 start_recording / stop_recording (frames' stop drains up to 1 + 2 s)
+  home_s: 90.0                            # C3 home; above the PC's homing_timeout_s (hello)
+  startup_s: 20.0                         # start-up, not counting the waits while C2 shows homing or the home itself
+  pc_homing_wait_s: 60.0                  # start-up: longest wait without C3 while C2 shows homing
+clock:                                    # pd:'s config/manager.yaml clock block; the estimator is link.yaml's
+  hello_period_s: 0.5                     # hello rate after start-up
+  startup_hello_period_s: 0.02            # hello rate while the map gets ready (every cycle)
+  round_trip:
+    window_s: 10.0
+    best_fraction: 0.3
+  one_way:
+    window_s: 5.0
+    best_fraction: 0.3
+  drift_min_span_s: 5.0                   # drift fitted once the best samples span this long
+  max_drift_ppm: 200.0                    # a larger fitted drift is noise (worst extrapolation 200 ppm x 5 s = 1 ms)
+  min_samples_s: 2.0                      # the map is ready only with this span ...
+  min_samples: 10                         # ... and this many samples
+  max_sample_age_s: 5.0                   # the map is not ready when its newest sample is older (after a long home)
+  startup_agree_ms: 5.0                   # start-up guard: map vs the shortest-RTT hello
+  jump_log_ms: 1.0                        # a refit that moves "now" by more than this is logged
+  mismatch_sets: 3                        # this many counted sets in a row conclude
+  mismatch_min_lead_ms: 60.0              # teleop's lead is 100 ms (pd: 100 ms for a policy's 350 ms)
+  future_state_ms: 20.0                   # a set sent while the newest C2 t_ns is this far ahead of mapped "now" counts
+  log_every_s: 10.0                       # clock.jsonl period
+link_stats:
+  window_s: 10.0                          # RTT percentiles window

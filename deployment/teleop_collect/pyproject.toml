@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teleop-collect"
+version = "1.0.0"
+description = "The laptop side of teleop collection: frames, teleop, ui, fake PC and their launcher"
+requires-python = ">=3.10,<3.11"
+# deploy-contracts is NOT listed: it is installed editable from deployment/contracts first (PLAN.md 4.1);
+# `teleop_collect check` fails without it.
+dependencies = [
+    "numpy>=1.26,<2.3",
+    "pyyaml==6.0.3",
+    "opencv-python-headless==4.12.0.88",
+    "scipy==1.15.3",
+    "av==17.1.0",
+    "aiohttp==3.10.10",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+teleop_collect = "teleop_collect.launcher.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["teleop_collect", "teleop_collect.*"]
+
+[tool.setuptools.package-data]
+"teleop_collect.ui" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"

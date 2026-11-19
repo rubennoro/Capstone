@@ -10,7 +10,17 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17)
+## Current state (2026-10-17; teleop added 2026-11-18)
+
+- **Teleop data collection** (this branch, `rnoro/teleop-collect-deploy`): `deployment/teleop_collect/` is built and
+  tested; it has not run on hardware yet.
+  - What it is: keyboard teleop of the Panda from a browser page on the laptop, recording both Pi streams (MJPEG .mkv)
+    and every arm state into `~/CapstoneTeleop/<task>/episode_NNN/`.
+  - The PC runs `control_deploy` from `rnoro/final-deployment`, unchanged and never modified. `deployment/contracts/`
+    here is its byte copy.
+  - Docs: `teleop_collect/{PLAN,STRUCTURE,DESIGN,DIRECTIONS}.md` and `deployment/control_deploy/DIRECTIONS.md`.
+  - Tests: `teleop_collect` has 1295 passing, including the mock run and the cross test against
+    `franka_control --mock`; `contracts` has 582. The env is `~/envs/teleop_collect`.
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -59,6 +69,13 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
+- Teleop:
+  1. Commit and push `rnoro/teleop-collect-deploy` (after the walk-through).
+  2. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md`, measuring the workspace box first, then
+     the `console` steps.
+  3. On the laptop: `teleop_collect/DIRECTIONS.md`. Set the real addresses in `link.yaml` on both machines and in
+     `station.yaml`.
+  4. First teleop: slow mode, hand on the user stop.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.
