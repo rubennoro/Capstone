@@ -52,8 +52,9 @@ need() {
 }
 need CLUSTER_REPO CLUSTER_DATASETS CLUSTER_RUNS CLUSTER_LOGS CLUSTER_CONDA_MODULE CLUSTER_CONDA_ENV \
   SLURM_PARTITION SLURM_GRES SLURM_TIME SLURM_CPUS SLURM_MEM SMOKE_PARTITION SMOKE_TIME EVAL_PARTITION EVAL_TIME \
-  DEFAULT_EPOCHS
+  DEFAULT_EPOCHS TRAIN_CONFIG
 case ${SLURM_ACCOUNT:-} in *'<'*) die "config: SLURM_ACCOUNT is still a placeholder; set it or make it \"\"" ;; esac
+[[ $TRAIN_CONFIG =~ ^[A-Za-z0-9_]+$ ]] || die "config: TRAIN_CONFIG must be a config name like umi_policy_dunetp (got '$TRAIN_CONFIG')"
 
 TOPK=${TOPK:-1}  # one checkpoint per run by default (~2.5 GB slim), like the old pipeline's checkpoint.topk.k=1
 
@@ -101,6 +102,21 @@ run_sbatch() {
 check_clone() {
   [ -f "$REPO/behavior_prompting/behavior_prompting/train_network/train.py" ] && [ -f "$REPO/scripts/package_run.py" ] ||
     die "repo clone not found or incomplete at $REPO (CLUSTER_REPO); clone the repo there first"
+}
+
+check_train_config() {
+  local dir="$REPO/behavior_prompting/behavior_prompting/train_network/config"
+  [ -f "$dir/$TRAIN_CONFIG.yaml" ] ||
+    die "TRAIN_CONFIG=$TRAIN_CONFIG: no $TRAIN_CONFIG.yaml in $dir (umi_policy_dunetp = behavior prompting, umi_policy_dunet = plain diffusion)"
+}
+
+# run_train_config RUN_DIR: the config that run was trained with, from the config frozen at its submission
+# (run_config/submit_config.env). Copies frozen before TRAIN_CONFIG existed are umi_policy_dunetp, then the only one.
+run_train_config() {
+  # shellcheck disable=SC2034  # TRAIN_DIR is read by config.env (LOCAL_DATA_ROOT default)
+  (TRAIN_CONFIG=''; set +u; TRAIN_DIR=$1/run_config
+   # shellcheck source=/dev/null
+   source "$1/run_config/submit_config.env" >/dev/null 2>&1; echo "${TRAIN_CONFIG:-umi_policy_dunetp}")
 }
 
 # Next free run_NNN_<date>[_smoke] under $RUNS/<label>. mkdir is atomic: a concurrent submitter that took the same
@@ -167,6 +183,7 @@ cmd_train() {
   done
 
   check_clone
+  check_train_config
   local zip="$DATASETS/$label/$dataset/$dataset.zarr.zip"
   [ -f "$zip" ] || die "dataset not found: $zip (upload it with train/upload.sh)"
   mkdir -p "$LOGS"
@@ -239,6 +256,10 @@ cmd_eval() {
   local files=("$final"/checkpoints/"${ckpt}"_*.ckpt)
   [ -f "${files[0]}" ] || die "no checkpoints/${ckpt}_*.ckpt in $final (STATUS=$(cat "$final/STATUS" 2>/dev/null || echo ?); training not packaged yet?)"
   [ ${#files[@]} -eq 1 ] || die "more than one checkpoints/${ckpt}_*.ckpt in $final"
+  local run_config
+  run_config=$(run_train_config "$final")
+  [ "$attention" = 0 ] || [ "$run_config" = umi_policy_dunetp ] ||
+    die "--attention needs a behavior-prompting run (umi_policy_dunetp); $run was trained with $run_config, whose task has no env runner (no videos). Drop --attention: the offline eval still works."
   mkdir -p "$LOGS"
   resource_args "$EVAL_PARTITION" "$EVAL_TIME"
   SB+=(--job-name="bp_eval_$label" --signal=B:USR1@300)

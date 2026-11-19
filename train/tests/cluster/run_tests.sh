@@ -51,6 +51,7 @@ SMOKE_PARTITION="gpu-short"
 SMOKE_TIME="02:00:00"
 EVAL_PARTITION="gpu-short"
 EVAL_TIME="01:00:00"
+TRAIN_CONFIG="umi_policy_dunetp"
 DEFAULT_EPOCHS="60"
 MIN_PER_EPOCH_PER_10K_STEPS="0.55"
 TIME_MARGIN_MIN="40"
@@ -64,8 +65,10 @@ eval "$(HOME=$H TRAIN_DIR=$TOOLS bash -c 'set +u; source "$1/config.env"; for v 
   CLUSTER_DATASETS SLURM_PARTITION SLURM_GRES SLURM_TIME SLURM_CPUS SLURM_MEM SMOKE_PARTITION SMOKE_TIME EVAL_PARTITION \
   EVAL_TIME TOPK DEFAULT_EPOCHS; do printf "%s=%q\n" "E_$v" "${!v}"; done' _ "$TOOLS")"
 REPO=$H/$E_CLUSTER_REPO RUNS=$H/$E_CLUSTER_RUNS/block_raise LOGS=$H/$E_CLUSTER_LOGS
-mkdir -p "$REPO/behavior_prompting/behavior_prompting/train_network" "$REPO/scripts" "$REPO/controlSW/franka_deploy/franka_deploy"
-touch "$REPO/behavior_prompting/behavior_prompting/train_network/train.py" "$REPO/scripts/package_run.py" "$REPO/scripts/slim_checkpoint.py"
+mkdir -p "$REPO/behavior_prompting/behavior_prompting/train_network/config" "$REPO/scripts" "$REPO/controlSW/franka_deploy/franka_deploy"
+touch "$REPO/behavior_prompting/behavior_prompting/train_network/train.py" "$REPO/scripts/package_run.py" "$REPO/scripts/slim_checkpoint.py" \
+  "$REPO/behavior_prompting/behavior_prompting/train_network/config/umi_policy_dunetp.yaml" \
+  "$REPO/behavior_prompting/behavior_prompting/train_network/config/umi_policy_dunet.yaml"
 git -C "$REPO" init -q && git -C "$REPO" -c user.name=t -c user.email=t@t add -A &&
   git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -m init
 COMMIT=$(git -C "$REPO" rev-parse HEAD)
@@ -235,6 +238,11 @@ check "account from config.local.env" line "$T/sbatch_args_last" "--account=acct
 echo 'CLUSTER_RUNS="<runs dir>"' > "$TOOLS/config.local.env"
 SJ "${TRAIN_ARGS[@]}" --mode full --epochs 5 --topk 1 --note a > "$T/o7" 2>&1; rc=$?
 check "placeholder refused, names the variable" [ $rc -ne 0 ] && has "$T/o7" "CLUSTER_RUNS"
+echo 'TRAIN_CONFIG="umi_policy_dunet"' > "$TOOLS/config.local.env"
+SJ "${TRAIN_ARGS[@]}" --mode full --epochs 5 --topk 1 --note p > "$T/o7b" 2>&1; rc=$?
+P=$(sed -n 's/^RUN=//p' "$T/o7b")
+check "plain TRAIN_CONFIG accepted and frozen into the run" [ $rc -eq 0 ] && [ -n "$P" ] &&
+  grep -qx 'TRAIN_CONFIG="umi_policy_dunet"' "$RUNS/$P/run_config/submit_config.env"
 rm -f "$TOOLS/config.local.env"
 
 n_before=$(ls "$RUNS" | wc -l); j_before=$(cat "$T/jobid")
@@ -250,6 +258,13 @@ SJ "${TRAIN_ARGS[@]}" --mode bogus --note a > "$T/o9c" 2>&1; rc=$?
 check "bad mode refused" [ $rc -ne 0 ]
 SJ "${TRAIN_ARGS[@]}" --mode full --after 12x --note a > "$T/o9d" 2>&1; rc=$?
 check "bad --after refused" [ $rc -ne 0 ]
+echo 'TRAIN_CONFIG="umi_policy_nope"' > "$TOOLS/config.local.env"
+SJ "${TRAIN_ARGS[@]}" --mode full --epochs 5 --topk 1 --note a > "$T/o9f" 2>&1; rc=$?
+check "TRAIN_CONFIG not in the clone refused" [ $rc -ne 0 ] && has "$T/o9f" "no umi_policy_nope.yaml"
+echo 'TRAIN_CONFIG="../x"' > "$TOOLS/config.local.env"
+SJ "${TRAIN_ARGS[@]}" --mode full --epochs 5 --topk 1 --note a > "$T/o9g" 2>&1; rc=$?
+check "TRAIN_CONFIG that is not a plain name refused" [ $rc -ne 0 ] && has "$T/o9g" "must be a config name"
+rm -f "$TOOLS/config.local.env"
 touch "$T/sbatch_fail"
 SJ "${TRAIN_ARGS[@]}" --mode full --epochs 5 --topk 1 --note a > "$T/o10" 2>&1; rc=$?
 rm -f "$T/sbatch_fail"
@@ -275,6 +290,14 @@ mv "$T/controlSW.bak" "$REPO/controlSW"
 check "old clone message" [ $rc -ne 0 ] && has "$T/e3" "clone is older than 4be9982"
 SJ eval --label block_raise --run run_001_$DATE --dataset ds1 --ckpt best > "$T/e4" 2>&1; rc=$?
 check "bad --ckpt refused" [ $rc -ne 0 ]
+RC=$RUNS/run_001_$DATE/run_config/submit_config.env
+echo 'TRAIN_CONFIG="umi_policy_dunet"' >> "$RC"
+SJ eval --label block_raise --run run_001_$DATE --dataset ds1 --ckpt top1 --attention > "$T/e5" 2>&1; rc=$?
+check "--attention refused for a plain-diffusion run" [ $rc -ne 0 ] && has "$T/e5" "needs a behavior-prompting run"
+SJ eval --label block_raise --run run_001_$DATE --dataset ds1 --ckpt top1 > "$T/e6" 2>&1; rc=$?
+J=$(cat "$T/jobid")
+check "plain-diffusion run: offline eval without --attention submitted" [ $rc -eq 0 ] && line "$T/e6" "JOB=$J"
+sed -i '$d' "$RC"
 
 # ================================================================== submit_job.sh status
 R=$RUNS/run_001_$DATE
@@ -398,6 +421,23 @@ check "smoke: topk=1 -> one file" [ "$(jq_ "$F/checkpoints/checkpoints.json" "le
 check "package_run failure: STATUS still ok, exit nonzero" [ "$(cat "$F/STATUS")" = ok ] && [ $SB_RC -ne 0 ]
 check "package_run failure: scratch kept + recorded" [ -d "$RD" ] && line "$F/logs/checkpoints_on_scratch.txt" "$RD"
 check "job_info.json" [ "$(jq_ "$RD/job_info.json" "d['job_id'], d['task'], d['mode'], d['gpu_name'], d['epochs']")" = "2002 block_raise smoke NVIDIA H200 3" ]
+
+# ---- plain diffusion (TRAIN_CONFIG=umi_policy_dunet): its config name; smoke forces no rollouts (its task has no env runner)
+JID=2010; echo ok > "$T/accel_mode"
+/bin/mkdir -p "$RUNS/rp/run_config"
+{ cat "$TOOLS/config.env"; echo 'TRAIN_CONFIG="umi_policy_dunet"'; } > "$RUNS/rp/run_config/submit_config.env"
+run_train rp smoke 3 1 "plain"
+check "plain: exit 0, STATUS ok" [ $SB_RC -eq 0 ] && [ "$(cat "$RUNS/rp/STATUS")" = ok ]
+check "plain: --config-name=umi_policy_dunet" line "$T/accel_args" "--config-name=umi_policy_dunet"
+check "plain smoke: val/sample every 1, no rollout_every" line "$T/accel_args" "training.val_every=1" &&
+  line "$T/accel_args" "training.sample_every=1" && hasnt "$T/accel_args" "training.rollout_every"
+
+# ---- a config frozen before TRAIN_CONFIG existed -> umi_policy_dunetp (the only config then)
+JID=2011; echo ok > "$T/accel_mode"
+/bin/mkdir -p "$RUNS/ro/run_config"
+grep -v '^TRAIN_CONFIG=' "$TOOLS/config.env" > "$RUNS/ro/run_config/submit_config.env"
+run_train ro full 60 1 "old"
+check "old frozen config: --config-name=umi_policy_dunetp" [ $SB_RC -eq 0 ] && line "$T/accel_args" "--config-name=umi_policy_dunetp"
 
 # ---- failed training: STATUS failed, scratch kept
 JID=2003; echo fail > "$T/accel_mode"

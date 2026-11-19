@@ -50,7 +50,9 @@ Details:
 - **submit.sh** prints the run names and job ids and writes `data/<folder>/policy/<run>/job.json`; on stdout it
   prints only `SMOKE_RUN=<run>` / `FULL_RUN=<run>` (what all.sh reads). Extra Hydra
   overrides go after `--`, e.g. `-- training.lr_scheduler=constant`. `--smoke-first` = a 3-epoch smoke run, then the
-  full run, which only starts if the smoke run succeeded.
+  full run, which only starts if the smoke run succeeded. The policy type is `TRAIN_CONFIG` in `config.env`:
+  `umi_policy_dunetp` (behavior prompting, the default) or `umi_policy_dunet` (plain diffusion: no rollout/attention
+  videos, so no `eval.sh --attention`).
 - **status.sh** without a run name uses the newest `job.json`. `--wait` checks every 5 min until the run is `ok`,
   `failed` or `timeout`. `--eval top1` shows (and with `--wait` waits for) the newest offline-eval job of that
   checkpoint instead; a job that died without writing its result is reported from Slurm, so the wait always ends.

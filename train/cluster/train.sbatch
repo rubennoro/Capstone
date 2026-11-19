@@ -8,7 +8,8 @@
 #SBATCH --mem=64G
 #SBATCH --time=08:00:00
 #SBATCH --signal=B:USR1@600
-# Train behavior prompting on one packaged dataset and package the run folder that train/fetch.sh brings back.
+# Train one policy (TRAIN_CONFIG: umi_policy_dunetp = behavior prompting, umi_policy_dunet = plain diffusion) on one
+# packaged dataset and package the run folder that train/fetch.sh brings back.
 # Derived from scripts/cluster/train.sbatch (same env setup, LIBERO/EGL handling, GPU csv, USR1 timeout handling,
 # packaging always runs), but: hydra run dir on scratch, results in $HOME/CLUSTER_RUNS/<label>/<run>/, top-K slim
 # checkpoints (K=TOPK, default 1 like the old checkpoint.topk.k=1),
@@ -29,8 +30,8 @@
 #
 # When top-K checkpoints exist (TrainPolicyWorkspace, lines ~275-321 and ~610-619): the monitor key is
 # checkpoint.topk.monitor_key = val_action_mse_error_all (umi_policy_base.yaml), which needs training.sample_every, so
-# candidates are saved only at epochs where epoch % sample_every == 0 (0-indexed: 0, 10, 20, ... with the dunetp
-# default sample_every=10) plus the last epoch. A 60-epoch run has 7 candidates (0,10,...,50,59) for the K slots
+# candidates are saved only at epochs where epoch % sample_every == 0 (0-indexed: 0, 10, 20, ... with sample_every=10,
+# the default of both umi_policy_dunetp and umi_policy_dunet) plus the last epoch. A 60-epoch run has 7 candidates (0,10,...,50,59) for the K slots
 # (K=1 by default: the best one); smoke (sample_every=1) has one per epoch. Fallbacks in the workspace, each renaming the file key via format_str:
 #   sample_every=-1 -> val_loss (every val_every); empty val split -> train_action_mse_error_all (every sample_every);
 #   no val at all -> train_loss, for which no top-K manager exists (and save_train_loss_ckpt_every=null here), so the
@@ -64,12 +65,16 @@ SCRATCH=${BP_SCRATCH:-/scratch/$USER}  # BP_SCRATCH exists only for the local te
 RUN_DIR=$SCRATCH/bp_runs/$LABEL/$RUN_NAME
 SLURM_LOG=$LOGS/${SLURM_JOB_NAME}_${SLURM_JOB_ID}.out
 GPU_CSV=$LOGS/${SLURM_JOB_NAME}_${SLURM_JOB_ID}_gpu.csv
-CONFIG_NAME=umi_policy_dunetp
+# From the frozen submit config; a copy frozen before TRAIN_CONFIG existed means umi_policy_dunetp (the only one then).
+CONFIG_NAME=${TRAIN_CONFIG:-umi_policy_dunetp}
 
 case $MODE in
   full)  MODE_ARGS=() ;;
-  # val/rollout/sample every epoch so every code path runs once (epochs come from --epochs, 3 for smoke)
-  smoke) MODE_ARGS=(training.val_every=1 training.rollout_every=1 training.sample_every=1) ;;
+  # val/rollout/sample every epoch so every code path runs once (epochs come from --epochs, 3 for smoke). Rollouts
+  # need the task's env runner: umi_policy_dunetp (task umi_prompt) has one; umi_policy_dunet (task umi) has none and
+  # keeps rollout_every=-1, so forcing rollout_every=1 there would crash load_env_runner.
+  smoke) MODE_ARGS=(training.val_every=1 training.sample_every=1)
+         if [ "$CONFIG_NAME" = umi_policy_dunetp ]; then MODE_ARGS+=(training.rollout_every=1); fi ;;
   *) echo "ERROR: mode must be full or smoke" >&2; exit 1 ;;
 esac
 

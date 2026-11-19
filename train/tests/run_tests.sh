@@ -195,10 +195,12 @@ python3 -I "$T/make_pkg.py" "$J/data/datasets/block_raise/dsbig" dsbig block_rai
 
 # Cluster: a clone with what submit_job.sh checks for
 C=$T/homes/cluster
-mkdir -p "$C/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network" \
+mkdir -p "$C/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/config" \
   "$C/CapstoneProject/Capstone/scripts" "$C/CapstoneProject/Capstone/controlSW/franka_deploy/franka_deploy"
 touch "$C/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/train.py" \
-  "$C/CapstoneProject/Capstone/scripts/package_run.py"
+  "$C/CapstoneProject/Capstone/scripts/package_run.py" \
+  "$C/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/config/umi_policy_dunetp.yaml" \
+  "$C/CapstoneProject/Capstone/behavior_prompting/behavior_prompting/train_network/config/umi_policy_dunet.yaml"
 
 # Stub cluster tools (records its argv, prints RUN=/JOB=, creates the run dir)
 mkdir -p "$T/stub_tools"
