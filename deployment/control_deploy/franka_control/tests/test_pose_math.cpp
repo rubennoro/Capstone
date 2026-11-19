@@ -28,10 +28,10 @@ TEST(PoseMath, TcpFromFlangeMatchesAnIndependent4x4Formula) {
   EXPECT_TRUE(got.translation().isApprox(p_ind, 1e-12));
   EXPECT_TRUE(got.linear().isApprox(R_ind, 1e-12));
   EXPECT_TRUE(flangeFromTcp(got, F_T_TCP).matrix().isApprox(O_T_F.matrix(), 1e-12));   // exactly once each way
-  // The fixed hand F_T_TCP: -45 deg about the flange z axis, fingertips 150 mm out.
+  // The fixed hand F_T_TCP (frames.yaml): +45 deg about the flange z axis, fingertips 150 mm out.
   const Config cfg = test::testConfig();
   EXPECT_NEAR(cfg.F_T_TCP.translation().z(), 0.150, 1e-12);
-  EXPECT_TRUE(cfg.F_T_TCP.linear().isApprox(Eigen::AngleAxisd(-M_PI / 4, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
+  EXPECT_TRUE(cfg.F_T_TCP.linear().isApprox(Eigen::AngleAxisd(M_PI / 4, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
                                             1e-12));
 }
 

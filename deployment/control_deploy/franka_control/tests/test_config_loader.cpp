@@ -162,7 +162,7 @@ TEST(ConfigLoader, FTcpIsFramesYamlReNormalised) {
   const Config c = test::testConfig();
   const double h = std::sqrt(0.5);
   Eigen::Matrix4d want;
-  want << h, h, 0, 0, -h, h, 0, 0, 0, 0, 1, 0.150, 0, 0, 0, 1;
+  want << h, -h, 0, 0, h, h, 0, 0, 0, 0, 1, 0.150, 0, 0, 0, 1;
   EXPECT_TRUE(c.F_T_TCP.matrix().isApprox(want, 1e-15));
   EXPECT_LT((c.F_T_TCP.linear().transpose() * c.F_T_TCP.linear() - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff(),
             1e-15);

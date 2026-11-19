@@ -614,12 +614,12 @@ move to policy_deploy (PLAN §5.5: only what crosses).
 
 ```yaml
 # The one definition of the TCP (PLAN §9). The TCP on the wire (C2, C3) is the training TCP.
-# PENDING PLAN §9: this is rnoro/deployment's Franka Hand TCP (-45 deg about flange z, fingertips 150 mm out);
-# its axes are 90 deg about z from training's. Must be settled, and checked on the arm, before the first
-# trained-policy run. Not needed for hold still or the console tests.
+# Training's TCP axes (PLAN §9): x = finger closing (image right), y = image down, z = toward the fingertips.
+# The camera is on the Franka Hand's +x face (away from the base at home), so this is the Franka Hand TCP turned
+# +90 deg about z: +45 deg about flange z, fingertips 150 mm out. Check on the arm before settled: true.
 F_T_TCP:
+  - [0.7071067811865476, -0.7071067811865476, 0.0, 0.0]
   - [0.7071067811865476, 0.7071067811865476, 0.0, 0.0]
-  - [-0.7071067811865476, 0.7071067811865476, 0.0, 0.0]
   - [0.0, 0.0, 1.0, 0.150]
   - [0.0, 0.0, 0.0, 1.0]
 settled: false     # true once PLAN §9 is done and checked on the arm

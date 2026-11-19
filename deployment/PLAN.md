@@ -461,6 +461,10 @@ The rule: **the TCP on the wire (C2 and C3) is the training TCP.** It is defined
 `F_T_TCP`'s rotation (its sign follows from which side of the hand the camera is mounted), never by a correction on
 the laptop. The PC's gate doesn't depend on the TCP axes (the box uses position, the cone the flange z axis).
 
+**Set 2026-11-19:** the camera is on the Franka Hand's +x face (away from the base at home), so `F_T_TCP` is the
+Franka Hand TCP turned +90° about z (+45° about the flange z). The other face would be −135°. `settled` waits for
+the checks in policy_deploy/DIRECTIONS.md ("A trained policy", step 4).
+
 This does not block hold still (zero motion, any axes) or the PC console tests. It must be settled, and checked on the
 arm, before the first trained-policy run. Related, also before that run: the robot's camera mount should reproduce the
 handheld's camera-to-fingertip geometry, so the images look like training's.

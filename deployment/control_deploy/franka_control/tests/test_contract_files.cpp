@@ -48,7 +48,7 @@ TEST(ContractFrame, TheRealFramesYamlLoadsAndEqualsTheContractLiteral) {   // de
   const Pose f = ContractFrame::load(test::framesFile(), kTol, problems);
   ASSERT_TRUE(problems.empty()) << problems.front();
   Eigen::Matrix4d want;
-  want << 0.7071067811865476, 0.7071067811865476, 0.0, 0.0, -0.7071067811865476, 0.7071067811865476, 0.0, 0.0, 0.0,
+  want << 0.7071067811865476, -0.7071067811865476, 0.0, 0.0, 0.7071067811865476, 0.7071067811865476, 0.0, 0.0, 0.0,
       0.0, 1.0, 0.150, 0.0, 0.0, 0.0, 1.0;
   EXPECT_TRUE(f.matrix().isApprox(want, 1e-15));
   // re-normalised through a unit quaternion: orthonormal to rounding
