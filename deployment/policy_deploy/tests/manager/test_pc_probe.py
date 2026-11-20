@@ -1,9 +1,10 @@
 """pc_probe against an in-process FakePc (STRUCTURE.md 8.6, 12.2): reads C2, sends only hello/heartbeat, prints both
-estimators, refuses while holding past the H2 limit; --check --json lines."""
+estimators, refuses while holding past the H2 limit; --check --json lines; --start-pose lines."""
 from __future__ import annotations
 
 import io
 import json
+import math
 
 import pytest
 from manager_pc_fakepc import make_fake_pc
@@ -11,7 +12,7 @@ from manager_pc_harness import FAST, merge, small_link
 from station_helpers import write_station
 
 from policy_deploy.contracts import Station
-from policy_deploy.manager.pc_probe import PcCheck, PcProbe, emit
+from policy_deploy.manager.pc_probe import PcCheck, PcProbe, emit, start_pose_lines
 from policy_deploy.manager.settings import Settings
 
 FAST_LINK = small_link(watchdog_limit_s=0.5, c3_timeout_s=0.15)
@@ -120,3 +121,51 @@ def test_no_c2_row(tmp_path):
     finally:
         probe.close()
     assert rows == [PcCheck("C2", "fail", rows[0].detail)] and "no C2 state" in rows[0].detail
+
+
+def _tilted_forward(deg: float, z_m: float) -> list[list[float]]:
+    """The fake PC's pointing-down pose turned about base y: the fingertips (TCP z) tilt `deg` toward forward (+x)."""
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return [[c, 0.0, s, 0.45], [0.0, -1.0, 0.0, 0.0], [s, 0.0, -c, z_m], [0.0, 0.0, 0.0, 1.0]]
+
+
+@pytest.mark.parametrize("pose, width_m, height, direction", [
+    (None, 0.04, "z 0.300 m", "base (+0.00, +0.00, -1.00): tilted 0.0 deg from straight down, no horizontal direction"),
+    (_tilted_forward(48.0, 0.16), 0.08, "z 0.160 m",
+     "base (+0.74, +0.00, -0.67): tilted 48.0 deg from straight down, pointing forward (away from the base)"),
+])
+def test_start_pose_lines_from_the_fake_pcs_c2(probe_for, pose, width_m, height, direction):
+    fake, probe, _ = probe_for(start_width_m=width_m, **({"start_pose": pose} if pose is not None else {}))
+    rows = probe.run(0.3, report_every_s=None)
+    assert {r.name: r for r in rows}["hello"].status == "pass"
+    assert set(fake.request_names()) <= {"c3.hello/v1", "c3.heartbeat/v1"}       # read-only
+    lines = start_pose_lines(probe.history.latest())
+    assert lines == [
+        "q_start_rad: [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]   # paste under franka_control: homing: "
+        "in the PC's control_deploy/station.yaml",
+        f"fingertip (TCP) height: {height} in the robot base frame",
+        f"fingertip direction (TCP z axis) -> {direction}",
+        f"gripper width: {width_m * 1000:.1f} mm",
+        "demos start: fingertips tilted ~48 deg from straight down (38-64), ~16 cm above the table (6-27), hand open; "
+        "object ~16 cm ahead horizontally and ~17 cm below the fingertips"]
+
+
+@pytest.mark.parametrize("zx, zy, words", [
+    (0.0, 0.7, "pointing to the robot's left"), (0.0, -0.7, "pointing to the robot's right"),
+    (-0.7, 0.0, "pointing back (toward the base)"),
+    (0.5, 0.5, "pointing between forward (away from the base) and to the robot's left"),
+])
+def test_start_pose_words_and_q(zx, zy, words):
+    from types import SimpleNamespace
+
+    import numpy as np
+    z = np.array([zx, zy, -math.sqrt(1 - zx * zx - zy * zy)])
+    x = np.cross([0.0, 0.0, 1.0], z)
+    x /= np.linalg.norm(x)
+    T = np.eye(4)
+    T[:3, 0], T[:3, 1], T[:3, 2], T[2, 3] = x, np.cross(z, x), z, 0.2
+    q = [0.1, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816]
+    lines = start_pose_lines(SimpleNamespace(q=np.array(q), O_T_TCP=T, gripper_width_m=0.0))
+    assert lines[0].startswith("q_start_rad: [0.1000, -0.7854, 0.0000, -2.3562, 0.0000, 1.5708, 0.7854]   # paste")
+    assert lines[2].endswith(words) and f"tilted {math.degrees(math.acos(-z[2])):.1f} deg" in lines[2]
+    assert lines[3] == "gripper width: 0.0 mm"

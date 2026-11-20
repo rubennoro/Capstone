@@ -8,7 +8,7 @@ the recorded episode (station_helpers.RECORDED_EPISODE).
 2. `$FRANKA_CONTROL_BIN --station <tmp>/fc_station.yaml --mock --local --ready-file <tmp>/fc.ready`, wait for the ready
    file (30 s); skipped if 127.0.0.1:5620/5630 are busy;
 3. `python -m policy_deploy run --mock` with launcher.fake_pc: false (frames with the fake Pi, policy hold_still, the
-   manager on 127.0.0.1 with the link.yaml ports) and the script c, wait_steps 20, y, h, q;
+   manager on 127.0.0.1 with the link.yaml ports) and the script c, wait_steps 20, y, q;
 4. SIGTERM the binary, expect exit 0.
 
 Also (fix wave, S2): a set_waypoints whose failing waypoint is not the first, sent with the laptop's PcClient to the
@@ -33,7 +33,7 @@ from policy_deploy.fake_pc.fake_gate import NOT_CHECKED
 from policy_deploy.manager.episode_loop import gate_rejection_detail
 from policy_deploy.manager.pc_client import PcClient
 
-SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "h"}, {"key": "q"}]
+SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "q"}]
 
 
 def _franka_control(tmp_path, with_episode: bool):
@@ -112,9 +112,9 @@ def test_laptop_against_the_real_franka_control(tmp_path, franka_control):
     ids = [s["chunk_id"] for s in steps]
     assert ids == sorted(ids)
 
-    # home answered ok, then the stop of q
+    # no home from the laptop (homing is a PC keyboard key only), then the stop of q
     kinds = [(e["kind"], e["detail"]) for e in events]
-    assert ("home", "home pose reached") in kinds
+    assert not any(kind == "home" for kind, _ in kinds)
     assert ("exit", "operator quit key") in kinds
 
     # the binary stops cleanly on SIGTERM

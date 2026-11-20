@@ -8,7 +8,7 @@ from manager_fakes import FakeClock
 from policy_deploy.manager.episode_loop import LoopProgress, Phase
 from policy_deploy.manager.errors import ScriptError, ScriptTimeout
 from policy_deploy.manager.keyboard_operator import KeyboardOperator
-from policy_deploy.manager.operator import Key
+from policy_deploy.manager.operator import Key, key_for
 from policy_deploy.manager.scripted_operator import ScriptedOperator, parse_script
 
 
@@ -56,14 +56,14 @@ def test_wait_s_by_the_clock():
     assert op.poll_key(progress(Phase.IDLE)) is Key.QUIT
 
 
-def test_two_episodes_with_stop_home_and_fail():
+def test_three_episodes_with_stop_and_fail():
     text = ("- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 1}\n- {key: y}\n"
             "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 1}\n- {key: s}\n"
-            "- {wait_phase: idle}\n- {key: h}\n- {wait_phase: idle}\n"
+            "- {wait_phase: idle}\n"
             "- {key: c}\n- {wait_steps: 1}\n- {key: n}\n- {wait_phase: idle}\n- {key: q}\n")
     op = load(text)
     seq = [progress(Phase.IDLE), progress(Phase.RUNNING, 1), progress(Phase.IDLE), progress(Phase.RESETTING),
-           progress(Phase.RUNNING, 1), progress(Phase.IDLE), progress(Phase.HOMING), progress(Phase.IDLE),
+           progress(Phase.RUNNING, 1), progress(Phase.IDLE), progress(Phase.RESETTING),
            progress(Phase.RUNNING, 1), progress(Phase.IDLE)]
     keys = []
     for p in seq:
@@ -71,12 +71,13 @@ def test_two_episodes_with_stop_home_and_fail():
             k = op.poll_key(p)
             if k is not None:
                 keys.append(k.value)
-    assert keys == ["c", "y", "c", "s", "h", "c", "n", "q"] and op.done()
+    assert keys == ["c", "y", "c", "s", "c", "n", "q"] and op.done()
 
 
 @pytest.mark.parametrize("text, words", [
     ("- {key: c}\n- {press: y}\n- {key: q}\n", "script.yaml:2: unknown entry 'press'"),
     ("- {key: c}\n- {key: x}\n- {key: q}\n", "script.yaml:2: unknown key 'x'"),
+    ("- {key: c}\n- {key: h}\n- {key: q}\n", "script.yaml:2: unknown key 'h'"),   # homing: a PC key only
     ("- {key: c}\n- {key: s}\n", "script.yaml:2: the last entry must be {key: q}"),
     ("- {wait_phase: flying}\n- {key: q}\n", "script.yaml:1: unknown phase 'flying'"),
     ("- {wait_steps: -1}\n- {key: q}\n", "script.yaml:1: wait_steps needs"),
@@ -128,13 +129,13 @@ def test_wait_s_has_no_time_limit():
 
 
 def test_a_refused_key_is_retried_once_something_changes():
-    op = load("- {key: h}\n- {key: q}\n")
+    op = load("- {key: c}\n- {key: q}\n")
     busy = progress(Phase.IDLE, 5, 1, busy=True)
-    assert op.poll_key(busy) is Key.HOME
-    op.key_refused(Key.HOME, "h: waiting for the last policy step to finish")
+    assert op.poll_key(busy) is Key.START
+    op.key_refused(Key.START, "c: waiting for the last policy step to finish")
     assert not op.done()
     assert op.poll_key(busy) is None                     # nothing changed: no retry (no hint every cycle)
-    assert op.poll_key(progress(Phase.IDLE, 5, 1)) is Key.HOME     # the step finished: retried
+    assert op.poll_key(progress(Phase.IDLE, 5, 1)) is Key.START    # the step finished: retried
     assert op.poll_key(progress(Phase.IDLE, 5, 1)) is Key.QUIT and op.done()
 
 
@@ -143,13 +144,13 @@ def test_a_key_refused_for_too_long_times_out():
     op = load("- {wait_phase: idle}\n- {key: y}\n- {key: q}\n", clock, limit_s=1.0)
     idle = progress(Phase.IDLE)
     assert op.poll_key(idle) is Key.SUCCESS
-    op.key_refused(Key.SUCCESS, "y: no episode running (c start, h home, q quit)")
+    op.key_refused(Key.SUCCESS, "y: no episode running (c start, q quit)")
     clock.advance(0.5)
     assert op.poll_key(idle) is None
     clock.advance(0.5)
     with pytest.raises(ScriptTimeout) as e:
         op.poll_key(idle)
-    assert "script.yaml:2: key y: still refused (y: no episode running (c start, h home, q quit)) after 1.0 s" \
+    assert "script.yaml:2: key y: still refused (y: no episode running (c start, q quit)) after 1.0 s" \
         in str(e.value)
 
 
@@ -172,7 +173,7 @@ def test_the_time_limit_of_a_retried_key_counts_from_its_first_try():
 def test_key_refused_for_another_key_is_ignored():
     op = load("- {key: c}\n- {key: q}\n")
     assert op.poll_key(progress(Phase.IDLE)) is Key.START
-    op.key_refused(Key.HOME, "h: x")
+    op.key_refused(Key.STOP, "s: x")
     assert op.poll_key(progress(Phase.IDLE)) is Key.QUIT
 
 
@@ -189,9 +190,9 @@ def wait_keys(op, n):
 
 def test_keyboard_from_a_pipe():
     out = io.StringIO()
-    op = KeyboardOperator(io.StringIO("c\nyes\n\n  n\nS\nhome\nq\n"), out)
+    op = KeyboardOperator(io.StringIO("c\nyes\n\n  n\nS\nq\n"), out)
     op.start()
-    assert wait_keys(op, 6) == [Key.START, Key.SUCCESS, Key.FAIL, Key.STOP, Key.HOME, Key.QUIT]
+    assert wait_keys(op, 5) == [Key.START, Key.SUCCESS, Key.FAIL, Key.STOP, Key.QUIT]
     op.close()
 
 
@@ -201,6 +202,17 @@ def test_keyboard_unknown_key_shows_the_key_list():
     op.start()
     assert wait_keys(op, 1) == [Key.QUIT]
     assert "not a key" in out.getvalue() and "c start" in out.getvalue()
+
+
+@pytest.mark.parametrize("char", ["h", "p"])
+def test_h_and_p_are_not_laptop_keys(char):
+    """No laptop key moves the arm to a pose: homing (h) and the start pose (p) are PC keyboard keys only."""
+    out = io.StringIO()
+    op = KeyboardOperator(io.StringIO(f"{char}\nq\n"), out)
+    op.start()
+    assert wait_keys(op, 1) == [Key.QUIT]
+    assert f"{char!r}: not a key. keys: c start  y success  n fail  s stop  q quit" in out.getvalue()
+    assert key_for(char) is None
 
 
 def test_status_rewritten_in_place_and_messages_above():

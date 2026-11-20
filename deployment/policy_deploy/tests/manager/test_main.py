@@ -122,7 +122,7 @@ def test_a_script_that_waits_forever_gives_the_fatal_line(tmp_path, capsys, monk
         assert main(["--station", str(station), "--session", str(tmp_path / "s"), "--mock"]) == 1
         err = capsys.readouterr().err.splitlines()
         assert err[-1] == (f"FATAL manager: operator script: {script}:2: key y: still refused "
-                           "(y: no episode running (c start, h home, q quit)) after 0.5 s "
+                           "(y: no episode running (c start, q quit)) after 0.5 s "
                            "(manager.operator_script_wait_s): check the script (manager.operator_script) "
                            "or raise operator_script_wait_s")
         assert pc.request_names()[-1] == "c3.stop/v1"

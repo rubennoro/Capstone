@@ -6,7 +6,7 @@ from integration_helpers import (jsonl, need_episode, need_pc_ports_free, run_po
                                  write_run_station)
 
 SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "c"}, {"wait_steps": 5}, {"key": "s"},
-          {"key": "h"}, {"key": "q"}]
+          {"key": "q"}]
 MAX_LEAD_NS = 1_500_000_000          # config/fake_pc.yaml max_lead_s
 
 
@@ -40,7 +40,7 @@ def test_run_mock_two_episodes(tmp_path):
     assert sum(c["accepted"] for c in sets) > 0
     assert all(c["t_last_pc_ns"] - c["t_pc_ns"] <= MAX_LEAD_NS for c in sets)      # on the fake PC's own clock
     assert commands[-1]["request"] == "c3.stop/v1"
-    assert any(c["request"] == "c3.home/v1" and c["ok"] for c in commands)
+    assert not any(c["request"] == "c3.home/v1" for c in commands)                   # no laptop key homes the arm
 
     # the clock map: offset (PC - laptop) as the fake PC's drifting clock says, about +1000 s
     fits = [r for r in jsonl(session / "manager/clock.jsonl") if r.get("kind") == "fit" and r["offset_ns"]]

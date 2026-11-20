@@ -31,7 +31,7 @@ timeouts:
   prompt_s: 60.0              # C4 prompt (never sent to a plain diffusion policy)
   home_s: 90.0                # C3 home; must be above the PC's homing_timeout_s (hello)
   startup_s: 20.0             # start-up steps 2-9, not counting the waits while C2 shows homing
-  pc_homing_wait_s: 60.0      # start-up: longest wait without C3 while C2 shows homing (a home left by an earlier run)
+  pc_homing_wait_s: 60.0      # start-up: longest wait without C3 while C2 shows homing (the PC's h, p or g)
 clock:                        # the laptop <-> PC clock map (PLAN 5.6); the estimator is link.yaml clock.estimator
   hello_period_s: 0.5         # hello rate after start-up
   startup_hello_period_s: 0.02  # hello rate during start-up step 4 (every cycle)
@@ -45,7 +45,7 @@ clock:                        # the laptop <-> PC clock map (PLAN 5.6); the esti
   max_drift_ppm: 200.0        # a larger fitted drift is noise (worst extrapolation 200 ppm x 5 s = 1 ms)
   min_samples_s: 2.0          # the map is ready only with this span ...
   min_samples: 10             # ... and this many samples (PLAN 5.6 guard 1)
-  max_sample_age_s: 5.0       # the map is not ready when its newest sample is older (after a long home)
+  max_sample_age_s: 5.0       # the map is not ready when its newest sample is older (e.g. after a link gap)
   startup_agree_ms: 5.0       # start-up guard 2: map vs the shortest-RTT hello
   jump_log_ms: 1.0            # a refit that moves "now" by more than this is logged (guard 3)
   mismatch_sets: 3            # guard 4: this many counted sets in a row conclude

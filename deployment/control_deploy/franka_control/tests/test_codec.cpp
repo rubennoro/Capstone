@@ -330,7 +330,7 @@ TEST(Codec, TheContractFilesGiveTheirValues) {
   const Pose f = ContractFrame::load(test::framesFile(), 1e-6, problems);
   const ContractLink link = ContractLink::load(test::linkFile(), problems);
   EXPECT_TRUE(problems.empty());
-  EXPECT_NEAR(f.translation().z(), 0.150, 1e-12);
+  EXPECT_NEAR(f.translation().z(), 0.23565, 1e-12);
   EXPECT_DOUBLE_EQ(link.watchdog_limit_s, 1.0);
   EXPECT_EQ(link.state_port, 5620);
   EXPECT_EQ(link.commands_port, 5630);

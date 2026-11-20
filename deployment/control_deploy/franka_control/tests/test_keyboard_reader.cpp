@@ -1,5 +1,5 @@
 // New (control_deploy/STRUCTURE.md 9.1): KeyboardReader over a pipe, TerminalMode on a pty, KeyQueue. Fix wave: upper
-// case keys, IXON off, s never dropped.
+// case keys, IXON off, s never dropped. + p (the start pose).
 #include <gtest/gtest.h>
 
 #include <pty.h>
@@ -39,6 +39,8 @@ std::vector<Key> drain(KeyQueue& q) {
 
 TEST(KeyboardReader, TheKeyTable) {
   EXPECT_EQ(KeyboardReader::map('h'), Key::kHomeArm);
+  EXPECT_EQ(KeyboardReader::map('p'), Key::kStartPose);
+  EXPECT_EQ(KeyboardReader::map('P'), Key::kStartPose);
   EXPECT_EQ(KeyboardReader::map('g'), Key::kHomeHand);
   EXPECT_EQ(KeyboardReader::map('s'), Key::kStop);
   EXPECT_EQ(KeyboardReader::map('q'), Key::kQuit);
@@ -47,6 +49,20 @@ TEST(KeyboardReader, TheKeyTable) {
   EXPECT_EQ(KeyboardReader::map('S'), Key::kStop);
   EXPECT_EQ(KeyboardReader::map('Q'), Key::kQuit);
   for (char c : {'x', 'X', ' ', '\x1b', '\n'}) EXPECT_FALSE(KeyboardReader::map(c)) << c;
+}
+
+TEST(KeyboardReader, PIsQueuedAndNamed) {
+  Pipe p;
+  KeyQueue q;
+  SharedState shared;
+  KeyboardReader reader(p.fds[0], q, [] {}, shared);
+  p.write("pPh");
+  p.closeWrite();
+  testing::internal::CaptureStderr();
+  reader.run();
+  testing::internal::GetCapturedStderr();
+  EXPECT_EQ(drain(q), (std::vector<Key>{Key::kStartPose, Key::kStartPose, Key::kHomeArm}));
+  EXPECT_STREQ(keyChar(Key::kStartPose), "p");
 }
 
 TEST(KeyboardReader, KeysAreQueuedInOrderQuitCallsBackEofEnds) {
@@ -65,7 +81,7 @@ TEST(KeyboardReader, KeysAreQueuedInOrderQuitCallsBackEofEnds) {
   EXPECT_EQ(drain(q), (std::vector<Key>{Key::kHomeArm, Key::kHomeHand, Key::kStop, Key::kHomeArm, Key::kHomeHand,
                                        Key::kStop}));   // q and Q are never queued
   EXPECT_EQ(quits, 2);                                  // Q and q; EOF is not q
-  EXPECT_NE(log.find("keys: h home arm, g home hand, s stop, q quit"), std::string::npos) << log;
+  EXPECT_NE(log.find("keys: h home arm, p start pose, g home hand, s stop, q quit"), std::string::npos) << log;
   EXPECT_NE(log.find("keyboard: stdin closed: keys disabled"), std::string::npos) << log;
 }
 

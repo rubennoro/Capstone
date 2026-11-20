@@ -29,7 +29,7 @@ STOP_TIMEOUT_S = 5.0          # SIGTERM -> SIGKILL; the binary's own budget is 3
 STATUS_PERIOD_S = 0.25
 PEERS_PERIOD_S = 1.0
 READY_HINT = "check robot_ip, FCI enabled in Desk, brakes unlocked, user stop released, and the log"
-KEYS = "Keys: h home arm, g home hand, s stop, q quit"
+KEYS = "Keys: h home arm, p start pose, g home hand, s stop, q quit"
 
 
 class Runner:

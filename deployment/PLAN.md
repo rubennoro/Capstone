@@ -70,7 +70,7 @@ Milestones:
        (Wi-Fi, ASUS_5g)                   (episodes,                            franka_control (C++)
                                            keyboard,       ◄──C2 state 100 Hz── safety gate, 1 kHz loop,
                                            pose conversion, ──C3 commands─────► gripper, homing, watchdog,
-                                           PC clock map)                        keyboard (h, hand homing)
+                                           PC clock map)                        keyboard (h, p, hand homing)
                                                                                      │ FCI (Ethernet, 172.16.0.2)
                                                                                      ▼
                                                                                 Franka Panda + Franka Hand
@@ -91,7 +91,7 @@ deployment/
 | laptop | **frames** | Receives the Pi stream (C0), maps Pi time to laptop time, keeps the last second of frames, reports each camera's health, and on request returns 2 main + 2 ultrawide images prepared exactly as in training (C1). |
 | laptop | **policy** | Loads the model on the GPU. Given images and relative state, returns 16 relative steps (C4). Knows nothing about the arm, absolute poses or the PC. |
 | laptop | **manager** | The episode loop and the keyboard. Keeps the PC's state history and the PC clock map, builds the policy inputs, converts poses (absolute → relative in, relative → absolute out), sends waypoints and heartbeats to the PC, decides "slow" vs "conclude". |
-| PC | **franka_control** | The only process connected to the arm. Every waypoint passes the safety gate; the 1 kHz Cartesian impedance loop moves between accepted waypoints; it handles the gripper and homing, broadcasts the state, and stops the arm when the laptop goes quiet. Its keyboard homes the arm (`h`) and the hand. |
+| PC | **franka_control** | The only process connected to the arm. Every waypoint passes the safety gate; the 1 kHz Cartesian impedance loop moves between accepted waypoints; it handles the gripper and homing, broadcasts the state, and stops the arm when the laptop goes quiet. Its keyboard homes the arm (`h`), moves to the start pose (`p`) and homes the hand (`g`). |
 
 The laptop's three processes stay separate (as in `rnoro/deployment`): JPEG decoding at 30 packets/s and the torch
 diffusion loop then never delay the manager's heartbeats or its timing of arriving states, `hold_still` runs without
@@ -203,7 +203,7 @@ inside franka_control, not as a client).
 | `hello` (new) | none | `t_pc_ns` (PC clock, read while answering), the PC's commit, `mock`, `F_T_TCP`, `gripper_width_max_m`, `max_waypoints`, `watchdog_limit_s`, `homing_timeout_s`, `max_lead_s`. Read-only. |
 | `get_state` | none | one C2 message |
 | `heartbeat` | none | ok. Every manager loop cycle (20 ms), with or without new waypoints. |
-| `start` | none | ok (`idle`/`stopped` → `holding` at the current target), or refused with the reason |
+| `start` | none | ok (`idle`/`stopped` → `holding` at the current target), or refused with the reason. **2026-11-20:** once `homing.q_start_rad` is set, also refused unless every joint is within `homing.at_pose_tol_rad` of it (`not at the start pose: press h, then p on the PC`) |
 | `stop` | none | ok: stop following, hold. Never refused. |
 | `home` | none | ok when the home pose is reached (blocking joint move of all 7 joints); refused unless `idle`/`stopped`; `ok: false` with a reason starting `stopped:` when the PC's `s` stopped the move (the PC is then `stopped`) |
 | `set_waypoints` | `chunk_id`; `t_ns` int64 (N,) increasing, **PC clock**; `O_T_TCP` float64 (N, 4, 4); `gripper_width_m` float64 (N,) | `accepted` (shortened ones included), `shortened`, `skipped` (time already passed), `rejected` with reasons. Replaces every waypoint not yet reached. |
@@ -258,13 +258,12 @@ interface, picked by one setting:
 | `round_trip` (default) | a `hello` twice a second: the PC's time against the midpoint of the round trip; the shortest round trips of a 10 s window, fitted for offset and drift | half the round-trip asymmetry: well under 1 ms wired, a few ms at worst on Wi-Fi |
 | `one_way` (backup) | every C2: PC `t_ns` against laptop arrival, only when `t_ns` advanced; the least-delayed of a 5 s window | the minimum PC→laptop latency: about 1.5 ms wired, a few ms on Wi-Fi |
 
-Guards for both: at least 2 s of samples before the first step (and again after a long `home`, which sends no hellos);
-at start-up the map must agree with a `hello` sample within 5 ms (else refuse to start; a real check for `one_way`,
-while `round_trip` builds its map from those same hellos); fit jumps are logged; and three waypoint sets in a row that
-the PC skipped entirely while the laptop thought they were in the future, or sent while the newest C2 `t_ns` was more
-than 20 ms ahead of the mapped "now" (a map running behind), end the run (`clock mismatch`). The PC never changes its
-clock and needs no clock code. Chrony/PTP on the wall clock was rejected: it would put the PC's gate and watchdog on a
-clock that can jump.
+Guards for both: at least 2 s of samples before the first step; at start-up the map must agree with a `hello` sample
+within 5 ms (else refuse to start; a real check for `one_way`, while `round_trip` builds its map from those same
+hellos); fit jumps are logged; and three waypoint sets in a row that the PC skipped entirely while the laptop thought
+they were in the future, or sent while the newest C2 `t_ns` was more than 20 ms ahead of the mapped "now" (a map running
+behind), end the run (`clock mismatch`). The PC never changes its clock and needs no clock code. Chrony/PTP on the wall
+clock was rejected: it would put the PC's gate and watchdog on a clock that can jump.
 
 ## 6. The link: Wi-Fi first, then wired
 
@@ -334,11 +333,11 @@ only make the arm hold.
 | Clock mismatch (section 5.6), or `hello` disagreeing at start-up | conclude | names the field |
 | The PC reports `fault` (reflex, lost FCI connection, rejected waypoint, homing failed) | conclude | the PC holds; a fault needs Ctrl-C and a restart of `control_deploy run` on the PC (after releasing the user stop if it was a reflex) |
 | The PC `stopped` during an episode without the laptop asking (its watchdog, or `s` on the PC's keyboard) | conclude | "the PC stopped the arm (watchdog or the PC's `s`): check the link and the PC" |
-| Between episodes, the PC's keys change its mode (`stopped` after `s`, `homing` after `h`/`g`) | normal | the laptop follows C2: `c` works from `idle`/`stopped`; while C2 shows `homing` the laptop refuses `c` and `h` itself (a hint on the status line; it stays idle, never concludes). A `start` the PC refuses is a hint too |
-| A C3 `home` answered `ok: false` with a reason starting `stopped:` (`s` on the PC stopped the move) | normal | the arm holds where it stopped (`stopped`); the laptop shows it and stays idle. A `home` refused with `refused: mode is homing` (the PC's own `h`/`g` started first) is a hint too. Any other `ok: false` or no reply to `home` is a conclude. |
+| Between episodes, the PC's keys change its mode (`stopped` after `s`, `homing` after `h`/`p`/`g`) | normal | the laptop follows C2: `c` works from `idle`/`stopped`; while C2 shows `homing` the laptop refuses `c` itself (a hint on the status line; it stays idle, never concludes). A `start` the PC refuses (e.g. `not at the start pose: press h, then p on the PC`) is a hint too |
+| A C3 `home` answered `ok: false` with a reason starting `stopped:` (`s` on the PC stopped the move; only a client that sends C3 `home`, the laptop no longer does) | normal | the arm holds where it stopped (`stopped`); the laptop shows it and stays idle. A `home` refused with `refused: mode is homing` (the PC's own `h`/`p`/`g` started first) is a hint too. Any other `ok: false` or no reply to `home` is a conclude. |
 | The laptop dies, sleeps, or the link drops | (PC side) | the watchdog stops following and holds; the PC stays up; the next laptop run reconnects with `start` |
 | A message failing its contract | conclude | names the message and field. A broken C3 request gets an error reply from the PC (not a fault); the laptop concludes on it. |
-| Operator `s` | episode ends | `stop`, recorded `stopped`; `h` then `c` for the next one |
+| Operator `s` | episode ends | `stop`, recorded `stopped`; the PC's `h` then `p`, then `c` for the next one |
 | Operator `q` / Ctrl-C on the laptop | conclude (normal) | `stop`, laptop shuts down; the PC keeps holding |
 | At start-up: anything `check` finds wrong, or the PC in `running`/`holding` (another client) or `fault` | conclude | refuses to start and says why |
 
@@ -360,7 +359,10 @@ motion or finger moves; the keyboard and stop-during-homing need small additive 
 state, the control thread's session loop and the gripper worker, plus: one new state-machine event (homing aborted →
 `stopped`), a new `Gripper::home()` for the hand's homing, SIGHUP handled like SIGTERM, a `--keyboard` flag, and in
 `LibfrankaArm`/`FakeArm` the sticky stop flag becomes a per-call stop epoch (a sticky flag would mislabel every later
-reflex as a requested stop). The last one is on the verified path and is tested at bring-up.
+reflex as a requested stop). The last one is on the verified path and is tested at bring-up. **2026-11-20, key `p`:**
+the `kHome` command carries an optional joint target and open width (`step()` only copies them; the session loop
+moves to that target and sets the finger target before the move), the start pose's arrival is checked against the box
+and the cone, and `start` is refused away from `homing.q_start_rad` once it is set.
 libfranka 0.9.2 in `~/franka/` and `build.sh` are reused.
 
 **Entry:** `control_deploy check | run | console | firewall [--mock] [--local] [--station FILE]`, a small Python wrapper on the PC (its checks: config valid, arm
@@ -377,18 +379,19 @@ and whether the hand's homing can be interrupted, is checked at bring-up; either
 homes its fingers once, and the arm holds where it is. It stays up across laptop runs and is restarted only after a
 fault or at the end of the day.
 
-**PC keyboard** (inside franka_control, not a C3 client; `h` and `g` are refused while `running`/`holding`, i.e. while
+**PC keyboard** (inside franka_control, not a C3 client; `h`, `p` and `g` are refused while `running`/`holding`, i.e. while
 the laptop is driving an episode; `s` and `q` are never refused):
 
 | Key | Does |
 |---|---|
 | `h` | home the arm: all 7 joints to `homing.q_home_rad`, slow joint move (as verified) |
+| `p` | **2026-11-20.** start pose: only from home (joints within `homing.at_pose_tol_rad`), the same joint move to `homing.q_start_rad` (to be measured on the arm with `pc_probe --start-pose`: the training demos' start, fingertips ~48° from straight down, ~16 cm above the table), the hand opened fully; at the end the TCP must be inside the box and the cone, else `fault`. `q_start_rad` is null until measured: `p` refused, `start` unchanged |
 | `g` | home the hand: the Franka Hand's own homing (fingers close and reopen to calibrate) |
 | `s` | stop: hold where it is |
 | `q` / Ctrl-C | stop the arm and exit |
 
 **Bring-up console** (`control_deploy console`, PC only, run instead of the laptop, never alongside it): sends C3
-itself to test waypoint following before any laptop run: `start` and hold, a 1–2 cm move, a 5° rotation, a gripper
+itself to test waypoint following before any laptop run: `start` and hold, a 1–2 cm move, a 2° rotation, a gripper
 width, the watchdog (stop sending), and one waypoint deliberately outside the box (expect a fault with no motion).
 
 **Tests:** the existing C++ tests (gate, interpolation, holding, watchdog, every state change, impedance torque, a
@@ -402,21 +405,24 @@ its own contracts (C0, C1, C4), a launcher, and a fake PC. An import test enforc
 only `policy_deploy`'s contracts and `deployment/contracts/`. New package names and a new environment, so nothing
 clashes with `rnoro/deployment`'s editable installs.
 
-**Entry:** `policy_deploy check | run [--mock]`. `run` starts frames, policy, manager in that order, each after the
-previous is ready, and stops them in reverse. It never starts or stops anything on the PC. Each process can be run
-alone (`python -m policy_deploy.frames`, `.policy`, `.manager`). A read-only link probe (`python -m
-policy_deploy.manager.pc_probe`) shows the C2 rate, `seq` gaps, the clock fit and C3 round trips.
+**Entry:** `policy_deploy check | run [--mock]`, and `policy_deploy use RUN_FOLDER|hold_still` (rewrites station.yaml's
+policy and manager sections). `run` starts frames, policy, manager in that order, each after the previous is ready,
+and stops them in reverse. It never starts or stops anything on the PC. Each process can be run alone (`python -m
+policy_deploy.frames`, `.policy`, `.manager`). A read-only link probe (`python -m policy_deploy.manager.pc_probe`)
+shows the C2 rate, `seq` gaps, the clock fit and C3 round trips; `--axes` says where the TCP axes point, `--start-pose`
+prints the arm's joints as a `q_start_rad` line.
 
 **Start-up order of the manager:** C2 arriving → while C2 shows `running`/`holding` (an earlier laptop session's
 episode), wait without sending anything on C3, up to 2 × the watchdog, so the PC's watchdog can stop it; likewise
-while C2 shows `homing` (a home left running by an earlier run), up to 60 s → `hello`
+while C2 shows `homing` (the PC's `h`/`p`/`g`), up to 60 s → `hello`
 exchanges start and give 2 s of clock samples → `hello` checked (section 5.4) → `get_state` mode `idle`/`stopped`
 (wait while `homing`; refuse in `fault`) → heartbeats start → policy config checked → both cameras ok → ready.
 A commit different from the PC's is a warning, not a refusal; every difference that matters is caught by the `hello`
 checks. A trained policy is refused on the real arm while `frames.yaml` says `settled: false` (section 9).
 
-**Laptop keyboard:** `c` start an episode, `y` / `n` end it as success / failure, `s` stop, `h` home (C3 `home`),
-`q` quit. Same meaning as in `rnoro/deployment`; `c` and `h` are refused locally while C2 shows `homing` (section 7).
+**Laptop keyboard:** `c` start an episode, `y` / `n` end it as success / failure, `s` stop, `q` quit. (**2026-11-20:**
+the laptop's `h` is removed: no laptop key moves the arm to a pose; homing and the start pose are the PC's `h` and `p`.
+C3 `home` stays in the contract.) Same meaning as in `rnoro/deployment`; `c` is refused locally while C2 shows `homing` (section 7).
 
 **From `rnoro/deployment`:**
 - frames: the pi_v1 path (`pi_stream_source`, `receiver`, buffer, selector, image prep copied from dataproc unchanged,
@@ -463,7 +469,10 @@ the laptop. The PC's gate doesn't depend on the TCP axes (the box uses position,
 
 **Set 2026-11-19:** the camera is on the Franka Hand's +x face (away from the base at home), so `F_T_TCP` is the
 Franka Hand TCP turned +90° about z (+45° about the flange z). The other face would be −135°. `settled` waits for
-the checks in policy_deploy/DIRECTIONS.md ("A trained policy", step 4).
+the checks in policy_deploy/DIRECTIONS.md ("A trained policy", step 4). **2026-11-20:** the TCP is 235.65 mm out
+along the flange z (was 150): the printed finger adapter's CAD (`rnoro/main-sim` sim_deploy D7); check it with a
+caliper on the arm. The robot camera mount (`franka_mount_with_rig.STEP`) was placed for 223.9 mm, so the fingertips
+sit 11.8 mm further from the cameras than that placement assumed (sim_deploy judges the image match with 235.65).
 
 This does not block hold still (zero motion, any axes) or the PC console tests. It must be settled, and checked on the
 arm, before the first trained-policy run. Related, also before that run: the robot's camera mount should reproduce the
@@ -517,7 +526,9 @@ commands to copy, in order.
 ## 12. Hardware bring-up order
 
 1. **PC alone:** `control_deploy run`, then `console`: hold, small moves, rotation, gripper, watchdog, out-of-box
-   fault. Set the workspace box, payload and `width_offset_m` first (they are TODO in the config).
+   fault. Set the workspace box, payload and `width_offset_m` first (they are TODO in the config). Then measure
+   `homing.q_start_rad` (hand-guide to the demos' start, `pc_probe --start-pose`, set in `control_deploy/station.yaml`)
+   and test `h`, then `p`.
 2. **Laptop alone:** frames against the live Pi on ASUS_5g (probe), then the policy's speed and memory.
 3. **Both, Wi-Fi, hold still:** the clock map, the watchdog over the link, waypoints on the real arm.
 4. **Both, wired, hold still:** cable the laptop and/or the PC to the router, update the addresses in `link.yaml`;

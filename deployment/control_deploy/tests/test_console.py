@@ -142,7 +142,7 @@ def test_the_box_comes_from_config_and_station(tmp_path):
     s = write_station(tmp_path, franka_control={"safety": {"workspace_max_m": [0.7, 0.3, 0.6]}})
     from control_deploy.station import Station
     lo, hi = workspace_box(Station.load(s))
-    assert list(lo) == [0.25, -0.40, 0.05] and list(hi) == [0.7, 0.3, 0.6]
+    assert list(lo) == [0.25, -0.40, -0.005] and list(hi) == [0.7, 0.3, 0.6]
 
 
 # ---- the out-of-box step against a fake PC that wrongly accepts everything ----

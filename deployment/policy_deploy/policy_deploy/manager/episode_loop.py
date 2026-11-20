@@ -1,13 +1,13 @@
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/episode_loop.py @ 91b178b
 # changes: start-up moved to StartupSequence; HeartbeatSender (a hello or a heartbeat per cycle) instead of a bare
 # heartbeat; the cycle period is link.yaml heartbeat_period_s; margins in PC time; the CLOCK_MISMATCH counter (skipped
-# sets the laptop timed ahead, or a C2 from the future); keys dispatched through KEY_HANDLERS; c and h refused locally
-# while C2 shows homing; c needs the clock map ready; home returns its Ack: ok, HOME_STOPPED (the `stopped:` prefix),
-# a refusal because the PC is homing (a hint), else HOMING_FAILED; after a home the clock map re-warms (a hello every
-# cycle); the start ack time kept as start_ack_pc_ns (mapped); last_anchor_t_ns stays laptop time; STATE_LOST by the
-# listener's arrival time; clock.jsonl / link.jsonl; conclude sends nothing on C3 before hellos started. Fix wave: the
-# GATE_REJECTED text from gate_rejection_detail(); an entirely skipped set counts toward CLOCK_MISMATCH or POLICY_LATE,
-# never both.
+# sets the laptop timed ahead, or a C2 from the future); keys dispatched through KEY_HANDLERS; c refused locally while
+# C2 shows homing; c needs the clock map ready; the start ack time kept as start_ack_pc_ns (mapped); last_anchor_t_ns
+# stays laptop time; STATE_LOST by the listener's arrival time; clock.jsonl / link.jsonl; conclude sends nothing on C3
+# before hellos started. Fix wave: the GATE_REJECTED text from gate_rejection_detail(); an entirely skipped set counts
+# toward CLOCK_MISMATCH or POLICY_LATE, never both. Later: no h key and no C3 home from the loop (phase HOMING, the
+# re-warm after a home and interrupt_set went with it): no laptop key moves the arm to a pose; homing (h) and the start
+# pose (p) are PC keyboard keys only.
 """EpisodeLoop: the main thread. Rhythm, keys, every C3 request (rule H1), health polls, failure decisions, logging,
 status line (STRUCTURE.md 6.1, 6.4, 6.5, 7.4, 7.5)."""
 from __future__ import annotations
@@ -22,7 +22,6 @@ from pathlib import Path
 import numpy as np
 
 from policy_deploy.contracts import NotSynced, PolicyConfig
-from policy_deploy.manager.errors import RequestCancelled
 from policy_deploy.manager.failure_monitor import SKIP_CODES, FailureMonitor
 from policy_deploy.manager.frames_client import FramesClient
 from policy_deploy.manager.heartbeat_sender import HeartbeatSender
@@ -61,7 +60,6 @@ class Phase(Enum):
     IDLE = "idle"                 # no episode; waiting for a key
     RESETTING = "resetting"       # start key pressed: policy reset (+ prompt), then the PC's start
     RUNNING = "running"           # an episode: policy steps
-    HOMING = "homing"             # blocking home request
     DONE = "done"                 # finished; run() returns
 
 
@@ -71,8 +69,8 @@ class LoopProgress:               # what ScriptedOperator may wait on
     episode_id: int               # 0 before the first episode
     steps_sent: int               # waypoint sets sent in this episode
     now_ns: int
-    worker_busy: bool = False     # a policy step (or reset) still on the worker: c and h are refused meanwhile
-    pc_mode: str = ""             # the newest C2 mode (a refused c/h is retried when it changes)
+    worker_busy: bool = False     # a policy step (or reset) still on the worker: c is refused meanwhile
+    pc_mode: str = ""             # the newest C2 mode (a refused c is retried when it changes)
     clock_ready: bool = True
 
 
@@ -111,7 +109,6 @@ class EpisodeLoop:
         self._shut = False
         self._call: tuple[str, str] = ("manager", "")
         self._beating = False             # hellos/heartbeats started (start-up step 4); nothing on C3 before
-        self._rewarm = False              # after a home: a hello every cycle until the map is ready
         self._policy_config: PolicyConfig | None = None
         self._uses_prompt = False
         self._hello = None                # the newest hello reply at start-up (session.yaml, status line)
@@ -167,10 +164,6 @@ class EpisodeLoop:
         """SIGTERM handler: sets the terminate flag, nothing else."""
         self._terminate.set()
 
-    def interrupt_set(self) -> bool:
-        """Read by PcClient.home between slices: Ctrl-C or SIGTERM."""
-        return self._interrupt.is_set() or self._terminate.is_set()
-
     def progress(self) -> LoopProgress:
         latest = self._history.latest()
         now = self._clock()
@@ -204,7 +197,7 @@ class EpisodeLoop:
         now = self._clock()
         self._check_flags()                                                         # 1
         self._check_state(now)                                                      # 2
-        if self._beating and self._phase is not Phase.HOMING:                       # 3
+        if self._beating:                                                           # 3
             self._beat(now)
         if self._worker.busy():                     # a result that is already there (run() handles most of them)
             result = self._worker.wait(0.0)
@@ -245,10 +238,6 @@ class EpisodeLoop:
             for jump in self._pc_clock.take_jumps():
                 self._safe_event("clock_jump", f"refit moved the PC time by {jump.jump_ms:+.2f} ms")
                 self._log.log_clock({"kind": "jump", "estimator": self._pc_clock.NAME, "jump_ms": jump.jump_ms})
-        if self._rewarm and self._pc_clock.ready(self._clock()):
-            self._rewarm = False
-            self._heartbeats.startup_mode(False)
-            self._safe_event("clock", "PC clock map ready again")
 
     def _check_flags(self) -> None:
         if self._interrupt.is_set():
@@ -294,7 +283,7 @@ class EpisodeLoop:
                 self._refuse(key, "c: waiting for the last policy step to finish")
                 return
             if self._pc_mode() == "homing":
-                self._refuse(key, "c: the PC is homing (its h or g key): wait for idle")
+                self._refuse(key, "c: the PC is homing (its h, g or p key): wait for idle")
                 return
             if not self._pc_clock.ready(self._clock()):
                 self._refuse(key, "c: waiting for the PC clock map")
@@ -316,17 +305,7 @@ class EpisodeLoop:
         elif phase is Phase.RESETTING:
             self._refuse(key, f"{key.value}: the episode is still starting (s cancels)")
         else:
-            self._refuse(key, f"{key.value}: no episode running (c start, h home, q quit)")
-
-    def _key_home(self, key: Key) -> None:
-        if self._phase is not Phase.IDLE:
-            self._refuse(key, "h: end the episode first (y / n / s)")
-        elif self._worker.busy():
-            self._refuse(key, "h: waiting for the last policy step to finish")
-        elif self._pc_mode() == "homing":
-            self._refuse(key, "h: the PC is already homing (its h or g key)")
-        else:
-            self._home()
+            self._refuse(key, f"{key.value}: no episode running (c start, q quit)")
 
     def _key_stop(self, key: Key) -> None:
         """Everything s does: stop (the arm holds), end the episode if any as stopped, back to IDLE."""
@@ -340,7 +319,7 @@ class EpisodeLoop:
             self._operator.show_message("start cancelled")
         else:
             self._send_stop()
-            self._hint("s: no episode running (c start, h home, q quit)")
+            self._hint("s: no episode running (c start, q quit)")
 
     def _hint(self, text: str) -> None:
         self._hint_text = text
@@ -529,39 +508,7 @@ class EpisodeLoop:
         if s.save_tap:
             self._log.save_tap(done, reply)
 
-    # ---- home, quit, launcher stop, conclude ---------------------------------------------------------------------
-
-    def _home(self) -> None:
-        """STRUCTURE.md 6.4: heartbeats and hellos pause; Ctrl-C / SIGTERM cancel the wait (no stop is sent)."""
-        self._phase = Phase.HOMING
-        self._show_status(self._clock())
-        self._log.log_event("home", "homing started")
-        try:
-            ack = self._rpc(PC, "c3.home/v1", self._pc.home, self.interrupt_set)
-        except RequestCancelled:
-            self._log.log_event("home", "cancelled")
-            if self._terminate.is_set():
-                self._launcher_stop(send_stop=False)
-            self._quit("Ctrl-C", send_stop=False)
-        if ack.ok:
-            self._phase = Phase.IDLE
-            self._log.log_event("home", "home pose reached")
-            self._operator.show_message("home pose reached")
-        elif self._pc.home_stopped(ack):
-            self._phase = Phase.IDLE
-            verdict = self._monitor.classify(Problem(C.HOME_STOPPED, PC, ack.reason))
-            self._log.log_event("home_stopped", f"{verdict.what_failed}: {verdict.what_to_check}")
-            self._hint(f"{verdict.what_failed}: {verdict.what_to_check}")
-        elif self._pc.home_refused_homing(ack):
-            self._phase = Phase.IDLE
-            self._log.log_event("home_refused", ack.reason)
-            self._hint(f"h: the PC is already homing (its h or g key): {ack.reason}")
-        else:
-            self._conclude(Problem(C.HOMING_FAILED, PC, ack.reason or "refused"))
-        self._rewarm = True                                  # the map had no samples during the home
-        self._heartbeats.startup_mode(True)
-        self._beat(self._clock())                            # heartbeats resume at once
-        self._show_status(self._clock())
+    # ---- stop, quit, launcher stop, conclude ---------------------------------------------------------------------
 
     def _send_stop(self) -> None:
         self._rpc(PC, "c3.stop/v1", self._pc.stop)
@@ -741,6 +688,5 @@ KEY_HANDLERS: dict[str, Callable[[EpisodeLoop, Key], None]] = {
     Key.SUCCESS.value: EpisodeLoop._key_end,
     Key.FAIL.value: EpisodeLoop._key_end,
     Key.STOP.value: EpisodeLoop._key_stop,
-    Key.HOME.value: EpisodeLoop._key_home,
     Key.QUIT.value: EpisodeLoop._key_quit,
 }

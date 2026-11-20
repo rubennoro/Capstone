@@ -76,7 +76,7 @@ def test_log_lines_reach_the_log_file_and_the_terminal_and_the_ready_banner(setu
     text = out.getvalue()
     assert "fake: starting" in text
     assert ("control_deploy: ready: C2 tcp://127.0.0.1:5620, C3 tcp://127.0.0.1:5630; start policy_deploy on the "
-            "laptop. Keys: h home arm, g home hand, s stop, q quit") in text
+            "laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit") in text
     assert "ready:" in (folder / "logs" / "control_deploy.log").read_text()
     for name in ("run.yaml", "station.yaml", "contracts/limits.yaml", "contracts/frames.yaml", "contracts/link.yaml"):
         assert (folder / name).is_file(), name

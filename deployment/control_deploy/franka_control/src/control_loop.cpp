@@ -4,6 +4,8 @@
 // control.settle_timeout_s) and starts a new torque session holding the measured pose, or faults if the arm then
 // reports a problem; a normal finish clears the flag; the move is bracketed with SharedState::begin/endHomingMove, so a
 // homing stop cannot land in the next torque session (fix wave). step() and observeHoming() are unchanged.
+// + the move's goal is the accepted kHome's q_target (h: homing.q_home_rad, p: homing.q_start_rad), and its
+// open_width_m becomes the finger target just before the move (p opens the hand); step() only stores them.
 #include "franka_control/control_loop.h"
 
 #include <algorithm>
@@ -88,7 +90,11 @@ TorqueCommand ControlLoop::step(const ArmReading& r) {
   if (first_cycle_) {
     first_cycle_ = false;
     last_target_.O_T_TCP = tcpFromFlange(r.O_T_F, F_T_TCP_);
-    last_target_.width_m = shared_.gripperWidth();
+    // after a finished move with an open width (key p), keep that finger target: the hand may still be opening, and
+    // holding the width measured now would close it again (review 2026-11-20)
+    last_target_.width_m = (hold_open_width_next_session_ && home_open_width_m_) ? *home_open_width_m_
+                                                                                 : shared_.gripperWidth();
+    hold_open_width_next_session_ = false;
     holdCurrent();
     controller_.setNullspaceTarget(r.q);
   }
@@ -115,6 +121,8 @@ TorqueCommand ControlLoop::step(const ArmReading& r) {
             ending_ = Ending::kHome;
             ending_start_ns_ = t;
             home_generation_ = c->generation;
+            home_target_ = c->q_target ? *c->q_target : homing_.q_home_rad;   // copies: no allocation
+            home_open_width_m_ = c->open_width_m;
           }
           break;
       }
@@ -277,9 +285,11 @@ void ControlLoop::run() {
       continue;
     }
 
-    // the joint move, then a new session holding the home pose
-    const HomingMotion motion(last_q_, homing_.q_home_rad, homing_.max_joint_speed_rad_per_s,
-                              homing_.min_duration_s);
+    // the joint move, then a new session holding the reached pose. The fingers (key p: open) move meanwhile: the
+    // gripper thread follows this target, and after a normal finish the new session keeps it (an aborted move
+    // holds the measured width).
+    const HomingMotion motion(last_q_, home_target_, homing_.max_joint_speed_rad_per_s, homing_.min_duration_s);
+    if (home_open_width_m_) shared_.setGripperTarget(*home_open_width_m_);
     shared_.beginHomingMove(session_);
     try {
       arm_.moveToJoints(motion, observe_fn);
@@ -309,6 +319,7 @@ void ControlLoop::run() {
     shared_.endHomingMove();   // waits for a stop being sent under its lock: it cannot reach the next session
     shared_.clearHomingAbort();   // a stop that arrived as the move finished: the normal completion wins
     homed_generation_ = home_generation_;
+    hold_open_width_next_session_ = home_open_width_m_.has_value();
     ++session_;
   }
   cur_.phase = LoopSnapshot::Phase::kEnded;

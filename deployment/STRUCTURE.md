@@ -395,12 +395,12 @@ N it sent and concludes if it differs.
 
 #### 3.7.2 Replies per mode
 
-| Request | `idle` | `holding` | `running` | `stopped` | `homing` (from the PC's `h`/`g`, or a C3 `home`) | `fault` |
+| Request | `idle` | `holding` | `running` | `stopped` | `homing` (from the PC's `h`/`p`/`g`, or a C3 `home`) | `fault` |
 |---|---|---|---|---|---|---|
 | `hello` | reply | reply | reply | reply | reply | reply |
 | `get_state` | reply | reply | reply | reply | reply | reply |
 | `heartbeat` | ok | ok | ok | ok | ok | ok |
-| `start` | ok → `holding` | refused | refused | ok → `holding` | refused | refused |
+| `start` | ok → `holding`¹ | refused | refused | ok → `holding`¹ | refused | refused |
 | `stop` | ok → `stopped` | ok → `stopped` | ok → `stopped` | ok | ok; aborts the move → `stopped`; if the move finished first → `idle` | ok, stays `fault` |
 | `home` | → `homing`, reply at the end | refused | refused | → `homing`, reply at the end | refused | refused |
 | `set_waypoints` | `error/v1` | gate | gate | `error/v1` | `error/v1` | `error/v1` |
@@ -410,15 +410,17 @@ because the PC keyboard can home while C3 is free (PLAN §8.1); when homing was 
 answers nothing until that `home` reply is sent (old:franka_control/src/command_server.cpp:42-50), and the client's REQ
 socket cannot send meanwhile anyway, so the cells of that column are reached over C3 only during a keyboard homing.
 Refusal reasons are one line naming the mode (e.g. `refused: mode is homing`). A successful `home` ends in `idle`;
-its timeout is `homing_timeout_s`.
+its timeout is `homing_timeout_s`. ¹ Once the PC's `homing.q_start_rad` is set (2026-11-20), `start` is also refused
+unless every joint is within `homing.at_pose_tol_rad` of it: `refused: not at the start pose: press h, then p on the PC`.
 
 **A stopped homing (contract).** The PC's `s`, or a C3 `stop` during a keyboard homing, aborts the move: the arm (or
 the fingers) holds where it stopped and the mode becomes `stopped`. If the move finished first, the normal end wins
 (`idle`). A C3 `home` aborted this way (only the PC's `s` can do it, since the REP socket is busy) replies
 `ack {ok: false, reason}` where `reason` starts with the fixed prefix **`stopped:`** (exactly these 8 characters, then
 one space and the text), and C2 shows `stopped` from then on. No other `home` reply starts with `stopped:`: a refusal
-starts with `refused:`, a failure or timeout with any other text, and the PC is then in `fault` or unchanged. The
-laptop tells the cases apart by this prefix alone.
+starts with `refused:`, a failure or timeout with any other text, and the PC is then in `fault` or unchanged. A C3
+client that sends `home` (`PcClient.home`; the laptop no longer does in normal operation) tells the cases apart by this
+prefix alone.
 
 #### 3.7.3 Watchdog, hello and the one-client rule
 
@@ -532,8 +534,8 @@ class RemoteError(RuntimeError):          # process, reply: ErrorReply
 ```
 
 The helpers never retry or hide one. The laptop concludes on `ContractError`, `RemoteError` and `TransportTimeout`
-from C2/C3 (PLAN §7). `TransportCancelled` only happens when the caller asked (e.g. Ctrl-C while waiting on `home`).
-The C++ side has its own `ContractError` with the same `schema`/`field`/`problem` and the same text
+from C2/C3 (PLAN §7). `TransportCancelled` only happens when the caller asked (e.g. Ctrl-C while `PcClient.home`
+waits on `home`). The C++ side has its own `ContractError` with the same `schema`/`field`/`problem` and the same text
 (old:franka_control/src/contract_error.cpp).
 
 ### 3.11 Transport helpers (`rpc.py`, `pubsub.py`)
@@ -620,11 +622,13 @@ move to policy_deploy (PLAN §5.5: only what crosses).
 # The one definition of the TCP (PLAN §9). The TCP on the wire (C2, C3) is the training TCP.
 # Training's TCP axes (PLAN §9): x = finger closing (image right), y = image down, z = toward the fingertips.
 # The camera is on the Franka Hand's +x face (away from the base at home), so this is the Franka Hand TCP turned
-# +90 deg about z: +45 deg about flange z, fingertips 150 mm out. Check on the arm before settled: true.
+# +90 deg about z: +45 deg about flange z, fingertips 235.65 mm out: the printed finger adapter's CAD (UMI fingers
+# and holders on the Franka Hand; rnoro/main-sim sim_deploy D7: flange to tongue top 77.3 + 1.0 + 157.35 mm; was
+# 150). Check on the arm (a caliper, flange to the fingertips) before settled: true.
 F_T_TCP:
   - [0.7071067811865476, -0.7071067811865476, 0.0, 0.0]
   - [0.7071067811865476, 0.7071067811865476, 0.0, 0.0]
-  - [0.0, 0.0, 1.0, 0.150]
+  - [0.0, 0.0, 1.0, 0.23565]
   - [0.0, 0.0, 0.0, 1.0]
 settled: false     # true once PLAN §9 is done and checked on the arm
 ```
@@ -808,8 +812,7 @@ laptop code, variables holding PC times end in `_pc_ns`, Pi times in `_pi_ns`, l
 - Ignore repeated `t_ns` for interpolation and for the `one_way` map; never use `get_state` replies as samples
   (§3.6 obligation 3).
 - `round_trip` samples: stamp the laptop clock just before sending `hello` and just after its reply; sample =
-  (`t_pc_ns`, midpoint). While a C3 `home` is pending (up to `homing_timeout_s`) no hello can be sent, so the map gets
-  no samples for that time; after it the laptop sends a hello every cycle again until the map is ready.
+  (`t_pc_ns`, midpoint).
 - A hello `t_pc_ns` going back means the PC rebooted (`CLOCK_MONOTONIC` survives a franka_control restart; a restart
   shows as C2 `seq` going back).
 - The guards of PLAN §5.6 (2 s of samples, 5 ms start-up agreement with a hello, fit jumps logged, `clock mismatch`
@@ -864,19 +867,23 @@ Settled by the lead on 2026-11-13, with PLAN.md updated to match:
 1. **Commit mismatch between the machines: warn**, in `check` and at `run` start-up. Refuse only on what
    `compare_hello` and the laptop's budget checks find.
 2. **The laptop's start-up order:** C2 arriving → wait while C2 shows `running`/`holding` (rule H2, no C3, up to
-   2 × watchdog), and likewise while it shows `homing` (up to 60 s: the PC's REP doesn't answer during a C3 home) →
-   hellos start (2 s of samples) → `compare_hello` and the laptop's checks → mode `idle`/`stopped` via
-   `get_state` (wait while `homing`; refuse in `fault`) → heartbeats → policy config → cameras ok → ready (PLAN §8.2).
+   2 × watchdog), and likewise while it shows `homing` (the PC's `h`/`p`/`g`, or a C3 `home`, during which the PC's REP
+   doesn't answer; up to `pc_homing_wait_s` 60 s) → hellos start (2 s of samples) → `compare_hello` and the laptop's
+   checks → mode `idle`/`stopped` via `get_state` (wait while `homing`; refuse in `fault`) → heartbeats → policy
+   config → cameras ok → ready (PLAN §8.2).
 3. **`settled: false` in `frames.yaml`** (§4.2): `policy_deploy` refuses a trained policy on the real arm while it is
    false.
-4. **The PC keyboard** (PLAN §8.1): `h` homes the arm, `g` homes the hand (C2 shows `homing`; afterwards the fingers
-   return to the commanded width), `s` stops and holds, `q` quits. `h` and `g` are refused in `holding`/`running`
-   (the laptop is driving), `homing` and `fault`; `s` and `q` are never refused. Keys never feed the watchdog.
+4. **The PC keyboard** (PLAN §8.1): `h` homes the arm, `p` moves to the start pose (from home only), `g` homes the hand
+   (C2 shows `homing`; afterwards the fingers return to the commanded width), `s` stops and holds, `q` quits. `h`, `p`
+   and `g` are refused in `holding`/`running` (the laptop is driving), `homing` and `fault`; `s` and `q` are never
+   refused. Keys never feed the watchdog.
 5. **Stop during homing** (§3.7.2): a C3 `stop` or the PC's `s` aborts any homing move → `stopped`, holding where it
    stopped; if the move finished first → `idle`. A C3 `home` stopped this way replies `ok: false` with the `stopped:`
-   prefix; the laptop shows it and stays idle. Any other not-ok `home` reply concludes on the laptop.
+   prefix. The laptop sends no `home` (2026-11-20: its `h` key is removed); `PcClient.home` and its reply handling stay
+   as the contract.
 6. **Between episodes** the PC's keys may move it to `stopped` or `homing`; the laptop follows C2: `c` from
-   `idle`/`stopped`; while C2 shows `homing` the laptop refuses `c` and `h` itself with a hint and stays idle.
+   `idle`/`stopped`; while C2 shows `homing` the laptop refuses `c` itself with a hint and stays idle. A `start` the PC
+   refuses (e.g. not at the start pose) is a hint too.
 7. **C4 config reply v2** (§3.12): it carries the policy's `kind`, so the settled rule needs no station reading.
 8. **The ultrawide pair rule** (PLAN §7): a pair is usable only within [main − 60 ms, main + 25 ms] (mid-exposures;
    the lead confirmed from `pi_collect`) and when the same ultrawide frame was the pair of at most 2 consecutive

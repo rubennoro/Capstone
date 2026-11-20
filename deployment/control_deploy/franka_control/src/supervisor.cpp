@@ -5,6 +5,9 @@
 // (control_deploy/STRUCTURE.md 3.3, 4.4, 5.2). Fix wave: the arm stop (abort, homing timeout) is sent under
 // SharedState::stopHomingMove, re-sent every 100 ms while that move runs and the outcome is unresolved (also after a
 // timeout fault); the hand's stop under SharedState::stopHandHoming, so it never aborts a finger move.
+// + key p (onStartPose): from home, onHome's arm path (startArmMove, shared with h) to homing.q_start_rad with the
+// hand opened to gripper_width_max_m; its completion checks the box and the cone (cone_max_deg, no margin); onStart
+// is refused away from the start pose once homing.q_start_rad is set.
 #include "franka_control/supervisor.h"
 
 #include <cmath>
@@ -40,15 +43,19 @@ Supervisor::Supervisor(SharedState& shared, Arm& arm, const Config& cfg, const C
       gate_(cfg.safety, cfg.F_T_TCP, limits.gripper_width_max_m),
       watchdog_(secondsToNs(cfg.watchdog.limit_s)),
       scratch_(std::make_unique<LoopCommand>()),
-      gripper_(gripper) {
+      gripper_(gripper),
+      gripper_open_m_(limits.gripper_width_max_m) {
   snap_ = shared_.latestSnapshot();
   next_stats_ns_ = clock_() + secondsToNs(cfg_.messaging.stats_period_s);
   post(LoopCommand::Kind::kHold);
 }
 
-uint64_t Supervisor::post(LoopCommand::Kind kind, const WaypointTrajectory* plan) {
+uint64_t Supervisor::post(LoopCommand::Kind kind, const WaypointTrajectory* plan, const std::optional<Vec7>& q_target,
+                          std::optional<double> open_width_m) {
   scratch_->generation = next_generation_++;
   scratch_->kind = kind;
+  scratch_->q_target = q_target;
+  scratch_->open_width_m = open_width_m;
   if (plan) {
     scratch_->plan = *plan;
   } else {
@@ -166,15 +173,31 @@ void Supervisor::tickHoming(const LoopSnapshot& s, int64_t now) {
     shared_.clearHomingAbort();
     if (abort_pending_) Log::info("stop arrived after the home pose was reached");
     const Eigen::Vector3d p = snap_.O_T_TCP.translation();
-    if (gate_.insideBox(p)) {
+    const bool start_pose = arm_goal_ == ArmGoal::kStartPose;
+    std::string text;   // empty: the reached pose is fine
+    if (!gate_.insideBox(p)) {
+      text = std::string(start_pose ? "start" : "home") + " pose TCP (" + fmt(p.x(), 2) + ", " + fmt(p.y(), 2) +
+             ", " + fmt(p.z(), 2) + ") m is outside the workspace box: check " +
+             (start_pose ? "homing.q_start_rad" : "homing.q_home_rad") + " and the box";
+    } else if (start_pose) {
+      // the cone without its margin: a start inside the margin band would have every waypoint near it pulled back
+      const double tilt = gate_.tiltDeg(Eigen::Quaterniond(snap_.O_T_TCP.linear()));
+      if (!(tilt <= cfg_.safety.cone_max_deg)) {
+        text = "start pose tilt " + fmt(tilt, 1) + " deg from the approach axis > safety.cone_max_deg " +
+               fmt(cfg_.safety.cone_max_deg, 1) + ": check homing.q_start_rad and the cone";
+      }
+    }
+    if (text.empty()) {
       sm_.apply(Event::kHomingDone);
       post(LoopCommand::Kind::kHold);
       shared_.markAlive(now);   // the watchdog resumes as soon as homing ends
       setHomeReply(true, "");
-      Log::info("homing finished");
+      if (start_pose) {
+        Log::info("start pose reached (fingers at " + fmt(shared_.gripperWidth(), 3) + " m): start the episode");
+      } else {
+        Log::info("homing finished");
+      }
     } else {
-      const std::string text = "home pose TCP (" + fmt(p.x(), 2) + ", " + fmt(p.y(), 2) + ", " + fmt(p.z(), 2) +
-                               ") m is outside the workspace box: check homing.q_home_rad and the box";
       toFault(Event::kHomingFailed, text);
       post(LoopCommand::Kind::kHold);
       shared_.markAlive(now);
@@ -240,6 +263,9 @@ void Supervisor::onKey(Key key) {
     case Key::kHomeArm:
       if (auto r = onHome(Source::kKeyboard)) Log::warning("key h refused: " + keyRefusal(r->reason));
       break;
+    case Key::kStartPose:
+      if (auto r = onStartPose(Source::kKeyboard)) Log::warning("key p refused: " + keyRefusal(r->reason));
+      break;
     case Key::kHomeHand:
       if (auto r = onHandHome()) {
         Log::warning("key g refused: " + keyRefusal(r->reason));
@@ -294,6 +320,10 @@ msg::Ack Supervisor::onHeartbeat() { return msg::Ack{true, ""}; }
 msg::Ack Supervisor::onStart() {
   const Transition t = sm_.check(Event::kStart);
   if (!t.allowed) return msg::Ack{false, t.reason};
+  if (cfg_.homing.q_start_rad &&   // unset: as before (hold_still tests, the bring-up console)
+      !(maxJointError(snap_.q, *cfg_.homing.q_start_rad) <= cfg_.homing.at_pose_tol_rad)) {
+    return msg::Ack{false, "refused: not at the start pose: press h, then p on the PC"};
+  }
   plan_.clear();
   plan_.append(snapshotTarget(clock_()));
   follow_generation_ = post(LoopCommand::Kind::kFollow, &plan_);
@@ -334,27 +364,57 @@ std::optional<msg::Ack> Supervisor::onHandHome() {
 }
 
 std::optional<msg::Ack> Supervisor::onHome(Source source) {
+  return startArmMove(source, ArmGoal::kHome, cfg_.homing.q_home_rad, std::nullopt);
+}
+
+std::optional<msg::Ack> Supervisor::onStartPose(Source source) {
+  if (!cfg_.homing.q_start_rad) {
+    return msg::Ack{false, "refused: homing.q_start_rad is not set: measure it and set it in "
+                           "control_deploy/station.yaml (franka_control: homing:)"};
+  }
   const Transition t = sm_.check(Event::kHome);
   if (!t.allowed) return msg::Ack{false, t.reason};
-  const HomingMotion motion(snap_.q, cfg_.homing.q_home_rad, cfg_.homing.max_joint_speed_rad_per_s,
-                            cfg_.homing.min_duration_s);
+  if (!(maxJointError(snap_.q, cfg_.homing.q_home_rad) <= cfg_.homing.at_pose_tol_rad)) {
+    return msg::Ack{false, "refused: not at home: press h first"};
+  }
+  return startArmMove(source, ArmGoal::kStartPose, *cfg_.homing.q_start_rad, gripper_open_m_);
+}
+
+std::optional<msg::Ack> Supervisor::startArmMove(Source source, ArmGoal goal, const Vec7& target,
+                                                 std::optional<double> open_width_m) {
+  const Transition t = sm_.check(Event::kHome);
+  if (!t.allowed) return msg::Ack{false, t.reason};
+  const bool start_pose = goal == ArmGoal::kStartPose;
+  const HomingMotion motion(snap_.q, target, cfg_.homing.max_joint_speed_rad_per_s, cfg_.homing.min_duration_s);
   if (motion.durationS() >= cfg_.homing.timeout_s) {
-    return msg::Ack{false, "refused: home move would take " + fmt(motion.durationS(), 1) + " s > homing.timeout_s " +
-                               fmt(cfg_.homing.timeout_s, 1) + " s: move the arm closer by hand"};
+    return msg::Ack{false, std::string("refused: ") + (start_pose ? "start pose" : "home") + " move would take " +
+                               fmt(motion.durationS(), 1) + " s > homing.timeout_s " + fmt(cfg_.homing.timeout_s, 1) +
+                               " s: move the arm closer by hand"};
   }
   homing_kind_ = HomingKind::kArm;
+  arm_goal_ = goal;
   homing_source_ = source;
   abort_pending_ = false;
   arm_stop_sent_ns_.reset();
   timeout_stop_pending_ = false;
   shared_.clearHomingAbort();   // no homing runs now: nothing stale may skip this one
-  home_generation_ = post(LoopCommand::Kind::kHome);
+  home_generation_ = post(LoopCommand::Kind::kHome, nullptr, target, open_width_m);
   home_session_ = snap_.session;
   home_start_ns_ = clock_();
   home_reply_.reset();
   sm_.apply(Event::kHome);
-  Log::info(std::string(source == Source::kKeyboard ? "key h: homing the arm: " : "homing: ") +
-            fmt(motion.durationS(), 1) + " s joint move to homing.q_home_rad");
+  const bool by_key = source == Source::kKeyboard;
+  if (start_pose) {
+    Log::info(std::string(by_key ? "key p: " : "") + "start pose: " + fmt(motion.durationS(), 1) +
+              " s joint move to homing.q_start_rad");
+  } else {
+    Log::info(std::string(by_key ? "key h: homing the arm: " : "homing: ") + fmt(motion.durationS(), 1) +
+              " s joint move to homing.q_home_rad");
+  }
+  if (open_width_m) {
+    Log::info(std::string(by_key ? "key p: " : "") + "the hand opens to " + fmt(*open_width_m, 3) +
+              " m (gripper_width_max_m) during the move");
+  }
   return std::nullopt;
 }
 

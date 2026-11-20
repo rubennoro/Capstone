@@ -2,6 +2,7 @@
 // changes: EndpointsAndSessionRootComeFromTheStation -> EndpointsComeFromLinkYaml; a station endpoints: section and
 // overrides of tcp.F_T_TCP / watchdog.limit_s refused with their hints; max_lead_s 1.5; F_T_TCP from frames.yaml;
 // watchdog.limit_s from link.yaml and its floor; contract file problems (control_deploy/STRUCTURE.md 9.1).
+// + homing.q_start_rad and homing.at_pose_tol_rad (key p, the start pose).
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -116,6 +117,56 @@ TEST(ConfigLoader, EachBadValueIsRefusedAndAllAreListedAtOnce) {
   }
 }
 
+TEST(ConfigLoader, TheStartPoseIsUnsetUntilTheStationSetsIt) {
+  const Config c = test::testConfig();
+  EXPECT_FALSE(c.homing.q_start_rad);   // config.yaml ships null: key p refused
+  EXPECT_DOUBLE_EQ(c.homing.at_pose_tol_rad, 0.05);
+  const Config s = test::testConfig(
+      "  homing:\n"
+      "    q_start_rad: [0.1, -0.3, 0.0, -2.2, 0.0, 2.0, 0.785]\n"
+      "    at_pose_tol_rad: 0.02\n");
+  ASSERT_TRUE(s.homing.q_start_rad);
+  Vec7 want;
+  want << 0.1, -0.3, 0.0, -2.2, 0.0, 2.0, 0.785;
+  EXPECT_TRUE(s.homing.q_start_rad->isApprox(want));
+  EXPECT_DOUBLE_EQ(s.homing.at_pose_tol_rad, 0.02);
+  EXPECT_TRUE(s.homing.q_home_rad.isApprox(c.homing.q_home_rad));   // the rest of homing stays
+  EXPECT_NE(ConfigLoader::toYaml(s).find("q_start_rad"), std::string::npos);   // --check-config shows it
+  EXPECT_FALSE(test::testConfig("  homing:\n    q_start_rad: null\n").homing.q_start_rad);
+}
+
+TEST(ConfigLoader, AnAbsentStartPoseIsUnset) {
+  const auto dir = test::tmpDir("cfgnostart");
+  std::string text = test::readFile(configFile());
+  const size_t at = text.find("  q_start_rad:");
+  ASSERT_NE(at, std::string::npos);
+  text.erase(at, text.find('\n', at) + 1 - at);
+  test::writeFile(dir / "config.yaml", text);
+  const Config c = ConfigLoader::load(test::writeStation(dir), true, false, dir / "config.yaml",
+                                      test::contractFiles());
+  EXPECT_FALSE(c.homing.q_start_rad);
+}
+
+TEST(ConfigLoader, BadStartPoseValuesAreRefused) {
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [0, 0, 0]\n"),
+                         "station.yaml: franka_control.homing.q_start_rad: expected a list of 7 numbers"));
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [0, 0, 0, -2, 0, 2, x]\n"),
+                         "homing.q_start_rad: expected a list of 7 numbers"));
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [0, 0, 0, -2, 0, 2, .nan]\n"),
+                         "homing.q_start_rad: expected a list of 7 numbers"));
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: 0.5\n"),
+                         "homing.q_start_rad: expected a list of 7 numbers"));
+  const auto p = problemsFor("  homing:\n    q_start_rad: [0, 0, 0, 0.0, 0, 2, 0]\n");
+  ASSERT_EQ(p.size(), 1u);
+  EXPECT_EQ(p[0], "station.yaml: franka_control.homing.q_start_rad: joint 4 (0.0000 rad) is outside the Panda's "
+                  "limits [-3.0718, -0.0698] rad");
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [3.0, 0, 0, -2, 0, 2, 0]\n"),
+                         "joint 1 (3.0000 rad) is outside the Panda's limits [-2.8973, 2.8973] rad"));
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    at_pose_tol_rad: 0\n"),
+                         "station.yaml: franka_control.homing.at_pose_tol_rad: must be > 0"));
+  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    at_pose_tol_rad: -0.1\n"), "homing.at_pose_tol_rad: must be > 0"));
+}
+
 TEST(ConfigLoader, EndpointsComeFromLinkYaml) {
   const Config c = test::testConfig();
   EXPECT_EQ(c.pc_address, "192.168.50.10");
@@ -162,7 +213,7 @@ TEST(ConfigLoader, FTcpIsFramesYamlReNormalised) {
   const Config c = test::testConfig();
   const double h = std::sqrt(0.5);
   Eigen::Matrix4d want;
-  want << h, -h, 0, 0, h, h, 0, 0, 0, 0, 1, 0.150, 0, 0, 0, 1;
+  want << h, -h, 0, 0, h, h, 0, 0, 0, 0, 1, 0.23565, 0, 0, 0, 1;
   EXPECT_TRUE(c.F_T_TCP.matrix().isApprox(want, 1e-15));
   EXPECT_LT((c.F_T_TCP.linear().transpose() * c.F_T_TCP.linear() - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff(),
             1e-15);

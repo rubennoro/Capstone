@@ -50,7 +50,7 @@ Each line is a step in that machine's directions. Each step has its own **Good**
 | 4 | PC | 7 (optional) | firewall: only the laptop can command the arm |
 | 5 | PC | 8 | the workspace box and the rig's weight |
 | 6 | PC | 9 | a run with a fake arm (checks the install) |
-| 7 | PC | 10 | **the arm alone:** first real run, homing, the console tests. Keep a hand on the user stop |
+| 7 | PC | 10 | **the arm alone:** first real run, homing, the console tests, measuring the start pose. Keep a hand on the user stop |
 | 8 | Laptop | 5 | the Pi's stream arrives (press the C button first) |
 | 9 | Laptop | 6 | the link to the PC (with `control_deploy run` running on the PC) |
 | 10 | Laptop | 7 | **the first trial run** (below) |
@@ -78,8 +78,10 @@ laptop: `policy_deploy use <run folder>` (laptop directions, "A trained policy")
    ~/envs/policy_deploy/bin/policy_deploy run
    ```
 
-6. **Laptop keys:** `h` (home the arm), `c` (start an episode), `y` / `n` (end it as success / failure). Repeat `h`,
-   `c`, ... as often as you like.
+6. **Each episode:** on the **PC**, `h` (home), then `p` (start pose: the arm goes to where the training demos
+   started and the hand opens); then on the **laptop**, `c` (start), and `y` / `n` (end it as success / failure).
+   Repeat from the PC's `h`. No laptop key moves the arm to a pose. The start pose is measured once (PC directions,
+   step 10, "The start pose"); until then `p` is refused and `c` starts wherever the arm is.
 
 **Always the PC first, then the laptop.** Stop the arm at any time with `s` on either machine, or the user stop.
 

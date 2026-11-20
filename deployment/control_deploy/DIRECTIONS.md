@@ -18,12 +18,15 @@ Every command below runs from `~/Capstone/deployment` (step 2), in a terminal wh
 >
 > | Key on the PC | What it does |
 > |---|---|
-> | `h` | home the arm: all 7 joints to the home pose, slow joint move |
+> | `h` | home the arm: all 7 joints to the home pose (fingertips straight down), slow joint move |
+> | `p` | start pose: from home only, a slow joint move to `homing.q_start_rad` (the pose the training demos started from: fingertips tilted ~48°), and the hand opens fully |
 > | `g` | home the hand: the fingers close and reopen to calibrate, then go back to their width |
 > | `s` | stop: the arm holds where it is |
 > | `q` or Ctrl-C | stop the arm and quit |
 >
-> `h` and `g` are refused while the laptop is running an episode. `s` and `q` always work.
+> `h`, `p` and `g` are refused while the laptop is running an episode. `s` and `q` always work.
+> Before every episode: `h`, then `p`, then `c` on the laptop. Once `homing.q_start_rad` is set (step 8), the PC refuses
+> the laptop's start (`c`) unless the arm is at the start pose.
 
 ---
 
@@ -167,21 +170,24 @@ Some settings in `control_deploy/franka_control/config.yaml` are still marked `T
 franka_control:
   realtime: ignore                 # already there: keep it until the PC has a real-time kernel
   safety:
-    workspace_min_m: [0.30, -0.30, 0.10]   # the box the fingertips may move in (m, robot base frame)
+    workspace_min_m: [0.30, -0.30, -0.005] # the box the fingertips may move in (m, robot base frame)
     workspace_max_m: [0.70, 0.30, 0.60]
   load:
     mass_kg: 0.45                  # everything beyond the Franka Hand: printed fingers, Pi, cameras, mount
     com_m: [0.0, 0.0, 0.05]        # its centre of mass from the flange (m, from CAD)
   gripper:
     width_offset_m: 0.0            # real fingertip opening minus the width the hand reports
+  # homing:                       # the start pose, once measured (step 10, "The start pose"): uncomment and paste
+  #   q_start_rad: [...]           # the line pc_probe --start-pose prints (7 joint angles, rad)
 ```
 
 | Value | How to get it |
 |---|---|
-| `workspace_min_m`, `workspace_max_m` | Measure around the table from the robot base (x forward, y to the left, z up), a few cm inside the real limits. `min z` must keep the fingertips above the table. |
+| `workspace_min_m`, `workspace_max_m` | Measure around the table from the robot base (x forward, y to the left, z up), a few cm inside the real limits. `min z`: rest the fingertips on the table, read `tcp z` on the status line, and use that minus 0.005 (about `-0.005` with the arm standing on the table). Grasps end at the table, so a higher floor faults every grasp. |
 | the home pose (`homing.q_home_rad`) | Keep the default. In step 10, after `h`, the `tcp x y z` on the status line must be inside the box. |
 | `load.mass_kg`, `load.com_m` | Weigh the rig without the Franka Hand. While it is 0, `check` warns and the arm sags a few mm. |
 | `gripper.width_offset_m` | In step 10: measure the fingertip gap with calipers and compare it with `grip` on the status line. |
+| the start pose (`homing.q_start_rad`) | In step 10, below "The start pose". Until it is set, `p` is refused (`homing.q_start_rad is not set`) and episodes start wherever the arm is. |
 
 - **Good:** `~/envs/control_deploy/bin/control_deploy check` shows `config  PASS`, `payload  PASS`, and the `todo`
   row no longer lists these keys (it may still list the gains, collision thresholds and cone: those are fine).
@@ -196,7 +202,8 @@ Runs everything with a fake arm on this PC only, to check the install. `--local`
 ~/envs/control_deploy/bin/control_deploy run --mock --local
 ```
 
-Press `h`, wait for `homing finished`, then `g`, wait for `hand homing finished`, then `s`, then `q`.
+Press `h`, wait for `homing finished`, then `g`, wait for `hand homing finished`, then `s`, then `q`. (`p` answers
+`refused: homing.q_start_rad is not set` until the start pose is measured, step 10.)
 
 - **Good:** see the `run --mock` section below. It ends with `control_deploy: franka_control stopped cleanly`.
 - **If not:** "When something fails".
@@ -214,7 +221,31 @@ The first time on the real arm, test it alone with the console before any laptop
    down the text, Ctrl-C and start `run` again. Then `h` once more: it must home normally.
 6. In a second terminal, `console` (section below), one step at a time. Its last step ends in `fault` on purpose:
    Ctrl-C `run` and start it again.
-7. Only then the laptop.
+7. **The start pose** (once; again if the table or the object's place changes). The policy starts each episode from
+   here, so its first camera view looks like the training demos'. Target, from the 30 PICK_TEST1 demos (measured
+   straight up from the table):
+
+   | | Aim for | The demos' range |
+   |---|---|---|
+   | Fingertips tilted from straight down, pointing away from the robot, camera on top | about 48° | 38–64° |
+   | Fingertips above the table | about 16 cm | 6–27 cm |
+   | The object | about 16 cm ahead of the fingertips (horizontally), centred left–right, on the table | 8–23 cm |
+
+   Within about ±10° and ±5 cm is fine.
+   1. Ctrl-C `run`. In Desk, put the arm in guiding mode (FCI off) and move it by hand to the pose above, with the
+      object in its place. Use a ruler for the height.
+   2. Back in Desk: activate FCI. Start `run` again: the arm holds where you left it.
+   3. On the laptop: `~/envs/policy_deploy/bin/python -m policy_deploy.manager.pc_probe --seconds 3 --start-pose`.
+      It prints the tilt, the height and the hand opening (compare them with the table), and a `q_start_rad: [...]`
+      line. On this PC, paste that line into `control_deploy/station.yaml` under `franka_control:` → `homing:`
+      (uncomment the two lines of step 8's example). Ctrl-C `run` and start it again.
+      Then commit and push it (`git commit -m "control_deploy/station.yaml: measured homing.q_start_rad"
+      control_deploy/station.yaml && git push`), so the laptop's clone and the simulation get the same value.
+   4. Press `h`, then `p` (hand on the user stop): the arm goes to that pose and the hand opens. `p` again: refused
+      (`not at home`).
+   5. Compare the camera view with a training frame (laptop directions, "The frames probe"): the object should be in
+      about the same place and size.
+8. Only then the laptop.
 
 - **Good:** every item behaves as described, and the console ends with `all steps done`. Keep its `results.yaml`.
 - **If not:** "When something fails"; a `WARN` in the console is not a stop (tune the values later).
@@ -254,14 +285,16 @@ skips the arm rows; with `--local` it skips the address and firewall rows. `run`
 ~/envs/control_deploy/bin/control_deploy run
 ```
 
-**Keys:** `h` home arm, `g` home hand, `s` stop, `q` quit (table at the top).
+**Keys:** `h` home arm, `p` start pose, `g` home hand, `s` stop, `q` quit (table at the top).
 
 **Good:** the check table, then `control_deploy: ready: C2 tcp://<PC>:5620, C3 tcp://<PC>:5630; start policy_deploy
-on the laptop. Keys: h home arm, g home hand, s stop, q quit`. Then a status line at the bottom:
+on the laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit`. Then a status line at the bottom:
 
 ```
-idle | tcp 0.450 0.000 0.450 m | grip 0.080 m | gate a0 s0 p0 r0 | late 0 (+0/10s) | C2 100 Hz | C3 peer 192.168.50.20 | h g s q
+idle | tcp 0.307 0.000 0.354 m | grip 0.080 m | gate a0 s0 p0 r0 | late 0 (+0/10s) | C2 100 Hz | C3 peer 192.168.50.20 | h p g s q
 ```
+
+(After `h`: the home pose puts the TCP, between the fingertips, at about x 0.307, y 0, z 0.354 m.)
 
 Mode (`idle`, `holding`, `running`, `stopped`, `homing`, `fault: <reason>`), the fingertip point (x y z, m), the
 finger opening, the moves the safety gate accepted / shortened / pulled back / rejected, late control cycles, the
@@ -289,7 +322,8 @@ starting `idle | tcp 0.450 0.000 0.450 m | grip 0.080 m`. `h` prints `key h: hom
 ### `control_deploy console`
 
 **When:** at bring-up (step 10), to test moves on the real arm without the laptop. Run it in a **second terminal**
-while `run` shows `idle` or `stopped`. **Never** while the laptop is running.
+while `run` shows `idle` or `stopped`. **Never** while the laptop is running. Once `homing.q_start_rad` is set, press
+`h` then `p` in `run` first: the console starts like the laptop does, so it is refused away from the start pose.
 
 ```bash
 ~/envs/control_deploy/bin/control_deploy console
@@ -329,8 +363,8 @@ prints; step 7 installs it.
 control_deploy/franka_control/build/franka_control --station control_deploy/station.yaml --keyboard
 ```
 
-**Keys:** the same as `run`. **Good:** `ready: C2 on tcp://<PC>:5620, C3 on tcp://<PC>:5630; keys: h home arm, g home
-hand, s stop, q quit`. Add `--mock --local` for the fake arm.
+**Keys:** the same as `run`. **Good:** `ready: C2 on tcp://<PC>:5620, C3 on tcp://<PC>:5630; keys: h home arm, p start
+pose, g home hand, s stop, q quit`. Add `--mock --local` for the fake arm.
 
 ---
 
@@ -355,6 +389,10 @@ hand, s stop, q quit`. Add `--mock --local` for the fake arm.
 | `FATAL franka_control: cannot bind the C2 endpoint ...` | the PC's Wi-Fi address is not `link.yaml pc.address` (step 6), or another `franka_control` is running |
 | `libfranka 0.9.2 does not match the robot's system version` | Desk → Settings → System must be 4.x for libfranka 0.9.2; ask the maintainer before changing `libfranka_version` |
 | `fault: safety gate rejected waypoint ...` | a move outside the box (expected after the console's `out_of_box`); Ctrl-C, `run` again; if it happens with the laptop, check the box |
+| `key p refused: ... homing.q_start_rad is not set` | the start pose is not measured yet: step 10, "The start pose" |
+| `key p refused: not at home: press h first` | press `h`, wait for `homing finished`, then `p` |
+| `fault: ... homing.q_start_rad ...` (outside the box or the cone) | the start pose is outside the safety box or tilt cone: measure it again (step 10), or widen the box (step 8) if it is really safe |
+| the laptop: `c: the PC refused start: refused: not at the start pose: press h, then p on the PC` | exactly that: `h`, then `p` here, then `c` on the laptop |
 | `stopped` during a laptop episode, `stopped: watchdog` in the log | the laptop went quiet for 1 s (Wi-Fi stall, laptop closed): the arm holds; the laptop just reruns |
 | `realtime WARN` and late cycles or reflexes while holding | expected without a real-time (PREEMPT_RT) kernel; install one when possible, then set `realtime: enforce` in `station.yaml` |
 | build: `Could not find a configuration file for package "Eigen3" ... version "3.4"` | Ubuntu 20.04's Eigen is 3.3. Install 3.4 into `~/franka` without `sudo`, then build again with it (below) |

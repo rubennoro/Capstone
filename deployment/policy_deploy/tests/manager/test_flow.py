@@ -135,13 +135,13 @@ def test_odd_chunk_skipped_counted_next_sent(stack, capsys):
 
 # ---- operator keys ------------------------------------------------------------------------------------------------
 
-def test_s_then_h_then_c(stack, capsys):
-    script = (EPISODE % (3, "s") + "- {wait_phase: idle}\n- {key: h}\n- {wait_s: 0.1}\n" + EPISODE % (3, "y") + QUIT)
+def test_s_then_c(stack, capsys):
+    script = (EPISODE % (3, "s") + "- {wait_phase: idle}\n- {wait_s: 0.1}\n" + EPISODE % (3, "y") + QUIT)
     code, err = stack.run(script, capsys)
     assert code == 0, err[-3:]
     assert [e["outcome"] for e in stack.jsonl("episodes.jsonl")] == ["stopped", "success"]
     names = stack.names()
-    assert names.count("home") == 1 and names.count("start") == 2
+    assert names.count("home") == 0 and names.count("start") == 2
     assert stack.policy.calls.count("c4.reset/v1") == 2
 
 

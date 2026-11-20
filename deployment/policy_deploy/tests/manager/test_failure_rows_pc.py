@@ -163,52 +163,16 @@ def test_one_skipped_set_is_only_policy_late(tmp_path, rigs):
 
 # ---------------------------------------------------------------------------------------------- home
 
-def test_home_stopped_on_the_pc_is_normal_and_the_map_rewarms(tmp_path, rigs):
-    rig = rigs(tmp_path, fake={"home_duration_s": 2.0})
-    rig.start()
-    rig.operator.press("h")
-    assert rig.wait(lambda: rig.fake.mode == "homing", 3.0)
-    rig.fake.keyboard_stop()
-    assert rig.wait(lambda: rig.loop.phase is Phase.IDLE and "home_stopped" in [e["kind"] for e in rig.events()], 3.0)
-    assert rig.code is None
-    assert any(m.startswith("home stopped on the PC: stopped: ") for m in rig.operator.messages)
-    assert rig.wait(lambda: "PC clock map ready again" in [e["detail"] for e in rig.events()], 3.0)
-    assert not rig.heartbeats.in_startup_mode()
-    rig.start_episode(3)                                                # c accepted afterwards
-    assert rig.fake.mode in ("holding", "running")
-
-
-def test_home_refused_is_homing_failed(tmp_path, rigs):
-    rig = rigs(tmp_path)
-    rig.start()
-    rig.fake.set_mode("holding")                                       # e.g. another client started an episode
-    assert rig.wait(lambda: rig.history.latest().mode == "holding", 2.0)
-    rig.operator.press("h")
-    v = concluded(rig, C.HOMING_FAILED)
-    assert v.what_failed == "the PC's homing failed: refused: mode is holding: send stop first"
-
-
-def test_home_timed_out_is_homing_failed(tmp_path, rigs):
-    rig = rigs(tmp_path, manager={"timeouts": {"home_s": 0.4}},
-               fake={"homing_timeout_s": 0.2, "home_duration_s": 3.0})
-    rig.start()
-    rig.operator.press("h")
-    v = concluded(rig, C.HOMING_FAILED)
-    assert v.what_failed == "the PC's homing failed: no reply within 0.4 s"
-
-
 @pytest.mark.parametrize("hook", ["keyboard_home", "keyboard_hand_home"])
-def test_c_and_h_refused_locally_while_the_pc_homes(tmp_path, rigs, hook):
+def test_c_refused_locally_while_the_pc_homes(tmp_path, rigs, hook):
     rig = rigs(tmp_path, fake={"home_duration_s": 1.0})
     rig.start()
     assert getattr(rig.fake, hook)().ok
     assert rig.wait(lambda: rig.history.latest().mode == "homing", 2.0)
     rig.operator.press("c")
-    rig.operator.press("h")
-    assert rig.wait(lambda: len(rig.operator.refused) >= 2, 2.0)
+    assert rig.wait(lambda: len(rig.operator.refused) >= 1, 2.0)
     hints = [h for _, h in rig.operator.refused]
-    assert "c: the PC is homing (its h or g key): wait for idle" in hints
-    assert "h: the PC is already homing (its h or g key)" in hints
+    assert "c: the PC is homing (its h, g or p key): wait for idle" in hints
     names = rig.requests()
     assert "c3.start/v1" not in names and "c3.home/v1" not in names
     assert rig.loop.phase is Phase.IDLE and rig.code is None

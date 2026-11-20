@@ -10,6 +10,7 @@ namespace franka_control {
 const char* keyChar(Key k) {
   switch (k) {
     case Key::kHomeArm: return "h";
+    case Key::kStartPose: return "p";
     case Key::kHomeHand: return "g";
     case Key::kStop: return "s";
     case Key::kQuit: return "q";

@@ -1,6 +1,7 @@
 // from rnoro/deployment:deployment/franka_control/tests/test_control_loop.cpp @ 91b178b
 // changes: the backstop case uses link.yaml's 1.0 s; + run() with a scripted Arm (stop during homing) and the stop
-// epoch with FakeArm (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged.
+// epoch with FakeArm (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged. + the kHome goal and finger
+// target (key p, the start pose); ScriptArm records each move's goal and the finger target at the move.
 // ControlLoop::step() with hand-made readings and a FakeClock; the test plays the messaging thread.
 #include <gtest/gtest.h>
 
@@ -293,8 +294,10 @@ class ScriptArm : public Arm {
     }
     ADD_FAILURE() << "a torque session did not finish";
   }
-  void moveToJoints(const HomingMotion&, const Observer& observe) override {
+  void moveToJoints(const HomingMotion& m, const Observer& observe) override {
     ++moves;
+    goals.push_back(m.goal());
+    finger_targets.push_back(shared_.gripperTarget());
     if (on_move) on_move(observe);
   }
   void requestStop() override {}
@@ -314,6 +317,8 @@ class ScriptArm : public Arm {
   ArmStatusFlags after_stop{RobotMode::kIdle, "[]"};
   std::function<void(const Observer&)> on_move;
   std::vector<TorqueCommand> first_command;   // the first command of each session
+  std::vector<Vec7> goals;                     // each move's goal
+  std::vector<double> finger_targets;          // SharedState::gripperTarget() as each move began
   int sessions = 0, moves = 0, status_calls = 0;
 
  private:
@@ -450,6 +455,64 @@ TEST(ControlLoopRun, ANormalFinishWithTheFlagSetIsHomedAndClearsIt) {
   EXPECT_FALSE(r.shared->homingAbortRequested());
   EXPECT_EQ(r.shared->latestSnapshot().homed_generation, r.home_gen);
   EXPECT_EQ(r.shared->latestSnapshot().homing_aborted_generation, 0u);
+}
+
+TEST(ControlLoopRun, AKHomeWithoutATargetGoesToQHomeAndLeavesTheFingers) {   // h, as before
+  RunRig r;
+  r.loop->run();
+  ASSERT_EQ(r.arm.goals.size(), 1u);
+  EXPECT_TRUE(r.arm.goals[0].isApprox(r.cfg.homing.q_home_rad));
+  EXPECT_DOUBLE_EQ(r.arm.finger_targets[0], 0.05);   // the held width
+}
+
+TEST(ControlLoopRun, TheKHomeTargetIsTheMovesGoalAndItsOpenWidthTheFingerTarget) {   // key p
+  RunRig r;
+  Vec7 q_start = r.cfg.homing.q_home_rad;
+  q_start(5) += 0.5;
+  LoopCommand c;
+  c.generation = r.home_gen;   // replaces the constructor's command before the loop saw it
+  c.kind = LoopCommand::Kind::kHome;
+  c.q_target = q_start;
+  c.open_width_m = 0.08;
+  r.shared->postCommand(c);
+  r.loop->run();
+  ASSERT_EQ(r.arm.goals.size(), 1u);
+  EXPECT_TRUE(r.arm.goals[0].isApprox(q_start));
+  EXPECT_DOUBLE_EQ(r.arm.finger_targets[0], 0.08);   // the hand opens during the move
+  EXPECT_EQ(r.shared->latestSnapshot().homed_generation, r.home_gen);
+  // the new session keeps the open target, not the measured width (0.05 here: the test's gripper does not move), so a
+  // hand still opening when the arm arrives finishes opening instead of closing again
+  EXPECT_DOUBLE_EQ(r.shared->gripperTarget(), 0.08);
+}
+
+TEST(ControlLoopRun, AStoppedPMoveHoldsTheMeasuredWidth) {   // key p, then s mid-move: hold what the hand is at
+  RunRig r;
+  Vec7 q_start = r.cfg.homing.q_home_rad;
+  q_start(5) += 0.5;
+  LoopCommand c;
+  c.generation = r.home_gen;
+  c.kind = LoopCommand::Kind::kHome;
+  c.q_target = q_start;
+  c.open_width_m = 0.08;
+  r.shared->postCommand(c);
+  r.stopTheMove(true);
+  r.loop->run();
+  ASSERT_EQ(r.arm.moves, 1);
+  EXPECT_DOUBLE_EQ(r.shared->gripperTarget(), 0.05);
+}
+
+TEST(ControlLoopRun, AnAbortBeforeTheMoveLeavesTheFingers) {
+  RunRig r;
+  LoopCommand c;
+  c.generation = r.home_gen;
+  c.kind = LoopCommand::Kind::kHome;
+  c.q_target = r.cfg.homing.q_home_rad;
+  c.open_width_m = 0.08;
+  r.shared->postCommand(c);
+  r.shared->requestHomingAbort();
+  r.loop->run();
+  EXPECT_EQ(r.arm.moves, 0);
+  EXPECT_DOUBLE_EQ(r.shared->gripperTarget(), 0.05);
 }
 
 // ---- the stop epoch (control_deploy/STRUCTURE.md 3.3), with FakeArm in real time ----

@@ -29,7 +29,7 @@ def test_each_example_state(s):
     else:
         g = s.gate
         assert f"gate a{g.accepted} s{g.shortened} p{g.pulled_back} r{g.rejected}" in line
-        assert "C3 peer 192.168.50.20" in line and line.endswith("h g s q")
+        assert "C3 peer 192.168.50.20" in line and line.endswith("h p g s q")
         assert f"grip {s.gripper_width_m:.3f} m" in line
 
 

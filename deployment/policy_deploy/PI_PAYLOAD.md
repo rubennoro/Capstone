@@ -8,13 +8,12 @@
 # C0: the Pi payload contract
 
 What the Raspberry Pi 5 sends to the PC during deployment, and what the PC expects of it. The Pi sender is fixed; the
-PC adapts to it. Format: **`pi_stream/v1`**, read by `process_frames` with `stream: pi_v1` (the default).
+PC adapts to it. Format: **`pi_stream/v1`**, read by `policy_deploy.frames` (the only format; no `stream` setting).
 Code: `contracts/pi_stream.py` (parse and check) and `process_frames/pi_stream_source.py` (convert). PLAN.md §4 C0
 points here.
 
-Sections 1–8 further down are an **appendix**: the original C0 design (msgpack packets plus a time-sync socket). The
-Pi doesn't send it. It's kept because `process_frames` still uses that packet form internally, and `stream: c0`
-still reads it.
+The **appendix** below (§3–4 only) is the internal packet form (`c0.packet/v1`) the receiver works on; the Pi never
+sends it.
 
 ## 0. `pi_stream/v1`
 
@@ -23,7 +22,7 @@ still reads it.
 | | |
 |---|---|
 | Library | ZeroMQ |
-| Socket | The Pi **binds a PUB** socket on port **5555**. `process_frames` connects a SUB, subscribed to everything, at `endpoints.pi_frames` (`station.yaml`, e.g. `tcp://10.42.0.78:5555`). |
+| Socket | The Pi **binds a PUB** socket on port **5555**. `process_frames` connects a SUB, subscribed to everything, at `tcp://<pi.address>:<pi.port>` (`station.yaml pi:`, e.g. `tcp://192.168.50.30:5555`). |
 | Direction | Pi → PC only. Nothing is sent back, and there is no time-sync socket. |
 | Message | One ZeroMQ **multipart** message per main frame, delivered whole or not at all. |
 | Frames | Both cameras **640×480 (4:3) at 30 FPS**, JPEG. Rig file: `deployment/contracts/rigs/rig_pi_v3_640.yaml` (generated; DIRECTIONS.md "Camera constants"). |
@@ -66,7 +65,7 @@ All keys are required, with no others. Integers are JSON integers, never boolean
 
 1. **`packet_no` goes up by 1 per packet.** A gap means lost packets (`packets lost` in the stats). Going backwards
    means the sender restarted: `process_frames` marks both cameras down and ignores the rest, so restart it (or
-   `deploy run`) after restarting the Pi sender.
+   `policy_deploy run`) after restarting the Pi sender.
 2. **Each camera's `frame_no` and `t_sensor_ns` only go up.** The exception is a repeated ultrawide frame
    (`uw_reused`), which carries the earlier frame's numbers. A skipped ultrawide `frame_no` shows up as a `drop`
    count, which is harmless with JPEG.
@@ -95,7 +94,7 @@ All keys are required, with no others. Integers are JSON integers, never boolean
 3. **Clock, one-way:** each packet's `t_send_ns` against its PC arrival time. In each second, the least-delayed
    packets are fitted for offset and drift (`OneWayClockMap`). PC times come out late by the minimum Wi-Fi latency,
    a few ms.
-4. **From here on it's the same as appendix §7:** packet time is the main frame's mid-exposure. Then the 1 s buffer,
+4. **From here on it's the serving of policy_deploy/STRUCTURE.md §4.3:** packet time is the main frame's mid-exposure. Then the 1 s buffer,
    frame picking (main images at T − 50 ms and T, ultrawide at T − 100 ms and T), and the C1 224×224 images.
 
 ### 0.6 Example
@@ -156,10 +155,10 @@ The number of parts is exactly `2 + len(header.ultrawide)`. Any other count is a
 | Key | Type | Meaning |
 |---|---|---|
 | `sensor` | str | `"imx519"` for main, `"imx219"` for ultrawide. Checked against the rig file, which catches swapped cameras. |
-| `frame_seq` | uint64 | Counts **captured frames of this camera** from 0, per camera. It goes up by exactly 1 per frame of that camera, so a gap means that camera lost frames, which matters for its H.264 decoder. |
+| `frame_seq` | uint64 | Counts **captured frames of this camera** from 0, per camera. It goes up by exactly 1 per frame of that camera, so a gap means that camera lost frames, which is harmless with JPEG (`frame_decoder.py` knows only `jpeg`). |
 | `t_pi_ns` | int64 | libcamera `SensorTimestamp`, verbatim: the end of the first row's exposure, on the Pi's `CLOCK_BOOTTIME`, in ns. The same meaning as `t_ns` in the Pi's recordings (`camX_frames.csv`). |
 | `exposure_ns` | int64 | libcamera `ExposureTime` × 1000 (ns); 0 if unknown, in which case `process_frames` uses its `default_exposure_ns` |
-| `width`, `height` | uint32 | encoded frame size. Must equal the rig file (`rig_pi_v2.yaml`: main 1600×1200, ultrawide 1280×960). |
-| `encoding` | str | `"h264"` (default) or `"jpeg"` (backup, PLAN §9). The same for every frame of a camera during a run. |
+| `width`, `height` | uint32 | encoded frame size. Must equal the rig file (`../contracts/rigs/rig_pi_v3_640.yaml`: both 640×480). |
+| `encoding` | str | always `"jpeg"` here (`pi_stream_source.py`; `"h264"` was the original design's default). The same for every frame of a camera during a run. |
 | `keyframe` | bool | H.264: true for a frame that decodes on its own (an IDR frame). JPEG: always true. |
 

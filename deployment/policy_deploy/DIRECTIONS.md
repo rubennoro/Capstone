@@ -23,13 +23,14 @@ prints nothing (if it shows `/opt/ros/...`, run `unset PYTHONPATH` first).
 >
 > | Key | What it does |
 > |---|---|
-> | `h` | home the arm (all 7 joints to the home pose). Refused during an episode or while the PC is homing. |
 > | `c` | start an episode from where the arm is |
 > | `y` / `n` | end the episode as a success / failure; the arm holds |
 > | `s` | stop: the arm holds, the episode is recorded as stopped |
 > | `q` or Ctrl-C | quit the laptop. The PC keeps running and holding the arm. |
 >
-> Usual cycle: `h`, `c`, ..., `y` or `n`, then `h`, `c` again. `q` when done.
+> No laptop key moves the arm to a pose: homing and the start pose are the PC's keys.
+> Usual cycle: **PC `h`** (home), **PC `p`** (start pose, hand open), then here `c`, ..., `y` or `n`; again from the PC's
+> `h`. `q` when done. Once the start pose is set, `c` before `p` gets `c: the PC refused start: refused: not at the start pose: ...`.
 
 The policy that runs is the one `policy_deploy use` last chose. **`hold_still`** (the start) keeps the arm at the pose
 where the episode started: it tests the cameras, the link and the timing without moving anything.
@@ -156,12 +157,13 @@ The first run with the real arm. The PC must already have done its bring-up (the
 ~/envs/policy_deploy/bin/policy_deploy run
 ```
 
-- **Good:** see the `run` section. `h`, `c`: the arm stays still (hold still), the status line counts steps; `y`.
+- **Good:** see the `run` section. PC `h` (and `p` once the start pose is set), then `c` here: the arm stays still
+  (hold still), the status line counts steps; `y`.
 - **If not:** "When something fails".
 
 ### 8. Stopping, restarting, and after a fault
 
-- **End an episode:** `y`, `n` or `s`. The arm holds; `h` then `c` for the next one.
+- **End an episode:** `y`, `n` or `s`. The arm holds; for the next one: PC `h`, PC `p`, then `c` here.
 - **Quit:** `q` or Ctrl-C. The PC keeps holding the arm; `policy_deploy run` again whenever you want.
 - **When the run stops by itself**, it prints one line: `policy_deploy: FAILED <process> ...: <what failed>: <what
   to check>`. Fix that (table at the end) and run again.
@@ -194,22 +196,22 @@ on both (and rebuild on the PC).
 ~/envs/policy_deploy/bin/policy_deploy run
 ```
 
-**Keys:** `h c y n s q` (table at the top).
+**Keys:** `c y n s q` (table at the top).
 
 **Good:** the check table, then `policy_deploy: all 3 processes ready (session: ...)` and a status line, for example:
 
 ```
-[idle] arm idle | cams ok 30/ok 30 fps | late loops 0 | rtt 3 ms c2 100 Hz clock ok | keys: c start  h home  q quit
+[idle] arm idle | cams ok 30/ok 30 fps | late loops 0 | rtt 3 ms c2 100 Hz clock ok | keys: c start  q quit
 [ep 1 running 2.0 s] step 59 | rtt 3 ms c2 100 Hz clock ok | cycle 41 ms (policy 3) | img 74 ms | margin +239 ms | keys: y n s q
 ```
 
 `cams` is both cameras' state and frame rate (30 each), `rtt` the link's round trip, `c2` the PC's state rate (about
 100 Hz), `margin` how far ahead of the arm the policy is (positive is good). Messages appear above it:
-`home pose reached`, `episode 1 started`, `episode 1: success (operator), 181 steps, 6.0 s`. It ends with
-`policy_deploy: done`. Records: `~/policy_deploy_sessions/<date>_<time>/` (`logs/`, `manager/episodes.jsonl`).
+`episode 1 started`, `episode 1: success (operator), 181 steps, 6.0 s`. It ends with `policy_deploy: done`. Records:
+`~/policy_deploy_sessions/<date>_<time>/` (`logs/`, `manager/episodes.jsonl`).
 
-While homing the keys are inactive; Ctrl-C quits, the arm's user stop stops it. A refused key prints why, e.g.
-`h: end the episode first (y / n / s)` or `c: the PC is homing (its h or g key): wait for idle`.
+While the PC is homing or moving to the start pose the status line shows `arm homing`. A refused key prints why, e.g.
+`c: the PC is homing (its h, g or p key): wait for idle` or `y: no episode running (c start, q quit)`.
 
 ### `policy_deploy use`
 
@@ -247,7 +249,9 @@ PASS  compare_hello: all equal
 ```
 
 `--axes` adds three lines saying where the TCP's axes point (the check before `settled: true`, "A trained
-policy" step 4). `C2` about 100 Hz with few gaps; `rtt p95` a few ms on Wi-Fi (under 1 ms wired); `diff` (the two clock estimates)
+policy" step 4). `--start-pose` adds the arm's joints as a ready-to-paste `q_start_rad: [...]` line, the fingertip
+height, tilt and direction, the hand opening, and the training demos' start to compare with (measuring the start pose:
+the PC's directions, step 10). `C2` about 100 Hz with few gaps; `rtt p95` a few ms on Wi-Fi (under 1 ms wired); `diff` (the two clock estimates)
 within a few ms. Any `FAIL` names what differs. Without the PC: `--mock` against the fake PC
 (`python -m policy_deploy.fake_pc --mock` in another terminal).
 
@@ -397,10 +401,12 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
 
 4. **On the real arm, once: settle the gripper axes.** `check` refuses a trained policy
    (`settled FAIL trained policy refused on the real arm`) until `../contracts/frames.yaml` says `settled: true`.
-   Set it only after both checks below pass. Only `h` moves the arm. "Right" means standing behind the robot,
+   Set it only after both checks below pass. Only the PC's `h` moves the arm. "Right" means standing behind the robot,
    facing the way it faces.
 
-   1. PC: `git pull`, `control_deploy run`, press `h` (home). Laptop, with `policy_deploy run` not running:
+   1. PC: `git pull`, `control_deploy/franka_control/build.sh` (needed after any pull with C++ changes, e.g. the `p`
+      key), `control_deploy run`, press `h` (home; these checks are at home, before any `p`). Laptop, with
+      `policy_deploy run` not running:
 
       ```bash
       ~/envs/policy_deploy/bin/python -m policy_deploy.manager.pc_probe --seconds 3 --axes
@@ -413,7 +419,10 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
    3. Both good: set `settled: true` in `../contracts/frames.yaml`, commit, push, `git pull` on the PC and restart
       `control_deploy run` there. Either one wrong (x "to the robot's left", or your hand on the left): **don't**
       settle; the camera is on the other face and `F_T_TCP` needs the other rotation (PLAN §9).
-   4. First trained episode: hand on the user stop. If the first move does not head for the object, press `s`.
+   4. The start pose, once: the PC's directions, step 10 "The start pose" (hand-guide, `pc_probe --start-pose`,
+      paste `q_start_rad`).
+   5. First trained episode: PC `h`, PC `p`, then `c` here, hand on the user stop. If the first move does not head for
+      the object, press `s`.
 
 5. **Every run after that:** the daily routine at the top (`check`, then `run`). The chosen policy stays chosen.
 
@@ -460,12 +469,13 @@ Plugged in, on AC power: on battery or power-saver the start-up limits are misse
 | `Wi-Fi WARN not on ASUS_5g` | fine when wired; otherwise join ASUS_5g |
 | `terminal FAIL no terminal for the keyboard` | run it in a normal terminal window, not through a pipe |
 | `... cannot bind tcp://127.0.0.1:56..: is another policy_deploy run ... still running?` | another `policy_deploy run` (or a `control_deploy run --mock` on this laptop) is still open: quit it |
-| `settled FAIL trained policy refused on the real arm` | set `kind: hold_still` in `station.yaml` ("A trained policy", item 3) |
+| `settled FAIL trained policy refused on the real arm` | `policy_deploy use hold_still`, or settle the axes first ("A trained policy", step 4) |
 | `PC not answering: ...: check franka_control on the PC and the link` | is `control_deploy run` still running? Wi-Fi; then run again |
 | `the PC stopped the arm (watchdog or the PC's 's')` | a Wi-Fi stall over 1 s, or someone pressed `s` on the PC: run again |
 | `the PC reports fault: ...` | on the PC: Ctrl-C, release the user stop if it was a reflex, `control_deploy run`; then run again |
 | `franka_control restarted on the PC` | the PC was restarted during the run: run again |
 | `the PC is driving an episode for another C3 client` | stop the other laptop run, `pc_probe` or the PC's `console` |
+| `c: the PC refused start: refused: not at the start pose: press h, then p on the PC` | on the PC: `h`, wait, `p`; then `c` here |
 | `FAILED frames during start-up: not ready after 30 s` | the Pi stream isn't arriving: `pi_collect` |
 | `main camera down` / `ultrawide camera down` | the Pi or its Wi-Fi: check the Pi, then run again |
 | `frame size ..., rig file says ...` | the Pi now streams another size: regenerate the rig file for it ("Camera constants", `--size W H`) |

@@ -1,6 +1,7 @@
 # from rnoro/deployment:deployment/franka_control/config.yaml @ 91b178b
 # changes: tcp: removed (F_T_TCP is contracts/frames.yaml); watchdog.limit_s removed (contracts/link.yaml
 # timing.watchdog_limit_s); safety.max_lead_s 5.0 -> 1.5; comments name control_deploy (control_deploy/STRUCTURE.md 7).
+# + homing.q_start_rad and homing.at_pose_tol_rad (key p, the start pose).
 # franka_control: every setting, with its default (control_deploy/STRUCTURE.md section 7).
 # control_deploy/station.yaml's `franka_control:` section may override any key except libfranka_version: maps merge
 # key by key, other values are replaced, an unknown key is an error. F_T_TCP is in contracts/frames.yaml, the
@@ -39,7 +40,8 @@ load:                                 # payload beyond the hand configured in De
     - [0.0, 0.0, 0.0]
 
 safety:                               # the gate (old-S §6); defaults from main-sim bridge.yaml
-  workspace_min_m: [0.25, -0.40, 0.05]      # TODO: measure around the table
+  workspace_min_m: [0.25, -0.40, -0.005]    # TODO: measure around the table; z: 5 mm below the TCP z with the
+                                            # fingertips on the table (base on the table top: about 0), grasps end there
   workspace_max_m: [0.80, 0.40, 0.70]       # TODO: measure around the table
   cone_axis: [0.0, 0.0, -1.0]               # the hand's approach axis at home (normalised by the loader)
   cone_max_deg: 60.0                        # TODO: check around the table
@@ -58,6 +60,8 @@ homing:
   max_joint_speed_rad_per_s: 0.3
   min_duration_s: 2.0
   timeout_s: 30.0                     # arm and hand homing; reported in hello (the laptop's home timeout must exceed it)
+  q_start_rad: null   # TODO: measure on the arm (hand-guide to the demos' start, read with pc_probe --start-pose); null: p refused
+  at_pose_tol_rad: 0.05               # every joint: "at home" for p, "at the start pose" for C3 start (once q_start_rad is set)
 
 gripper:                              # max opening: gripper_width_max_m in contracts/limits.yaml
   speed_m_per_s: 0.05

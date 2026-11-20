@@ -4,7 +4,7 @@ import pytest
 
 from manager_fakes import health
 from policy_deploy.manager.episode_loop import Phase
-from policy_deploy.manager.status_line import HOMING_LINE, StatusLine, StatusSnapshot
+from policy_deploy.manager.status_line import StatusLine, StatusSnapshot
 
 
 def snap(**kw):
@@ -22,7 +22,7 @@ def fmt(**kw):
 
 def test_idle():
     line = fmt(phase=Phase.IDLE, arm_mode="stopped")
-    assert line == "[idle] arm stopped | cams ok 30/ok 30 fps | late loops 0 | keys: c start  h home  q quit"
+    assert line == "[idle] arm stopped | cams ok 30/ok 30 fps | late loops 0 | keys: c start  q quit"
 
 
 def test_running_line():
@@ -58,11 +58,6 @@ def test_skipping():
     assert line == "[ep 3 running 31.0 s] SKIPPING 12.4 s: main camera stale | arm holding | keys: y n s q"
 
 
-def test_homing():
-    assert fmt(phase=Phase.HOMING) == HOMING_LINE
-    assert "keys inactive; Ctrl-C quits; immediate stop: the robot's external stop button" in HOMING_LINE
-
-
 @pytest.mark.parametrize("kw", [
     dict(),
     dict(late=99, anchor_fallbacks=12, skips={"camera_stale": 400}, shortened=12345, pulled_back=9999,
@@ -79,7 +74,7 @@ def test_never_longer_than_120(kw):
 
 def test_idle_shows_link_clock_pc_mock_and_the_hint():
     line = fmt(phase=Phase.IDLE, arm_mode="homing", rtt_ms=4.2, c2_hz=99.6, clock_ok=True, pc_mock=True,
-               hint="c: the PC is homing (its h or g key): wait for idle")
+               hint="c: the PC is homing (its h, g or p key): wait for idle")
     assert line.startswith("[idle] arm homing (PC mock) | cams ok 30/ok 30 fps | late loops 0 | rtt 4 ms c2 100 Hz "
                            "clock ok")
     assert len(line) <= 120

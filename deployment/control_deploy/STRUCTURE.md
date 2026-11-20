@@ -21,7 +21,8 @@ Source references:
 - `franka_control` (C++17, libfranka 0.9.2): the safety gate, the 1 kHz Cartesian impedance loop, the watchdog, the
   state machine, arm homing, the Franka Hand (fingers and their own homing), reflex handling, the C2 broadcast and the
   C3 server. **Unchanged in behaviour** except for what section 3 lists.
-- The PC keyboard, read inside `franka_control`: `h` home the arm, `g` home the hand, `s` stop and hold, `q` quit.
+- The PC keyboard, read inside `franka_control`: `h` home the arm, `p` start pose, `g` home the hand, `s` stop and
+  hold, `q` quit.
 - The wrapper `control_deploy`: the PC's checks, running the binary in the terminal with a status line and a session
   folder, the bring-up console (PLAN §8.1), and the firewall rule text.
 - `control_deploy/station.yaml` (this PC's settings) and `franka_control/config.yaml` (the arm's settings).
@@ -44,7 +45,7 @@ and the three contract files in `deployment/contracts/` (it reads them, never wr
 ```
 control_deploy/
   STRUCTURE.md                 this file
-  DIRECTIONS.md                from-scratch steps on the PC (outline in section 10; written later)
+  DIRECTIONS.md                from-scratch steps on the PC (outline in section 10)
   station.yaml                 this PC's settings (section 6.2)
   pyproject.toml               distribution "control-deploy", import package control_deploy
   control_deploy/              the Python wrapper (section 6)
@@ -93,7 +94,8 @@ their checks move to `checks.py`), and `STRUCTURE.md` (this file replaces it; ol
 ## 3. Every change vs `rnoro/deployment@91b178b`
 
 Everything not in this table is copied byte for byte from `old:franka_control/` (apart from comments that name old
-paths). In particular **unchanged**: `ControlLoop::step` (the 1 kHz cycle), `SafetyGate` (apart from one reason text,
+paths). In particular **unchanged**: `ControlLoop::step` (the 1 kHz cycle; apart from copying a `kHome`'s joint target
+and open width, section 3.3), `SafetyGate` (apart from one reason text,
 section 3.2), `WaypointTrajectory`,
 `ImpedanceController`, `HomingMotion`, `Watchdog`, `TripleBuffer`, `StatePublisher`, `pose_math`, `arm_status`,
 `log`, `contract_limits`, the moving parts of `GripperWorker` (apart from a finger move aborted by the shutdown, section
@@ -109,9 +111,9 @@ section 3.2), `WaypointTrajectory`,
 | `CMakeLists.txt` | Adds the new sources (`contract_frame`, `contract_link`, `keyboard_reader`, `key_queue`) and tests (section 9.1). Comment paths `control_deploy/franka_control/...`. The 91b178b fix (libfranka classes inside `franka_control_core`) is kept as is. | |
 | `.gitignore` | One line added: `build-nolibfranka/` (the laptop's build for the cross test, section 8.3). | |
 | `build.sh` | Only the header comment and usage text: `control_deploy/franka_control/build.sh`. The `usage()` line range (old:franka_control/build.sh:27, `sed -n '5,16p'`) follows the header. Behaviour, apt list, libfranka prefix unchanged. | It is location-independent already (`$HERE`). |
-| `config.yaml` | `tcp:` removed (old:franka_control/config.yaml:37-42). `watchdog.limit_s` removed (line 57). `safety.max_lead_s` 5.0 → **1.5**. Comments: `launch.py` → `control_deploy`, `deploy check` → `control_deploy check`, `message_comms` → "the laptop's hello check", `contracts/contracts/limits.yaml` → `contracts/limits.yaml`. Full file in section 7. | `F_T_TCP` now comes from `contracts/frames.yaml`, the watchdog limit from `contracts/link.yaml` (top §4.2, §4.3); `max_lead_s` per PLAN §5.4. |
-| `include/config.h` | `Config` keeps its fields `F_T_TCP` and `watchdog.limit_s` (now filled from frames.yaml and link.yaml), so `ControlLoop`, `Supervisor`, `SafetyGate`, `FakeArm` read them exactly as before. New fields: `pc_address`, `local`, `contracts_dir`, `limits_file`, `frames_file`, `link_file`. `GateConfig::max_lead_s` default 1.5. The `endpoint_state`/`endpoint_commands` fields stay, now built from link.yaml. | No change in any user of `Config`. |
-| `include/config_loader.h`, `src/config_loader.cpp` | `load(station_file, mock, local, config_file, ContractFiles{limits, frames, link})`. Reads `F_T_TCP` through `ContractFrame`, `pc.address`, the two ports and `timing.watchdog_limit_s` through `ContractLink` (both new). Endpoints = `tcp://<pc.address>:<port>`, or `tcp://127.0.0.1:<port>` with `--local`. The station's `endpoints:` section is refused (old readStation, old:franka_control/src/config_loader.cpp:239-268, read it): `station.yaml: endpoints: no longer used: franka_control binds contracts/link.yaml pc.address and ports`. `session_root` is still required in the station. A station override of `tcp.*` or `watchdog.limit_s` is refused with the hint `moved to contracts/frames.yaml` / `moved to contracts/link.yaml timing.watchdog_limit_s` (the generic "not a key of config.yaml" error, old lines 36-38, gets that suffix). The 0.5 s floor (old line 17) now checks the link.yaml value, text `link.yaml: timing.watchdog_limit_s: must be >= 0.5 s (franka_control's floor)`. `toYaml` adds a `contracts:` block (the four paths, `pc_address`, `local`, the endpoints, `F_T_TCP`, `watchdog_limit_s`). | top §4.3, §4.4, §2.3; `check` compares the `contracts:` paths with the checkout (moved without rebuild). |
+| `config.yaml` | `tcp:` removed (old:franka_control/config.yaml:37-42). `watchdog.limit_s` removed (line 57). `safety.max_lead_s` 5.0 → **1.5**. Comments: `launch.py` → `control_deploy`, `deploy check` → `control_deploy check`, `message_comms` → "the laptop's hello check", `contracts/contracts/limits.yaml` → `contracts/limits.yaml`. **2026-11-20:** `homing.q_start_rad` (`null`: unset) and `homing.at_pose_tol_rad` (0.05) added. Full file in section 7. | `F_T_TCP` now comes from `contracts/frames.yaml`, the watchdog limit from `contracts/link.yaml` (top §4.2, §4.3); `max_lead_s` per PLAN §5.4; the start pose (key `p`). |
+| `include/config.h` | `Config` keeps its fields `F_T_TCP` and `watchdog.limit_s` (now filled from frames.yaml and link.yaml), so `ControlLoop`, `Supervisor`, `SafetyGate`, `FakeArm` read them exactly as before. New fields: `pc_address`, `local`, `contracts_dir`, `limits_file`, `frames_file`, `link_file`. `GateConfig::max_lead_s` default 1.5. The `endpoint_state`/`endpoint_commands` fields stay, now built from link.yaml. **2026-11-20:** `HomingConfig::q_start_rad` (`std::optional<Vec7>`, nullopt: `p` refused) and `at_pose_tol_rad` (0.05). | No change in any user of `Config`. |
+| `include/config_loader.h`, `src/config_loader.cpp` | `load(station_file, mock, local, config_file, ContractFiles{limits, frames, link})`. Reads `F_T_TCP` through `ContractFrame`, `pc.address`, the two ports and `timing.watchdog_limit_s` through `ContractLink` (both new). Endpoints = `tcp://<pc.address>:<port>`, or `tcp://127.0.0.1:<port>` with `--local`. The station's `endpoints:` section is refused (old readStation, old:franka_control/src/config_loader.cpp:239-268, read it): `station.yaml: endpoints: no longer used: franka_control binds contracts/link.yaml pc.address and ports`. `session_root` is still required in the station. A station override of `tcp.*` or `watchdog.limit_s` is refused with the hint `moved to contracts/frames.yaml` / `moved to contracts/link.yaml timing.watchdog_limit_s` (the generic "not a key of config.yaml" error, old lines 36-38, gets that suffix). The 0.5 s floor (old line 17) now checks the link.yaml value, text `link.yaml: timing.watchdog_limit_s: must be >= 0.5 s (franka_control's floor)`. `toYaml` adds a `contracts:` block (the four paths, `pc_address`, `local`, the endpoints, `F_T_TCP`, `watchdog_limit_s`). **2026-11-20:** `homing.q_start_rad`: null or absent = unset, else 7 numbers inside the Panda's joint limits (the problem names the first joint outside); `homing.at_pose_tol_rad` > 0. | top §4.3, §4.4, §2.3; `check` compares the `contracts:` paths with the checkout (moved without rebuild). |
 | `include/contract_frame.h`, `src/contract_frame.cpp` | New, `ContractFrame::load(path, rotation_tol, problems)`: reads `F_T_TCP` (4 rows of 4 finite numbers, rigid within `rotation_tol`), returns it re-normalised through a unit quaternion as old line 408 did. Ignores `settled` and any other key. | top §4.2, §4.4. |
 | `include/contract_link.h`, `src/contract_link.cpp` | New, `ContractLink::load(path, problems)`: `pc.address` (IPv4 dotted literal by `inet_pton`, not `0.0.0.0`), `ports.state`, `ports.commands` (integers 1024–65535, different), `timing.watchdog_limit_s` (> 0). Ignores the other keys. `endpoint(port, local)`. | top §4.3, §4.4. |
 | `include/command_line.h`, `src/command_line.cpp` | Two flags: `--local` (bind `127.0.0.1`) and `--keyboard` (read keys from stdin). Usage: `franka_control --station FILE [--session DIR] [--ready-file FILE] [--mock] [--local] [--keyboard] \| --version \| --check-config --station FILE [--mock] [--local]`. `--station` stays required. | top §2.3 (`--local`); the keyboard is opt-in so the unit tests never touch a developer's terminal. |
@@ -131,11 +133,11 @@ section 3.2), `WaypointTrajectory`,
 | File | Change | Why |
 |---|---|---|
 | `include/keyboard_reader.h`, `src/keyboard_reader.cpp` | New: `KeyboardReader` (the keyboard thread), `TerminalMode` (RAII cbreak, IXON off), the key table (upper case acts like lower case). Section 4.3. | PLAN §8.1 PC keyboard. |
-| `include/key_queue.h`, `src/key_queue.cpp` | New: `KeyQueue`, a queue with a mutex, keyboard thread → messaging thread; `h` and `g` dropped when 16 keys wait, `s` never dropped. | The Supervisor belongs to the messaging thread (old-S §3.3); keys reach it as events, like C3 requests. |
+| `include/key_queue.h`, `src/key_queue.cpp` | New: `KeyQueue`, a queue with a mutex, keyboard thread → messaging thread; `h`, `p` and `g` dropped when 16 keys wait, `s` never dropped. | The Supervisor belongs to the messaging thread (old-S §3.3); keys reach it as events, like C3 requests. |
 | `include/state_machine.h`, `src/state_machine.cpp` | One new event `kHomingAborted` (`homing` → `stopped`). `kHome` is reused for both kinds of homing (same rules). The comment on `kStop` ("message_comms sends it") names the laptop's manager. | Stop during homing (section 4.4). |
-| `include/supervisor.h`, `src/supervisor.cpp` | `onHome(Source)`, `onHandHome()`, `onStop(Source)` (aborts a homing), `onKey(Key)`; the homing kind (arm or hand) and source (C3 or keyboard); `tick()` sends the arm stop once the move runs (under `SharedState::stopHomingMove`, again every 100 ms while the move runs and the outcome is unresolved, also after a homing timeout), and resolves the outcomes (aborted, hand homing done, hand homing timeout); the hand's stop goes through `SharedState::stopHandHoming`. New last constructor parameter `Gripper* gripper = nullptr` (nullptr: `g` is refused, "no gripper"; old tests compile unchanged). Section 4.4. | PLAN §8.1 keys; the brief's stop-during-homing behaviour. |
-| `include/shared_state.h`, `src/shared_state.cpp` | `LoopSnapshot::homing_aborted_generation` (uint64). New atomics: the homing-abort flag (messaging sets, control clears), the hand-homing request generation (messaging → gripper) and report (gripper → messaging, one `atomic<uint64_t>` holding generation × 4 + result, so the pair is read consistently). Two small locks, never taken by the 1 kHz callbacks: the hand's homing (`beginHandHoming`/`endHandHoming` on the gripper thread around `home()`, `stopHandHoming(gen, stop)` on the messaging thread) and the arm's homing move (`beginHomingMove(session)`/`endHomingMove()` on the control thread around `moveToJoints`, `stopHomingMove(session, stop)` on the messaging and main threads). The stop runs under the lock, so it reaches only the move it is meant for (section 4.4). | The loop and the gripper thread report outcomes the same way as `homed_generation` today. A stop must never abort a finger move (a gripper fault) or land in the torque session after a finished move (a fault). |
-| `include/control_loop.h`, `src/control_loop.cpp` | `run()` only (old:franka_control/src/control_loop.cpp:222-264): before the homing move, an abort skips it; a stop-requested exception from the move with the abort flag set waits for the robot to leave its move mode and starts a new torque session instead of ending the thread; the move is bracketed with `SharedState::beginHomingMove`/`endHomingMove` (replacing the `in_homing_` atomic). Section 4.4. `step()` and `observeHoming()` are unchanged. | Stop during homing ends in a hold, not a fault. |
+| `include/supervisor.h`, `src/supervisor.cpp` | `onHome(Source)`, `onHandHome()`, `onStop(Source)` (aborts a homing), `onKey(Key)`; the homing kind (arm or hand) and source (C3 or keyboard); `tick()` sends the arm stop once the move runs (under `SharedState::stopHomingMove`, again every 100 ms while the move runs and the outcome is unresolved, also after a homing timeout), and resolves the outcomes (aborted, hand homing done, hand homing timeout); the hand's stop goes through `SharedState::stopHandHoming`. New last constructor parameter `Gripper* gripper = nullptr` (nullptr: `g` is refused, "no gripper"; old tests compile unchanged). Section 4.4. **2026-11-20:** `onStartPose(Source)` (key `p`; refused while `homing.q_start_rad` is unset, outside `idle`/`stopped`, or away from home); `onHome` and `onStartPose` share `startArmMove(source, ArmGoal, target, open_width_m)` (`ArmGoal` `kHome`/`kStartPose`: timeout check, bookkeeping, the `kHome` command, the log line); at the end of a `p` move the TCP must be inside the box and tilt ≤ `safety.cone_max_deg` (no margin), else `fault`; `onStart` is refused away from `q_start_rad` once it is set (section 4.3). | PLAN §8.1 keys; the brief's stop-during-homing behaviour. |
+| `include/shared_state.h`, `src/shared_state.cpp` | `LoopSnapshot::homing_aborted_generation` (uint64). New atomics: the homing-abort flag (messaging sets, control clears), the hand-homing request generation (messaging → gripper) and report (gripper → messaging, one `atomic<uint64_t>` holding generation × 4 + result, so the pair is read consistently). Two small locks, never taken by the 1 kHz callbacks: the hand's homing (`beginHandHoming`/`endHandHoming` on the gripper thread around `home()`, `stopHandHoming(gen, stop)` on the messaging thread) and the arm's homing move (`beginHomingMove(session)`/`endHomingMove()` on the control thread around `moveToJoints`, `stopHomingMove(session, stop)` on the messaging and main threads). The stop runs under the lock, so it reaches only the move it is meant for (section 4.4). **2026-11-20:** `LoopCommand::q_target` (`optional<Vec7>`, nullopt: `q_home_rad`) and `open_width_m` (`optional<double>`, nullopt: fingers unchanged), used with `kHome` (key `p`). | The loop and the gripper thread report outcomes the same way as `homed_generation` today. A stop must never abort a finger move (a gripper fault) or land in the torque session after a finished move (a fault). |
+| `include/control_loop.h`, `src/control_loop.cpp` | `run()` only (old:franka_control/src/control_loop.cpp:222-264): before the homing move, an abort skips it; a stop-requested exception from the move with the abort flag set waits for the robot to leave its move mode and starts a new torque session instead of ending the thread; the move is bracketed with `SharedState::beginHomingMove`/`endHomingMove` (replacing the `in_homing_` atomic). Section 4.4. **2026-11-20 (key `p`):** `step()` copies the accepted `kHome`'s `q_target` (nullopt: `q_home_rad`) and `open_width_m` (no allocation); `run()` moves to that goal (`home_target_`) and sets the finger target to the open width just before the move; after a normal finish with an open width, the next session's first cycle keeps that width as the finger target instead of the measured one (`hold_open_width_next_session_`; an aborted move holds the measured width). `observeHoming()` is unchanged. | Stop during homing ends in a hold, not a fault. `p` opens the hand during the move; holding the width measured at the end would close it again. |
 | `include/arm.h` | Comment only: `requestStop()` affects the control call running at that moment. | |
 | `include/libfranka_arm.h`, `src/libfranka_arm.cpp` | The sticky `stop_requested_` flag (old:franka_control/src/libfranka_arm.cpp:133, 187-194) becomes a stop epoch: `requestStop()` increments it, then calls `robot_->stop()`; each `runTorqueControl`/`moveToJoints` call records the epoch at its start and classifies a `ControlException` as `kStopRequested` only if the epoch changed during that call. Hint text `rerun deploy run` → `restart control_deploy run` (line 82). **A change on the verified path** (decided, PLAN §8.1, top §8.11): tested at bring-up (section 11.1). | After an aborted homing the process keeps running; a sticky flag would mislabel every later reflex as a requested stop. |
 | `include/fake_arm.h`, `src/fake_arm.cpp` | The same epoch rule (old:franka_control/src/fake_arm.cpp:46, 70). Test hook `statusAfterStop(ArmStatusFlags)`: what `status()` reports after a stop. | The fake must allow a new session after an abort. |
@@ -152,7 +154,7 @@ section 3.2), `WaypointTrajectory`,
 | same | SIGHUP joins SIGINT and SIGTERM in the blocked set and the `sigtimedwait` set (old lines 86-91, 317-327): closing the terminal shuts down cleanly. | The process now lives in a terminal for hours; the default SIGHUP action would kill it without settling. |
 | same | Builds the `HelloReply` template (section 5.5) and passes it to `CommandServer`; passes the gripper to `Supervisor`. | |
 | same | The shutdown stop of a homing move goes through `SharedState::stopHomingMove` and is re-sent every 100 ms while the move runs (old: once). | A stop sent just before the move's libfranka call records its epoch is lost; the move would run to its end. |
-| same | With `--keyboard`: after the sockets are bound, starts the keyboard thread (section 4.3); the messaging loop drains `KeyQueue` each iteration (section 4.1); `q` calls `App::requestStop()`. The ready log line adds `keys: h home arm, g home hand, s stop, q quit`. | PLAN §8.1. |
+| same | With `--keyboard`: after the sockets are bound, starts the keyboard thread (section 4.3); the messaging loop drains `KeyQueue` each iteration (section 4.1); `q` calls `App::requestStop()`. The ready log line adds `keys: h home arm, p start pose, g home hand, s stop, q quit`. | PLAN §8.1. |
 | same | `App(CommandLine, AppOverrides = {})`. `AppOverrides` is for tests only and never reachable from the command line: endpoints (e.g. `tcp://127.0.0.1:*`), `link_file`, `frames_file`, `keyboard_fd`. | Unit tests bind free ports (top §2.3) and feed keys through a pipe; old tests set endpoints through the station, which is no longer allowed. |
 | `include/contract_limits.h`, `src/codec.cpp`, `include/command_server.h`, `include/config_loader.h`, `include/config.h` | Header comments that name `contracts/contracts/...`, `message_comms`, `deploy` STRUCTURE sections. | |
 
@@ -160,7 +162,7 @@ section 3.2), `WaypointTrajectory`,
 
 - No new C2 field, no new mode, no change to `c2.state/v1` or the existing C3 messages (top §3.4).
 - The watchdog logic (old-S §7.1): only its limit's source changed. Keys never feed it.
-- Homing motion, settle rule, homing timeout, the after-homing box check (old-S §7.2).
+- Homing motion, settle rule, homing timeout, the after-homing box check (old-S §7.2; key `p` adds the cone, 4.3).
 - Shutdown order and budget (old-S §7.4): 3 s + 1.5 s, under the 5 s that `control_deploy run` waits before SIGKILL.
 - `ConfigLoader`'s merge of the station's `franka_control:` section (old lines 29-53, 294-308).
 
@@ -182,7 +184,7 @@ The messaging loop (old:franka_control/src/app.cpp:292-296) becomes:
 ```
 while (!messaging_stop) {
   supervisor.tick();
-  while (auto key = keys.pop()) supervisor.onKey(*key);      // new: h, g, s (q never reaches it)
+  while (auto key = keys.pop()) supervisor.onKey(*key);      // new: h, p, g, s (q never reaches it)
   server->serviceOnce(std::min(publisher->nsUntilNext(), poll_ns));
   publisher->maybePublish();
 }
@@ -193,7 +195,7 @@ A key is acted on within one iteration (≤ `messaging.poll_max_s`, 5 ms). While
 so keys are still served every iteration.
 
 **SharedState** (old-S §3.2, old:franka_control/include/franka_control/shared_state.h): copied, plus these members.
-None is touched by `ControlLoop::step`, so the 1 kHz cycle stays as it was.
+None is touched by `ControlLoop::step` except the two `LoopCommand` fields, which it only copies (no allocation).
 
 | New member | Writer → reader | Type | What |
 |---|---|---|---|
@@ -201,6 +203,7 @@ None is touched by `ControlLoop::step`, so the 1 kHz cycle stays as it was.
 | `requestHomingAbort()` / `homingAbortRequested()` / `clearHomingAbort()` | messaging sets; control reads and clears | `atomic<bool>` | "stop the homing now" |
 | `requestHandHoming(gen)` / `handHomingRequested()` | messaging → gripper | `atomic<uint64_t>` | the newest hand-homing request; 0 = none |
 | `reportHandHoming(gen, result)` / `handHomingReport()` | gripper → messaging | `atomic<uint64_t>` = gen × 4 + result | result `kDone` 1, `kAborted` 2 (a failure is a gripper fault, as now) |
+| `LoopCommand::q_target`, `LoopCommand::open_width_m` (2026-11-20) | messaging → control | `optional<Vec7>`, `optional<double>` in the command | the `kHome` goal (nullopt: `q_home_rad`) and the finger target during the move (`p`: `gripper_width_max_m`) |
 
 All atomics stay lock-free (`static_assert`, as old shared_state.h:73-75).
 
@@ -227,7 +230,7 @@ Each failing step ends the process with one `FATAL franka_control: <what failed>
    messaging, gripper and gripper-reader threads, and with `--keyboard` the keyboard thread (it first discards keys
    typed before this point: `tcflush(TCIFLUSH)` on a TTY).
 8. **Ready**: the first C2 is published, the ready file is created (`--ready-file`), and the log says
-   `ready: C2 on tcp://192.168.50.10:5620, C3 on tcp://192.168.50.10:5630; keys: h home arm, g home hand, s stop, q quit`.
+   `ready: C2 on tcp://192.168.50.10:5620, C3 on tcp://192.168.50.10:5630; keys: h home arm, p start pose, g home hand, s stop, q quit`.
    From here C3 is answered and keys are acted on. The mode is `idle`; the arm holds where it was.
 
 The laptop never sees the ready file; it decides readiness from C2 and `hello` (PLAN §8.2, top §8.2).
@@ -235,13 +238,13 @@ The laptop never sees the ready file; it decides readiness from C2 and `hello` (
 ### 4.3 The keyboard (new)
 
 ```
-enum class Key { kHomeArm, kHomeHand, kStop, kQuit };
+enum class Key { kHomeArm, kStartPose, kHomeHand, kStop, kQuit };
 
 class KeyboardReader {                       // keyboard thread
  public:
   KeyboardReader(int fd, KeyQueue& keys, std::function<void()> on_quit, const SharedState& shared);
   void run();                                // until shutdown, EOF or a read error
-  static std::optional<Key> map(char c);     // the one key table: 'h', 'g', 's', 'q' and their upper case
+  static std::optional<Key> map(char c);     // the one key table: 'h', 'p', 'g', 's', 'q' and their upper case
 };
 
 class TerminalMode {                         // RAII; does nothing when fd is not a TTY
@@ -252,16 +255,23 @@ class TerminalMode {                         // RAII; does nothing when fd is no
 
 class KeyQueue {                             // keyboard -> messaging; mutex (neither is the 1 kHz loop)
  public:
-  void push(Key k);                          // h, g: dropped with a warning when 16 are waiting; s: never dropped
+  void push(Key k);                          // h, p, g: dropped with a warning when 16 are waiting; s: never dropped
   std::optional<Key> pop();
 };
 ```
 
 - `run()` polls the fd every 50 ms (so it sees `shutdown` quickly), reads bytes, maps each one. Unknown bytes log
-  `keys: h home arm, g home hand, s stop, q quit` (at most once a second). Upper case acts like lower case, so with
+  `keys: h home arm, p start pose, g home hand, s stop, q quit` (at most once a second). Upper case acts like lower case, so with
   caps lock on `S` still stops (it would otherwise print the help line).
 - `q`: calls `on_quit` (= `App::requestStop()`, the same path as SIGTERM). It is not queued.
-- `h`, `g`, `s`: pushed to `KeyQueue` (`s` always gets in, even when 16 keys wait); the messaging thread calls
+- `p` (2026-11-20, start pose): from home only (every joint within `homing.at_pose_tol_rad` of `q_home_rad`), the
+  same arm-homing path as `h` (`Supervisor::startArmMove`: one shared helper for bookkeeping, stop/abort, timeout,
+  logging) to `homing.q_start_rad`; the kHome `LoopCommand` carries the joint target and an open width, and
+  `ControlLoop::run()` sets the finger target to `gripper_width_max_m` just before the move (outside the 1 kHz path).
+  At the end: TCP inside the box **and** tilt <= `safety.cone_max_deg` (no margin, like the box), else `fault` naming
+  `homing.q_start_rad`. Refused while `q_start_rad` is unset. Once it is set, C3 `start` is refused unless every joint
+  is within the tolerance of it (`not at the start pose: press h, then p on the PC`); unset, `start` is unchanged.
+- `h`, `g`, `p`, `s`: pushed to `KeyQueue` (`s` always gets in, even when 16 keys wait); the messaging thread calls
   `Supervisor::onKey`, which logs one line with the
   result, e.g. `key h: homing the arm: 4.2 s joint move to homing.q_home_rad` or
   `key h refused: mode is running: the laptop is driving an episode: press s or stop it on the laptop first`.
@@ -286,7 +296,9 @@ blocks it.
 104-129): `Supervisor::onHome` checks the mode and the move's duration, posts `kHome`, the loop settles, ends the
 torque session, runs `moveToJoints`, starts a new session holding the home pose; the Supervisor checks the home TCP
 against the box and goes to `idle`. The only difference between the two sources: a C3 `home` gets its deferred `ack`
-when the homing ends; a key gets a log line.
+when the homing ends; a key gets a log line. **Key `p`** (2026-11-20) takes the same path (`Supervisor::startArmMove`,
+`ArmGoal::kStartPose`) to `homing.q_start_rad`, from home only, the hand opening meanwhile (section 4.3); its
+completion checks the box and also the cone (`safety.cone_max_deg`, no margin), else `fault`.
 
 **Hand homing** (`g` key only; no C3 request exists for it):
 
@@ -339,7 +351,7 @@ when the homing ends; a key gets a log line.
 - **The move finished first** (the stop came in its last milliseconds): the normal completion wins: `idle`, a C3
   `home` gets `ok`, the log says `stop arrived after the home pose was reached`. The control thread clears the abort
   flag after a normal finish. Both `idle` and `stopped` hold the pose and accept `start` and `home` (decision 3,
-  section 12).
+  section 12; `start` only at the start pose once `homing.q_start_rad` is set).
 - **Hand homing:** a stop must never abort a finger move (libfranka throws on an aborted command: a gripper fault,
   restart). The gripper thread may still be in the previous finger move when `g` and `s` come (up to 1.6 s after an
   episode). So the stop goes through `shared.stopHandHoming(gen, stop)`, tied to the hand-homing request number:
@@ -355,7 +367,8 @@ when the homing ends; a key gets a log line.
   Whether `franka::Gripper::stop()` interrupts `homing()` is checked at bring-up (section 11); if it does not, the
   hand finishes its homing (a few seconds) and the result is `idle`.
 - **Resulting state: `stopped`, holding the pose where the arm (or the fingers) stopped**; the laptop can `start`
-  from there, `h` can home again.
+  from there (once `homing.q_start_rad` is set, only at the start pose), `h` can home again. A stopped `p` holds the
+  measured finger width.
 - C2 during an aborted arm homing: `t_ns` advances during the move, then repeats unchanged while the control thread
   waits for the robot (up to 1 s), then advances again with the new session (top §3.6 obligation 1, PLAN §5.3).
 - **No stop in the next session:** a `robot.stop()` meant for a move that has just finished cannot preempt the new
@@ -384,7 +397,7 @@ Old-S §4.2 rows, then the new ones (**bold**). "Key" means the PC keyboard; "C3
 | From | Trigger | To | Command to the loop / action |
 |---|---|---|---|
 | *(start-up)* | the loop has held for `startup.hold_before_ready_s` | `idle` | `kHold` |
-| `idle`, `stopped` | C3 `start` | `holding` | `kFollow`, plan = [current target, now] |
+| `idle`, `stopped` | C3 `start` (**once `homing.q_start_rad` is set: every joint within `homing.at_pose_tol_rad` of it, else refused**) | `holding` | `kFollow`, plan = [current target, now] |
 | `holding`, `running` | C3 `set_waypoints`, ≥ 1 accepted | `running` | `kFollow`, new plan |
 | `holding`, `running` | C3 `set_waypoints`, all skipped | `holding` | `kFollow`, [current target, now] |
 | `running` | now ≥ the plan's last time | `holding` | none |
@@ -392,9 +405,10 @@ Old-S §4.2 rows, then the new ones (**bold**). "Key" means the PC keyboard; "C3
 | `holding`, `running` | watchdog (no C3 request for `watchdog_limit_s`, or the loop's backstop at + `backstop_extra_s`) | `stopped` | `kHold` |
 | `holding`, `running` | `set_waypoints` with a rejected waypoint | `fault` | `kHold` |
 | `idle`, `stopped` | C3 `home` **or key `h`** | `homing` (arm) | `kHome` |
+| **`idle`, `stopped`** | **key `p`, at home (`homing.at_pose_tol_rad`), `homing.q_start_rad` set** | **`homing` (arm)** | **`kHome` with `q_target` = `q_start_rad`, `open_width_m` = `gripper_width_max_m`** |
 | **`idle`, `stopped`** | **key `g`** | **`homing` (hand)** | **none; hand-homing request to the gripper thread** |
-| `homing` (arm) | the move finished, the new session holds, home TCP inside the box | `idle` | `kHold`; `markAlive`; C3 reply ok |
-| `homing` (arm) | home TCP outside the box, the move failed, or `homing.timeout_s` passed | `fault` | `kHold` / none; timeout: `requestStop()`; C3 reply not ok |
+| `homing` (arm) | the move finished, the new session holds, home TCP inside the box (**`p`: and tilt ≤ `safety.cone_max_deg`**) | `idle` | `kHold`; `markAlive`; C3 reply ok |
+| `homing` (arm) | home TCP outside the box (**`p`: or tilt > `safety.cone_max_deg`**), the move failed, or `homing.timeout_s` passed | `fault` | `kHold` / none; timeout: `requestStop()`; C3 reply not ok |
 | **`homing` (hand)** | **the gripper reports done** | **`idle`** | **`markAlive`** |
 | **`homing` (hand)** | **`homing.timeout_s` passed** | **`fault`** | **`gripper.stop()`** |
 | **`homing` (either)** | **C3 `stop` or key `s`** | **`homing` (until the outcome)** | **abort: arm → flag + `requestStop()` once the move runs; hand → `gripper.stop()`** |
@@ -424,13 +438,16 @@ C3, identical to top §3.7.2 (a C3 `stop` aborts a keyboard homing; a C3 `home` 
 | broken, unknown, laptop-only, or a reply | `error/v1` | `error/v1` | `error/v1` | `error/v1` | `error/v1` | `error/v1` |
 
 Refusal reasons are the state machine's one line (old:franka_control/src/state_machine.cpp:28-39), e.g.
-`refused: mode is homing: homing in progress`. A laptop-only schema is `unknown_schema` (top §3.4).
+`refused: mode is homing: homing in progress`. A laptop-only schema is `unknown_schema` (top §3.4). Once
+`homing.q_start_rad` is set, `start` in `idle`/`stopped` is also refused unless every joint is within
+`homing.at_pose_tol_rad` of it: `refused: not at the start pose: press h, then p on the PC` (2026-11-20).
 
 PC keyboard:
 
 | Key | `idle` | `holding` | `running` | `stopped` | `homing` | `fault` |
 |---|---|---|---|---|---|---|
 | `h` | → `homing` (arm) | refused | refused | → `homing` (arm) | refused | refused |
+| `p` | → `homing` (arm) at home; refused while `homing.q_start_rad` is unset, away from home (`not at home: press h first`) or if the move would exceed `homing.timeout_s` | refused | refused | as `idle` | refused | refused |
 | `g` | → `homing` (hand) | refused | refused | → `homing` (hand) | refused | refused |
 | `s` | → `stopped` | → `stopped` | → `stopped` | no change | aborts → `stopped` | no change ("Ctrl-C and restart after a fault") |
 | `q` | exit | exit | exit | exit | exit (the move is stopped) | exit |
@@ -578,12 +595,13 @@ ported from old:franka_control/launch.py:42-118 (tests from old:franka_control/t
    at the bottom: before printing a log line it clears the status line (`\r\033[K`), prints the line, redraws.
 5. Waits for the ready file, at most 90 s (FCI connect + finger homing + the hold). Then prints
    `control_deploy: ready: C2 tcp://192.168.50.10:5620, C3 tcp://192.168.50.10:5630; start policy_deploy on the
-   laptop. Keys: h home arm, g home hand, s stop, q quit`. Not ready after 90 s: SIGTERM, and the old READY_HINT
+   laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit`. Not ready after 90 s: SIGTERM, and the old READY_HINT
    ("check robot_ip, FCI enabled in Desk, brakes unlocked, user stop released, and the log").
 6. **Status line**, redrawn 4 times a second from a C2 `Subscriber` (deploy_contracts) on the bound C2 endpoint, plus
    the C3 peers from `ss -Htn state established '( sport = :5630 )'`:
-   `idle | tcp 0.452 0.001 0.449 m | grip 0.079 m | gate a120 s3 p0 r0 | late 0 (+0 in 10 s) | C2 100 Hz | C3 peer 192.168.50.20 | h g s q`.
-   In `fault` it shows the error text. No C2 for 1 s while the binary runs: `no C2: see the log`.
+   `idle | tcp 0.307 0.001 0.354 m | grip 0.079 m | gate a120 s3 p0 r0 | late 0 (+0 in 10 s) | C2 100 Hz | C3 peer 192.168.50.20 | h p g s q`
+   (136 columns). Over 120 columns it is compacted only as far as needed: `late 0 (+0/10s)`, then `|` without
+   spaces, then no tcp unit and `C2 100Hz`. In `fault` it shows the error text. No C2 for 1 s while the binary runs: `no C2: see the log`.
 7. **Signals.** The wrapper ignores SIGINT while the child runs: Ctrl-C reaches the binary through the terminal's
    process group, and the binary shuts down itself. SIGTERM or SIGHUP to the wrapper: forwarded as SIGTERM, then
    SIGKILL after 5 s (the old launcher's `stop_timeout_s`, which the binary's 4.5 s budget is built for).
@@ -597,7 +615,8 @@ Without a TTY on stdin (tests, scripts): no status line, keys come from whatever
 
 A C3 client on the PC, run in a second terminal while `control_deploy run` shows `idle` or `stopped`, **never while
 the laptop runs**. It is the first tool that exercises waypoint following on the real arm. It runs on the PC, so it
-times waypoints with `time.monotonic_ns()`, the PC's `CLOCK_MONOTONIC`, with no clock map.
+times waypoints with `time.monotonic_ns()`, the PC's `CLOCK_MONOTONIC`, with no clock map. Once `homing.q_start_rad` is
+set, press `h`, then `p` in `run` first: the console's `start` is refused away from the start pose, as the laptop's is.
 
 **Preflight** (any refusal: one line, exit 2, nothing sent on C3):
 
@@ -628,7 +647,7 @@ user stop; `--yes` skips the prompts and is refused without `--mock`; `--only ST
 |---|---|---|
 | 1 `hold` | `start`; heartbeats for `hold_s` (3 s) | `ack ok`; C2 `holding` within 0.1 s; TCP drift ≤ 2 mm and ≤ 1° over the hold; no new `loop_late` (warn otherwise) |
 | 2 `move` | waypoints: TCP +`move_m` (1.5 cm) along base z (up, away from the table), out and back | **plan check**: C2 `O_T_TCP_target` matches the sent path at the same `t_ns` within 0.5 mm (software: gate, plan, interpolation); **tracking**: \|`O_T_TCP` − `O_T_TCP_target`\| ≤ 3 mm pass, ≤ 10 mm warn (gains, payload), > 10 mm fail; C2 `running`, then `holding` at the end |
-| 3 `rotate` | waypoints: `rotate_deg` (5°) about the TCP z axis (no tilt change, so the cone is untouched), out and back | target matches within 0.05°; tracking ≤ 1° pass, ≤ 3° warn |
+| 3 `rotate` | waypoints: `rotate_deg` (2°) about the TCP z axis (no tilt change, so the cone is untouched), out and back | target matches within 0.05°; tracking ≤ 1° pass, ≤ 3° warn |
 | 4 `gripper` | waypoints at the current pose, width − `gripper_delta_m` (2 cm; + if the width is under 3 cm), hold 1.5 s, back | C2 `gripper_width_m` within 7 mm of the command after the hold (deadband 5 mm; `width_offset_m` unmeasured → warn, not fail) |
 | 5 `watchdog` | nothing at all (C2 only) | C2 `stopped` between `watchdog_limit_s` and + 60 ms after the last request; TCP drift ≤ 2 mm; then `start` again → `holding` |
 | 6 `out_of_box` | one `set_waypoints`: the current pose with z = `workspace_max_m.z` + `out_of_box_m` (3 cm above the box: beyond the 1 cm margin, moving away from the table if the gate failed), 1 s ahead | reply `accepted 0`, one `rejected` with "outside workspace box"; C2 `fault` with "safety gate rejected"; TCP drift ≤ 2 mm over 1 s. If anything was accepted: `stop` at once and FAIL in capitals |
@@ -702,7 +721,8 @@ load:                                 # payload beyond the hand configured in De
     - [0.0, 0.0, 0.0]
 
 safety:                               # the gate (old-S §6); defaults from main-sim bridge.yaml
-  workspace_min_m: [0.25, -0.40, 0.05]      # TODO: measure around the table
+  workspace_min_m: [0.25, -0.40, -0.005]    # TODO: measure around the table; z: 5 mm below the TCP z with the
+                                            # fingertips on the table (base on the table top: about 0), grasps end there
   workspace_max_m: [0.80, 0.40, 0.70]       # TODO: measure around the table
   cone_axis: [0.0, 0.0, -1.0]               # the hand's approach axis at home (normalised by the loader)
   cone_max_deg: 60.0                        # TODO: check around the table
@@ -721,6 +741,8 @@ homing:
   max_joint_speed_rad_per_s: 0.3
   min_duration_s: 2.0
   timeout_s: 30.0                     # arm and hand homing; reported in hello (the laptop's home timeout must exceed it)
+  q_start_rad: null   # TODO: measure on the arm (hand-guide to the demos' start, read with pc_probe --start-pose); null: p refused
+  at_pose_tol_rad: 0.05               # every joint: "at home" for p, "at the start pose" for C3 start (once q_start_rad is set)
 
 gripper:                              # max opening: gripper_width_max_m in contracts/limits.yaml
   speed_m_per_s: 0.05
@@ -872,13 +894,13 @@ definitions; `writeLink(dir, address, state_port, commands_port)` for a temporar
 | File | Change |
 |---|---|
 | `test_codec.cpp` | `MessagesOfOtherContractsAreUnexpected` → `LaptopOnlySchemasAreUnknown` (`c1.frames/v1`, `c4.chunk/v1` → `unknown_schema`, top §3.4). New `KnownSchemasAreExactlyTheSharedOnes`: `Codec::knownSchemas()` equals the decoded `c3/hello_reply` `schemas`, in order (top §5.3 item 4). Hello requests and replies are covered by the generic example tests (decode, `values`, broken field/problem, byte-for-byte re-encode of `hello_reply`). |
-| `test_config_loader.cpp` | `EndpointsAndSessionRootComeFromTheStation` → `EndpointsComeFromLinkYaml` (`tcp://<pc.address>:5620/5630`; with `local`, `tcp://127.0.0.1:...`); a station `endpoints:` section refused with its hint; station overrides of `tcp.F_T_TCP` and `watchdog.limit_s` refused with the "moved to" hints; `max_lead_s` default 1.5; `F_T_TCP` equals frames.yaml (re-normalised); `watchdog.limit_s` equals link.yaml; a link.yaml watchdog of 0.4 refused (floor). |
+| `test_config_loader.cpp` | `EndpointsAndSessionRootComeFromTheStation` → `EndpointsComeFromLinkYaml` (`tcp://<pc.address>:5620/5630`; with `local`, `tcp://127.0.0.1:...`); a station `endpoints:` section refused with its hint; station overrides of `tcp.F_T_TCP` and `watchdog.limit_s` refused with the "moved to" hints; `max_lead_s` default 1.5; `F_T_TCP` equals frames.yaml (re-normalised); `watchdog.limit_s` equals link.yaml; a link.yaml watchdog of 0.4 refused (floor). **2026-11-20:** `TheStartPoseIsUnsetUntilTheStationSetsIt` (null by default, `at_pose_tol_rad` 0.05, both set from the station, shown by `toYaml`), `AnAbsentStartPoseIsUnset`, `BadStartPoseValuesAreRefused` (not 7 finite numbers, a joint outside the Panda's limits, `at_pose_tol_rad` ≤ 0). |
 | `test_command_server.cpp` | `EachRequestGetsItsReplyType` + hello; new `HelloReplyCarriesTheTemplateAndTheClock` (FakeClock: `t_pc_ns` is the clock value at handling, every other field the template's, the reply passes the decoder); `EveryDecodedRequestFeedsTheWatchdog` + hello; a `c3.hello.reply/v1` sent as a request → `unexpected_message`. |
 | `test_state_machine.cpp` | `kHomingAborted`: `homing` → `stopped`; refused in every other mode; `kStop` in `homing` still allowed with no change of mode. |
-| `test_supervisor.cpp` | Old cases unchanged. New: keys `h`/`g` refused in `holding`, `running`, `homing`, `fault` with the reason, state unchanged; `h` from `idle` and `stopped` → `homing`, `kHome` posted, no C3 reply produced at the end; `g` → `homing`, the hand request in SharedState, no loop command; hand done → `idle` + `markAlive`; hand timeout → `gripper.stop()` (a test gripper, while `home()` runs) + `fault`; `g` with no gripper refused; **stop during arm homing**: the abort flag set at once, `requestStop()` not called while the snapshot shows `kTorque`, called when it shows `kHoming` and the control thread marks the move, again only after 100 ms while the move runs, never once the move has ended (even with a stale `kHoming` snapshot); a homing-timeout stop waits for the move, is re-sent every 100 ms until the move is over, then never again; the loop's aborted report → `stopped`, `kHold`, `markAlive`, and the C3 home reply `ok: false` with a reason starting exactly `stopped: `; every other not-ok home reply (refused, box check, loop fault, gripper fault, timeout) does not start with `stopped:`; a `homed_generation` arriving first → `idle`, C3 reply ok; stop during hand homing → `gripper.stop()` only while `home()` runs, aborted report → `stopped`; a stop before `home()` began → no `gripper.stop()`, the homing skipped, `stopped`; a stop after it ended → nothing sent, `idle`; `s` key in `idle` → `stopped`, in `fault` → no change. |
-| `test_control_loop.cpp` | Old cases unchanged. New (test `Arm`): the abort flag set when the session ends for `kHome` → `moveToJoints` never called, a new session, `homing_aborted_generation` set, flag cleared; `kStopRequested` from `moveToJoints` with the flag → `status()` polled, a new session holding the measured pose, nullspace target = that `q`; the same with `status()` reporting a reflex → `fault` with the problem text; `kStopRequested` without the flag → `fault` (as before); a normal finish with the flag set → homed, flag cleared; the move is marked in SharedState only while it runs (`stopHomingMove` runs the stop during it, for its session only, and never after). |
+| `test_supervisor.cpp` | Old cases unchanged. New: keys `h`/`g` refused in `holding`, `running`, `homing`, `fault` with the reason, state unchanged; `h` from `idle` and `stopped` → `homing`, `kHome` posted, no C3 reply produced at the end; `g` → `homing`, the hand request in SharedState, no loop command; hand done → `idle` + `markAlive`; hand timeout → `gripper.stop()` (a test gripper, while `home()` runs) + `fault`; `g` with no gripper refused; **stop during arm homing**: the abort flag set at once, `requestStop()` not called while the snapshot shows `kTorque`, called when it shows `kHoming` and the control thread marks the move, again only after 100 ms while the move runs, never once the move has ended (even with a stale `kHoming` snapshot); a homing-timeout stop waits for the move, is re-sent every 100 ms until the move is over, then never again; the loop's aborted report → `stopped`, `kHold`, `markAlive`, and the C3 home reply `ok: false` with a reason starting exactly `stopped: `; every other not-ok home reply (refused, box check, loop fault, gripper fault, timeout) does not start with `stopped:`; a `homed_generation` arriving first → `idle`, C3 reply ok; stop during hand homing → `gripper.stop()` only while `home()` runs, aborted report → `stopped`; a stop before `home()` began → no `gripper.stop()`, the homing skipped, `stopped`; a stop after it ended → nothing sent, `idle`; `s` key in `idle` → `stopped`, in `fault` → no change. **2026-11-20, key `p`:** `KeyPIsRefusedWhileQStartIsUnset`, `...AwayFromHome`, `...OutsideIdleAndStopped`; `KeyPMovesFromHomeToTheStartPoseAndOpensTheHand`; `KeyHStillGoesToQHomeAndLeavesTheFingers`; `StopDuringKeyPAbortsItLikeAHoming`; `AStartPoseOutsideTheBoxFaults`; `AStartPoseOutsideTheConeFaultsWithoutTheMargin`; `AHomeIsNotCheckedAgainstTheCone`; `C3StartNeedsTheStartPoseOnceItIsSet`; `C3StartIsUnchangedWhileQStartIsUnset`. |
+| `test_control_loop.cpp` | Old cases unchanged. New (test `Arm`): the abort flag set when the session ends for `kHome` → `moveToJoints` never called, a new session, `homing_aborted_generation` set, flag cleared; `kStopRequested` from `moveToJoints` with the flag → `status()` polled, a new session holding the measured pose, nullspace target = that `q`; the same with `status()` reporting a reflex → `fault` with the problem text; `kStopRequested` without the flag → `fault` (as before); a normal finish with the flag set → homed, flag cleared; the move is marked in SharedState only while it runs (`stopHomingMove` runs the stop during it, for its session only, and never after). **2026-11-20:** `AKHomeWithoutATargetGoesToQHomeAndLeavesTheFingers`; `TheKHomeTargetIsTheMovesGoalAndItsOpenWidthTheFingerTarget`; `AStoppedPMoveHoldsTheMeasuredWidth`; `AnAbortBeforeTheMoveLeavesTheFingers`. |
 | `test_gripper_worker.cpp` | New: a hand-homing request → `home()` called once on the gripper thread, `kDone` reported, the target re-sent afterwards even inside the deadband; `stop()` during `home()` → `kAborted`; `failNextHome` → gripper fault; a stop before the homing began → skipped, `kAborted`, the fingers never move; a `stop()` from before the request does not skip it; a stopped finger move throws (gripper fault), but not after shutdown was requested. `Threads`: the width in SharedState changes during the fake homing; `g` then `s` while a finger move runs → the move finishes, no gripper fault, the homing skipped; a stop while `home()` runs stops it, the fingers return. |
-| `test_fake_arm_run.cpp` | Uses `AppOverrides` (free ports, a key pipe). The old run unchanged, plus: `hello` reply (`mock` true, the 12 schemas, `watchdog_limit_s` 1.0, `max_lead_s` 1.5, `t_pc_ns` between send and receive on `CLOCK_MONOTONIC`); keys through the pipe: `h` → C2 `homing` → `idle`; `h` then `s` mid-move → C2 `stopped` within 50 ms of the key, the fake TCP still afterwards (≤ 1 mm over 0.5 s), then `start` accepted; a C3 `home`, then `s` on the pipe mid-move → the deferred reply `ok: false` with a reason starting `stopped: `, C2 `stopped`; a C3 `stop` during a key `h` → `ack ok`, C2 `stopped`; `g` → `homing` → `idle`, width back to its value; `h` refused while `holding` (state unchanged); `q` → exit 0. `ShutdownStaysWithinTheLaunchersStopBudget` → `...WithinTheWrappersStopBudget` (same numbers). |
+| `test_fake_arm_run.cpp` | Uses `AppOverrides` (free ports, a key pipe). The old run unchanged, plus: `hello` reply (`mock` true, the 12 schemas, `watchdog_limit_s` 1.0, `max_lead_s` 1.5, `t_pc_ns` between send and receive on `CLOCK_MONOTONIC`); keys through the pipe: `h` → C2 `homing` → `idle`; `h` then `s` mid-move → C2 `stopped` within 50 ms of the key, the fake TCP still afterwards (≤ 1 mm over 0.5 s), then `start` accepted; a C3 `home`, then `s` on the pipe mid-move → the deferred reply `ok: false` with a reason starting `stopped: `, C2 `stopped`; a C3 `stop` during a key `h` → `ack ok`, C2 `stopped`; `g` → `homing` → `idle`, width back to its value; `h` refused while `holding` (state unchanged); `q` → exit 0; **2026-11-20:** `KeyPGoesFromHomeToTheStartPoseOpensTheHandAndC3StartNeedsIt`. `ShutdownStaysWithinTheLaunchersStopBudget` → `...WithinTheWrappersStopBudget` (same numbers). |
 
 **New:**
 
@@ -886,7 +908,7 @@ definitions; `writeLink(dir, address, state_port, commands_port)` for a temporar
 |---|---|
 | `test_contract_files.cpp` | `ContractFrame`: the real frames.yaml loads and equals the literal of top §4.2; not 4×4, non-finite, transposed, reflection refused; `settled` and unknown keys ignored; a missing `F_T_TCP` named. `ContractLink`: the real link.yaml loads; `0.0.0.0`, a hostname, `256.1.1.1` refused; port 80, 70000 and equal ports refused; watchdog 0 refused; other keys ignored; `endpoint(5620, false)` = `tcp://<pc.address>:5620`, `local` → `127.0.0.1`. |
 | `test_command_line.cpp` | `--local`, `--keyboard` parsed; unknown flags refused; `--version` alone; `--station` still required otherwise. |
-| `test_keyboard_reader.cpp` | Over a pipe: `h`, `g`, `s` (and `H`, `G`, `S`) queued in order; `q` and `Q` call `on_quit` and are not queued; unknown bytes ignored; EOF ends `run()` without `on_quit`; shutdown ends it within 0.1 s; the queue drops a 17th `h` or `g`, never an `s`. On a pty (`openpty`): `TerminalMode` sets ICANON, ECHO and IXON off, keeps ISIG, disables VSUSP and VQUIT, and restores the saved settings. On a pipe `TerminalMode` changes nothing. |
+| `test_keyboard_reader.cpp` | Over a pipe: `h`, `p`, `g`, `s` (and `H`, `P`, `G`, `S`) queued in order (`PIsQueuedAndNamed`); `q` and `Q` call `on_quit` and are not queued; unknown bytes ignored; EOF ends `run()` without `on_quit`; shutdown ends it within 0.1 s; the queue drops a 17th `h` or `g`, never an `s`. On a pty (`openpty`): `TerminalMode` sets ICANON, ECHO and IXON off, keeps ISIG, disables VSUSP and VQUIT, and restores the saved settings. On a pipe `TerminalMode` changes nothing. |
 | `test_build_info.cpp` | `kGitCommit` is 40 lowercase hex or `unknown`; `--version` line format (run the built binary). |
 | stop epoch (in `test_control_loop.cpp`, with `FakeArm`) | `requestStop()` during a call → that call ends `kStopRequested`; a stop requested before a call started (an earlier epoch) does not mark that call; a later fault in a new call is reported as the fault, never `kStopRequested`. |
 | bind address (in `test_fake_arm_run.cpp`, `Threads`) | `BindsOnlyTheLinkAddress`: a temporary link.yaml with `pc.address: 127.0.0.1` and two free ports → `App::stateEndpoint()`/`commandsEndpoint()` are `tcp://127.0.0.1:<port>`, never `0.0.0.0`/`*`; a link.yaml address not on the machine (`192.0.2.1`, TEST-NET) → FATAL naming link.yaml pc.address, exit 1. |
@@ -912,7 +934,7 @@ problem and schema as Python.
 | `test_console_mock.py` | marked `needs_binary` (skipped if `franka_control/build/franka_control` is missing): `run --mock --local` with stdin from a pipe, then `console --mock --local --yes`: every step passes, the last leaves C2 in `fault`; a key `q` on the pipe ends `run` with exit 0. This is PLAN §10's "`control_deploy run --mock` with a scripted console". Also: the binary alone with its stdout and stderr on a pipe whose read end is closed after ready (the wrapper gone) keeps running (SIGPIPE ignored) and exits 0 on SIGTERM |
 | `test_import_rules.py` | `control_deploy` imports only stdlib, yaml, numpy, zmq, msgpack, `deploy_contracts`; never `policy_deploy` or the old packages |
 
-## 10. DIRECTIONS.md outline (the file is written later)
+## 10. DIRECTIONS.md outline
 
 1. **What you need:** the PC (Ubuntu 20.04, two network connections: a cable to the Franka, Wi-Fi on ASUS_5g),
    sudo, internet once, Desk access in a browser.
@@ -932,7 +954,7 @@ problem and schema as Python.
 8. **Station:** `control_deploy/station.yaml`: `session_root`, `realtime: ignore` until the RT kernel.
 9. **Desk, every session:** open `https://172.16.0.2`; robot system 4.x (for libfranka 0.9.2); end effector set to the
    Franka Hand; unlock the brakes; activate FCI; release the user stop.
-10. **Without hardware:** `control_deploy check --mock --local`, `control_deploy run --mock --local` (keys h g s q),
+10. **Without hardware:** `control_deploy check --mock --local`, `control_deploy run --mock --local` (keys h p g s q),
     then in a second terminal `control_deploy console --mock --local`.
 11. **The real run:** `control_deploy check` (no fail), `control_deploy run`. What start-up looks like (fingers home
     once, the arm holds), the status line, the keys. Keep a hand on the user stop. Start `policy_deploy` on the
@@ -955,7 +977,8 @@ Before running anything:
 - [ ] Weigh the rig beyond the Franka Hand (printed fingers, Pi 5, cameras, mount); centre of mass from CAD; set
       `load.mass_kg`, `com_m` (not also in Desk: Desk's end effector is the Hand alone, `setLoad` adds the rest).
 - [ ] Measure the workspace box in the robot base frame around the table, a few cm inside the real limits; set
-      `safety.workspace_min_m`/`max_m`. The floor (`min z`) must keep the fingertips above the table.
+      `safety.workspace_min_m`/`max_m`. The floor (`min z`): 5 mm below the `tcp z` with the fingertips resting on the
+      table (grasps of a flat object end at the table; a target within `box_margin_m` below is pulled up onto it).
 - [ ] Check `homing.q_home_rad` with the rig on: no cable or camera collision; its TCP must be inside the box (the
       after-homing check faults otherwise).
 - [ ] Desk: system version 4.x, end effector Franka Hand, FCI on, brakes unlocked, user stop released.
@@ -978,6 +1001,12 @@ First run:
 - [ ] `g`, then `s` during the hand's homing: `stopped` (or `idle` if the hand cannot be interrupted).
 - [ ] `console`, one step at a time, Enter before each: `hold`, `move`, `rotate`, `gripper`, `watchdog`,
       `out_of_box` (ends in `fault` by design; restart `run`). Keep `results.yaml`.
+- [ ] **The start pose** (2026-11-20): Ctrl-C `run`; in Desk guiding mode (FCI off) move the arm by hand to the
+      training demos' start (fingertips ~48° from straight down, ~16 cm above the table); FCI on, `run` again (it
+      holds there); on the laptop `pc_probe --start-pose`; paste its `q_start_rad` line into `control_deploy/station.yaml`
+      (`franka_control: homing:`); restart `run`.
+- [ ] `h`, then `p`: the hand opens fully, the start pose is reached (`idle`, no box or cone fault); then `start` is
+      accepted there (`console --only hold`); `p` again: refused (`not at home`).
 - [ ] Only then the laptop (PLAN §12 step 3).
 
 ### 11.2 Risks

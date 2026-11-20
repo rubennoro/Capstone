@@ -51,7 +51,7 @@ class StatusLine:
             f"late {late_now} (+{late_recent} in {LATE_WINDOW_S:g} s)",
             f"C2 {rate:.0f} Hz",
             "C3 peer " + (", ".join(peers) if peers else "none"),
-            "h g s q",
+            "h p g s q",
         ]
         # The layout of STRUCTURE.md 6.4 is 134 columns for a typical state: compact it only as far as needed.
         sep = " | "
@@ -61,6 +61,10 @@ class StatusLine:
             line = sep.join(parts)
         if len(line) > self.width:
             sep = "|"
+            line = sep.join(parts)
+        if len(line) > self.width:   # the key hint grew with p: drop the tcp unit and the C2 rate's space
+            parts[1] = f"tcp {p[0]:.3f} {p[1]:.3f} {p[2]:.3f}"
+            parts[5] = f"C2 {rate:.0f}Hz"
             line = sep.join(parts)
         if len(line) > self.width and s.mode == "fault":   # the error text matters most: keep it, the peers, the keys
             tail = " | " + " | ".join(parts[-2:])

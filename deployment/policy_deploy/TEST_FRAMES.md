@@ -3,7 +3,7 @@
 ## Requirements
 
 - The laptop (Python 3.10), internet, about 10 GB free.
-- Wi-Fi on the lab router **ASUS-5G** (the PC and the Pi are on it too).
+- Wi-Fi on the lab router **ASUS_5g** (the PC and the Pi are on it too).
 
 ## Steps
 
@@ -38,13 +38,13 @@ cd policy_deploy
 ~/envs/policy_deploy/bin/policy_deploy --help
 ```
 
-### 2 - Power on the Pi
+### 3 - Power on the Pi
 
 Connect the Pi to power, and since this is a deployment test on the Franka hand, do your best to get everything setup as it would be on AI Model deployment day. 
 
-The Pi should automatically find the ASUS-5G wifi and connect to it.
+The Pi should automatically find the ASUS_5g wifi and connect to it.
 
-### 3 - Find the pi
+### 4 - Find the pi
 
 By name:
 ```bash
@@ -58,9 +58,9 @@ You can also find the name on the Pi itself:
 hostname -I
 ```
 
-### 4 - Start the Pi streaming
+### 5 - Start the Pi streaming
 
-To start the Pi's streaming, ensure that it's connected to ASUS-5G wifi, which should be automatic. 
+To start the Pi's streaming, ensure that it's connected to ASUS_5g wifi, which should be automatic. 
 
 You should press the **C Button** and see the LED light up
 **blue** on the Sensor Rig. Once this is working, you can let it go until you've collected the frames with the next step. 
@@ -74,7 +74,7 @@ timeout 2 bash -c "</dev/tcp/<PI>/5555" && echo "port 5555 open" || echo "nothin
 ```
 
 
-### 5 - Collecting camera output from Pi to local machine
+### 6 - Collecting camera output from Pi to local machine
 
 Fill in the <PI> below with the PI's address you found ahead of time:
 
@@ -148,7 +148,7 @@ One line per packet received. You normally don't need to read it. The useful par
 | You see | Meaning |
 |---|---|
 | ~30 pkt/s, all gaps 0, bad 0 | Healthy |
-| `waiting for the first packet ...` repeating | Nothing is arriving. Check that the LED is blue, you're on ASUS-5G, and `<PI>` is right (step 3) |
+| `waiting for the first packet ...` repeating | Nothing is arriving. Check that the LED is blue, you're on ASUS_5g, and `<PI>` is right (step 4) |
 | `packet_no gaps` above 0 | Packets lost on Wi-Fi. A few are fine; many mean a weak signal |
 | `bad` above 0 | Broken packets. The reason is in `problems` in `headers.jsonl` |
 

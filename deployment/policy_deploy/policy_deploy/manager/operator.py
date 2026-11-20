@@ -1,5 +1,6 @@
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/operator.py @ 91b178b
-# changes: Key lookup through a table (KEYS_BY_CHAR, key_for); imports, logger name
+# changes: Key lookup through a table (KEYS_BY_CHAR, key_for); imports, logger name; no h key (homing and the start
+# pose are PC keyboard keys only: no laptop key moves the arm to a pose)
 """Operator: where keys come from and where the status line goes (STRUCTURE.md 4.9)."""
 from __future__ import annotations
 
@@ -13,16 +14,16 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("manager.operator")
 CLEAR_LINE = "\x1b[K"
-KEY_LIST = "keys: c start  y success  n fail  s stop  h home  q quit"
+KEY_LIST = "keys: c start  y success  n fail  s stop  q quit"
 
 
 class Key(Enum):
-    """The keys; EpisodeLoop dispatches them through its KEY_HANDLERS table (a later jog key: one member + one entry)."""
+    """The keys; EpisodeLoop dispatches them through its KEY_HANDLERS table (a later jog key: one member + one entry).
+    No key moves the arm to a pose: homing (h) and the start pose (p) are the PC's keyboard keys."""
     START = "c"
     SUCCESS = "y"
     FAIL = "n"
     STOP = "s"
-    HOME = "h"
     QUIT = "q"
 
 

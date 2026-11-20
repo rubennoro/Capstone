@@ -4,9 +4,12 @@
 // tcp://127.0.0.1:<port> with --local; a station `endpoints:` section is refused; a station override of tcp.* or
 // watchdog.limit_s gets a "moved to" hint; the 0.5 s floor checks the link.yaml value; toYaml adds a contracts: block
 // (control_deploy/STRUCTURE.md 3.1). The merge of the station's franka_control section is unchanged.
+// + homing.q_start_rad (null or absent: unset; else 7 numbers inside the Panda's joint limits) and
+// homing.at_pose_tol_rad (key p, the start pose).
 #include "franka_control/config_loader.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <set>
@@ -25,6 +28,9 @@ namespace {
 constexpr double kWatchdogLimitMinS = 0.5;   // franka_control's own floor for link.yaml timing.watchdog_limit_s
 constexpr double kJointImpedanceMax = 14250.0;   // libfranka setJointImpedance range
 constexpr double kCutoffMaxHz = 1000.0;          // libfranka kMaxCutoffFrequency
+// The Panda's joint position limits (Franka's datasheet, "Robot and interface specifications"), rad.
+constexpr double kPandaQMin[7] = {-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973};
+constexpr double kPandaQMax[7] = {2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973};
 
 std::vector<std::string> splitPath(const std::string& path) {
   std::vector<std::string> parts;
@@ -195,6 +201,11 @@ class Reader {
       }
     }
     return true;
+  }
+  // Whether the key exists (null counts), without a "missing" problem when it does not.
+  bool present(const std::string& path) {
+    used_.insert(path);
+    return static_cast<bool>(descend(root_, splitPath(path), 0));
   }
   bool isNull(const std::string& path) {
     const YAML::Node n = node(path);
@@ -480,6 +491,22 @@ Config ConfigLoader::load(const std::filesystem::path& station_file, bool mock, 
   rd.positive("homing.max_joint_speed_rad_per_s", c.homing.max_joint_speed_rad_per_s);
   rd.positive("homing.min_duration_s", c.homing.min_duration_s);
   rd.positive("homing.timeout_s", c.homing.timeout_s);
+  if (rd.present("homing.q_start_rad") && !rd.isNull("homing.q_start_rad") && rd.numbers("homing.q_start_rad", 7, v)) {
+    Vec7 q;
+    bool inside = true;
+    for (int i = 0; i < 7; ++i) {
+      q(i) = v[static_cast<size_t>(i)];
+      if (inside && !(q(i) >= kPandaQMin[i] && q(i) <= kPandaQMax[i])) {
+        inside = false;
+        char buf[160];
+        std::snprintf(buf, sizeof(buf), "joint %d (%.4f rad) is outside the Panda's limits [%.4f, %.4f] rad", i + 1,
+                      q(i), kPandaQMin[i], kPandaQMax[i]);
+        rd.problem("homing.q_start_rad", buf);
+      }
+    }
+    if (inside) c.homing.q_start_rad = q;
+  }
+  rd.positive("homing.at_pose_tol_rad", c.homing.at_pose_tol_rad);
 
   // gripper
   rd.positive("gripper.speed_m_per_s", c.gripper.speed_m_per_s);

@@ -71,7 +71,7 @@ RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
     C.OPERATOR_SCRIPT: (Kind.CONCLUDE, "operator script: {detail}",
                         "check the script (manager.operator_script) or raise operator_script_wait_s"),
     C.INTERNAL_ERROR: (Kind.CONCLUDE, "{origin}internal error: {detail}", "see the manager log"),
-    C.EPISODE_STOP: (Kind.NORMAL, "{detail}", "nothing to do: h homes the arm, c starts the next episode"),
+    C.EPISODE_STOP: (Kind.NORMAL, "{detail}", "nothing to do: next episode: the PC's h, then p, then c here"),
     C.OPERATOR_STOP: (Kind.STOP, "{detail}", "nothing to check"),
     C.LAUNCHER_STOP: (Kind.STOP, "stopped by the launcher: another process exited", "see the launcher message"),
 }
@@ -154,7 +154,7 @@ class FailureMonitor:
         if (latest.mode == "stopped" and episode_running and not stop_sent
                 and (start_ack_pc_ns is None or latest.t_ns >= start_ack_pc_ns)):
             return Problem(C.PC_STOPPED, PC, latest.error or "mode stopped")
-        return None                              # homing: expected in HOMING, otherwise followed (c/h refused)
+        return None                              # homing (the PC's h, g or p): followed, c refused
 
     def check_health(self, health: HealthReport) -> Problem | None:
         """Only "down" is a problem here (stale is seen by the steps)."""

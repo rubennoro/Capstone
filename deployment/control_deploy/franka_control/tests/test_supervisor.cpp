@@ -3,9 +3,12 @@
 // and stop during homing (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged. Fix wave: the test also
 // plays the control thread's begin/endHomingMove and the gripper thread's begin/endHandHoming; stops re-sent every
 // 100 ms while the move runs; no stop once a move or a hand homing has ended, none before a hand homing began.
+// + key p (the start pose) and C3 start's start-pose check; Rig takes an optional config tweak.
 // Supervisor with a FakeClock, a SharedState and a test Arm; no threads. The test plays the control thread: it
 // publishes snapshots and takes the posted commands.
 #include <gtest/gtest.h>
+
+#include <cstdio>
 
 #include "franka_control/pose_math.h"
 #include "franka_control/supervisor.h"
@@ -41,8 +44,10 @@ class CountingGripper : public Gripper {
 constexpr int64_t kMs = 1000000;
 
 struct Rig {
-  explicit Rig(const Eigen::Vector3d& target = {0.45, 0.0, 0.45}, Gripper* gripper = nullptr)
+  explicit Rig(const Eigen::Vector3d& target = {0.45, 0.0, 0.45}, Gripper* gripper = nullptr,
+               const std::function<void(Config&)>& tweak = {})
       : cfg(test::testConfig()) {
+    if (tweak) tweak(cfg);
     shared = std::make_unique<SharedState>();
     shared->setGripperWidth(0.04);
     publish([&](LoopSnapshot& s) { setPose(s, target); });
@@ -363,7 +368,7 @@ TEST(Supervisor, AHomeTcpOutsideTheBoxFaults) {
   r.publish([&](LoopSnapshot& s) {
     s.homed_generation = gen;
     s.session = 1;
-    Rig::setPose(s, {0.31, 0.0, 0.03});
+    Rig::setPose(s, {0.31, 0.0, -0.03});   // below the floor (config.yaml min z -0.005)
   });
   r.sup->tick();
   EXPECT_EQ(r.sup->mode(), Mode::kFault);
@@ -371,7 +376,7 @@ TEST(Supervisor, AHomeTcpOutsideTheBoxFaults) {
   ASSERT_TRUE(reply);
   EXPECT_FALSE(reply->ok);
   EXPECT_EQ(reply->reason,
-            "home pose TCP (0.31, 0.00, 0.03) m is outside the workspace box: check homing.q_home_rad and the box");
+            "home pose TCP (0.31, 0.00, -0.03) m is outside the workspace box: check homing.q_home_rad and the box");
 }
 
 TEST(Supervisor, AGripperFaultFaults) {
@@ -644,7 +649,7 @@ TEST(Supervisor, NoOtherHomeReplyStartsWithStopped) {
     r.publish([&](LoopSnapshot& s) {
       s.homed_generation = gen;
       s.session = 1;
-      Rig::setPose(s, {0.31, 0.0, 0.03});
+      Rig::setPose(s, {0.31, 0.0, -0.03});   // below the floor (config.yaml min z -0.005)
     });
     r.sup->tick();
     reasons.push_back(r.sup->pollHome()->reason);
@@ -737,6 +742,229 @@ TEST(Supervisor, AStopAfterTheHandsHomingEndedStopsNothing) {
   const std::string log = stderrOf([&] { r.sup->tick(); });
   EXPECT_EQ(r.sup->mode(), Mode::kIdle);
   EXPECT_NE(log.find("stop arrived after the hand's homing had finished"), std::string::npos) << log;
+}
+
+// ---- key p, the start pose, and C3 start's start-pose check ----
+
+Vec7 startPose() {   // a start pose near the test config's home: 0.48 rad on joint 6 (a 3.0 s move)
+  Vec7 q = test::testConfig().homing.q_home_rad;
+  q(5) += 0.48;
+  return q;
+}
+
+void withStart(Config& c) { c.homing.q_start_rad = startPose(); }
+
+// A tilt of `deg` from the cone axis (straight down), measured on the flange's approach axis.
+void setTilted(LoopSnapshot& s, const Config& cfg, const Eigen::Vector3d& p, double deg) {
+  const Eigen::Matrix3d R_F =
+      Eigen::AngleAxisd(deg * M_PI / 180.0, Eigen::Vector3d::UnitY()).toRotationMatrix() *
+      Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()).toRotationMatrix();
+  s.O_T_TCP = Pose::Identity();
+  s.O_T_TCP.linear() = R_F * cfg.F_T_TCP.linear();
+  s.O_T_TCP.translation() = p;
+  s.O_T_TCP_target = s.O_T_TCP;
+}
+
+TEST(Supervisor, KeyPIsRefusedWhileQStartIsUnset) {
+  Rig r;
+  ASSERT_FALSE(r.cfg.homing.q_start_rad);   // config.yaml ships null
+  const auto reply = r.sup->onStartPose();
+  ASSERT_TRUE(reply);
+  EXPECT_FALSE(reply->ok);
+  EXPECT_EQ(reply->reason, "refused: homing.q_start_rad is not set: measure it and set it in control_deploy/station.yaml (franka_control: homing:)");
+  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
+  EXPECT_NE(log.find("key p refused: homing.q_start_rad is not set: measure it and set it in control_deploy/station.yaml (franka_control: homing:)"),
+            std::string::npos)
+      << log;
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+  EXPECT_EQ(r.take(), nullptr);
+}
+
+TEST(Supervisor, KeyPIsRefusedAwayFromHome) {
+  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
+  r.publish([&](LoopSnapshot& s) { s.q(3) = r.cfg.homing.q_home_rad(3) + 0.06; });   // > at_pose_tol_rad 0.05
+  r.sup->tick();
+  const auto reply = r.sup->onStartPose();
+  ASSERT_TRUE(reply);
+  EXPECT_FALSE(reply->ok);
+  EXPECT_EQ(reply->reason, "refused: not at home: press h first");
+  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
+  EXPECT_NE(log.find("key p refused: not at home: press h first"), std::string::npos) << log;
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+  EXPECT_EQ(r.take(), nullptr);
+  r.publish([&](LoopSnapshot& s) { s.q(3) = r.cfg.homing.q_home_rad(3) + 0.04; });   // within the tolerance
+  r.sup->tick();
+  EXPECT_FALSE(r.sup->onStartPose());
+  EXPECT_EQ(r.sup->mode(), Mode::kHoming);
+}
+
+TEST(Supervisor, KeyPIsRefusedOutsideIdleAndStopped) {
+  CountingGripper g;
+  for (Mode m : {Mode::kHolding, Mode::kRunning, Mode::kHoming, Mode::kFault}) {
+    SCOPED_TRACE(modeName(m));
+    Rig r({0.45, 0.0, 0.45}, &g, withStart);
+    if (m == Mode::kHolding || m == Mode::kRunning) {
+      r.publish([](LoopSnapshot& s) { s.q = startPose(); });   // C3 start needs the start pose
+      r.sup->tick();
+      r.start();
+    }
+    if (m == Mode::kRunning) r.send({r.wp(0.5, {0.46, 0, 0.45})});
+    if (m == Mode::kHoming) r.sup->onHome();
+    if (m == Mode::kFault) toFault(r);
+    r.take();
+    ASSERT_EQ(r.sup->mode(), m);
+    const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
+    EXPECT_EQ(r.sup->mode(), m);
+    EXPECT_EQ(r.take(), nullptr);
+    EXPECT_NE(log.find("key p refused: mode is " + modeName(m)), std::string::npos) << log;
+  }
+}
+
+TEST(Supervisor, KeyPMovesFromHomeToTheStartPoseAndOpensTheHand) {
+  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
+  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
+  EXPECT_NE(log.find("key p: start pose: 3.0 s joint move to homing.q_start_rad"), std::string::npos) << log;
+  EXPECT_NE(log.find("key p: the hand opens to 0.080 m (gripper_width_max_m) during the move"), std::string::npos)
+      << log;
+  EXPECT_EQ(r.sup->mode(), Mode::kHoming);
+  EXPECT_EQ(r.sup->stateMessage(1).mode, "homing");
+  const LoopCommand* c = r.take();
+  ASSERT_NE(c, nullptr);
+  ASSERT_EQ(c->kind, LoopCommand::Kind::kHome);
+  ASSERT_TRUE(c->q_target);
+  EXPECT_TRUE(c->q_target->isApprox(startPose()));
+  ASSERT_TRUE(c->open_width_m);
+  EXPECT_DOUBLE_EQ(*c->open_width_m, r.cfg.limits.gripper_width_max_m);
+  EXPECT_FALSE(r.sup->onStart().ok);   // refused while homing
+  const uint64_t gen = c->generation;
+  r.publish([&](LoopSnapshot& s) {
+    s.homed_generation = gen;
+    s.session = 1;
+    s.q = startPose();
+  });
+  const std::string done = stderrOf([&] { r.sup->tick(); });
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+  EXPECT_NE(done.find("start pose reached"), std::string::npos) << done;
+  EXPECT_EQ(r.shared->lastAliveNs(), r.clock.now());
+  EXPECT_EQ(r.take()->kind, LoopCommand::Kind::kHold);
+  EXPECT_FALSE(r.sup->pollHome());     // a key: no C3 reply
+  EXPECT_TRUE(r.sup->onStart().ok);    // the laptop starts from the start pose
+}
+
+TEST(Supervisor, KeyHStillGoesToQHomeAndLeavesTheFingers) {
+  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
+  r.sup->onKey(Key::kHomeArm);
+  const LoopCommand* c = r.take();
+  ASSERT_NE(c, nullptr);
+  ASSERT_EQ(c->kind, LoopCommand::Kind::kHome);
+  ASSERT_TRUE(c->q_target);
+  EXPECT_TRUE(c->q_target->isApprox(r.cfg.homing.q_home_rad));
+  EXPECT_FALSE(c->open_width_m);
+}
+
+TEST(Supervisor, StopDuringKeyPAbortsItLikeAHoming) {
+  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
+  r.sup->onKey(Key::kStartPose);
+  const uint64_t gen = r.take()->generation;
+  r.sup->onKey(Key::kStop);
+  EXPECT_EQ(r.sup->mode(), Mode::kHoming);
+  EXPECT_TRUE(r.shared->homingAbortRequested());
+  r.shared->beginHomingMove(0);
+  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });
+  r.sup->tick();
+  EXPECT_EQ(r.arm.stops, 1);
+  r.shared->endHomingMove();
+  r.shared->clearHomingAbort();
+  r.publish([&](LoopSnapshot& s) {
+    s.phase = LoopSnapshot::Phase::kTorque;
+    s.session = 1;
+    s.homing_aborted_generation = gen;
+  });
+  r.sup->tick();
+  EXPECT_EQ(r.sup->mode(), Mode::kStopped);
+  EXPECT_EQ(r.sup->modeDetail(), "stop during homing (PC keyboard)");
+  EXPECT_EQ(r.take()->kind, LoopCommand::Kind::kHold);
+  EXPECT_FALSE(r.sup->onStart().ok);   // stopped on the way: not at the start pose
+}
+
+TEST(Supervisor, AStartPoseOutsideTheBoxFaults) {
+  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
+  r.sup->onStartPose();
+  const uint64_t gen = r.take()->generation;
+  r.publish([&](LoopSnapshot& s) {
+    s.homed_generation = gen;
+    s.session = 1;
+    Rig::setPose(s, {0.31, 0.0, -0.03});   // below the floor (config.yaml min z -0.005)
+  });
+  r.sup->tick();
+  EXPECT_EQ(r.sup->mode(), Mode::kFault);
+  EXPECT_EQ(r.sup->stateMessage(1).error,
+            "start pose TCP (0.31, 0.00, -0.03) m is outside the workspace box: check homing.q_start_rad and the box");
+  EXPECT_EQ(r.take()->kind, LoopCommand::Kind::kHold);
+}
+
+TEST(Supervisor, AStartPoseOutsideTheConeFaultsWithoutTheMargin) {
+  for (double deg : {59.0, 61.0, 70.0}) {   // cone_max_deg 60, cone_margin_deg 2: no margin for the start pose
+    SCOPED_TRACE(deg);
+    Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
+    r.sup->onStartPose();
+    const uint64_t gen = r.take()->generation;
+    r.publish([&](LoopSnapshot& s) {
+      s.homed_generation = gen;
+      s.session = 1;
+      setTilted(s, r.cfg, {0.45, 0.0, 0.30}, deg);
+    });
+    r.sup->tick();
+    if (deg < 60.0) {
+      EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+    } else {
+      EXPECT_EQ(r.sup->mode(), Mode::kFault);
+      char want[160];
+      std::snprintf(want, sizeof(want),
+                    "start pose tilt %.1f deg from the approach axis > safety.cone_max_deg 60.0: check "
+                    "homing.q_start_rad and the cone",
+                    deg);
+      EXPECT_EQ(r.sup->stateMessage(1).error, want);
+    }
+  }
+}
+
+TEST(Supervisor, AHomeIsNotCheckedAgainstTheCone) {   // h unchanged: only the box
+  Rig r;
+  r.sup->onHome();
+  const uint64_t gen = r.take()->generation;
+  r.publish([&](LoopSnapshot& s) {
+    s.homed_generation = gen;
+    s.session = 1;
+    setTilted(s, r.cfg, {0.45, 0.0, 0.30}, 70.0);
+  });
+  r.sup->tick();
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+}
+
+TEST(Supervisor, C3StartNeedsTheStartPoseOnceItIsSet) {
+  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);   // at home
+  r.alive();
+  msg::Ack a = r.sup->onStart();
+  EXPECT_FALSE(a.ok);
+  EXPECT_EQ(a.reason, "refused: not at the start pose: press h, then p on the PC");
+  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
+  EXPECT_EQ(r.take(), nullptr);
+  r.publish([](LoopSnapshot& s) {
+    s.q = startPose();
+    s.q(0) += 0.049;   // within at_pose_tol_rad
+  });
+  r.sup->tick();
+  EXPECT_TRUE(r.sup->onStart().ok);
+  EXPECT_EQ(r.sup->mode(), Mode::kHolding);
+}
+
+TEST(Supervisor, C3StartIsUnchangedWhileQStartIsUnset) {
+  Rig r;
+  r.publish([](LoopSnapshot& s) { s.q(0) += 1.0; });   // anywhere
+  r.sup->tick();
+  EXPECT_TRUE(r.sup->onStart().ok);
+  EXPECT_EQ(r.sup->mode(), Mode::kHolding);
 }
 
 TEST(Supervisor, KeySStopsInIdleAndChangesNothingInFault) {

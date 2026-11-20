@@ -2,7 +2,8 @@
 // changes: + LoopSnapshot::homing_aborted_generation; + the homing-abort flag (messaging -> control), the hand-homing
 // request (messaging -> gripper) and its report (gripper -> messaging); none is touched by ControlLoop::step
 // (control_deploy/STRUCTURE.md 4.1). Fix wave: the arm's homing move and the hand's homing each have a small lock, so
-// a stop reaches only the move it is meant for (STRUCTURE.md 4.4).
+// a stop reaches only the move it is meant for (STRUCTURE.md 4.4). + LoopCommand::q_target and open_width_m (kHome:
+// the start pose of key p, and the hand opening during that move).
 // Where the threads meet. The 1 kHz loop uses only the wait-free parts.
 #pragma once
 
@@ -25,6 +26,8 @@ struct LoopCommand {                      // messaging -> control
   uint64_t generation = 0;                // +1 per posted command; the loop acts on each generation once
   Kind kind = Kind::kHold;
   WaypointTrajectory plan;                // used with kFollow
+  std::optional<Vec7> q_target;           // kHome: the joint move's goal (nullopt: homing.q_home_rad)
+  std::optional<double> open_width_m;     // kHome: the fingers' target during the move (nullopt: unchanged)
 };
 
 struct LoopStats {                        // the last completed window, computed by the loop itself

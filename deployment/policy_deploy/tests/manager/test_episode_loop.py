@@ -1,8 +1,8 @@
 # adapted from rnoro/deployment:deployment/message_comms/tests/test_episode_loop.py @ 91b178b
 # changes: the new LoopHarness (FakePcClient on a PC clock 1000 s ahead, a real PC clock map and HeartbeatSender);
 # keep-alives are hellos or heartbeats; the new codes and texts; start-up order (hellos before get_state);
-# + local refusal of c/h while the PC homes, c until the map is ready, home stopped/refused/failed, re-warm, margins
-# in PC time, the clock-mismatch guard, KEY_HANDLERS.
+# + local refusal of c while the PC homes, c until the map is ready, margins in PC time, the clock-mismatch guard,
+# KEY_HANDLERS; h is not a laptop key (homing and the start pose are PC keyboard keys only).
 """EpisodeLoop with fakes, FakeClock, ManualWorker and scripted keys, driving cycle() (STRUCTURE.md section 11)."""
 import io
 import json
@@ -108,9 +108,7 @@ def test_s_ends_the_episode_and_the_run_goes_on(h, settings):
     assert [e["outcome"] for e in episodes(settings)] == ["stopped"]
     assert episodes(settings)[0]["reason"] == "operator stop key"
     h.run_until(lambda: not h.worker.busy())
-    h.operator.press("h")
-    h.tick()
-    assert "home" in h.calls and h.loop.phase is Phase.IDLE
+    assert h.loop.phase is Phase.IDLE
     resets = h.policy.calls.count("reset")
     h.start_episode()
     assert h.loop.progress().episode_id == 2 and h.policy.calls.count("reset") == resets + 1
@@ -181,12 +179,12 @@ def test_sigterm_stops_records_aborted_exits_0(h, settings):
 
 
 def test_wrong_phase_keys_give_hints(h):
-    h.operator.press("h")
-    h.run_until(lambda: h.loop.phase is Phase.IDLE)
+    h.operator.press("y")
+    h.tick()
+    assert "y: no episode running (c start, q quit)" in h.operator.messages
     h.start_episode()
-    h.operator.press("h", "c")
+    h.operator.press("c")
     h.tick(2)
-    assert "h: end the episode first (y / n / s)" in h.operator.messages
     assert any(m.startswith("c: an episode is running") for m in h.operator.messages)
     assert h.loop.phase is Phase.RUNNING
 
@@ -234,51 +232,6 @@ def test_refused_start_returns_to_idle_without_an_episode(h, settings):
     assert h.loop.phase is Phase.IDLE and h.loop.progress().episode_id == 0 and episodes(settings) == []
     assert "start_refused" in events(settings)
     assert "c: the PC refused start: refused: mode is homing" in h.operator.messages
-
-
-# ---- homing -------------------------------------------------------------------------------------------------------
-
-def test_home_pauses_heartbeats_and_they_resume(h):
-    h.franka.home_s = 1.0
-    h.operator.press("h")
-    h.tick()
-    homes = [t for name, t in h.franka.timed if name == "home"]
-    beats = [t for name, t in h.franka.timed if name in ("heartbeat", "hello")]
-    assert len(homes) == 1
-    during = [t for t in beats if homes[0] < t < homes[0] + 900 * MS]
-    assert during == []
-    after = [t for t in beats if t > homes[0]]
-    assert after and after[0] - homes[0] <= 1_000 * MS + 1          # the one right after home returns
-    assert h.loop.phase is Phase.IDLE
-    assert any(line.startswith("[homing] keys inactive; Ctrl-C quits") for line in h.operator.statuses)
-
-
-@pytest.mark.parametrize("signal_name", ["interrupt", "terminate"])
-def test_ctrl_c_or_sigterm_during_homing_exits_within_one_slice(h, signal_name):
-    h.franka.home_behaviour = "hang"
-    slices = {"n": 0}
-
-    def during():
-        slices["n"] += 1
-        if slices["n"] == 10:
-            getattr(h.loop, signal_name)()
-    h.franka.during_home = during
-    stops = h.calls.count("stop")
-    h.operator.press("h")
-    h.tick()
-    assert h.loop.phase is Phase.DONE and h.loop.run() == 0
-    assert slices["n"] == 10 and h.franka.home_closed
-    assert h.calls.count("stop") == stops                         # no stop: the PC is busy homing
-    assert h.loop.verdict.kind is Kind.STOP
-
-
-def test_homing_refused_concludes(h):
-    h.franka.home_behaviour = "refuse"
-    h.operator.press("h")
-    h.tick()
-    assert h.loop.phase is Phase.DONE and h.loop.run() == 1
-    assert h.loop.verdict.problem.code is C.HOMING_FAILED and "stop" in h.calls
-    assert h.loop.verdict.what_failed == "the PC's homing failed: homing failed: home move would take 34 s"
 
 
 # ---- state checks -------------------------------------------------------------------------------------------------
@@ -533,7 +486,7 @@ def test_startup_camera_down_concludes(settings):
 def test_run_with_a_script_two_episodes(settings):
     harness = LoopHarness(settings)
     text = ("- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {wait_phase: idle}\n"
-            "- {wait_s: 0.2}\n- {key: h}\n- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: n}\n"
+            "- {wait_s: 0.2}\n- {key: c}\n- {wait_steps: 5}\n- {key: n}\n"
             "- {wait_s: 0.2}\n- {key: q}\n")
     harness.operator = ScriptedOperator(parse_script(text, "t"), io.StringIO(), harness.clock,
                                         settings.operator_script_wait_s)
@@ -541,7 +494,7 @@ def test_run_with_a_script_two_episodes(settings):
     harness.start()
     assert harness.loop.run() == 0
     assert [e["outcome"] for e in episodes(settings)] == ["stopped", "fail"]
-    assert harness.calls.count("home") == 1 and harness.calls[-1] in ("stop", "heartbeat", "hello")
+    assert "home" not in harness.calls and harness.calls[-1] in ("stop", "heartbeat", "hello")
     assert np.all(np.diff([msg.chunk_id for _, msg in harness.franka.sent]) > 0)
 
 
@@ -552,16 +505,22 @@ def scripted(harness, text, out=None):
 
 
 def test_run_with_a_script_retries_a_refused_key(settings):
-    """s while a step is in flight, then h at once: h is refused (the last step is still running) and retried."""
+    """s while a step is in flight, then c at once: c is refused (the last step is still running) and retried."""
     harness = LoopHarness(settings)
     harness.worker.delay_s = 0.2                         # a step is in flight when s is pressed
+    stop = harness.franka.stop
+
+    def stop_then_idle():                                # the PC idle before the retried c's start: with zero latency
+        stop()                                           # a `stopped` C2 stamped at the start ack would read as
+        harness.franka.mode = "idle"                     # PC_STOPPED (not this test's subject)
+    harness.franka.stop = stop_then_idle
     out = io.StringIO()
-    scripted(harness, "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {key: h}\n"
-                      "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 2}\n- {key: y}\n- {key: q}\n", out)
+    scripted(harness, "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {key: c}\n"
+                      "- {wait_steps: 2}\n- {key: y}\n- {key: q}\n", out)
     harness.start()
     assert harness.loop.run() == 0, harness.loop.verdict
-    assert "h: waiting for the last policy step to finish" in out.getvalue()
-    assert harness.calls.count("home") == 1
+    assert "c: waiting for the last policy step to finish" in out.getvalue()
+    assert "home" not in harness.calls
     assert [e["outcome"] for e in episodes(settings)] == ["stopped", "success"]
 
 
@@ -584,17 +543,21 @@ def test_key_handlers_cover_every_key():
     assert set(KEY_HANDLERS) == {k.value for k in Key}
 
 
-def test_c_and_h_refused_locally_while_the_pc_is_homing(h, settings):
-    h.mode_override = "homing"                           # the PC's own h or g
+def test_h_is_not_a_laptop_key():
+    """No laptop key moves the arm to a pose: homing (h) and the start pose (p) are PC keyboard keys only."""
+    assert {k.value for k in Key} == {"c", "y", "n", "s", "q"}
+    assert "h" not in KEY_HANDLERS and "p" not in KEY_HANDLERS
+    assert "homing" not in [phase.value for phase in Phase]
+
+
+def test_c_refused_locally_while_the_pc_is_homing(h, settings):
+    h.mode_override = "homing"                           # the PC's own h, g or p
     h.tick(2)
     h.operator.press("c")
     h.tick()
-    h.operator.press("h")
-    h.tick()
     assert h.loop.phase is Phase.IDLE and "reset" not in h.calls and "home" not in h.calls
-    assert "c: the PC is homing (its h or g key): wait for idle" in h.operator.messages
-    assert "h: the PC is already homing (its h or g key)" in h.operator.messages
-    assert [k for k, _ in h.operator.refused] == [Key.START, Key.HOME]
+    assert "c: the PC is homing (its h, g or p key): wait for idle" in h.operator.messages
+    assert [k for k, _ in h.operator.refused] == [Key.START]
     assert h.loop.verdict is None
     h.mode_override = None                               # idle again: accepted
     h.start_episode()
@@ -608,38 +571,6 @@ def test_c_refused_until_the_clock_map_is_ready(h, monkeypatch):
     assert h.loop.phase is Phase.IDLE and "c: waiting for the PC clock map" in h.operator.messages
     monkeypatch.undo()
     h.start_episode()
-
-
-def test_home_stopped_by_the_pc_is_shown_and_the_map_rewarms(h, settings):
-    h.franka.home_behaviour = "stopped"
-    h.franka.home_s = 24.0                               # stopped after 12 s: longer than the 10 s window
-    h.operator.press("h")
-    h.tick()
-    assert h.loop.phase is Phase.IDLE and h.loop.verdict is None
-    assert "home_stopped" in events(settings)
-    assert any(m.startswith("home stopped on the PC: stopped: homing stopped by the PC keyboard: the arm holds")
-               for m in h.operator.messages)
-    assert h.heartbeats.in_startup_mode() and not h.pc_clock.ready(h.clock())
-    hellos = h.count("hello")
-    h.tick(20)
-    assert h.count("hello") - hellos == 20               # a hello every cycle while re-warming
-    h.run_until(lambda: not h.heartbeats.in_startup_mode(), max_cycles=200)
-    assert h.pc_clock.ready(h.clock())
-    h.start_episode()                                    # c accepted afterwards
-
-
-def test_home_refused_because_the_pc_is_homing_is_a_hint(h, settings):
-    h.franka.home_behaviour = "refused_homing"
-    h.operator.press("h")
-    h.tick()
-    assert h.loop.phase is Phase.IDLE and h.loop.verdict is None and "home_refused" in events(settings)
-    assert any("h: the PC is already homing" in m for m in h.operator.messages)
-
-
-def test_home_ok_rewarms_only_when_needed(h):
-    h.operator.press("h")
-    h.tick()
-    assert h.loop.phase is Phase.IDLE and not h.heartbeats.in_startup_mode()   # 1 s home: the map stayed ready
 
 
 def test_margin_and_waypoints_on_the_pc_clock(h, settings):

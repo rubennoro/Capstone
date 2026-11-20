@@ -2,7 +2,8 @@
 // changes: run() only: a homing abort before the move skips it; a stop-requested end of the move with the abort flag
 // set waits for the robot to leave its move mode and starts a new torque session instead of ending the thread
 // (control_deploy/STRUCTURE.md 3.3, 4.4); the homing move is marked in SharedState (begin/endHomingMove) instead of
-// in_homing_ (fix wave). step() and observeHoming() are unchanged.
+// in_homing_ (fix wave). step() and observeHoming() are unchanged. + the kHome goal (homing.q_home_rad or the start
+// pose of key p) and its finger target: stored by step() when it accepts the kHome, used by run().
 // The control thread: torque sessions, the 1 kHz step, homing moves between sessions.
 // step() never blocks, allocates, locks, logs or throws on purpose; it talks to the other threads only through the
 // wait-free parts of SharedState.
@@ -67,6 +68,9 @@ class ControlLoop {
   uint64_t applied_generation_ = 0;
   uint64_t watchdog_trip_generation_ = 0;
   uint64_t home_generation_ = 0;
+  Vec7 home_target_ = Vec7::Zero();            // the accepted kHome's joint goal
+  std::optional<double> home_open_width_m_;    // the accepted kHome's finger target during the move
+  bool hold_open_width_next_session_ = false;  // a move with an open width finished: the next session keeps that target
   uint64_t homed_generation_ = 0;
   uint64_t homing_aborted_generation_ = 0;
   Ending ending_ = Ending::kNone;

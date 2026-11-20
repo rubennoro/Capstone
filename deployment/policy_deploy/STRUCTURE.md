@@ -16,7 +16,8 @@ The laptop receives the Pi's frames, runs the policy and drives the PC over the 
 - **policy**: the model on the GPU (C4). It knows nothing about the arm, absolute poses or the PC.
 - **manager**: the episode loop and keyboard; C2 in, C3 out; the laptop → PC clock map; the pose conversions; the
   slow/conclude rule (PLAN §7).
-- **launcher**: `policy_deploy check | run [--mock]` for those three processes only.
+- **launcher**: `policy_deploy check | run [--mock]` for those three processes only, and `policy_deploy use
+  RUN_FOLDER|hold_still` (station.yaml `policy:`/`manager:` from a fetched run, §9.1).
 - **fake_pc**: the Python stand-in for franka_control under `--mock`.
 
 It never starts, stops, configures or reads files of the PC (PLAN rule 2). The PC is started first by the operator
@@ -44,10 +45,10 @@ class; small value types share the file of the class that makes them (old conven
 deployment/policy_deploy/
   STRUCTURE.md                 this file
   DIRECTIONS.md                from scratch on the laptop (outline in §13)
-  PI_PAYLOAD.md                C0: old:contracts/PI_PAYLOAD.md §0 unchanged, plus appendix §3-4 (the internal packet
-                               form) and one note: the live Pi's `skew_ns` has the opposite sign to §0.3's definition
-                               (§0.6), so nothing may use `skew_ns` (§4.2); the c0 msgpack sender and time_sync parts
-                               are dropped
+  PI_PAYLOAD.md                C0: old:contracts/PI_PAYLOAD.md §0 (names and paths updated), plus appendix §3-4 (the
+                               internal packet form) and one note: the live Pi's `skew_ns` has the opposite sign to
+                               §0.3's definition (§0.6), so nothing may use `skew_ns` (§4.2); the c0 msgpack sender and
+                               time_sync parts are dropped
   pyproject.toml               distribution "policy-deploy" (§2.3)
   station.yaml                 the laptop station file (§2.4)
   config/                      every setting of each process, with its default (§2.5)
@@ -57,7 +58,7 @@ deployment/policy_deploy/
                                a guess). Its tcp: block is ignored here; the TCP is contracts/frames.yaml, PLAN §9
   policy_deploy/
     __init__.py                docstring only: importing the package imports nothing
-    __main__.py                python -m policy_deploy check | run  (= launcher.cli.main)
+    __main__.py                python -m policy_deploy check | run | use  (= launcher.cli.main)
     contracts/                 laptop-only contracts and laptop conventions, shared by the subpackages (§3)
       __init__.py              re-exports
       paths.py                 folder(), config_file(name), rigs_dir(), default_station(); config_file("frames") is
@@ -76,11 +77,12 @@ deployment/policy_deploy/
       examples.py              in-memory C0/C1/C4 examples                          adapted (old:contracts/contracts/examples.py:402-694)
     launcher/                  check | run (§9)
       cli.py errors.py session.py check_result.py check_helpers.py managed_process.py processes.py launcher.py
+      use_policy.py
     frames/                    process "frames" (§4)
       __main__.py app.py settings.py errors.py rig_file.py packet_source.py pi_stream_source.py
       recording_packet_source.py frame_decoder.py jpeg_decoder.py ultrawide_store.py pair_rule.py packet_buffer.py
       packet_selector.py camera_health.py receiver.py frames_server.py pi_recording.py packet_pairer.py
-      fake_pi_sender.py fake_pi.py probe.py pi_collect.py _dataproc/
+      fake_pi_sender.py fake_pi.py probe.py pi_collect.py deploy_rig.py _dataproc/
     policy/                    process "policy" (§5)
       __main__.py app.py settings.py errors.py policy_server.py policy_factory.py base_policy.py
       promptable_policy.py hold_still_policy.py key_map.py neutral_observation.py self_check.py probe.py
@@ -489,7 +491,7 @@ read `franka_control/config.yaml`), and that it must coexist with a PC that outl
 
 | Thread | Runs | Owns (sockets) | Blocks at most |
 |---|---|---|---|
-| main | `EpisodeLoop`: rhythm, keys, **every C3 request** (rule H1), health polls, failure decisions, logging, status line | `PcClient` (C3 REQ), a `FramesClient` for `get_health` | one C3 wait (`c3_timeout_s` 0.3 s) + one `get_health` (`timeouts.health_s` 0.05 s) per cycle; `home` waits in heartbeat-period slices |
+| main | `EpisodeLoop`: rhythm, keys, **every C3 request** (rule H1), health polls, failure decisions, logging, status line | `PcClient` (C3 REQ), a `FramesClient` for `get_health` | one C3 wait (`c3_timeout_s` 0.3 s) + one `get_health` (`timeouts.health_s` 0.05 s) per cycle |
 | step worker | `StepWorker`: one job at a time (`config`, `reset` + `prompt`, or `PolicyStep.run`) | a `FramesClient` for `get_frames`, `PolicyClient` (C4) | `timeouts.policy_hang_s` (5 s) |
 | pc listener | `PcListener`: every C2 into `StateHistory`, `PcClock.add_state`, `LinkStats` | the C2 SUB | `listener_poll_s` per receive |
 | keyboard | `KeyboardOperator` reader | none | forever (daemon) |
@@ -517,7 +519,7 @@ main read) and `LinkStats` (one lock). All decisions are made on the main thread
 | `PolicyStep`, `StepJob`, `StepDone`, `StepSkipped`, `NoNewFrame`, `StepTiming` (`policy_step.py`) | one step on the worker (§7) | old:message_comms/message_comms/policy_step.py:81-182 | image times mapped to PC time with one fit snapshot; state age on mapped "now"; `CLOCK_STALE` skip |
 | `StepWorker`, `WorkerResult` | the worker thread | copied | none |
 | `Kind`, `ProblemCode`, `Problem`, `Verdict` (`problems.py`); `FailureMonitor` (`failure_monitor.py`) | the slow/conclude table, one dict `RULES` | old:message_comms/message_comms/problems.py:8-61, failure_monitor.py:20-135 | new codes and texts (§8.5); `check_state` takes PC "now" |
-| `EpisodeLoop`, `Phase`, `LoopProgress` (`episode_loop.py`) | the loop (§6.4) | old:message_comms/message_comms/episode_loop.py | start-up moved to `StartupSequence`; `HeartbeatSender` instead of a bare heartbeat; margins in PC time; `CLOCK_MISMATCH` counter; key dispatch table; `c`/`h` refused while C2 shows `homing`; `HOME_STOPPED`; the `start` ack time kept as `start_ack_pc_ns` (mapped, §8.5); `last_anchor_t_ns` stays laptop time (old line 502) |
+| `EpisodeLoop`, `Phase`, `LoopProgress` (`episode_loop.py`) | the loop (§6.4) | old:message_comms/message_comms/episode_loop.py | start-up moved to `StartupSequence`; `HeartbeatSender` instead of a bare heartbeat; margins in PC time; `CLOCK_MISMATCH` counter; key dispatch table; `c` refused while C2 shows `homing` (the PC's `h`/`g`/`p`; no laptop home); the `start` ack time kept as `start_ack_pc_ns` (mapped, §8.5); `last_anchor_t_ns` stays laptop time (old line 502) |
 | `Operator`, `Key`, `KeyboardOperator`, `ScriptedOperator`, `ScriptEntry` | keys and status line | copied | `Key` lookup through a table (§6.5) |
 | `StatusLine`, `StatusSnapshot` | one line ≤ 120 chars | old:message_comms/message_comms/status_line.py | adds link RTT, C2 rate, clock state, `PC mock` |
 | `SessionLog` and records | the session files (§6.7) | old:message_comms/message_comms/session_log.py | adds `clock.jsonl`, `link.jsonl`, the hello reply and both commits in `session.yaml`, `c3_rtt_ms` in `StepRecord` |
@@ -533,7 +535,7 @@ before that.
 |---|---|---|---|
 | 1 | settings, `SessionLog`, start `PcListener` and `StepWorker` | | `config: <problems>: check station.yaml manager: and config/manager.yaml` |
 | 2 | **C2 arriving**: a valid C2 message | first message | `PC not answering: no C2 state from tcp://<pc>:5620 within 20 s: check that control_deploy run is running on the PC, ASUS_5g, and link.yaml pc.address` |
-| 3 | **H2 wait**: while the newest C2 mode is `running` or `holding`, send nothing on C3, up to `2 × link.watchdog_limit_s` (laptop time since the first C2); also while it is `homing`, up to `timeouts.pc_homing_wait_s` (a `home` started over C3 by an earlier laptop session blocks the PC's REP until it ends, TOP §3.7.2, so a hello would time out) | mode is `idle` or `stopped` | `running`/`holding` past the limit: `the PC is driving an episode for another C3 client: stop the other laptop session, pc_probe or console`; `fault`: `the PC is in fault: <error>: Ctrl-C and restart control_deploy run on the PC`; `homing` past its limit: `the PC is still homing after 60 s: check the PC terminal` |
+| 3 | **H2 wait**: while the newest C2 mode is `running` or `holding`, send nothing on C3, up to `2 × link.watchdog_limit_s` (laptop time since the first C2); also while it is `homing`, up to `timeouts.pc_homing_wait_s` (the PC's `h`/`g`/`p`, or a C3 `home` from another client, which blocks the PC's REP until it ends, TOP §3.7.2, so a hello would time out) | mode is `idle` or `stopped` | `running`/`holding` past the limit: `the PC is driving an episode for another C3 client: stop the other laptop session, pc_probe or console`; `fault`: `the PC is in fault: <error>: Ctrl-C and restart control_deploy run on the PC`; `homing` past its limit: `startup: the PC is still homing after 60 s: check the PC terminal` |
 | 4 | **hellos start**: one hello every cycle (`clock.startup_hello_period_s`) until the map has `clock.min_samples_s` (2 s) and `clock.min_samples` (10) of samples; then one every `clock.hello_period_s` (0.5 s), heartbeats in the other cycles. With `one_way`, the C2 samples since step 2 count too. | clock ready | C3 timeout: `PC not answering: no reply to c3.hello/v1 within 0.3 s: ...` |
 | 5 | **`compare_hello` + laptop checks** on the newest hello reply (`StartupChecks`, §8.4): mismatches, worst gap, home timeout, waypoint lead, 5 ms clock agreement, commit (warning only) | no failure | `hello mismatch: <field>: PC <value>, laptop <value> (<source>): <what to check>`; `clock mismatch at start-up: ...` |
 | 6 | **mode via `get_state`**: `idle`/`stopped` → go on; `homing` → keep beating, ask again every 0.5 s, up to `hello.homing_timeout_s + 5 s`; `running`/`holding` → another client; `fault` → refuse | `idle` or `stopped` | as step 3 |
@@ -549,14 +551,14 @@ launcher's ready timeout for the manager is **130 s** (§9.1), above that, so th
 first. Throughout start-up every cycle also checks the signal flags and, once hellos run, the state rules of §8.5
 (`fault`, `seq` going back, no C2 for `state_lost_s` by laptop arrival).
 
-### 6.4 The loop (phases `IDLE`, `RESETTING`, `RUNNING`, `HOMING`, `DONE`)
+### 6.4 The loop (phases `IDLE`, `RESETTING`, `RUNNING`, `DONE`)
 
 As old:message_comms/STRUCTURE.md §4.8 and §5, with these changes. One `cycle()`, every `link.heartbeat_period_s`:
 
 1. Interrupt flag (Ctrl-C) → quit; terminate flag (SIGTERM from the launcher) → launcher stop.
 2. `monitor.check_state(history.latest(), pc_clock.now_pc_ns(), ...)`; then `listener.error()` (a `PcRestarted`
    becomes `PC_RESTARTED`, any other error `CONTRACT_VIOLATION`).
-3. `heartbeats.beat(now)` (a hello or a heartbeat), except in `HOMING`.
+3. `heartbeats.beat(now)` (a hello or a heartbeat), every cycle once hellos have started (start-up step 4).
 4. A key → its handler (§6.5).
 5. Every `health_poll_ms`: `get_health` → camera `down` concludes.
 6. `RUNNING`, worker idle, nothing submitted this cycle → submit the next step.
@@ -567,17 +569,26 @@ episode ended; else `set_waypoints` (C3, main thread), reply checks (§8.1), the
 step and the tap. A cycle may therefore carry two C3 requests (its keep-alive and a `set_waypoints`); both feed the
 watchdog, so the worst gap of §8.4 still holds.
 
-Episode start (`c`, old §5.3): accepted in `IDLE` with the worker idle, **the clock map ready** (after a long `home`
-the `round_trip` map has had no samples; hint `c: waiting for the PC clock map`) and **the newest C2 mode not
-`homing`** (the PC's own `h`/`g`; hint `c: the PC is homing (its h or g key): wait for idle` through the old
-`_refuse` path; the laptop stays `IDLE` and sends nothing). Then `reset` (+ `prompt`), `start`, start pose =
+Episode start (`c`, old §5.3): accepted in `IDLE` with the worker idle, **the clock map ready** (e.g. after a link gap
+the map is not ready; hint `c: waiting for the PC clock map`) and **the newest C2 mode not `homing`** (the PC's own
+`h`/`g`/`p`; hint `c: the PC is homing (its h, g or p key): wait for idle` through the old `_refuse` path; the laptop
+stays `IDLE` and sends nothing). Then `reset` (+ `prompt`), `start`, start pose =
 `history.latest()` in `pose_source`, phase `RUNNING`. A `start` the PC refuses (`Ack ok: false`, e.g. it began homing
 in between) → back to `IDLE` with the hint `c: the PC refused start: <reason>`, as old
 (old:message_comms/message_comms/episode_loop.py:371-376); never a conclude. The `start` ack's laptop time is mapped
 at once, `start_ack_pc_ns = pc_clock.snapshot().to_pc_ns(start_ack_ns)`: that is the time compared with C2 `t_ns` by
 the `PC_STOPPED` rule (§8.5; old code compared a laptop time with C2 `t_ns`).
 
-Home (`h`, old §5.7): refused locally while the newest C2 mode is `homing` (hint `h: the PC is already homing (its h
+**2026-11-20: the laptop's `h` is removed** (no laptop key moves the arm to a pose; homing and the start pose are the
+PC's `h` and `p`, control_deploy/STRUCTURE.md). `EpisodeLoop._home()`, `Phase.HOMING` and the re-warm after a home are
+gone with it; C3 `home`, `PcClient.home()`, `HOME_STOPPED`/`HOMING_FAILED` stay (the contract). The PC refuses
+`start` unless the arm is at the start pose once `homing.q_start_rad` is set; the laptop shows that as
+`c: the PC refused start: refused: not at the start pose: press h, then p on the PC`. The rest of this paragraph,
+the table and the two paragraphs after it describe the removed laptop home, kept for the record; what still holds of
+them: the launcher never stops the PC, and the immediate stops are the robot's external stop button and the PC
+keyboard `s`.
+
+Home (`h`, old §5.7, removed 2026-11-20): refused locally while the newest C2 mode is `homing` (hint `h: the PC is already homing (its h
 or g key)`; stays `IDLE`, nothing sent, never a conclude). Otherwise heartbeats and hellos pause; `pc.home(interrupted)`
 waits up to `timeouts.home_s` in heartbeat-period slices. The outcome:
 
@@ -605,9 +616,9 @@ episode `aborted` with the reason, stop the threads, FATAL line, exit 1. **The P
 
 ### 6.5 Keyboard
 
-`c` start, `y` success, `n` failure, `s` stop, `h` home (C3 `home`), `q` quit; same meanings and phase rules as
-old:message_comms/STRUCTURE.md §4.9. A key that doesn't fit the phase gets a one-line hint. New (PLAN §7): while the
-newest C2 mode is `homing` (the PC's `h` or `g`), `c` and `h` are refused locally with a hint on the status line; the
+`c` start, `y` success, `n` failure, `s` stop, `q` quit (2026-11-20: `h` removed, §6.4); same meanings and phase rules
+as old:message_comms/STRUCTURE.md §4.9. A key that doesn't fit the phase gets a one-line hint. New (PLAN §7): while the
+newest C2 mode is `homing` (the PC's `h`, `g` or `p`), `c` is refused locally with a hint on the status line; the
 manager stays `IDLE` and never concludes for it (§6.4).
 
 **Extension point for jog keys (PLAN §14, later):** `EpisodeLoop` dispatches through one table
@@ -778,11 +789,11 @@ ack.reason.startswith("stopped:")` (TOP §3.7.2).
 | Method | Request → reply | Timeout | Sent when |
 |---|---|---|---|
 | `hello() -> HelloSample` | `c3.hello/v1` → `c3.hello.reply/v1`; stamps `t_send_ns` just before the request and `t_recv_ns` just after the reply; a plain `RpcClient.request` **without `poll_s` or `cancel`** (a sliced poll adds up to `poll_s` on the receive side only: an asymmetry the estimator would read as offset, old rpc.py:75-76) | `c3_timeout_s` | by `HeartbeatSender`: every cycle in start-up step 4, then every `hello_period_s`, in place of that cycle's heartbeat |
-| `heartbeat()` | `c3.heartbeat/v1` → `ack` | `c3_timeout_s` | every other cycle from start-up step 4, except in `HOMING` |
+| `heartbeat()` | `c3.heartbeat/v1` → `ack` | `c3_timeout_s` | every other cycle from start-up step 4, in every phase |
 | `get_state() -> ArmState` | → `c2.state/v1` | `c3_timeout_s` | start-up step 6 (mode only; never a C2 sample) |
 | `start() -> Ack` | → `ack`; not ok → `IDLE` with a hint (§6.4) | `c3_timeout_s` | `c`, unless C2 shows `homing` |
 | `stop()` | → `ack` (never refused) | `c3_timeout_s` | `y`, `n`, `s`, `q`, Ctrl-C, SIGTERM, conclude |
-| `home(interrupted) -> Ack` | → `ack` at the end of the move: ok, `stopped:` (→ `HOME_STOPPED`), or other not ok (→ `HOMING_FAILED`) | `timeouts.home_s`, in heartbeat-period slices | `h` in `IDLE`, unless C2 shows `homing` (§6.4) |
+| `home(interrupted) -> Ack` | → `ack` at the end of the move: ok, `stopped:` (→ `HOME_STOPPED`), or other not ok (→ `HOMING_FAILED`) | `timeouts.home_s`, in heartbeat-period slices | never by the manager since 2026-11-20 (kept for the C3 contract, §6.4) |
 | `set_waypoints(msg)` | → `c3.set_waypoints.reply/v1`; checks the `chunk_id` echo and the sum | `c3_timeout_s` | each `StepDone` |
 
 No other thread or socket sends C3 (rule H1), so a hung main loop starves the watchdog and the PC stops the arm.
@@ -801,8 +812,8 @@ class HeartbeatSender:
 Each hello's sample goes to `pc_clock.add_hello(...)` and its RTT to `stats`; each heartbeat's RTT to `stats`. A later
 hello whose `t_pc_ns` is below the previous one means **the PC rebooted** (`CLOCK_MONOTONIC` survives a franka_control
 restart; a restart shows as C2 `seq` going back): `PC_RESTARTED` with the reboot text (§8.5). The newest reply is kept
-for `StartupChecks`. `startup_mode(True)` is used in start-up step 4 and again after every `HOMING` that did not
-conclude, until `pc_clock.ready()` (§6.4).
+for `StartupChecks`. `startup_mode(True)` is used only in start-up step 4 (`startup_sequence.py`), until
+`pc_clock.ready()`.
 
 ### 8.3 `PcListener` and the PC clock classes
 
@@ -875,17 +886,18 @@ waypoints from this step, the PC finishes its plan and holds, heartbeats go on. 
 | `PC_BUSY` (new) | C2 `running`/`holding` after the H2 wait, or at step 6 | `StartupSequence` | conclude | `the PC is driving an episode for another C3 client: ...` |
 | `TCP_UNSETTLED` (new) | trained policy, `settled: false`, real PC | start-up step 8 | conclude | as §6.3 step 8 |
 | `CONTRACT_VIOLATION` | any message failing its contract (C1, C2, C3 incl. `error/v1` with a field, non-chunk C4; the client's extra checks; policy config sizes) | `ContractError`, `RemoteError` with field | conclude | `<message>: field '<f>': <detail>: check that both machines run the same commit` |
-| `HOMING_FAILED` | `home` answered not ok **without** the `stopped:` prefix (refused, failed, timed out on the PC), an `error/v1`, or no reply in `home_s` | `pc.home` | conclude | `the PC's homing failed: <reason>: check the arm's path to the home pose` |
-| `HOME_STOPPED` (new) | `home` answered not ok with the `stopped:` prefix (the PC's `s` stopped the move; TOP §3.7.2) | `pc.home` | normal | status line and event `home stopped on the PC: <reason>: the arm holds where it stopped`; `IDLE`; clock map re-warmed (§6.4) |
+| `HOMING_FAILED` | `home` answered not ok **without** the `stopped:` prefix (refused, failed, timed out on the PC), an `error/v1`, or no reply in `home_s` | `pc.home` | conclude | `the PC's homing failed: <reason>: check the arm's path to the home pose` (contract only: the manager sends no `home` since 2026-11-20) |
+| `HOME_STOPPED` (new) | `home` answered not ok with the `stopped:` prefix (the PC's `s` stopped the move; TOP §3.7.2) | `pc.home` | normal | status line and event `home stopped on the PC: <reason>: the arm holds where it stopped`; `IDLE` (contract only: the manager sends no `home` since 2026-11-20) |
 | `STARTUP` | §6.3 not done in time | `StartupSequence` | conclude | `startup: <what> within 20 s (<why>): check <process>` |
 | `OPERATOR_SCRIPT`, `INTERNAL_ERROR` | as old | | conclude | as old |
 | `EPISODE_STOP` | `s` | key | episode ends | `stop`, record `stopped`, back to `IDLE` |
 | `OPERATOR_STOP` | `q`, Ctrl-C | key, SIGINT | stop | `stop`, record `stopped`, exit 0 |
 | `LAUNCHER_STOP` (was `DEPLOY_STOP`) | SIGTERM from the launcher | signal | stop | `stop`, record `aborted` (`stopped by the launcher: another process exited`), exit 0 |
 
-Not problems (no code, never a conclude): `c` or `h` refused locally while the newest C2 mode is `homing` (the old
-`_refuse` path: a hint on the status line, and a scripted operator retries the key until `operator_script_wait_s`);
-a `start` the PC refuses (event `start_refused`, a hint, back to `IDLE`, as old). Both are in §6.4.
+Not problems (no code, never a conclude): `c` refused locally while the newest C2 mode is `homing` (the PC's `h`, `g`
+or `p`; the old `_refuse` path: a hint on the status line, and a scripted operator retries the key until
+`operator_script_wait_s`); a `start` the PC refuses (event `start_refused`, a hint, back to `IDLE`, as old). Both are
+in §6.4.
 
 `from_exception` maps as old §4.7, with: `TransportTimeout` on `c3.*` (not `home`) → `PC_NOT_ANSWERING`;
 `RemoteError` from `PC` with `field` → `CONTRACT_VIOLATION`, without → `PC_REFUSED`; `PcRestarted` →
@@ -894,12 +906,15 @@ stops following and holds, and the next laptop run reconnects (§6.3).
 
 ### 8.6 `pc_probe` (read-only)
 
-`python -m policy_deploy.manager.pc_probe --station FILE [--seconds 30] [--local] [--check] [--json]`. A C3 client,
-so never alongside a manager (TOP §2.4). It follows rule H2 first (waits while C2 shows `running`/`holding`/`homing`;
+`python -m policy_deploy.manager.pc_probe --station FILE [--seconds 30] [--local] [--mock] [--check] [--json] [--axes]
+[--start-pose]`. A C3 client, so never alongside a manager (TOP §2.4). It follows rule H2 first (waits while C2
+shows `running`/`holding`/`homing`;
 refuses after the limit). Then for `--seconds`: C2 rate, `seq` gaps, `t_ns` repeats, newest-state age; a hello every
 0.5 s (a burst of 2 s first) and heartbeats in between, with RTT p50/p95/max; **both** PC estimators fed side by side
 (a `RoundTripPcClock` and an `OneWayPcClock`) and their offsets, drifts and difference printed every second; the hello
-reply and `compare_hello`. It never sends `start`, `stop`, `home` or `set_waypoints`. `--check` runs 2 s and prints
+reply and `compare_hello`. `--axes` (2026-11-19): the TCP axes in words; `--start-pose` (2026-11-20): the C2 joints as
+a `q_start_rad:` line, the TCP height, its tilt from straight down and horizontal direction, the gripper width, and
+the demos' start for comparison. It never sends `start`, `stop`, `home` or `set_waypoints`. `--check` runs 2 s and prints
 one JSON check line per §8.4 row and per link fact (C2 rate, RTT, clock agreement), for the launcher (§9.2). Its
 clock agreement is judged with the map of `link.yaml clock.estimator` (the one_way map when so configured), as `run`
 judges it at start-up step 5; with round_trip the row would pass by construction, since that map is fitted from the
@@ -922,6 +937,7 @@ not carried over (PLAN §8.2, §9).
 | `FakePcProcess`, `FramesProcess`, `PolicyProcess`, `ManagerProcess` (`processes.py`) | old `launch.py` files of each folder | one class per process in one file; their checks call subprocesses (`frames.rig_file --json`, `policy.self_check`, `manager.self_check`) |
 | `Launcher` (`launcher.py`) | old:deploy/deploy/launcher.py | `ORDER = ("fake_pc", "frames", "policy", "manager")`, `fake_pc` only with `--mock` and `launcher.fake_pc: true` (the default); no geometry check |
 | `cli.py`, `errors.py` | copied | command name `policy_deploy` |
+| `use()`, `choose()`, `UseError` (`use_policy.py`, 2026-11-19) | new | `policy_deploy use RUN_FOLDER\|hold_still`: rewrites only the `policy:` and `manager:` sections of station.yaml from a fetched training run (other lines kept), validated by `Station.load` before writing; options `--prompt-index`, `--task`, `--prompt-dataset`, `--prompt-split`, `--precision`, `--diffusion-steps` (≥ 1), `--exec-h` (1..16), `--station` |
 
 Ready files and timeouts (`config/launcher.yaml`, overridable in `station.yaml launcher:`):
 
@@ -1113,7 +1129,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy_torch/bin/python -m pytest
 | `tests/contracts` | old:contracts/tests/test_c1.py, test_c4.py (+ `kind`), test_pi_stream.py, test_c0.py (internal packet only), the C0/C1/C4 part of test_examples.py; old:process_frames/tests/test_clock_map.py (now `clock_fit`, plus `to_remote_ns`) |
 | `tests/frames` | old:process_frames/tests/ test_imageprep.py, test_vendored_camera_model.py, test_imageprep_live.py, test_copies.py, test_rig_file.py, test_settings.py, test_frame_times.py, test_packet_pairer.py (rewritten for nearest pairing, §12.2), test_packet_buffer.py, test_packet_selector.py, test_camera_health.py, test_receiver.py (JPEG only), test_pi_recording.py (JPEG only), test_fake_pi_sender.py (`pi_v1` only), test_frames_server.py, test_pipeline.py (`pi_v1`), test_real_episode.py (skipped without the recorded episode, `RECORDED_EPISODE`), test_pi_v1.py, test_pi_collect.py, test_main.py, test_decoders.py (JPEG part); dropped: test_clock_sync.py, the H.264 tests, test_launch.py (moves to `tests/launcher`) |
 | `tests/policy` | every file of old:policy/tests (test_settings, test_make_chunk, test_key_map, test_hold_still_policy, test_policy_server, test_neutral_observation, test_policy_factory, test_import_without_torch, test_app, test_warm_up, test_self_check, test_probe, test_diffusion_policy, test_checkpoint_loader); test_launch.py moves to `tests/launcher`; new test_promptable_diffusion_policy (`POLICY_TEST_CHECKPOINT` + `POLICY_TEST_PROMPT_DATASET` add the real run_001 check) |
-| `tests/manager` | old:message_comms/tests/ test_pose_math.py, test_pose_converter.py, test_state_history.py, test_state_listener.py (now `PcListener`), test_clients.py (now `PcClient` incl. hello), test_policy_step.py, test_step_worker.py, test_episode_loop.py, test_failure_monitor.py, test_operator.py, test_status_line.py, test_session_log.py, test_settings.py, test_main.py, test_flow.py (against `FakePc` instead of `FakeFrankaControl`); helpers `fakes.py`, `harness.py`, `raw_server.py`, `reference_pose_utils.py` |
+| `tests/manager` | old:message_comms/tests/ test_pose_math.py, test_pose_converter.py, test_state_history.py, test_state_listener.py (now `PcListener`), test_clients.py (now `PcClient` incl. hello), test_policy_step.py, test_step_worker.py, test_episode_loop.py, test_failure_monitor.py, test_operator.py, test_status_line.py, test_session_log.py, test_settings.py, test_main.py, test_flow.py (against `FakePc` instead of `FakeFrankaControl`); helpers `tests/manager_fakes.py`, `manager_harness.py`, `manager_raw_server.py`, `manager_reference_pose_utils.py` (new: `manager_pc_fakepc.py`, `manager_pc_harness.py`, `manager_servers.py`) |
 | `tests/launcher` | old:deploy/tests/ test_station.py (new schema), test_config_merge.py, test_session.py, test_check_result.py, test_check_helpers.py, test_managed_process.py, test_launcher.py (new order), test_check.py, test_mock.py, test_cli.py, and each folder's test_launch.py as process-class tests; dropped: test_geometry.py, test_gripper_file.py, test_tcp_triangle.py |
 
 ### 12.2 New
@@ -1130,8 +1146,8 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy_torch/bin/python -m pytest
 | `tests/manager/test_startup_checks.py` | an equal hello passes; each `compare_hello` field differing refuses naming it; worst gap 0.57 vs watchdog 1.0 passes, vs 0.5 refuses with both values; `home_s ≤ homing_timeout_s` refuses; `exec_h` 16 with `max_lead_s` 0.5 refuses; clock agreement 4.9 ms passes, 5.1 ms refuses (shortest-RTT hello used); commit differing → warning only, `unknown` → warning; settled rule: `diffusion` + `settled: false` + real PC refuses, + mock PC passes, `hold_still` always passes |
 | `tests/manager/test_startup_sequence.py` | with `FakePc` in-process and `FakeClock`: the launcher's manager timeout (130 s) exceeds `startup_s + pc_homing_wait_s + homing_timeout_s + 5` from the default configs; the exact order of §6.3 (the fake's request log shows no C3 before the H2 wait ends, then hellos, `get_state`, heartbeats); **H2**: an orphaned `holding` turns `stopped` by the fake's watchdog within 2 × watchdog and start-up continues; a `holding` that stays (hellos from another "client" hook) → `PC_BUSY` after the limit, nothing sent; `homing` at start → no C3 until `idle`; `homing` at step 6 → waits, then goes on; `fault` → refused at once with the error text; no C2 → `PC not answering` after `startup_s`; hello mismatch → refused; ready file only after cameras ok and config checked |
 | `tests/manager/test_heartbeat_sender.py` | one C3 request per `beat`; a hello every `hello_period_s` replacing the heartbeat; every cycle in start-up mode; samples reach the clock; RTTs reach `LinkStats`; a hello `t_pc_ns` going back → `PC_RESTARTED` with the reboot text; hello uses no `poll_s`/`cancel` |
-| `tests/manager/test_failure_rows_pc.py` | each new row end to end against `FakePc`: `restart()` → `PC_RESTARTED`; `stall(0.4)` → C3 timeout `PC_NOT_ANSWERING`; C2 stall 2.1 s (C3 still answering) → `STATE_LOST`; `repeat_t_ns` for 1 s (as after a stopped homing) with C2 still arriving → no `STATE_LOST`; a burst of old states after a stall → `STATE_OLD` skips, never fresh by arrival; watchdog trip → `PC_STOPPED` with PLAN §7's text, and the same for `keyboard_stop()` during an episode; a `stopped` C2 older than the mapped `start` ack is ignored (C2 delayed 30 ms until the ack is mapped, then no PC_STOPPED and still running after 3 steps; fake PC clock +1000 s); `shift_clock(+2 s)` → three skipped sets → `CLOCK_MISMATCH`; `shift_clock(+0.1 s)` with the laptop's refit held (the map 100 ms behind: waypoints accepted, late) → three sets with a future C2 → `CLOCK_MISMATCH`; one skipped set → only `POLICY_LATE`; `h` then `keyboard_stop()` mid-home → `HOME_STOPPED`, `IDLE`, no conclude, the map re-warmed and `c` accepted afterwards; a home refused or timed out → `HOMING_FAILED`; `keyboard_home()` / `keyboard_hand_home()` in `IDLE` → `c` and `h` refused locally (no C3 sent, no conclude), accepted again after `idle`; a `start` refused by the PC → `IDLE` with the hint; `error/v1` without field → `PC_REFUSED`; gate rejection → `GATE_REJECTED`; `stop` sent first in every conclude, the episode `aborted` |
-| `tests/manager/test_pc_probe.py` | against `FakePc`: reads C2, sends only hello/heartbeat (request log), prints both estimators, refuses while `holding` past the H2 limit; `--check --json` lines; with every C2 50 ms late, `--check`'s clock agreement passes with `estimator: round_trip` and fails with `one_way` |
+| `tests/manager/test_failure_rows_pc.py` | each new row end to end against `FakePc`: `restart()` → `PC_RESTARTED`; `stall(0.4)` → C3 timeout `PC_NOT_ANSWERING`; C2 stall 2.1 s (C3 still answering) → `STATE_LOST`; `repeat_t_ns` for 1 s (as after a stopped homing) with C2 still arriving → no `STATE_LOST`; a burst of old states after a stall → `STATE_OLD` skips, never fresh by arrival; watchdog trip → `PC_STOPPED` with PLAN §7's text, and the same for `keyboard_stop()` during an episode; a `stopped` C2 older than the mapped `start` ack is ignored (C2 delayed 30 ms until the ack is mapped, then no PC_STOPPED and still running after 3 steps; fake PC clock +1000 s); `shift_clock(+2 s)` → three skipped sets → `CLOCK_MISMATCH`; `shift_clock(+0.1 s)` with the laptop's refit held (the map 100 ms behind: waypoints accepted, late) → three sets with a future C2 → `CLOCK_MISMATCH`; one skipped set → only `POLICY_LATE`; `keyboard_home()` / `keyboard_hand_home()` in `IDLE` → `c` refused locally with the hint `c: the PC is homing (its h, g or p key): wait for idle` (no C3 `start` or `home` sent, no conclude), accepted again after `idle`; a `start` refused by the PC → `IDLE` with the hint; `error/v1` without field → `PC_REFUSED`; gate rejection → `GATE_REJECTED`; `stop` sent first in every conclude, the episode `aborted` |
+| `tests/manager/test_pc_probe.py` | against `FakePc`: reads C2, sends only hello/heartbeat (request log), prints both estimators, refuses while `holding` past the H2 limit; `--check --json` lines; with every C2 50 ms late, `--check`'s clock agreement passes with `estimator: round_trip` and fails with `one_way`; `--start-pose` (`test_start_pose_lines_from_the_fake_pcs_c2`, `test_start_pose_words_and_q`): the `q_start_rad:` line, TCP height, tilt and direction words, gripper width and the demos' start, read-only (only hello/heartbeat sent) |
 | `tests/fake_pc/test_fake_pc.py` | modes and replies exactly TOP §3.7.2 (one parametrized case per cell, the `homing` column reached through `keyboard_home()`); a C3 `stop` during `keyboard_home()` → `stopped`, during a finished ramp → `idle`; `keyboard_stop()` during a C3 `home` → reply `ok: false` starting `stopped:`, mode `stopped`; `keyboard_hand_home()` → `homing`, REP answering, width back to the commanded width, `idle`; hello fields and `t_pc_ns` on the drifting clock; watchdog arms only in `holding`/`running`, trips to `stopped`, paused while homing; C3 `home` blocks other requests; `seq` from 1, +1, gap on `drop_states`; `t_ns` frozen after `inject_fault` (a loop end), advancing after a gate rejection; follower reaches waypoints at their times, holds after the last; past waypoints skipped, beyond `max_lead_s` rejected with `fault`; an all-skipped set freezes the target, mode `holding`; refusals with the real franka_control texts; replies pass the shared validators |
 | `tests/fake_pc/test_shared_examples.py` | every good C3 request of `deploy_contracts.load_index()` gets a valid reply of the right schema; every broken C3 request gets `error/v1` with its expected field; laptop-only schemas (`c1.frames/v1`, `c4.chunk/v1`), with `policy_deploy.contracts` imported in the test process, → `error/v1` `unknown_schema` (TOP §3.4, §3.11 schema filter) |
 | `tests/launcher/test_check_rows.py` | every row of §9.2 with a passing and a failing input; PC rows parsed from `pc_probe --check --json`; `--mock` skips Pi and PC rows |
@@ -1140,8 +1156,8 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy_torch/bin/python -m pytest
 
 | File | What |
 |---|---|
-| `tests/integration/test_run_mock.py` | `python -m policy_deploy run --mock` as a subprocess with a temporary station (free ports, temporary `session_root`, `manager.operator_script`: `c`, `wait_steps 20`, `y`, `c`, `wait_steps 5`, `s`, `h`, `q`). Exit 0, `policy_deploy: done`, two episodes in `episodes.jsonl` (`success`, `stopped`), increasing `chunk_id`s accepted by the fake PC on its drifting clock (none `rejected`, `max_lead_s` respected), `clock.jsonl` offset ≈ +1000 s, `stop` the last C3 request. A second case with the fake PC starting in `holding` exercises the H2 wait. Skipped without the recorded episode (`RECORDED_EPISODE`) |
-| `tests/integration/test_cross_franka_control.py` | PLAN §10 "across the two", **on the laptop** (TOP §8.10): the laptop's processes against the **real** franka_control code with the fake arm. The binary comes from `FRANKA_CONTROL_BIN` (the libfranka-less build of control_deploy/STRUCTURE.md §8.3); the test is skipped when it is unset, and without the recorded episode (`RECORDED_EPISODE`). Steps: (1) write a temporary franka_control station with only `session_root: <tmp>`; (2) start `$FRANKA_CONTROL_BIN --station <tmp>/fc_station.yaml --mock --local --ready-file <tmp>/fc.ready`, wait for the ready file (30 s), skip if 5620/5630 are busy; (3) run `python -m policy_deploy run --mock` with a temporary laptop station: `launcher.fake_pc: false` (the launcher starts frames with the fake Pi, policy `hold_still`, and the manager, which connects to `127.0.0.1` with the `link.yaml` ports, §9.1), `manager.operator_script`: `c`, `wait_steps 20`, `y`, `h`, `q`; (4) SIGTERM the binary, expect exit 0. Checks: start-up passes `compare_hello` against the C++'s hello (`mock` true, same schemas, `F_T_TCP`, limits, watchdog); one episode of 20 steps with `chunk_id`s accepted on the PC's real clock; `home` answered ok; `stop` sent; the laptop exits 0. Proves the laptop and the C++ speak the same C2/C3, including `hello`, the mode table and `home`. A second case (no episode needed): with the laptop's `PcClient`, `start`, then a `set_waypoints` of 5 whose waypoint 3 is 0.5 m below the box; the real reply lists all 5, the other four with the contract's `not checked: …` text, and `gate_rejection_detail` names `3: outside workspace box by … on z …`; C2 `fault`; SIGTERM exit 0 |
+| `tests/integration/test_run_mock.py` | `python -m policy_deploy run --mock` as a subprocess with a temporary station (free ports, temporary `session_root`, `manager.operator_script`: `c`, `wait_steps 20`, `y`, `c`, `wait_steps 5`, `s`, `q`). Exit 0, `policy_deploy: done`, the session files, two episodes in `episodes.jsonl` (`success`, `stopped`), increasing `chunk_id`s accepted by the fake PC on its drifting clock (none `rejected`, `max_lead_s` respected), `stop` the last C3 request and no `c3.home/v1` sent, `clock.jsonl` offset ≈ +1000 s (within 5 ms of the fake's), anchors mapped to PC time, `c3_rtt_ms` in every sent step. A second case: the fake PC starts in `holding` and another client keeps it there (`start_hold_s`) → nothing on C3 (rule H2), `PC_BUSY` (`FATAL manager: the PC is driving an episode for another C3 client`), exit 1. Skipped without the recorded episode (`RECORDED_EPISODE`) or with the `link.yaml` ports busy |
+| `tests/integration/test_cross_franka_control.py` | PLAN §10 "across the two", **on the laptop** (TOP §8.10): the laptop's processes against the **real** franka_control code with the fake arm. The binary comes from `FRANKA_CONTROL_BIN` (the libfranka-less build of control_deploy/STRUCTURE.md §8.3); the test is skipped when it is unset, and without the recorded episode (`RECORDED_EPISODE`). Steps: (1) write a temporary franka_control station with only `session_root: <tmp>`; (2) start `$FRANKA_CONTROL_BIN --station <tmp>/fc_station.yaml --mock --local --ready-file <tmp>/fc.ready`, wait for the ready file (30 s), skip if 5620/5630 are busy; (3) run `python -m policy_deploy run --mock` with a temporary laptop station: `launcher.fake_pc: false` (the launcher starts frames with the fake Pi, policy `hold_still`, and the manager, which connects to `127.0.0.1` with the `link.yaml` ports, §9.1), `manager.operator_script`: `c`, `wait_steps 20`, `y`, `q`; (4) SIGTERM the binary, expect exit 0. Checks: no fake PC started; start-up passes `compare_hello` against the C++'s hello (`mock` true, same schemas, `F_T_TCP`, limits, watchdog; a `ready` event, no `hello_check` event); one episode `success` of ≥ 20 steps with increasing `chunk_id`s, none rejected, accepted on the PC's real clock; no `home` from the laptop (homing is a PC keyboard key only); the `q` exit; the laptop exits 0. Proves the laptop and the C++ speak the same C2/C3, including `hello`. A second case (no episode needed): with the laptop's `PcClient`, `start`, then a `set_waypoints` of 5 whose waypoint 3 is 0.5 m below the box; the real reply lists all 5, the other four with the contract's `not checked: …` text, and `gate_rejection_detail` names `3: outside workspace box by … on z …`; C2 `fault`; SIGTERM exit 0 |
 
 ## 13. DIRECTIONS.md outline (the laptop, from scratch)
 
@@ -1154,7 +1170,8 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy_torch/bin/python -m pytest
    put the PC's address in `link.yaml pc.address` and the laptop's in `laptop.addresses` (commit, so the PC gets it).
    Going wired later: USB-C adapter, new address in `link.yaml`.
 6. `station.yaml` walk-through: `session_root`, `python.*`, `policy.kind`, `manager.exec_h`.
-7. Mock first: `policy_deploy check --mock`, `policy_deploy run --mock` (keys `c`, `y`, `n`, `s`, `h`, `q`).
+7. Mock first: `policy_deploy check --mock`, `policy_deploy run --mock` (keys `c`, `y`, `n`, `s`, `q`; homing and the
+   start pose are the PC's `h` and `p`).
 8. Frames alone against the live Pi: `python -m policy_deploy.frames`, `frames.probe --save`, `frames.pi_collect`
    (incl. the pair-gap report).
 9. Link alone: `python -m policy_deploy.manager.pc_probe` with the PC running; reading the RTT, the two estimators.
@@ -1185,15 +1202,17 @@ Settled by the lead on 2026-11-13, with PLAN.md and TOP updated to match. Nothin
 4. **Waiting without C3 while C2 shows `homing` at start-up**, up to `pc_homing_wait_s` (60 s), as well as the H2
    wait (§6.3 step 3; PLAN §8.2, TOP §8.2).
 5. **`precision: bf16` is autocast** (weights stay fp32); a weight-cast mode only if §11 shows VRAM is short.
-6. **A C3 `home` stopped by the PC's `s`** replies `ok: false` with the `stopped:` prefix (TOP §3.7.2): `HOME_STOPPED`,
-   shown, phase `IDLE`, clock map re-warmed. A `home` refused with `refused: mode is homing` (a race with the PC's own keys) is a hint, like a refused
-   `start`. Any other not-ok reply or no reply is `HOMING_FAILED` (conclude).
-7. **`c` and `h` are refused locally while C2 shows `homing`** (the PC's `h`/`g`): a hint, `IDLE`, never a conclude
-   (PLAN §7). A `start` refused by the PC is a hint too.
+6. **A C3 `home` stopped by the PC's `s`** (contract only: the manager sends no `home` since 2026-11-20) replies
+   `ok: false` with the `stopped:` prefix (TOP §3.7.2): `HOME_STOPPED`, shown, phase `IDLE`. A `home` refused with
+   `refused: mode is homing` (a race with the PC's own keys) is a hint, like a refused `start`. Any other not-ok reply
+   or no reply is `HOMING_FAILED` (conclude).
+7. **`c` is refused locally while C2 shows `homing`** (the PC's `h`/`g`/`p`): a hint, `IDLE`, never a conclude
+   (PLAN §7). A `start` refused by the PC is a hint too (e.g. `c: the PC refused start: refused: not at the start pose:
+   press h, then p on the PC`).
 8. **Clocks:** `Anchor` carries both `t_ns` (laptop) and `t_pc_ns` (PC); the `start` ack time is mapped to PC time
    before it is compared with C2 `t_ns`; `STATE_LOST` is judged by arrival (liveness), `STATE_OLD` by mapped `t_ns`;
-   a C2 more than 20 ms ahead of the mapped "now" counts toward `CLOCK_MISMATCH` (a map running behind); after a
-   `home` the map re-warms with a hello every cycle; a hello `t_pc_ns` going back means the PC rebooted.
+   a C2 more than 20 ms ahead of the mapped "now" counts toward `CLOCK_MISMATCH` (a map running behind); a hello
+   `t_pc_ns` going back means the PC rebooted.
 9. **The launcher's manager ready timeout is 130 s**, above the longest legal start-up (115 s, §6.3, §9.1).
 10. **The station refuses an explicit list of contract key names** (§2.4), never generic ones.
 11. **The unrequested-`stopped` code is `PC_STOPPED`** (was `ARM_STOPPED`, then `PC_WATCHDOG`), with PLAN §7's text.

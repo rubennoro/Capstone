@@ -1,4 +1,4 @@
-// New (control_deploy/STRUCTURE.md 3.3, 4.3). Fix wave: upper case maps like lower case; IXON off.
+// New (control_deploy/STRUCTURE.md 3.3, 4.3). Fix wave: upper case maps like lower case; IXON off. + p (start pose).
 #include "franka_control/keyboard_reader.h"
 
 #include <poll.h>
@@ -37,6 +37,8 @@ std::optional<Key> KeyboardReader::map(char c) {
   switch (c) {
     case 'h':
     case 'H': return Key::kHomeArm;                 // upper case: caps lock must not turn s into a help line
+    case 'p':
+    case 'P': return Key::kStartPose;
     case 'g':
     case 'G': return Key::kHomeHand;
     case 's':
@@ -47,7 +49,7 @@ std::optional<Key> KeyboardReader::map(char c) {
   }
 }
 
-const char* KeyboardReader::help() { return "keys: h home arm, g home hand, s stop, q quit"; }
+const char* KeyboardReader::help() { return "keys: h home arm, p start pose, g home hand, s stop, q quit"; }
 
 void KeyboardReader::handle(char c) {
   const std::optional<Key> k = map(c);

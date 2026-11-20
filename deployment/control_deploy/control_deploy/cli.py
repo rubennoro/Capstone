@@ -1,7 +1,7 @@
 """control_deploy check | run | console | firewall [--mock] [--local] [--station FILE] (control_deploy/STRUCTURE.md 6.1).
 
   check     the PC's checks (a table; exit 2 on any fail). Never moves the arm, never connects to FCI.
-  run       check, then franka_control on this terminal (keys h home arm, g home hand, s stop, q quit).
+  run       check, then franka_control on this terminal (keys h home arm, p start pose, g home hand, s stop, q quit).
   console   the bring-up C3 client (a second terminal, while run shows idle or stopped; never with the laptop).
   firewall  prints the nftables table for contracts/link.yaml (install it once with sudo).
 """

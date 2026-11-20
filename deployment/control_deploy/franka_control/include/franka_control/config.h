@@ -1,6 +1,7 @@
 // from rnoro/deployment:deployment/franka_control/include/franka_control/config.h @ 91b178b
 // changes: F_T_TCP and watchdog.limit_s are now filled from contracts/frames.yaml and contracts/link.yaml; new fields
 // pc_address, local and the contract file paths; GateConfig::max_lead_s default 1.5 (control_deploy/STRUCTURE.md 3.1).
+// + HomingConfig::q_start_rad and at_pose_tol_rad (key p, the start pose).
 // Every setting of config.yaml (merged with the station's franka_control section), plus the contract files'
 // values, as plain data (control_deploy/STRUCTURE.md section 7).
 #pragma once
@@ -72,6 +73,8 @@ struct WatchdogConfig {
 
 struct HomingConfig {
   Vec7 q_home_rad = Vec7::Zero();
+  std::optional<Vec7> q_start_rad;        // the episode start pose (key p); nullopt (config null): p refused
+  double at_pose_tol_rad = 0.05;          // "at home" (for p) and "at the start pose" (for C3 start), every joint
   double max_joint_speed_rad_per_s = 0.3;
   double min_duration_s = 2.0;
   double timeout_s = 30.0;

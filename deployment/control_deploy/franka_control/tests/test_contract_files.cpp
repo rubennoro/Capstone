@@ -49,7 +49,7 @@ TEST(ContractFrame, TheRealFramesYamlLoadsAndEqualsTheContractLiteral) {   // de
   ASSERT_TRUE(problems.empty()) << problems.front();
   Eigen::Matrix4d want;
   want << 0.7071067811865476, -0.7071067811865476, 0.0, 0.0, 0.7071067811865476, 0.7071067811865476, 0.0, 0.0, 0.0,
-      0.0, 1.0, 0.150, 0.0, 0.0, 0.0, 1.0;
+      0.0, 1.0, 0.23565, 0.0, 0.0, 0.0, 1.0;
   EXPECT_TRUE(f.matrix().isApprox(want, 1e-15));
   // re-normalised through a unit quaternion: orthonormal to rounding
   EXPECT_LT((f.linear().transpose() * f.linear() - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff(), 1e-15);

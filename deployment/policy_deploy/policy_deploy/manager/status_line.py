@@ -1,5 +1,6 @@
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/status_line.py @ 91b178b
-# changes: adds the link RTT, the C2 rate, the clock state and `PC mock` (and the last hint in IDLE); imports.
+# changes: adds the link RTT, the C2 rate, the clock state and `PC mock` (and the last hint in IDLE); imports. Later: no
+# homing line and no h in the keys (homing is a PC keyboard key only; the PC's mode shows as `arm homing`).
 """StatusLine: one line, at most 120 characters, rewritten in place (STRUCTURE.md 6.2): adds the link round trip,
 the C2 rate, the clock state and `PC mock`."""
 from __future__ import annotations
@@ -14,10 +15,9 @@ if TYPE_CHECKING:
     from policy_deploy.manager.episode_loop import Phase
 
 MAX_LEN = 120
-HOMING_LINE = "[homing] keys inactive; Ctrl-C quits; immediate stop: the robot's external stop button"
 KEYS = {                              # by Phase value (Phase lives in episode_loop.py, which imports this file)
     "starting": "keys: q quit",
-    "idle": "keys: c start  h home  q quit",
+    "idle": "keys: c start  q quit",
     "resetting": "keys: s cancel  q quit",
     "running": "keys: y n s q",
     "done": "",
@@ -57,8 +57,6 @@ class StatusSnapshot:
 
 class StatusLine:
     def format(self, snap: StatusSnapshot) -> str:
-        if snap.phase.value == "homing":
-            return HOMING_LINE[:MAX_LEN]
         keys = KEYS[snap.phase.value]
         arm = f"arm {snap.arm_mode or '?'}" + (" (PC mock)" if snap.pc_mock else "")
         link = _link(snap)

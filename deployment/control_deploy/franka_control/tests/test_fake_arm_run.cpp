@@ -2,6 +2,7 @@
 // changes: AppOverrides (free ports, a key pipe) instead of station endpoints; the watchdog numbers from link.yaml
 // (1.0 s); + hello, the keys h g s q through a pipe, stop during homing, the bind address; ShutdownStaysWithinThe-
 // LaunchersStopBudget -> ...WithinTheWrappersStopBudget (same numbers) (control_deploy/STRUCTURE.md 9.1).
+// + key p (the start pose) end to end; MockApp takes station overrides.
 // Label `threads`: short real-time runs of the whole App with --mock (FakeArm + FakeGripper) on free local ports,
 // driven by a test REQ client and a key pipe, watched through a C2 subscriber.
 #include <gtest/gtest.h>
@@ -59,8 +60,9 @@ class Watcher {   // the newest C2 message, read from a SUB socket
 
 // The whole App with --mock on free local ports, a key pipe as its keyboard, a REQ client and a C2 watcher.
 struct MockApp {
-  explicit MockApp(AppOverrides extra = {}, bool with_keys = true) : dir(test::tmpDir("run")) {
-    cl.station = test::writeStation(dir);
+  explicit MockApp(AppOverrides extra = {}, bool with_keys = true, const std::string& station_fc = "")
+      : dir(test::tmpDir("run")) {
+    cl.station = test::writeStation(dir, station_fc);
     cl.session = dir / "session";
     cl.ready_file = dir / "ready";
     cl.mock = true;
@@ -329,6 +331,48 @@ TEST(FakeArmRunThreads, KeyGHomesTheHandAndTheWidthComesBack) {
   const auto idle = m.waitMode("idle", 10.0);
   ASSERT_TRUE(idle);
   EXPECT_TRUE(m.c2->waitFor([&](const msg::ArmState& s) { return std::abs(s.gripper_width_m - w0) < 0.002; }, 2.0));
+}
+
+TEST(FakeArmRunThreads, KeyPGoesFromHomeToTheStartPoseOpensTheHandAndC3StartNeedsIt) {
+  // q_home_rad with joint 6 + 0.45 rad (a 2.8 s move)
+  MockApp m(AppOverrides{}, true,
+            "  homing:\n    q_start_rad: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 2.0207963, 0.7853982]\n");
+  ASSERT_TRUE(m.ready()) << m.fatal;
+  const auto refused = std::get<msg::Ack>(m.call(msg::Start{}));   // at home, not at the start pose
+  EXPECT_FALSE(refused.ok);
+  EXPECT_EQ(refused.reason, "refused: not at the start pose: press h, then p on the PC");
+  m.key('p');
+  ASSERT_TRUE(m.waitMode("homing", 2.0));
+  ASSERT_TRUE(m.waitMode("idle", 10.0));
+  EXPECT_NEAR(std::get<msg::ArmState>(m.call(msg::GetState{})).q[5], 2.0207963, 0.01);
+  // an episode closes the fingers; then h, and p opens them again
+  ASSERT_TRUE(std::get<msg::Ack>(m.call(msg::Start{})).ok);
+  const auto s0 = std::get<msg::ArmState>(m.call(msg::GetState{}));
+  const Pose here = poseFromRowMajor(s0.O_T_TCP_target);
+  const int64_t t0 = monotonicNowNs();
+  std::vector<TrajectoryPoint> pts;
+  for (int k = 1; k <= 5; ++k) {
+    pts.push_back(test::point(t0 + secondsToNs(0.1 * k), here.translation(), Eigen::Quaterniond(here.linear()),
+                              0.08 - 0.012 * k));
+  }
+  EXPECT_EQ(std::get<msg::SetWaypointsReply>(m.call(test::makeSetWaypoints(1, pts))).accepted, 5u);
+  EXPECT_TRUE(m.c2->waitFor([](const msg::ArmState& s) { return s.gripper_width_m < 0.025; }, 3.0));
+  EXPECT_TRUE(std::get<msg::Ack>(m.call(msg::Stop{})).ok);
+  m.key('p');   // not at home
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(m.mode(), "stopped");
+  m.key('h');
+  ASSERT_TRUE(m.waitMode("homing", 2.0));
+  ASSERT_TRUE(m.waitMode("idle", 10.0));
+  EXPECT_LT(std::get<msg::ArmState>(m.call(msg::GetState{})).gripper_width_m, 0.025);   // h leaves the fingers
+  m.key('p');
+  ASSERT_TRUE(m.waitMode("homing", 2.0));
+  const auto idle = m.waitMode("idle", 10.0);
+  ASSERT_TRUE(idle);
+  EXPECT_TRUE(m.c2->waitFor([](const msg::ArmState& s) { return s.gripper_width_m > 0.075; }, 1.0));
+  EXPECT_TRUE(std::get<msg::Ack>(m.call(msg::Start{})).ok);
+  EXPECT_EQ(m.mode(), "holding");
+  EXPECT_TRUE(std::get<msg::Ack>(m.call(msg::Stop{})).ok);
 }
 
 TEST(FakeArmRunThreads, KeyHIsRefusedWhileHoldingAndQQuits) {

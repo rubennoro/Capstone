@@ -5,6 +5,9 @@
 // (control_deploy/STRUCTURE.md 3.3, 4.4). Fix wave: the arm stop (abort or homing timeout) goes through
 // SharedState::stopHomingMove and is re-sent every 100 ms while that move runs and its outcome is unresolved; the
 // hand's stop goes through SharedState::stopHandHoming (never a finger move).
+// + key p, the start pose (onStartPose): the arm's homing path to homing.q_start_rad from home, the hand opened to
+// gripper_width_max_m meanwhile, completion checked against the box and the cone; C3 start refused away from the start
+// pose once homing.q_start_rad is set.
 // The messaging thread's decisions: owns the StateMachine, the SafetyGate, the watchdog and the current plan; turns
 // the loop's, the gripper's and the keyboard's events into state changes; builds every C3 reply and C2 message.
 #pragma once
@@ -46,7 +49,10 @@ class Supervisor {                                 // messaging thread
   // nullopt: homing started; a C3 home gets its reply later through pollHome(), a key homing only a log line.
   std::optional<msg::Ack> onHome(Source source = Source::kC3);
   std::optional<msg::Ack> onHandHome();            // the hand's own homing (key g only); nullopt: started
-  void onKey(Key key);                             // h, g, s from the PC keyboard: acts and logs one line
+  // Key p only: from home, the arm's homing move to homing.q_start_rad (mode homing) and the hand opened; nullopt:
+  // started. Refused while q_start_rad is unset, away from home (homing.at_pose_tol_rad) or outside idle/stopped.
+  std::optional<msg::Ack> onStartPose(Source source = Source::kKeyboard);
+  void onKey(Key key);                             // h, p, g, s from the PC keyboard: acts and logs one line
   std::optional<msg::Ack> pollHome();              // the deferred reply, once homing ended (ok, failed, timeout)
   msg::ArmState stateMessage(uint64_t seq) const;  // C2 content (also the get_state reply)
   Mode mode() const { return sm_.mode(); }
@@ -54,7 +60,9 @@ class Supervisor {                                 // messaging thread
   const msg::GateCounters& gateCounters() const { return gate_counts_; }
 
  private:
-  uint64_t post(LoopCommand::Kind kind, const WaypointTrajectory* plan = nullptr);
+  uint64_t post(LoopCommand::Kind kind, const WaypointTrajectory* plan = nullptr,
+                const std::optional<Vec7>& q_target = std::nullopt,
+                std::optional<double> open_width_m = std::nullopt);
   void toFault(Event e, const std::string& text);
   bool started() const { return sm_.mode() == Mode::kHolding || sm_.mode() == Mode::kRunning; }
   TrajectoryPoint snapshotTarget(int64_t now_ns) const;
@@ -66,6 +74,12 @@ class Supervisor {                                 // messaging thread
   std::string keyRefusal(const std::string& reason) const;
 
   enum class HomingKind { kArm, kHand };
+  enum class ArmGoal { kHome, kStartPose };          // h (and C3 home), or p
+
+  // The arm's homing path shared by h and p: the timeout check, the bookkeeping, the kHome command, the log line.
+  std::optional<msg::Ack> startArmMove(Source source, ArmGoal goal, const Vec7& target,
+                                       std::optional<double> open_width_m);
+  static double maxJointError(const Vec7& a, const Vec7& b) { return (a - b).cwiseAbs().maxCoeff(); }
 
   SharedState& shared_;
   Arm& arm_;
@@ -87,6 +101,8 @@ class Supervisor {                                 // messaging thread
   int64_t next_stats_ns_ = 0;
   Gripper* gripper_ = nullptr;
   HomingKind homing_kind_ = HomingKind::kArm;
+  ArmGoal arm_goal_ = ArmGoal::kHome;
+  double gripper_open_m_ = 0.0;                    // contracts/limits.yaml gripper_width_max_m (p opens to it)
   Source homing_source_ = Source::kC3;
   bool abort_pending_ = false;                     // a stop arrived during this homing
   Source abort_source_ = Source::kC3;
