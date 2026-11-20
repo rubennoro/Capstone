@@ -228,8 +228,10 @@ steps: upload, smoke run, full run, fetch, reports, offline eval.
 Notes:
 - **Long episodes:** `task/umi.yaml` sets `max_sequence_length: 1200`, which is 60 s at 20 Hz. Teleop is slow (5 cm/s
   per axis), so episodes can run longer. `package` warns per episode above 60 s. For prompting, raise the limit with a
-  Hydra override (`train/submit.sh ... -- task.shape_meta.max_sequence_length=<steps>`). Plain diffusion only samples
-  windows, so the limit matters there only if the dataset code enforces it (to be checked in wave 3, §11).
+  Hydra override (`train/submit.sh ... -- task.shape_meta.max_sequence_length=<steps>`). Checked in wave 3: the
+  dataset never reads it (both configs load episodes longer than the limit). Only the prompting model uses it, to size
+  its prompt token budget (`prompt_obs_encoder.py` `get_max_token_count`: `ceil(max_sequence_length /
+  prompt_chunk_n_actions)` chunks), so it matters for behavior prompting only.
 - **Dataset report:** `dataset_report.py` expects handheld files (`episodes.csv`, `validate.json`). `all.sh` treats
   its failure as non-fatal and goes on, so a teleop dataset trains even if that step fails.
 - **Epochs:** `submit.sh` sizes them from `totals.n_steps`; the 60-epoch default stays.
@@ -349,6 +351,17 @@ their task's files. The executor that dispatched them owns the result and report
 | 1 | 3 executors in parallel | **E1** `episode_reader.py` + `paths.py`; **E2** `trajectory.py`; **E3** `images.py` | each one's tests green |
 | 2 | 2 executors in parallel | **E4** `convert.py` (+ the `convert` command); **E5** `package.py` (+ the `package` command) | tests green; reviewer pass over waves 0-2 |
 | 3 | lead + E6 | mock-episode run and training-side check (§11); **E6** `DESIGN.md`, `DIRECTIONS.md` (short, command by command) | a mock dataset loads in `UmiTaskDataset` under both configs |
+
+**Wave 3 results (2026-11-19):**
+- Three `teleop_collect run --mock` episodes, driven through the page's WebSocket by teleop_collect's own
+  `ScriptedPage`, packaged with `teleop_train package`: two success, one fail left out, 729 steps. They recorded the
+  deployment rig and TCP, so both deployment checks passed. No frame or state time was empty.
+- The zip loads with `UmiTaskDataset` under `umi_policy_dunet` and `umi_policy_dunetp`, instantiated as `train.py`
+  does (hydra compose of this worktree's `behavior_prompting`, identical to `rnoro/training` `d58817b`).
+  - Every sample's action is finite and relative, and the normalizer builds.
+  - Prompting builds its prompt chunks.
+  - The local env has no `lmdb`, so the check swapped only the LMDB cache for an in-memory copy, using the same
+    `ReplayBuffer.copy_from_store`.
 
 After wave 3, the first real use: record teleop episodes, `teleop_train package`, then `train/all.sh` with the
 `--config` option of §2 (once it exists on `rnoro/training`).

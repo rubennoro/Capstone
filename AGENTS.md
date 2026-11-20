@@ -10,17 +10,36 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17; teleop added 2026-11-18)
+## Current state (2026-10-17; teleop added 2026-11-18; teleop-train 2026-11-19)
 
 - **Teleop data collection** (this branch, `rnoro/teleop-collect-deploy`): `deployment/teleop_collect/` is built and
   tested; it has not run on hardware yet.
   - What it is: keyboard teleop of the Panda from a browser page on the laptop, recording both Pi streams (MJPEG .mkv)
     and every arm state into `~/CapstoneTeleop/<task>/episode_NNN/`.
   - The PC runs `control_deploy` from `rnoro/final-deployment`, unchanged and never modified. `deployment/contracts/`
-    here is its byte copy.
+    here is its byte copy @ `ea9f7fb` (re-synced 2026-11-19, `fd177e1`).
+    - TCP: +45° about flange z (training's axes), still `settled: false`.
+    - teleop_collect records with the deployment rig `contracts/rigs/rig_pi_v3_640.yaml`.
+    - Mock episode: `~/Downloads/data/incoming/episode_000152`.
+    - `pc_probe --axes` added.
   - Docs: `teleop_collect/{PLAN,STRUCTURE,DESIGN,DIRECTIONS}.md` and `deployment/control_deploy/DIRECTIONS.md`.
-  - Tests: `teleop_collect` has 1295 passing, including the mock run and the cross test against
-    `franka_control --mock`; `contracts` has 582. The env is `~/envs/teleop_collect`.
+  - Tests: `teleop_collect` has 1301 (1295 passing at the re-sync, plus the `--axes` tests), including the mock run
+    and the cross test against `franka_control --mock`; `contracts` has 582. The env is `~/envs/teleop_collect`.
+    - Known flaky: `test_failure_rows.py::test_a_camera_down_mid_episode...`, a race in the test, not fixed.
+
+- **teleop-train** (this branch, `teleop-train/`, commits `745390a`, `fd230a8` + wave 3): teleop episodes → the
+  training `.zarr.zip` + `package.json` that `rnoro/training`'s `train/` uses as-is.
+  - Commands: `teleop_train convert <task>`, then `teleop_train package <task> <dataset>`. Output goes into
+    `~/Capstone/data/<task>/`.
+  - Training: `train/all.sh <task> <dataset>` (no `--pull`/`--package`).
+  - Docs: `teleop-train/{PLAN,DESIGN,DIRECTIONS}.md`.
+  - Tests: 340. The env is `~/envs/teleop_train`.
+  - Images match the deployment bit for bit (same decoder, same `ImagePrep` @ `ea9f7fb`). `package` refuses a TCP or
+    rig other than `deployment/contracts`'.
+  - Verified on real `teleop_collect run --mock` episodes, and the zip loads in `UmiTaskDataset` under
+    `umi_policy_dunet` and `umi_policy_dunetp`.
+  - Not built yet: the `--config` option on `rnoro/training`. `train.sbatch` hard-codes `umi_policy_dunetp`, so a
+    plain-diffusion run needs it.
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -70,7 +89,11 @@ Running status between working sessions. Update it at the end of each conversati
 ## Next time
 
 - Teleop:
-  1. Commit and push `rnoro/teleop-collect-deploy` (after the walk-through).
+  1. Push `rnoro/teleop-collect-deploy` (all local commits so far).
+  - Other branches are read only from this branch's sessions. The `--config umi_policy_dunet|umi_policy_dunetp`
+    option belongs to `rnoro/training` (`submit.sh`/`all.sh` → `train.sbatch`; `eval.sbatch` skips its attention
+    step for plain) and is not built here. Until it exists, `train/all.sh` trains behavior prompting. Then train a
+    first teleop dataset (`teleop-train/DIRECTIONS.md`).
   2. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md`, measuring the workspace box first, then
      the `console` steps.
   3. On the laptop: `teleop_collect/DIRECTIONS.md`. Set the real addresses in `link.yaml` on both machines and in
