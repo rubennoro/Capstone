@@ -8,6 +8,11 @@ Every source reference `fd:<path>` points into `rnoro/final-deployment` @ `2ffe6
 (`~/Capstone-final-deployment/deployment/`). That branch is only read and copied from, never changed.
 Re-synced to `ea9f7fb` (2026-11-19): `deployment/contracts/` (the new `F_T_TCP`, `rigs/rig_pi_v3_640.yaml`), the rig
 file setting and `frames/_dataproc/config.py`; those files' headers name `ea9f7fb`.
+Re-synced to `927a5ba` (2026-11-20): `deployment/contracts/` (`F_T_TCP` 235.65 mm out), the start pose (the PC's key
+`p`; no laptop home any more, §8) and `pc_probe --start-pose`; the files it touched name `927a5ba` in their header.
+No software stops (2026-11-20): only Franka's limits, the operator and a dead link stop the arm; data problems are
+warnings (§7); lead 300 ms, state age 250 ms, assumed PC margins 0.05 m / 10° (the PC's teleop block, §5.3). The PC
+runs fd:`447910b` (`927a5ba` + the default box x 0.20).
 
 ## 1. Goal
 
@@ -66,7 +71,7 @@ Out of scope: converting episodes into training data (done elsewhere, later); a 
 ```
                          LAPTOP: teleop_collect/                                 PC: control_deploy/ (unchanged)
  Pi 5 ──C0 pi_stream/v1──► frames ──R1──► teleop ◄──C2 state 100 Hz────────── franka_control
-       (Wi-Fi ASUS_5g)     (receive,      (episodes,  ──C3 start/stop/home/──►  (gate, 1 kHz loop,
+       (Wi-Fi ASUS_5g)     (receive,      (episodes,  ──C3 start/stop/───────►  (gate, 1 kHz loop,
                             record,        teleop loop,    set_waypoints,       gripper, homing,
                             preview)       PC clock map,   hello, heartbeat)    watchdog, keyboard)
                               ▲            record state)        │                    │ FCI
@@ -95,7 +100,7 @@ REQ/REP on `127.0.0.1` with ports from the station:
 | Contract | Between | Requests (detailed in STRUCTURE.md) |
 |---|---|---|
 | R1 | teleop → frames | `start_recording(episode_dir)`, `stop_recording()` → per-camera frame counts, gaps, first/last times; `get_health` |
-| U1 | ui → teleop | `get_status`, `keys(held, slow, focus)` (sent on every change and at least every 50 ms), `gripper(close|open)`, `select_task(name)`, `create_task(name, description)`, `start_episode`, `stop_episode(outcome)`, `delete_episode(id)`, `home`, `stop_arm` |
+| U1 | ui → teleop | `get_status`, `keys(held, slow, focus)` (sent on every change and at least every 50 ms), `gripper(close|open)`, `select_task(name)`, `create_task(name, description)`, `start_episode`, `stop_episode(outcome)`, `delete_episode(id)`, `stop_arm` |
 | U2 | ui → frames | `get_preview` → the newest JPEG of each camera and its age, plus health |
 
 A C3 request comes only from teleop's main thread: the ui never talks to the PC.
@@ -106,8 +111,16 @@ A C3 request comes only from teleop's main thread: the ui never talks to the PC.
 
 1. **The PC's bring-up**, exactly as fd:control_deploy/DIRECTIONS.md steps 1–10 (not done yet on the real arm). In
    particular:
-   - **Measure the workspace box** and put it in the PC's `control_deploy/station.yaml`. For teleop it is the table
-     guard: the arm stops at its walls and floor (§5.3), so `workspace_min_m` z must keep the fingertips above the table.
+   - **Measure the workspace box** and put it in the PC's `control_deploy/station.yaml`: it is the box of the
+     bring-up and of a policy run (default `workspace_min_m` x 0.20 since fd:`447910b`). **For teleop only its floor
+     is kept** (the PC's teleop block, §5.3): the sides and the cone are opened, the collision thresholds raised, and
+     the margins set to 0.05 m / 10°. The floor (`workspace_min_m` z) is 5 mm below the fingertips resting on the
+     table (about `-0.005`, fd:'s default since `927a5ba`): grasps end at the table. Teleop's moves stay within the
+     gate's 5 cm pull-back margin below it (§5.3), so they never fault there.
+   - **Measure the start pose** (`homing.q_start_rad`, fd:control_deploy/DIRECTIONS.md step 10): hand-guide the arm to
+     the training demos' start, read it with `pc_probe --start-pose`, paste it into the PC's station, then commit and
+     push it on `rnoro/final-deployment` (the one value tying teleop data to the deployment). Every teleop episode
+     starts there (§8).
    - Weigh the rig into the payload, set `gripper.width_offset_m`, and run the `console` steps (`hold`, `move`,
      `rotate`, `gripper`, `watchdog`, `out_of_box`). This is the first time the arm follows waypoints.
 2. **The addresses** in `contracts/link.yaml` (the PC's and the laptop's) and the Pi's address in the laptop's station:
@@ -125,12 +138,11 @@ A C3 request comes only from teleop's main thread: the ui never talks to the PC.
 1. **Physical:** router on, arm controller on, user stop plugged in and within reach, table clear apart from the scene.
 2. **PC, Desk:** `https://172.16.0.2`: unlock the brakes, activate FCI, release the user stop.
 3. **PC:** `control_deploy run`, then wait for `control_deploy: ready`. The fingers home once and the arm holds. It stays up
-   all session.
+   all session. Then `h` (the whole arm to the home pose), then `p` (to the start pose, the hand opens).
 4. **Pi:** press the C button; the LED turns blue.
 5. **Laptop:** `teleop_collect run`. It runs the checks (Pi reachable, C2 arriving, `hello` matching, clock map ready),
-   then **homes the whole arm once** (C3 `home`: a slow joint move of all 7 joints to the PC's home pose; keep a hand on
-   the user stop), waits for both cameras, and prints `teleop_collect: ready: open http://127.0.0.1:<port>`. The page
-   opens in the browser. Every session thus begins from the same pose (§8).
+   waits for both cameras, takes **the arm's pose now as this session's start pose** (§8; the arm does not move), and
+   prints `teleop_collect: ready: open http://127.0.0.1:<port>`. The page opens in the browser.
 
 **Always the PC first, then the Pi, then the laptop.** The page can open earlier, but **Start episode** stays disabled
 until the arm, the link and both cameras are healthy. So the moment Start is clicked, data flows.
@@ -144,38 +156,40 @@ until the arm, the link and both cameras are healthy. So the moment Start is cli
 │ │      live preview     │ │      live preview     │   cams ok 30/ok 30 fps   c2 100 Hz           │
 │ │                       │ │                       │   rtt 4 ms   clock ok   speed normal         │
 │ └───────────────────────┘ └───────────────────────┘                                              │
-│ [Home]  [Start episode]  [Stop arm]            keys: W/S A/D R/F move · I/K J/L U/O rotate ·      │
-│ at home ✓                                             N close · M open fingers · Shift slow        │
+│ [Start episode]  [Stop arm]                    keys: W/S A/D R/F move · I/K J/L U/O rotate ·      │
+│ at the start pose ✓ ready to start                    N close · M open fingers · Shift slow        │
 │ episodes: 000 success 24.1 s   001 fail 31.0 s   002 success 19.8 s  [delete]                      │
 └────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Pick a task** from the list, or **New task** (a name, lowercase letters, digits and `_`, plus an optional
    one-line description). The episode list shows that task's episodes.
-2. **Home the arm before every episode:** the page's **Home** button (C3 `home`), or `h` on the PC's
-   `control_deploy run` (its own key, already there, nothing to change). Either way the whole arm makes a slow joint
-   move to the PC's home pose. **Start episode is enabled only while the arm is at home** (§8: within
-   `home_tolerance_rad` of the joints recorded after the session's first home), so every episode starts from the same
-   pose. Then set up the scene.
-3. **Start episode:** the laptop sends C3 `start` (the PC holds the home pose), frames starts writing, teleop starts
+2. **The start pose before every episode:** `h`, then `p` on the PC's `control_deploy run` (its own keys). **Start
+   episode is enabled only while the arm is at this session's start pose** (§8), so every episode starts from the same
+   pose, the one the deployment starts from. Then set up the scene.
+3. **Start episode:** the laptop sends C3 `start` (the PC holds the start pose), frames starts writing, teleop starts
    recording C2, and the keys go live. The page shows `REC episode 003 0:00`. **Wait about a second before the first
    key**, so the recording opens on the still scene.
 4. **Drive:** hold keys to move, release to stop (§5). `N` closes the fingers (a grasp with force), `M` opens them.
 5. **Stop episode**, then choose **Save: success**, **Save: fail** or **Discard**. Motion stops, the laptop sends C3
    `stop` (the arm holds where it is), and the recording is closed. A saved episode is complete on disk at once;
    a discarded one is deleted.
-6. Repeat from 2: Home, scene, Start. **Delete** removes any listed episode, after a confirm.
+6. Repeat from 2: `h`, `p`, scene, Start. **Delete** removes any listed episode, after a confirm.
 7. **Quit:** close with Ctrl-C in the terminal (the page then shows "disconnected"). The PC keeps holding the arm.
    Then the Pi's C button (LED off); and at the end of the day, on the PC, `q`, then lock the brakes in Desk.
 
-The PC's own keys (`h` home, `g` home the hand, `s` stop, `q` quit) keep working for a second person at the PC. While
-the PC shows `homing`, the page refuses Start and Home with a hint (as policy_deploy does).
+The PC's own keys (`h` home, `p` start pose, `g` home the hand, `s` stop, `q` quit) are the only way to move the arm
+to a pose: the laptop has no home of its own (as policy_deploy since fd:`927a5ba`). While the PC shows `homing`, the
+page refuses Start with a hint.
 
 ### 4.4 When something goes wrong during an episode
 
 - **Hands off the keys:** the arm holds at once (§5.2). The user stop is always the hard stop.
 - **Stop arm** (button, or `Esc`): C3 `stop`, motion off. The open episode is aborted, which means **deleted** (§7).
-  **Except while homing**: the C3 socket waits for the home's reply, so use `s` on the PC or the user stop.
+  Between episodes it also stops a move of the PC's `h` or `p`.
+- **Nothing in the software stops the arm** except Franka's own limits and reflexes, the operator (keys released,
+  Stop arm, the PC's `s`, the user stop) and a dead link (the PC's 1 s watchdog). Data problems (a camera down or
+  stale, a failed recording) are warnings: the episode goes on (§7).
 - The page states anything that ended an episode by itself, in one line (§7).
 
 ## 5. The teleop loop
@@ -211,7 +225,7 @@ PC's 1.0 s watchdog, as checked at start-up against `hello` (fd:STRUCTURE.md §3
   cancel. **Shift** scales both by `slow_factor` (0.25).
 - The base of every command is **the PC's own latest target**: C2 `O_T_TCP_target` from the newest state, at its PC time
   `t_s`. The laptop never integrates a pose of its own, so it cannot drift away from where the arm really is.
-- A `set_waypoints` holds `K` waypoints (2), at PC times `t_k = now_pc + k × Δ` (Δ = 50 ms, so the lead is 100 ms), with
+- A `set_waypoints` holds `K` waypoints (6), at PC times `t_k = now_pc + k × Δ` (Δ = 50 ms, so the lead is 300 ms), with
   `now_pc` from the PC clock map. Each pose is the base pose moved by the twist over `t_k − t_s`: translation added in the
   base frame, rotation applied about the TCP point. The width of every waypoint is the commanded finger width.
 - **Release:** when every key is released, one last set holds the arm. Its single waypoint at `now_pc + Δ` is the base
@@ -231,23 +245,31 @@ PC's 1.0 s watchdog, as checked at start-up against `hello` (fd:STRUCTURE.md §3
 
 ### 5.3 Why teleop never faults the PC at the box and the cone
 
-The PC's gate **pulls back** a waypoint that lies at most `box_margin_m` (1 cm) outside the workspace box or
-`cone_margin_deg` (2°) outside the tilt cone, and **rejects** it beyond that, which is a `fault` and needs a PC restart.
+The PC's gate **pulls back** a waypoint that lies at most `box_margin_m` outside the workspace box or
+`cone_margin_deg` outside the tilt cone, and **rejects** it beyond that, which is a `fault` and needs a PC restart.
+For teleop the PC runs its **teleop block** (the PC's directions, step 8, "Teleop settings"): the box open except the
+floor, the cone 179°, and the margins **0.05 m / 10°**, which teleop assumes (`motion.assumed_pc_box_margin_m`,
+`assumed_pc_cone_margin_deg`). The PC does not report its margins, so `teleop_collect check` shows them as an INFO row
+(`PC margins`) and start-up as a page message: `teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg
+10 (the teleop block of the PC's station.yaml); with smaller PC margins a press into the floor can fault the PC`.
 Every command starts from the PC's target, which the gate has already pulled back onto the boundary. So a command can
-stick out past the boundary by at most `speed × (lead + state age)`. The settings keep that well inside the margins:
+stick out past the boundary by at most `speed × (lead + state age)`. The settings keep that inside `margin_use` (0.8)
+of the margins:
 
-| | Default | Worst step beyond the boundary, lead 100 ms + state age ≤ 50 ms | PC margin |
+| | Default | Worst step beyond the boundary, lead 300 ms + state age ≤ 250 ms | 0.8 × PC margin |
 |---|---|---|---|
-| translation `v_max` | 5 cm/s | 7.5 mm | 10 mm |
-| rotation `ω_max` | 10 °/s | 1.5° | 2° |
+| translation `v_max` | 5 cm/s | 27.5 mm | 40 mm |
+| rotation `ω_max` | 10 °/s | 5.5° | 8° |
 
-- **The guard:** teleop sends no set at all while the newest C2 is older than `state_max_age_ms` (50 ms, mapped PC
-  time), only heartbeats. The arm finishes its last plan (at most the 100 ms lead) and holds, so the bound holds even on
+- **The guard:** teleop sends no set at all while the newest C2 is older than `state_max_age_ms` (250 ms, mapped PC
+  time), only heartbeats. The arm finishes its last plan (at most the 300 ms lead) and holds, so the bound holds even on
   a bad Wi-Fi moment. A holding set built on a stale state could stick out further than the margin, so none is sent.
+  A C2 `seq` gap alone never pauses motion: the planner extrapolates from the newest target, so a lost state only
+  matters at a key change (counted and logged).
 - **Both tilt keys together** (I/K with J/L): the tilt rate is normalised to at most `ω_max`, so the cone bound holds for
   diagonal tilts too. Translation keys are per axis, like the box itself.
-- **What you see:** at a box wall or the cone edge the arm simply stops moving in that direction, and the page shows
-  `at workspace limit` from C2's `gate.pulled_back` counter.
+- **What you see:** at the floor (or a box wall or the cone edge, with the deployment block) the arm simply stops
+  moving in that direction, and the page shows `at workspace limit` from C2's `gate.pulled_back` counter.
 - **Speed is never pushed** (§13.3): these defaults stay, and nothing on the laptop copies the PC's box or cone
   to go faster. The PC's gate stays the one safety authority.
 - **The other gate rules** never trigger with these settings: the speed limit is 0.25 m/s and 1 rad/s, the lead limit
@@ -290,7 +312,7 @@ Recognised only while the page has focus and an episode is live. Losing focus co
       keys.csv                                     every key state change from the ui
       clock_pi.csv                                 the Pi -> laptop fit, once per second
       clock_pc.csv                                 every hello sample (send, receive, t_pc_ns) and the PC fit, once per second
-      events.jsonl                                 start, stop, home, hints, problems, with laptop times
+      events.jsonl                                 start, stop, hints, problems, with laptop times
       COMPLETE                                     written last: an episode without it is incomplete
     episode_001/
 ```
@@ -326,9 +348,10 @@ Recognised only while the page has focus and an episode is live. Losing focus co
 Task and episode number; outcome (`success` or `fail`; an aborted episode is never saved); start and stop times on the laptop and
 the PC; duration. Counts: main and ultrawide frames written, `packet_no` gaps, `frame_no` gaps, `uw_reused`, C2
 messages, C2 `seq` gaps, waypoint sets sent, skipped, shortened, `pulled_back` during the episode, and loop-late cycles
-during the episode. The full `hello` reply (the PC's commit, `mock`, **`F_T_TCP`**, the limits, `max_lead_s`). The
-laptop's commit and whether it was dirty. The rig file's path and its content. The teleop settings (speeds, K, Δ). The final Pi and PC clock
-fits.
+during the episode, and camera-down / recording-failed counts. `warnings`: each data problem seen while recording
+(`code`, `what`, `t_s` since Start), once per code and camera. The full `hello` reply (the PC's commit, `mock`,
+**`F_T_TCP`**, the limits, `max_lead_s`). The laptop's commit and whether it was dirty. The rig file's path and its
+content. The teleop settings (speeds, K, Δ). The final Pi and PC clock fits.
 
 `F_T_TCP` is stored because every pose on C2 is `O_T_F × F_T_TCP`. With it, the flange pose and any other TCP can be
 recovered offline if the TCP definition changes later (fd:PLAN.md §9; §13.9).
@@ -337,14 +360,16 @@ recovered offline if the TCP definition changes later (fd:PLAN.md §9; §13.9).
 
 About 30 main and 30 ultrawide JPEGs per second (about 48 kB and 75 kB each on the live Pi), so about 3.7 MB/s, about
 110 MB for a 30 s episode (the container adds well under 1 %). C2 adds 100 rows per second (well under 1 MB/s). frames writes on its own writer thread with a
-bounded queue. If the queue fills, that is a failure (§7).
+bounded queue. If the queue fills, that is a warning: the episode can then only be discarded (§7).
 
 ## 7. Failure rule
 
-Every problem is one of three kinds:
+Every problem is one of four kinds:
 
 - **Slow → keep going.** Motion pauses (the arm holds) until things catch up, and the recording continues. Counted and
   shown on the page.
+- **Warn → keep going, note it.** A data problem: the arm and the episode go on. Shown once per episode on the page,
+  written to the episode's `events.jsonl` and to `meta.yaml` `warnings`. Outside an episode it is normal.
 - **Episode → abort the episode.** The laptop stops the arm (C3 `stop`). The open episode is **aborted: its folder is
   deleted**, and the reason is shown on the page and written to the session log (`~/teleop_collect_sessions/`), never
   to the data root. The app stays up, ready for the next episode.
@@ -354,24 +379,25 @@ Every problem is one of three kinds:
 
 | Problem | Kind | Reaction |
 |---|---|---|
-| Newest C2 older than 50 ms (mapped), a C2 `seq` gap | slow | no motion this cycle (no set, only heartbeats) |
+| Newest C2 older than 250 ms (mapped) | slow | no motion this cycle (no set, only heartbeats) |
+| A C2 `seq` gap | normal | counted and logged ("a C2 seq gap (motion goes on)"); motion goes on |
 | Wi-Fi spike: a waypoint set skipped entirely by the PC | slow | counted; the next cycle sends a new one |
 | The page lost focus, the ui stopped sending keys (150 ms) | slow | keys released: the arm holds; recording continues |
 | Waypoints pulled back at the box or cone | normal | the arm stops at the limit; `at workspace limit` |
-| A camera stale (no new frame for 0.35 s) during an episode | slow | recording continues; the gap shows in the counts |
-| A camera down (2 s), the Pi stream restarted, during an episode | episode | aborted: "main camera down: check the Pi and ASUS_5g" |
+| A camera stale (no new frame for 0.35 s) during an episode | warn | the arm and recording go on; noted in `meta.yaml` `warnings` |
+| A camera down (2 s), the Pi stream restarted, during an episode | warn | the arm and recording go on: "episode_NNN: main camera down: check the Pi and ASUS_5g; the episode goes on (noted in its meta.yaml)"; it can be saved (teleop-train's frame-gap check will likely exclude it) |
 | The PC `stopped` without the laptop asking (its watchdog, or `s` on the PC) | episode | aborted: "the PC stopped the arm" |
-| The PC `homing` started from its keyboard during an episode | (cannot happen) | the PC refuses `h`/`g` while `running`/`holding` |
+| The PC `homing` started from its keyboard during an episode | (cannot happen) | the PC refuses `h`/`p`/`g` while `running`/`holding` |
 | Operator **Stop arm** / Esc | episode | aborted: "operator stop" |
-| frames' write queue full, a disk write error | episode | aborted: "recording could not keep up / disk error", plus the file |
+| frames' write queue full, a disk write error, during an episode | warn | the arm goes on; Save is refused ("this episode cannot be saved (...): Discard it"), only Discard works |
+| The same found only at Stop (after the C3 stop) | episode | the episode deleted: "recording could not keep up / disk error" |
 | A camera down, or the clock map not ready, **between** episodes | normal | Start is disabled, with the reason |
 | No C2 for 2 s, a C3 timeout | conclude | "PC not answering: check franka_control on the PC and the link" |
 | C2 `seq` goes backwards | conclude | "franka_control restarted on the PC" |
 | The PC reports `fault` (reflex, rejected waypoint, lost FCI) | conclude | the PC holds; on the PC Ctrl-C and `control_deploy run` again (release the user stop after a reflex) |
 | Clock mismatch (fd:PLAN.md §5.6), `hello` disagreeing at start-up | conclude | names the field |
 | A message failing its contract (C0, C2, C3, R1, U1, U2) | conclude | names the message and field |
-| A C3 `home` answered `ok: false` with `stopped:` | normal | the arm holds where it stopped; hint |
-| Any other `home` failure | conclude | as policy_deploy |
+| Start refused by the PC with `refused: not at the start pose` | normal | nothing recorded; the learned start pose is dropped (§8); `the PC refused start: ...` |
 | frames, teleop or ui exits | conclude | the launcher stops the rest |
 | At start-up: anything `check` finds wrong, the PC in `running`/`holding` (another C3 client) or `fault` | conclude | refuses to start and says why |
 | Operator Ctrl-C | conclude (normal) | `stop`; an open episode aborted (deleted); exit 0. The launcher prints `stopped by Ctrl-C`; teleop logs "stopped by the launcher (Ctrl-C, or another process exited)", since it only sees the launcher's SIGTERM |
@@ -384,24 +410,40 @@ Every problem is one of three kinds:
 As fd:policy_deploy/STRUCTURE.md §6.3, without the policy: C2 arriving → H2 wait (no C3 while C2 shows
 `running`/`holding`, up to 2× the watchdog, or `homing`, up to 60 s; `fault` refuses) → hellos every cycle until the PC
 clock map is ready (≥ 2 s and ≥ 10 samples) → `compare_hello` (schemas, `mock`, `F_T_TCP`, the limits, the watchdog)
-and the laptop's budget checks → `get_state` shows `idle`/`stopped` → heartbeats → **C3 `home`: the whole arm to the
-PC's home pose** (`home_on_start: true`; a `stopped:` reply, i.e. someone pressed `s` on the PC, leaves the arm where it
-stopped and start-up goes on; any other failure concludes) → hellos every cycle again until the clock map is ready
-(it gets no samples during the home, as in policy_deploy) → frames reports both cameras ok → the data root is writable
-→ ready.
+and the laptop's budget checks → `get_state` shows `idle`/`stopped` → heartbeats → frames reports both cameras ok →
+the data root is writable → **the start pose: the arm's pose now** (from the newest C2, when it shows `idle` or
+`stopped`; while the PC is moving the arm, the pose after that move) → ready. **No step moves the arm.**
 
-**At home, before every episode.** The laptop keeps a **home reference**: the joints `q` from C2 right after a home
-that ended in `idle`. A C3 `home` it sent (the start-up one or the Home button) always sets it. A PC `h` seen on C2 as
-`homing` → `idle` sets it only while no reference is known, and only if the arm actually moved during that homing, so
-the PC's `g` (hand homing, the same `homing` mode) never counts. Start episode is enabled only while every joint of the newest C2 is within `home_tolerance_rad`
-(0.01 rad) of that reference and the mode is `idle` or `stopped`; otherwise the page says `home the arm first (Home, or
-h on the PC)`. The laptop never needs the PC's `homing.q_home_rad` itself: it learns the pose from the arm.
+**The start pose, before every episode.** The PC owns it: its key `p` moves the arm from home to
+`homing.q_start_rad` (the training demos' start, measured once by hand-guiding, §4.1), and once that is set its C3
+`start` is refused anywhere else (`refused: not at the start pose: press h, then p on the PC`). The laptop never reads
+the PC's station; it learns the pose from the arm, as follows:
 
-**Why the laptop homes, not `control_deploy run`.** `control_deploy` stays unchanged (rule 2): at its own start it homes
-only the fingers and holds the arm where it is. So the first thing `teleop_collect` does once the link is up is the
-same C3 `home` the page's Home button sends. The PC's `h` key does the same by hand. A commit different from the PC's is expected (this branch versus
-`rnoro/final-deployment`). It is shown and recorded, never refused. The `settled` rule of fd:PLAN.md §9 is about a
-trained policy and does not apply to teleop.
+- **At start-up:** the operator pressed `h`, then `p` on the PC before `teleop_collect run`, so the arm's pose at the
+  end of start-up is the **candidate** (joints `q` and the TCP target position).
+- **Until confirmed:** a C2 `homing` → `idle` in which the arm moved (a joint by more than `start_pose.tolerance_rad`
+  or the TCP target by more than `start_pose.tolerance_m`) replaces the candidate with the pose after it: the PC's
+  `h`, then `p` end at the start pose. The PC's `g` (the hand only, the same `homing` mode) moves neither and never
+  counts.
+- **The PC has the final say:** the first start it accepts **confirms** the candidate, fixed for the session. A start
+  it refuses with `refused: not at the start pose` drops the candidate; the pose after the PC's next move is the new
+  one.
+
+Start episode is enabled only while every joint of the newest C2 is within `start_pose.tolerance_rad` (0.01 rad) of the
+start pose, its TCP target within `start_pose.tolerance_m` (5 mm), and the mode is `idle` or `stopped`. Otherwise the
+page says `put the arm at the start pose: h, then p on the PC` (none known), `not at the start pose: h, then p on the
+PC`, or `the PC refused the start here (not the start pose): press p on the PC`.
+
+**With `homing.q_start_rad` unset** the PC refuses `p` and checks nothing at `start`: the operator presses only `h`,
+the start pose is home, and the first start confirms it. **The start pose must be the same for collecting and for
+deploying:** a policy trained on demos that started at home must be deployed with `homing.q_start_rad` unset too, or
+the demos recorded again once it is set.
+
+**Why the laptop never moves the arm to a pose.** `control_deploy` stays unchanged (rule 2), and since fd:`927a5ba`
+homing and the start pose are its keyboard keys only (policy_deploy has no laptop home either). At its own start it
+homes only the fingers and holds the arm where it is, so the operator presses `h`, then `p` there. A commit different
+from the PC's is expected (this branch versus `rnoro/final-deployment`). It is shown and recorded, never refused. The
+`settled` rule of fd:PLAN.md §9 is about a trained policy and does not apply to teleop.
 
 ## 9. What is copied, and from where
 
@@ -424,7 +466,7 @@ All unit tests run on the laptop without the Pi, the arm or a GPU (rule 7).
 
 - **Contracts:** R1/U1/U2 examples pass their validators and broken ones fail. The copied C2/C3 code keeps its tests.
 - **Teleop step:** twist from keys (cancelling, slow mode, stale keys = released); waypoint times and poses for a given
-  base state; the release set; the `N`/`M` finger commands; Start refused away from home; the margin bound of §5.3 for every key combination and every state
+  base state; the release set; the `N`/`M` finger commands; Start refused away from the start pose; the margin bound of §5.3 for every key combination and every state
   age up to the guard; no motion while C2 is too old.
 - **Recorder:** every frame of each `.mkv` demuxes to exactly the JPEG bytes that arrived, and `video_index` matches; the CSV rows; a reused ultrawide not written
   twice; `COMPLETE` last; an aborted or incomplete episode deleted; delete; numbering with gaps.
@@ -492,11 +534,11 @@ them).
 1. **PLAN.md and STRUCTURE.md against the code:** every class, contract, config key, failure row (§7) and the episode
    layout (§6).
 2. **Copies:** each copied file diffed against its fd: source at the commit its header names (`2ffe641`, or `ea9f7fb`
-   after the re-sync), and every difference listed in its header.
+   / `927a5ba` after the re-syncs), and every difference listed in its header.
    `deployment/contracts/` byte-identical to fd:contracts/ (only `link.yaml` addresses may differ, and only when the user
    set them).
-3. **`rnoro/final-deployment` untouched:** `~/Capstone-final-deployment` still at `ea9f7fb` (was `2ffe641`) with a clean
-   `git status`.
+3. **`rnoro/final-deployment` untouched:** `~/Capstone-final-deployment` still at `927a5ba` (was `2ffe641`, then
+   `ea9f7fb`), never changed from this branch's sessions.
 4. **The dependency rules:** no import of `policy_deploy` or `control_deploy`; process subpackages import only
    `teleop_collect.contracts` and `deploy_contracts`.
 5. **Safety:** the §5.3 bound in code and tests (speeds, lead, state-age guard, stale keys = released, focus loss, the
@@ -520,7 +562,7 @@ deviates from this plan) and commits only after the user agrees. No push without
 
 | File | Machine | Covers |
 |---|---|---|
-| `deployment/control_deploy/DIRECTIONS.md` | the PC | getting `rnoro/final-deployment` on the PC, the env, the `franka_control` build, the arm cable, `link.yaml`, the measured arm values (the workspace box first), the bring-up `console`, the daily `control_deploy run`, and the keys (`h` before every episode). Documents only: the PC's code stays `control_deploy` from `rnoro/final-deployment`, unchanged (rule 2). It shortens fd:control_deploy/DIRECTIONS.md to what teleop collection needs. The real addresses go into the PC checkout's `contracts/link.yaml` as a local edit, never committed to `rnoro/final-deployment`. |
+| `deployment/control_deploy/DIRECTIONS.md` | the PC | getting `rnoro/final-deployment` on the PC, the env, the `franka_control` build, the arm cable, `link.yaml`, the measured arm values (the workspace box first), the bring-up `console`, the start pose (`homing.q_start_rad`), the daily `control_deploy run`, and the keys (`h`, then `p` before every episode). Documents only: the PC's code stays `control_deploy` from `rnoro/final-deployment`, unchanged (rule 2). It shortens fd:control_deploy/DIRECTIONS.md to what teleop collection needs. The real addresses go into the PC checkout's `contracts/link.yaml` as a local edit, never committed to `rnoro/final-deployment`. |
 | `deployment/teleop_collect/DIRECTIONS.md` | the laptop | the code, `~/envs/teleop_collect`, `link.yaml` and the Pi's address, `run --mock`, `check`, the session routine (PC, Pi, laptop), the page and its keys, episodes on disk, the tools (`pi_collect`, `pc_probe`), and stopping. |
 
 Rules for both:
@@ -555,21 +597,23 @@ All settled with the user on 2026-11-18; nothing is open.
 2. **Rotation axes and key map:** the twist turns the hand about its own approach axis, whatever its tilt. The tilts
    lean it forward/back and left/right about the robot base's axes, pivoting at the fingertip point (§5.2, §5.4).
 3. **Speeds:** never pushed. 5 cm/s, 10 °/s, slow ×0.25, with the PC's gate as the only safety authority (§5.3).
-4. **Aborted episodes are deleted**, whatever ended them (a problem, Stop arm, a conclude, Ctrl-C, a crash). The reason
-   goes to the page and the session log only (§7).
+4. **Aborted episodes are deleted**, whatever ended them (the PC stopping the arm, Stop arm, a conclude, Ctrl-C, a
+   crash). The reason goes to the page and the session log only (§7). Data problems never abort since 2026-11-20:
+   they are warnings in the episode's `meta.yaml`; a failed recording can only be discarded.
 5. **Numbering:** episode numbers just count up. Deleted or discarded numbers are never reused, so gaps are normal (§6.1).
 6. **Images:** one MJPEG video per camera holding the received JPEGs unchanged (§6.1).
 7. **No pre-roll:** the recording starts at the Start click, and the operator waits about a second before the first key
    (§4.3).
 8. **A lost or faulted PC is a failure:** conclude, with the one-line reason; rerun `teleop_collect run` (§7).
 9. **The TCP:** the `F_T_TCP` in `contracts/frames.yaml` as the PC runs it now (since `ea9f7fb`: training's TCP axes,
-   +45 deg about flange z, fingertips 150 mm out). Training and the deployed policy both use
+   +45 deg about flange z; since `927a5ba`: fingertips 235.65 mm out, the printed finger adapter's CAD). Training and the deployed policy both use
    the same robot TCP, so the teleop data is consistent; `F_T_TCP` is saved with every episode. Not part of this branch:
    to deploy a teleop-trained policy, `policy_deploy` refuses any trained policy while `frames.yaml` says
    `settled: false`. That flag is a `rnoro/final-deployment` matter for later.
 10. **Fingers:** `N` closes (a grasp with force), `M` opens fully. There is no toggle (§5.2, §5.4).
-11. **Homing:** the whole arm is homed once at session start by `teleop_collect` (§8), and again **before every episode**
-    with the page's Home button or the PC's `h`. Start is enabled only at home (§8), so every episode starts from the
-    home pose.
+11. **The start pose** (changed 2026-11-20 with fd:`927a5ba`; was a laptop home): no laptop home at all. The operator
+    presses `h`, then `p` on the PC before `teleop_collect run` and **before every episode**; teleop takes the arm's
+    pose at start-up as the session's start pose, and the PC's first accepted start confirms it. Start is enabled only
+    there (§8), so every episode starts from the pose the deployment starts from.
 12. **Metadata:** only what helps policy training: the task name and its one-line description. No operator names or
     free-text notes.

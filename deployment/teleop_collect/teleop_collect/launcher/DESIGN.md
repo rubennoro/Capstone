@@ -75,6 +75,11 @@ stop in reverse (ui, teleop, frames, fake_pc): SIGTERM, stop_timeout_s, SIGKILL
   - `mock episode` (`meta.json` present) and `fake Pi port` free (`--mock`).
 - **teleop:**
   - `U1 port` free;
+  - `PC margins` (INFO, also under `--mock`): `teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg 10
+    (the teleop block of the PC's station.yaml); with smaller PC margins a press into the floor can fault the PC`, from
+    `teleop.motion`. The PC never reports its margins, so this can only be shown, not checked; FAIL only when the two
+    keys cannot be read. The text is a copy of `teleop.motion.planner.ASSUMED_MARGINS` (the launcher imports no
+    process subpackage);
   - not under `--mock`: the rows `python -m teleop_collect.teleop.pc_probe --station S --check --json` prints, one per
     JSON line, or one failing `PC` row. The PC commit WARN is one of pc_probe's own rows.
   - under `--mock`: an INFO `PC` row (the fake PC, or the cross test's `franka_control --mock --local`).
@@ -98,8 +103,10 @@ stop in reverse (ui, teleop, frames, fake_pc): SIGTERM, stop_timeout_s, SIGKILL
 - **The browser** opens only on ready, and not with `--no-browser` or `ui.open_browser: false`. On Linux it also needs
   `DISPLAY`/`WAYLAND_DISPLAY`: without a display, `webbrowser` would start a console browser in the terminal. When it
   cannot open one, one line says to open the page by hand, and the run goes on.
-- **A note before teleop starts** when `teleop.home.on_start` is true. The arm then homes once, so "keep a hand on the
-  user stop" (PLAN §4.2 step 5).
+- **A note before teleop starts** (PLAN §4.2 step 5): `teleop_collect: teleop: the start pose is the arm's pose at
+  start-up: press h, then p on the PC first` (with `--mock`: `...: the fake PC starts at its start pose`). teleop's
+  start-up never moves the arm (no start-up home since 2026-11-20, as final-deployment @ 927a5ba), so there is no
+  "keep a hand on the user stop" note any more.
 - **One environment:** `python()` is `sys.executable`. There is no station `python:` section.
 - **Timeouts** come from `config/launcher.yaml`. teleop's 150 s is above its longest legal start-up (20 + 60 + 30 +
   5 = 115 s), so teleop's own FATAL line always comes first.
@@ -115,6 +122,7 @@ Every file is adapted from `pd:launcher/` @ 2ffe641, and each header lists its c
 - The `ready: open` line, the browser, the `starting` line and the teleop note.
 - The disk row looks under `data_root`, plus the `data_root` row.
 - The frames rows drop `imports` and the C1 port, and add the R1 and preview ports.
+- The teleop rows add `PC margins` (2026-11-20).
 - Messages say `teleop_collect`.
 
 ## Tests

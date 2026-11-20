@@ -35,17 +35,25 @@ python3.10 -m venv ~/envs/teleop_train
 Follow [../deployment/teleop_collect/DIRECTIONS.md](../deployment/teleop_collect/DIRECTIONS.md): its steps 9-11
 cover the session routine, collecting and the keys.
 
+First, on the PC: `h`, then `p` (the arm goes to the PC's start pose). Then:
+
 ```bash
 ~/envs/teleop_collect/bin/teleop_collect check
 ~/envs/teleop_collect/bin/teleop_collect run       # then the page at http://127.0.0.1:8765
 ```
 
-- In the page, create the task `$TASK`, then for each demo: Home, Start, drive, Stop, then save as **success** or
-  **fail**.
+- In the page, create the task `$TASK`, then for each demo: `h`, then `p` on the PC, wait for `at the start pose ✓
+  ready to start`, Start, drive, Stop, then save as **success** or **fail**.
+- So every demo starts at the PC's start pose (`homing.q_start_rad`), the pose the deployment starts from. **Collect
+  and deploy with the same start pose:** demos recorded while `homing.q_start_rad` is unset (`p` refused, `h` only)
+  start at home, and their policy must then be deployed with `homing.q_start_rad` unset too, or the demos recorded
+  again once it is set. Once measured, the value is committed and pushed on `rnoro/final-deployment` (the PC's
+  directions, step 10), so the deployment uses the same one.
 - Keep each demo under about 60 s. Behavior prompting reads at most 60 s per demo (§7 of PLAN.md).
 - Episodes land in `~/CapstoneTeleop/$TASK/episode_NNN/`.
-- Before recording, the PC and this branch must have the same `contracts/frames.yaml` (the TCP); `check` says so. To
-  see where the TCP axes point, use `pc_probe --axes` (teleop_collect DIRECTIONS, "pc_probe").
+- Before recording, the PC and this branch must have the same `contracts/frames.yaml` (the TCP, 235.65 mm out since
+  `927a5ba`); `check` says so. To see where the TCP axes point, use `pc_probe --axes` (teleop_collect DIRECTIONS,
+  "pc_probe"). Episodes recorded with the older 150 mm TCP no longer package.
 
 ## 3. Convert
 
@@ -162,7 +170,7 @@ In `~/Capstone-final-deployment/deployment/policy_deploy` (its DIRECTIONS.md, "A
 |---|---|
 | `COMPLETE: missing` | the recording did not finish (laptop crash); teleop_collect deletes it at its next start |
 | `gap of ... ms between consecutive arm states` | arm states missing inside the demo (limit 50 ms): the PC link dropped; record it again |
-| `gap of ... ms between consecutive main frames` / `ultrawide frames` | camera frames missing inside the demo (limits 100 / 200 ms): Wi-Fi; record it again |
+| `gap of ... ms between consecutive main frames` / `ultrawide frames` | camera frames missing inside the demo (limits 100 / 200 ms): Wi-Fi; record it again. An episode saved with a camera down or stale (its `meta.yaml` `warnings:`) usually ends here |
 | `no motion found` | nothing moved above 5 mm/s, 1 °/s or 5 mm/s of gripper |
 | `kept span ... is shorter than 2 s` | too short after trimming |
 | `...: ... the rig expects 640x480` | the stream size differs from the recorded rig |

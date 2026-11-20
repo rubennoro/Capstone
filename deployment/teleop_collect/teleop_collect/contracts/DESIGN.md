@@ -29,7 +29,7 @@ imports (with `teleop_collect.common`), so it imports no other part of `teleop_c
 | `keys.py` | `MOTION_KEYS`, `GRIPPER_COMMANDS`, `OUTCOMES`, `SAVED_OUTCOMES`, `TASK_NAME_RE`, `EPISODE_NAME_RE`, `is_task_name`, `is_episode_name` |
 | `r1_recorder.py` | R1 teleop -> frames: `StartRecording`, `StopRecording`, `GetFramesHealth`; replies `RecordingSummary` (with two `CameraSummary`), `FramesHealth` |
 | `u2_preview.py` | U2 ui -> frames: `GetPreview`; reply `Preview`; `NO_FRAME = -1` |
-| `u1_teleop.py` | U1 ui -> teleop: `GetStatus`, `KeysUpdate`, `GripperCommand`, `SelectTask`, `CreateTask`, `HomeRequest`, `StartEpisode`, `StopEpisode`, `DeleteEpisode`, `StopArm`; reply `TeleopStatus` (with `EpisodeInfo`, `UiMessage`); `PHASES`, `MESSAGE_LEVELS`, `STATUS_MAX_MESSAGES` |
+| `u1_teleop.py` | U1 ui -> teleop: `GetStatus`, `KeysUpdate`, `GripperCommand`, `SelectTask`, `CreateTask`, `StartEpisode`, `StopEpisode`, `DeleteEpisode`, `StopArm`; reply `TeleopStatus` (with `EpisodeInfo`, `UiMessage`); `PHASES` (no `homing`), `MESSAGE_LEVELS`, `STATUS_MAX_MESSAGES` |
 | `examples.py` | `build_examples()`: good and broken R1/U1/U2 examples; `health()`, `recording_summary()`, `teleop_status(**change)` for tests |
 
 Every message is a frozen `deploy_contracts.Message` built from its field helpers, so a message that exists is valid.
@@ -41,10 +41,16 @@ Commands are answered with `ack/v1`; a broken request gets `error/v1` from `RpcS
   distinct (`PORT_KEYS`), checked at load; the HTTP port is the page's.
 - **Rules a message can check alone are in the contract** (STRUCTURE §4.4-4.5): key names, outcomes, the
   `delete_episode` name pattern, `main_after >= -1`, strictly increasing message ids, `start_refusal == ""` exactly
-  when start is allowed, `episode_s >= 0`. Added because they follow from the field meanings: no key twice in
+  when start is allowed, `episode_s >= 0`, `start_pose_confirmed` and `at_start_pose` only while
+  `start_pose_known`. Added because they follow from the field meanings: no key twice in
   `held`; `arm_mode` is `""` or a C2 mode; at most `STATUS_MAX_MESSAGES` (50) messages; `CameraSummary` times set
   exactly when `frames > 0` and `last >= first`; a `Preview` JPEG is non-empty and has a `frame_no`;
   `StartRecording.episode_dir` is absolute.
+- **No home request** (2026-11-20, as final-deployment @ 927a5ba): `u1.home/v1` is gone and `PHASES` has no
+  `homing`. The arm is homed (`h`) and put at the start pose (`p`) only with the PC's keys. `TeleopStatus` says where
+  the start pose stands: `start_pose_known` (learned at start-up, or taken after the PC's `h`/`p`),
+  `start_pose_confirmed` (the PC accepted a start there: fixed for the session), `at_start_pose` (known, and the
+  newest C2 within its tolerances). The PC's homing still shows through `arm_mode` `homing`.
 - **Task names are not a contract rule:** a bad name typed in the page must come back as a readable `ack` refusal,
   not as a contract error (PLAN §7: a contract failure concludes). `is_task_name` is there for teleop to use.
 - **Images stay bytes:** U2 carries the JPEG exactly as received (PLAN §6.1); nothing here decodes it.
@@ -65,7 +71,7 @@ Commands are answered with `ack/v1`; a broken request gets `error/v1` from `RpcS
 | `config_merge.py`, `process_args.py`, `paths.py` | `contracts/` | names: teleop_collect, its folder, its processes and configs |
 | `health.py` | `contracts/c1_frames.py` | the two health Records only; + `CAMERAS` |
 | `__init__.py` | `contracts/__init__.py` | the re-exports of this package |
-| `../../config/fake_pc.yaml` | `config/` | none (byte-identical, no header, so a diff stays empty) |
+| `../../config/fake_pc.yaml` | `config/` | none in the source's bytes (no header); a start pose block appended after them (`p_pose`, `at_pose_tol_m`, `auto_h_p_after_stop_s`, 2026-11-20) |
 
 New: `keys.py`, `r1_recorder.py`, `u1_teleop.py`, `u2_preview.py`, `examples.py`. Each copied file's header lists its
 changes (STRUCTURE §1).
@@ -82,8 +88,10 @@ The rig file is not copied: `config/frames_process.yaml` points at the deploymen
 - `test_station.py`: the example station, the helper station, refused contract keys at any depth, distinct ports,
   required roots, sections checked against the config files.
 - `test_config_files.py`: every config has exactly the keys of STRUCTURE §3.3 and its defaults; merge and
-  `resolve_path`; `fake_pc.yaml` and the rig byte-identical to fd:; `ProcessArgs`.
-- `test_examples.py`: every R1/U1/U2 schema has a good example, broken ones fail with their field and problem.
+  `resolve_path`; `fake_pc.yaml` starts with fd:'s bytes, then the start pose block; the rig byte-identical to fd:;
+  `ProcessArgs`.
+- `test_examples.py`: every R1/U1/U2 schema has a good example, broken ones fail with their field and problem (among
+  them a start pose confirmed or "at" while not known).
 - `test_r1_u1_u2.py`, `test_health.py`: names, round trips, each rule above, one request over a real REQ/REP pair.
 - `tests/test_import_rules.py`: the import rules for the whole package (whatever files exist).
 

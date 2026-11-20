@@ -8,8 +8,10 @@ The operator's page and the small web server behind it (STRUCTURE.md §9, PLAN.m
 - Forwards the page's key state, finger commands and buttons to teleop (U1), and pushes teleop's status to the page.
 - Pulls the newest JPEG of each camera from frames (U2) and pushes it to the page.
 - Enforces a **deadman** on the key state.
-- It owns nothing and decides nothing: refusals (Start away from home, Home while homing, ...) come from teleop's acks
-  and status. It never talks to the PC or the Pi, and imports no other process subpackage.
+- It owns nothing and decides nothing: refusals (Start away from the start pose, Start while the PC is homing, ...)
+  come from teleop's acks and status. It never moves the arm to a pose: there is no Home button and no `home`
+  command; the arm is homed (`h`) and put at the start pose (`p`) with the PC's keys (since 2026-11-20, as
+  final-deployment @ 927a5ba). It never talks to the PC or the Pi, and imports no other process subpackage.
 - It never exits on its own when teleop or frames are slow or gone: the page shows `teleop not answering` /
   `frames not answering`. It ends on SIGINT/SIGTERM (exit 0) or a FATAL (a reply breaking its contract, the HTTP
   port taken, bad settings; exit 1 with one `FATAL ui: ...` line).
@@ -69,6 +71,10 @@ are dropped when a page is 6 sends behind (acks never are).
   only while focused. Esc = Stop arm in every phase, even while typing. Keys typed into the task form are not captured.
   Stop episode opens Save: success / Save: fail / Discard (one `stop_episode`) or Keep recording; keys are off
   meanwhile. Delete asks `confirm()`.
+- **The hint under Start** (outside an episode): when Start is allowed, `at the start pose ✓ ready to start` once the
+  PC has accepted a start there (`start_pose_confirmed`), else `at the start-up pose ✓ ready to start (the PC checks
+  it at Start)`; when not, teleop's `start_refusal` as it is (e.g. `put the arm at the start pose: h, then p on the
+  PC`). During an episode: `recording: hold keys to move`, or `motion off: save or discard the episode`.
 - **Local only:** bound on 127.0.0.1; plus a Host check (DNS rebinding) and an Origin check (browsers let any site
   open a WebSocket to localhost), so only a page opened as `127.0.0.1`/`localhost` on this port can drive the arm.
   An `Origin` header must be exactly `http://127.0.0.1:<port>` or `http://localhost:<port>`; anything else is
@@ -85,9 +91,10 @@ Fake U1 and U2 RpcServers on free ports, the server on HTTP port 0 or a free por
 `test_server.py` (127.0.0.1-only bind via /proc/net/tcp, port in use, the page and static files, Host/Origin checks,
 ready rule, teleop/frames gone, status rate and fields, messages, every command and its ack, refusals, bad commands,
 the stop lane, previews only newer, the deadman on silence / close / blur / bad keys, multi-page focus, gripper,
-shutdown release, contract break = fatal); `test_scripted_page.py` (round trips E7 uses);
-`test_page_static.py` (app.js holds the §4.1 map, the focus rules, offline, every command known; `node --check` when
-node exists); `test_settings_and_process.py` (settings; the process: ready, SIGINT/SIGTERM exit 0, FATAL lines).
+shutdown release, contract break = fatal); `test_scripted_page.py` (round trips E7 uses, `wait_start_allowed()`);
+`test_page_static.py` (app.js holds the §4.1 map, the focus rules, offline, every command known, no Home button;
+`node --check` when node exists); `test_settings_and_process.py` (settings; the process: ready, SIGINT/SIGTERM exit 0,
+FATAL lines).
 
 ## How to extend
 

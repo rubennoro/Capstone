@@ -8,13 +8,20 @@ files an executor decides the rest, and lists every deviation from this file in 
 `fd:<path>` = `rnoro/final-deployment` @ `2ffe641`, at `~/Capstone-final-deployment/deployment/<path>`, read-only.
 Re-synced to `ea9f7fb` (2026-11-19): `deployment/contracts/` (new `F_T_TCP`, `rigs/rig_pi_v3_640.yaml`), the rig file
 setting and `frames/_dataproc/config.py`; the files taken from `ea9f7fb` name it in their header.
+Re-synced to `927a5ba` (2026-11-20): `deployment/contracts/` (`F_T_TCP` z 0.23565), the start pose (no laptop home:
+§3.3 `start_pose:`, §4.4, §6.4, §6.7, §7.5, §10.2) and `pc_probe --start-pose`. Files copied whole from a source that
+`927a5ba` changed are re-pinned to `@ 927a5ba` (`teleop/heartbeat_sender.py`, `teleop/pc_probe.py`); adapted files
+changed for it say so in their `# changes:` line.
+No software stops (2026-11-20, §3.3 `motion:`, §6.4, §6.5, §8.3, §10.1): data problems are WARN (the arm and the
+episode go on; `meta.yaml` `warnings`), a C2 seq gap never pauses motion, lead 300 ms, state age 250 ms, assumed PC
+margins 0.05 m / 10° (the PC's teleop block).
 `pd:` = `fd:policy_deploy/policy_deploy/`. Owners: **E1** foundation, **E2** frames, **E3** teleop link, **E4** teleop
 core, **E5** ui, **E6** launcher and fake PC, **E7** integration and documents. **L** = the lead.
 
 ## 1. Conventions
 
 - **Copied files** start with a header comment, then the module docstring:
-  - `# copied from rnoro/final-deployment:deployment/<path> @ 2ffe641` (or `@ ea9f7fb`), plus `# changes: imports only` when only the
+  - `# copied from rnoro/final-deployment:deployment/<path> @ 2ffe641` (or `@ ea9f7fb`, `@ 927a5ba`), plus `# changes: imports only` when only the
     imports changed;
   - or `# adapted from ... @ 2ffe641`, with `# changes: <every change, in a few words>`;
   - a file built from several sources names each one.
@@ -37,7 +44,7 @@ core, **E5** ui, **E6** launcher and fake PC, **E7** integration and documents. 
 
 ```
 deployment/
-  contracts/                                  L (wave 0, done): byte-for-byte copy of fd:contracts/ (@ ea9f7fb), never edited
+  contracts/                                  L (wave 0, done): byte-for-byte copy of fd:contracts/ (@ 927a5ba), never edited
   control_deploy/DIRECTIONS.md                E7  the PC's directions (documents only, PLAN §12.5)
   teleop_collect/
     PLAN.md  STRUCTURE.md                     L
@@ -69,7 +76,7 @@ deployment/
         startup_sequence.py  startup_checks.py  failure_monitor.py  session_log.py  pc_probe.py
         frames_client.py  u1_server.py  teleop_loop.py  episode_flow.py
         motion/                               E4  (§7)
-          __init__.py  DESIGN.md  keys.py  twist.py  planner.py  controller.py  home.py
+          __init__.py  DESIGN.md  keys.py  twist.py  planner.py  controller.py  start_pose.py
         episode/                              E4  (§8)
           __init__.py  DESIGN.md  store.py  recorders.py  meta.py
       ui/                                     E5  (§9)
@@ -185,16 +192,18 @@ motion:                                   # PLAN 5.2-5.3
   v_max_m_s: 0.05                         # per axis, each held translation key
   w_max_deg_s: 10.0                       # the twist, and the tilt (both tilt axes together, normalised)
   slow_factor: 0.25                       # Shift
-  waypoints: 2                            # K
-  spacing_ms: 50                          # Delta; the lead is K x Delta = 100 ms
+  waypoints: 6                            # K
+  spacing_ms: 50                          # Delta; the lead is K x Delta = 300 ms
   key_stale_ms: 150                       # no key state for this long = all keys released
-  state_max_age_ms: 50                    # no motion while the newest C2 is older (mapped)
-  assumed_pc_box_margin_m: 0.01           # the PC's safety.box_margin_m (fd:control_deploy/franka_control/config.yaml)
-  assumed_pc_cone_margin_deg: 2.0         # the PC's safety.cone_margin_deg
+  state_max_age_ms: 250                   # no motion while the newest C2 is older (mapped); a seq gap never pauses
+  assumed_pc_box_margin_m: 0.05           # the PC's safety.box_margin_m: the teleop block of the PC's station.yaml
+  assumed_pc_cone_margin_deg: 10.0        # the PC's safety.cone_margin_deg (same block); smaller PC margins: a press
+                                          # into the floor can fault the PC (the gate rejects beyond its margin)
   margin_use: 0.8                         # settings are refused if the worst step exceeds this share of a margin
-home:
-  on_start: true                          # PLAN 8: home the whole arm once at start-up
-  tolerance_rad: 0.01                     # every joint within this of the home reference
+                                          # worst step: 0.05 m/s x (0.3 + 0.25) s = 27.5 mm <= 0.8 x 50 mm;
+                                          # 10 deg/s x 0.55 s = 5.5 deg <= 0.8 x 10 deg
+start_pose:                               # the arm's pose when start-up ends (h, then p on the PC first); PLAN 8
+  tolerance_rad: 0.01                     # every joint within this of the start pose
   tolerance_m: 0.005                      # and the TCP target position within this (the fake PC reports q = 0)
 history_s: 1.0
 state_recv_hwm: 1000
@@ -207,8 +216,8 @@ messages_kept: 200                        # page messages kept in memory
 timeouts:
   health_s: 0.05                          # R1 get_health (a term of the worst C3 gap)
   frames_s: 4.0                           # R1 start_recording / stop_recording (frames' stop drains up to 1 + 2 s); 1.0 s on aborts
-  home_s: 90.0                            # C3 home; above the PC's homing_timeout_s (hello)
-  startup_s: 20.0                         # start-up, not counting the waits while C2 shows homing or the home itself
+  home_s: 90.0                            # PcClient's C3 home timeout only: teleop sends no C3 home (pc_probe neither)
+  startup_s: 20.0                         # start-up, not counting the waits while C2 shows homing
   pc_homing_wait_s: 60.0
 clock:                                    # pd:'s config/manager.yaml clock block, unchanged
   hello_period_s: 0.5
@@ -223,7 +232,7 @@ clock:                                    # pd:'s config/manager.yaml clock bloc
   startup_agree_ms: 5.0
   jump_log_ms: 1.0
   mismatch_sets: 3
-  mismatch_min_lead_ms: 60.0              # teleop's lead is 100 ms (pd: 100 ms for a policy's 350 ms)
+  mismatch_min_lead_ms: 60.0              # teleop's lead is 300 ms (pd: 100 ms for a policy's 350 ms)
   future_state_ms: 20.0
   log_every_s: 10.0
 link_stats: {window_s: 10.0}
@@ -240,7 +249,15 @@ rpc_timeout_s: 0.5       # U1 / U2 request timeout
 open_browser: true       # teleop_collect run opens the page (also --no-browser)
 ```
 
-**`config/fake_pc.yaml`:** copied from fd:policy_deploy/config/fake_pc.yaml, unchanged.
+**`config/fake_pc.yaml`:** copied from fd:policy_deploy/config/fake_pc.yaml, plus the start pose block (§10.2):
+
+```yaml
+p_pose: [[1.0, 0.0, 0.0, 0.45], [0.0, -1.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.30], [0.0, 0.0, 0.0, 1.0]]
+                              # where the PC's p takes the TCP target (= start_pose: a mock session starts there);
+                              # null: p refused, as homing.q_start_rad unset, and C3 start never checks the pose
+at_pose_tol_m: 0.002          # "at home" for p, "at the start pose" for C3 start (and the rotation within 1 deg)
+auto_h_p_after_stop_s: 1.0    # the operator stand-in: h, then p, this long after an episode's stop; null: off
+```
 
 **`config/launcher.yaml`:**
 
@@ -249,8 +266,8 @@ stop_timeout_s: 5.0
 poll_s: 0.1
 fake_pc: true                       # --mock: start the fake PC (false for the cross test)
 ready_timeout_s: {fake_pc: 10.0, frames: 30.0, teleop: 150.0, ui: 15.0}
-                                    # teleop: startup 20 + pc_homing_wait 60 + home_s 90 cannot all happen, the
-                                    # longest legal is 20 + 60 + 30 (the PC's homing timeout) + 5 = 115 s
+                                    # teleop: the longest legal is startup 20 + pc_homing_wait 60 + 30 (the PC's
+                                    # homing timeout) + 5 = 115 s
 ```
 
 ## 4. Laptop contracts (E1): `teleop_collect.contracts`
@@ -355,11 +372,12 @@ The page's keyboard map (the ui's alone; teleop only sees these names):
 | `u1.gripper/v1` | `command: str (GRIPPER_COMMANDS)` | `ack/v1` |
 | `u1.select_task/v1` | `name: str` | `ack/v1` |
 | `u1.create_task/v1` | `name: str`, `description: str` | `ack/v1` (also selects it) |
-| `u1.home/v1` | none | `ack/v1`: ok = homing started (the outcome shows in status) |
 | `u1.start_episode/v1` | none | `ack/v1` |
 | `u1.stop_episode/v1` | `outcome: str (OUTCOMES)` | `ack/v1` |
 | `u1.delete_episode/v1` | `episode: str (EPISODE_NAME_RE)` | `ack/v1` |
 | `u1.stop_arm/v1` | none | `ack/v1` |
+
+There is no home request: homing (`h`) and the start pose (`p`) are the PC's keyboard keys (PLAN §8).
 
 Records:
 
@@ -372,7 +390,7 @@ Records:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `phase` | str: `starting`, `idle`, `recording`, `homing`, `stopping`, `done` | |
+| `phase` | str: `starting`, `idle`, `recording`, `stopping`, `done` | |
 | `ready` | bool | start-up finished |
 | `task`, `task_description` | str | `""` when none selected |
 | `tasks` | str_list | every task under `data_root` |
@@ -383,7 +401,9 @@ Records:
 | `tcp_m` | optional float64 (3,) | newest C2 `O_T_TCP` position |
 | `gripper_width_m` | optional float64 | newest C2 width |
 | `commanded_width_m` | float64 | |
-| `home_known`, `at_home` | bool | |
+| `start_pose_known` | bool | a start pose is learned (at start-up, or after the PC's `h`, `p`) |
+| `start_pose_confirmed` | bool | the PC accepted a start there: fixed for the session |
+| `at_start_pose` | bool | known, and the newest C2 within its tolerances |
 | `start_allowed` | bool | |
 | `start_refusal` | str | why not, `""` when allowed |
 | `at_limit` | bool | gate `pulled_back` rose within `at_limit_hold_ms` |
@@ -397,7 +417,8 @@ Records:
 | `messages` | list of `UiMessage` | those with `id > after_message`, at most 50, oldest first |
 | `final_line` | str | the one-line reason when `phase` is `done` |
 
-Validation adds: `episode_s >= 0`; `messages` ids strictly increasing; `start_refusal == ""` exactly when `start_allowed`.
+Validation adds: `episode_s >= 0`; `messages` ids strictly increasing; `start_refusal == ""` exactly when `start_allowed`;
+`start_pose_confirmed` and `at_start_pose` only with `start_pose_known`.
 
 ### 4.5 `examples.py`
 
@@ -512,12 +533,12 @@ called with `(state, arrival_ns, t_ns_mapped | None)`. The mapped laptop time co
 |---|---|
 | `pc_client.py`, `pc_clock.py`, `link_stats.py`, `state_history.py`, `heartbeat_sender.py`, `errors.py` | imports, process name `teleop` |
 | `pc_listener.py` | the recorder hook (§6.1) |
-| `settings.py` | `config/teleop.yaml` + `link.yaml` (§3.3); `MotionSettings`, `HomeSettings` objects passed to E4 (§7); the margin rule (§7.3) refused at load |
+| `settings.py` | `config/teleop.yaml` + `link.yaml` (§3.3); `MotionSettings`, `StartPoseSettings` objects passed to E4 (§7); the margin rule (§7.3) refused at load |
 | `problems.py`, `failure_monitor.py` | the kinds and codes of §6.5 |
-| `startup_checks.py` | no `settled` rule, no policy; `waypoint_lead_ms` = K × Δ; `worst_gap` as pd: |
+| `startup_checks.py` | no `settled` rule, no policy, no home timeout row (teleop sends no C3 home); `waypoint_lead_ms` = K × Δ; `worst_gap` as pd: |
 | `startup_sequence.py` | PLAN §8 (§6.4) |
 | `session_log.py` | session.yaml, events.jsonl, clock.jsonl, link.jsonl under `<session>/teleop/`; no steps, tap or policy |
-| `pc_probe.py` | unchanged behaviour, imports; `--check --json` for the launcher |
+| `pc_probe.py` | unchanged behaviour, imports; `--check --json` for the launcher; `--start-pose` as pd:'s @ `927a5ba` |
 
 ### 6.3 One cycle (`teleop_loop.py`)
 
@@ -533,13 +554,15 @@ The order is fixed:
      guard uses `clock.mismatch_*` (§3.3).
 5. R1 health every `health_poll_ms`.
 6. Up to `u1_max_per_cycle` U1 requests (§6.6).
-7. Status bookkeeping (`at_limit` from `gate.pulled_back`) and periodic session-log rows.
+7. Status bookkeeping (`StartPoseReference.observe` with the newest C2, `at_limit` from `gate.pulled_back`) and
+   periodic session-log rows.
 
 `chunk_id` counts up from 1 for the whole run.
 
 ### 6.4 Phases, start-up and the episode flow (`startup_sequence.py`, `episode_flow.py`)
 
-**Phases:** `STARTING → IDLE ⇄ RECORDING`, `IDLE → HOMING → IDLE`, `RECORDING → STOPPING → IDLE`, any → `DONE`.
+**Phases:** `STARTING → IDLE ⇄ RECORDING`, `RECORDING → STOPPING → IDLE`, any → `DONE`. No HOMING phase: the PC's
+`h` and `p` show only as the C2 mode `homing`.
 
 **Start-up** (PLAN §8):
 1. `TaskStore.clean_incomplete()`, each deletion logged.
@@ -549,18 +572,26 @@ The order is fixed:
 5. `compare_hello` and the budget checks.
 6. `get_state` shows `idle` or `stopped`.
 7. Heartbeats.
-8. If `home.on_start`: the C3 home (§6.7), then hellos every cycle until the map is ready again.
-9. R1 health shows both cameras `ok`.
-10. `data_root` writable.
-11. `session.yaml`, the ready file, phase IDLE.
+8. R1 health shows both cameras `ok`.
+9. `data_root` writable.
+10. The start pose: `StartPoseReference.learn(q, O_T_TCP_target)` from the newest C2 when it shows `idle` or
+    `stopped` (page message `start pose: the arm's pose now (x, y, z m); every episode starts here (h, then p on the
+    PC)`). Otherwise nothing is learned (`start pose not learned: the PC is <mode>; the pose after its move is the start
+    pose`) and the PC's next move gives it (§6.7).
+11. `session.yaml`, the ready file, phase IDLE; the assumed PC margins logged and on the page
+    (`planner.assumed_margins_text`: `teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg 10 (the
+    teleop block of the PC's station.yaml); with smaller PC margins a press into the floor can fault the PC`).
 
-`timeouts.startup_s` covers steps 2–10, not counting the H2 / homing waits or the home itself.
+`timeouts.startup_s` covers steps 2–9, not counting the H2 / homing waits. No step moves the arm.
 
 **Start allowed** (`start_refusal` text in brackets, the first that applies):
-- phase IDLE, not done (`starting up` / `recording` / `homing`);
+- phase IDLE, not done (`starting up` / `recording` / `teleop has stopped`);
 - a task selected (`select or create a task first`);
 - C2 mode `idle` or `stopped` (`the PC is <mode>`);
-- home known and at home (`home the arm first (Home, or h on the PC)`);
+- a start pose known: if not, at the pose where the PC refused a start
+  (`the PC refused the start here (not the start pose): press p on the PC`), else
+  (`put the arm at the start pose: h, then p on the PC`);
+- at the start pose (`not at the start pose: h, then p on the PC`);
 - both cameras `ok` (`<camera> camera <status>`);
 - the clock map ready (`waiting for the PC clock map`).
 
@@ -568,7 +599,9 @@ The order is fixed:
 1. `Task.new_episode()`.
 2. Open `EpisodeRecording` (§8.2).
 3. R1 `start_recording(dir)`. A refusal discards the folder and shows the reason.
-4. C3 `start`. A refusal: R1 `stop_recording`, discard, show the reason.
+4. C3 `start`. A refusal: R1 `stop_recording`, discard, show `the PC refused start: <reason>`; a reason starting
+   `refused: not at the start pose` first calls `StartPoseReference.refused_here` (§6.7). Accepted: `confirm()` if not
+   yet confirmed.
 5. Commanded width = newest C2 width.
 6. Phase RECORDING.
 
@@ -578,8 +611,17 @@ The order is fixed:
 3. C3 `stop`.
 4. R1 `stop_recording` → summary.
 5. Close the recorders.
-6. `outcome == discard` → `EpisodeDir.discard()`; otherwise `EpisodeDir.finish(build_meta(...))`.
+6. `outcome == discard` → `EpisodeDir.discard()`; otherwise `EpisodeDir.finish(build_meta(..., warnings=...))`.
 7. Phase IDLE.
+After a RECORDING_FAILED warning, Stop with `success`/`fail` is refused before step 1 (`this episode cannot be saved
+(<what>): Discard it`; the episode goes on); `discard` works. A failure found only at Stop (R1 summary error, a
+recorder or close error, meta.yaml / COMPLETE) aborts as below (`discard` just discards).
+
+**Warn** (a WARN problem while recording, §6.5): `EpisodeFlow.warn` notes it once per episode (per code and camera;
+the first recording failure): a warn page message (`episode_NNN: <what>: <check>; the episode goes on (noted in its
+meta.yaml)`, or for a recording failure `...; the arm goes on: Stop and Discard (this episode cannot be saved)`), a
+`warning` row in the episode's `events.jsonl`, the session log, and `{code, what, t_s}` for `meta.yaml` `warnings`.
+No C3 stop, no pause.
 
 **Abort** (an EPISODE problem, §6.5): as Stop, with the folder discarded. The reason goes to the page messages and
 `events.jsonl` of the session log.
@@ -589,22 +631,26 @@ for STOP.
 
 ### 6.5 Problem kinds (adapted `problems.py`)
 
-`Kind`: `NORMAL`, `SLOW`, **`EPISODE`** (new: abort the open episode, stay up), `CONCLUDE`, `STOP`.
+`Kind`: `NORMAL`, `SLOW`, **`WARN`** (new, 2026-11-20: a data problem; shown, noted in `meta.yaml` `warnings`; the
+arm and the episode go on; NORMAL outside an episode), **`EPISODE`** (new: abort the open episode, stay up),
+`CONCLUDE`, `STOP`.
 - **Kept, with pd:'s kinds:**
-  - `STATE_GAP`, `STATE_OLD`, `CLOCK_STALE` (SLOW);
-  - `PULLED_BACK`, `SHORTENED`, `LOOP_LATE`, `HOME_STOPPED` (NORMAL);
+  - `STATE_OLD` (SLOW: older than `state_max_age_ms`, 250 ms), `CLOCK_STALE` (SLOW);
+  - `STATE_GAP` (NORMAL since 2026-11-20: counted and logged, `a C2 seq gap (motion goes on)`; was SLOW);
+  - `PULLED_BACK`, `SHORTENED`, `LOOP_LATE` (NORMAL);
   - `PC_NOT_ANSWERING`, `STATE_LOST`, `PC_RESTARTED`, `ARM_FAULT`, `GATE_REJECTED`, `CLOCK_MISMATCH`,
-    `HELLO_MISMATCH`, `PC_BUSY`, `CONTRACT_VIOLATION`, `HOMING_FAILED`, `STARTUP`, `NO_ANSWER`, `INTERNAL_ERROR`
+    `HELLO_MISMATCH`, `PC_BUSY`, `CONTRACT_VIOLATION`, `STARTUP`, `NO_ANSWER`, `INTERNAL_ERROR`
     (CONCLUDE);
   - `OPERATOR_STOP`, `LAUNCHER_STOP` (STOP).
 - **Changed or new:**
-  - `CAMERA_STALE` (SLOW);
-  - `CAMERA_DOWN` (**EPISODE** while recording, NORMAL otherwise);
+  - `CAMERA_STALE` (**WARN** while recording);
+  - `CAMERA_DOWN` (**WARN** while recording, NORMAL otherwise; between episodes a camera down refuses Start);
   - `PC_STOPPED` (**EPISODE**);
   - `OPERATOR_ABORT` (EPISODE, Stop arm / Esc);
-  - `RECORDING_FAILED` (EPISODE, R1 `recording_error`, or a recorder write error);
+  - `RECORDING_FAILED` (**WARN**, R1 `recording_error`, or a recorder write error: the episode can then only be
+    discarded; found only at Stop it aborts);
   - `SET_SKIPPED` (SLOW, a set skipped entirely).
-- **Dropped:** the policy codes and `TCP_UNSETTLED`.
+- **Dropped:** the policy codes and `TCP_UNSETTLED`; `HOME_STOPPED` and `HOMING_FAILED` (no laptop home, 2026-11-20).
 
 ### 6.6 U1 server (`u1_server.py`)
 
@@ -615,29 +661,27 @@ A `deploy_contracts.RpcServer` on `station.u1_endpoint()`, served from the main 
 |---|---|
 | `keys` | goes into `KeyState` |
 | `gripper` | queued for the next cycle's `MotionController` |
-| `home` | starts the home in the next cycle |
 | `stop_arm` | Abort with `OPERATOR_ABORT` when recording, otherwise C3 `stop` |
 | `get_status` | builds `TeleopStatus` |
 
 Refusals are `ack(ok=false, reason)` in plain words.
 
-### 6.7 Home
+### 6.7 The start pose
 
-- **Sending it:** `PcClient.home(interrupted)` waits in `heartbeat_period_s` slices. The `interrupted` callback E3
-  passes also serves U1:
-  - `get_status` (phase HOMING);
-  - `keys` (ignored);
-  - everything else refused with `homing: wait, or press s on the PC (the user stop is always there)`.
-
-  It returns the Ctrl-C/SIGTERM flag.
-- **Outcomes:** as pd:, i.e. ok, `stopped:` (NORMAL), refused because the PC is homing (hint), anything else concludes
-  `HOMING_FAILED`.
-- **After any home:** hellos every cycle until the map is ready again. A successful home sets
-  `HomeReference.set_from(q, T_target)` from the first `idle` C2 after it (§7.5).
+There is no laptop home (no `u1.home/v1`, no C3 home, no HOMING phase): homing (`h`) and the start pose (`p`) are the
+PC's keyboard keys, as in pd: since `927a5ba`. Teleop keeps a `StartPoseReference` (§7.5):
+- **Start-up step 10:** `learn` from the newest C2: the candidate.
+- **Every cycle:** `observe(mode, q, O_T_TCP_target)` of the newest C2. Until confirmed, a `homing` → `idle` in which the
+  arm moved replaces the candidate (logged `candidate: the pose after the PC's move (x, y, z m)`).
+- **The C3 start's reply:** ok → `confirm()` (logged `confirmed: ...`); `refused: not at the start pose ...` →
+  `refused_here(q, O_T_TCP_target)` of the newest C2 (the candidate dropped while not confirmed; this pose kept for the
+  refusal text of §6.4).
+- **Status:** `start_pose_known`, `start_pose_confirmed`, `at_start_pose`. The page shows `at the start pose ✓ ready to
+  start` when confirmed, `at the start-up pose ✓ ready to start (the PC checks it at Start)` before.
 
 ### 6.8 Who E3 calls in E4
 
-`KeyState`, `MotionController`, `HomeReference` (§7) and `TaskStore`, `EpisodeRecording`, `build_meta` (§8). Exactly
+`KeyState`, `MotionController`, `StartPoseReference` (§7) and `TaskStore`, `EpisodeRecording`, `build_meta` (§8). Exactly
 the signatures below. In its own tests E3 may use the real E4 classes once they exist, or small fakes with the same
 signatures.
 
@@ -741,19 +785,32 @@ clips the start width into [0, `width_open_m`].
 
 When a finger command and motion come together, the new width rides on the move's waypoints.
 
-### 7.5 `home.py`
+### 7.5 `start_pose.py`
 
 ```python
-class HomeReference:
-    def __init__(self, s: HomeSettings) -> None
-    def set_from(self, q: np.ndarray, T_target: np.ndarray) -> None   # after a home that ended in idle
+@dataclass(frozen=True)
+class StartPoseSettings:            # the `start_pose:` keys of §3.3
+    tolerance_rad: float
+    tolerance_m: float
+    @classmethod
+    def from_config(cls, m: Mapping[str, Any]) -> StartPoseSettings   # missing / unknown keys -> ValueError
+class StartPoseReference:
+    def __init__(self, s: StartPoseSettings) -> None
+    def learn(self, q: np.ndarray, T_target: np.ndarray) -> None       # the end of start-up: the candidate
     def observe(self, mode: str, q: np.ndarray, T_target: np.ndarray) -> None
-        # a C2 homing -> idle transition (the PC's h) sets it, only while none is known and only if the arm moved
-        # (joints > tolerance_rad or TCP > tolerance_m) during that homing, so the PC's g never counts
+        # every C2. While not confirmed, a homing -> idle transition in which the arm moved (a joint > tolerance_rad
+        # or the TCP target > tolerance_m, from the first homing C2 to the idle one) replaces the candidate with that
+        # idle pose (also when none is known); the PC's g moves neither and never counts. Confirmed: nothing changes
+    def confirm(self) -> None                                         # the PC accepted a start: fixed
+    def refused_here(self, q: np.ndarray, T_target: np.ndarray) -> None
+        # the PC refused a start (not at the start pose): the candidate dropped while not confirmed; this pose kept
     @property
-    def known(self) -> bool
-    def at_home(self, q: np.ndarray, T_target: np.ndarray) -> bool
-        # all |q - q_ref| <= tolerance_rad and |p - p_ref| <= tolerance_m
+    def known(self) -> bool                                           # a candidate or a confirmed pose
+    @property
+    def confirmed(self) -> bool
+    def at_start(self, q: np.ndarray, T_target: np.ndarray) -> bool
+        # known, all |q - q_ref| <= tolerance_rad and |p - p_ref| <= tolerance_m (the mode rule is E3's)
+    def at_refused_pose(self, q: np.ndarray, T_target: np.ndarray) -> bool
 ```
 
 ## 8. teleop core: episode (E4), files only
@@ -810,10 +867,12 @@ class EpisodeRecording:                 # opened by Start, closed by Stop/Abort;
 ```python
 def build_meta(*, task: Task, episode: EpisodeDir, outcome: str, times: Mapping[str, int], frames: RecordingSummary,
                counts: Mapping[str, int], hello: HelloReply, laptop_commit: str, laptop_dirty: bool,
-               rig_file: Path, motion: MotionSettings, pi_fit: Mapping, pc_fit: Mapping) -> dict
+               rig_file: Path, motion: MotionSettings, pi_fit: Mapping, pc_fit: Mapping,
+               warnings: Sequence[Mapping[str, Any]] = ()) -> dict
 ```
 
-It returns the PLAN §6.3 content as plain YAML-able types. `hello` comes complete, `F_T_TCP` as a 4×4 list.
+It returns the PLAN §6.3 content as plain YAML-able types. `warnings` is a list of `{code, what, t_s}` (exactly those
+keys, else ValueError); `meta_version` stays 1 (an added key; teleop-train reads only the keys it needs). `hello` comes complete, `F_T_TCP` as a 4×4 list.
 
 ## 9. ui (E5)
 
@@ -838,7 +897,7 @@ It returns the PLAN §6.3 content as plain YAML-able types. `hello` comes comple
 | server → page | `{"type": "preview", "camera": "main"\|"ultrawide", "frame_no": N}` followed by one binary message (the JPEG) |
 | page → server | `{"type": "keys", "held": [...], "slow": b, "focus": b}` on every change and every `keys_resend_ms` |
 | page → server | `{"type": "gripper", "command": "close"\|"open"}` on key down (no repeat) |
-| page → server | `{"type": "command", "name": "home"\|"start_episode"\|"stop_arm"\|"select_task"\|"create_task"\|"stop_episode"\|"delete_episode", "args": {...}, "id": n}` (the arguments in their own map, so a task `name` cannot clash with the command `name`) |
+| page → server | `{"type": "command", "name": "start_episode"\|"stop_arm"\|"select_task"\|"create_task"\|"stop_episode"\|"delete_episode", "args": {...}, "id": n}` (the arguments in their own map, so a task `name` cannot clash with the command `name`) |
 | server → page | `{"type": "hello", ...}` on connect (the rates and key names), `{"type": "error", "text": ...}` for a message it cannot use |
 | server → page | `{"type": "ack", "id": n, "ok": b, "reason": str}` |
 
@@ -848,12 +907,14 @@ same `Origin`. That way another web site open in the browser cannot reach the ar
 ### 9.3 The page (`static/`)
 
 - Plain HTML, CSS and JS, no build step and no CDN: it must work offline in the lab.
-- The layout of PLAN §4.3, with buttons Home, Start episode, Stop arm, and Save success / Save fail / Discard after Stop.
+- The layout of PLAN §4.3, with buttons Start episode, Stop arm, and Save success / Save fail / Discard after Stop
+  (no Home button).
 - A delete with a confirm, the task picker and New task.
 - **The keyboard map of §4.1.** `keydown` / `keyup` maintain the held set, ignoring auto-repeat.
 - **Losing the keys:** `blur` and `visibilitychange` send an empty held set with `focus:false`.
 - Keys work only while the page has focus and the phase is `recording`.
-- Shows `REC episode_NNN m:ss`, the `start_refusal` text, the messages, and `at workspace limit`.
+- Shows `REC episode_NNN m:ss`, the `start_refusal` text (or, when Start is allowed, `at the start pose ✓ ready to
+  start` / `at the start-up pose ✓ ready to start (the PC checks it at Start)`), the messages, and `at workspace limit`.
 
 ### 9.4 `scripted_page.py` (used by E7)
 
@@ -864,6 +925,7 @@ class ScriptedPage:                     # speaks the WebSocket protocol exactly 
     def status(self) -> dict                                   # the newest status message
     def wait_for(self, pred: Callable[[dict], bool], timeout_s: float, what: str) -> dict
     def command(self, name: str, **args) -> dict               # sends, returns the ack {"ok", "reason"}
+    def wait_start_allowed(self, timeout_s: float = 10.0) -> dict   # idle and start_allowed (no Home to press)
     def hold(self, keys: Sequence[str], seconds: float, slow: bool = False) -> None   # key frames like the page
     def gripper(self, command: str) -> None
     def blur(self) -> None
@@ -878,6 +940,8 @@ class ScriptedPage:                     # speaks the WebSocket protocol exactly 
 - **`ORDER`:** `("fake_pc", "frames", "teleop", "ui")`; `fake_pc` only with `--mock` and `launcher.fake_pc`.
 - **Each process** is started as `python -m teleop_collect.<name> --station S --session D --ready-file F [--mock]` with
   `sys.executable`. Its log goes to `<session>/logs/<name>.log`.
+- **Before teleop starts:** one note, `teleop_collect: teleop: the start pose is the arm's pose at start-up: press h,
+  then p on the PC first` (`--mock`: `...: the fake PC starts at its start pose`).
 - **On ready:** `teleop_collect: ready: open <station.http_url()>`, plus `webbrowser.open` unless `--no-browser` or
   `ui.open_browser: false`.
 - **Failures:** one line, `teleop_collect: FAILED <process> ...: <FATAL line>`.
@@ -894,24 +958,37 @@ class ScriptedPage:                     # speaks the WebSocket protocol exactly 
   - fake_pc: ports free;
   - frames: the rig file subprocess check, Pi reachable (not `--mock`), mock episode present (`--mock`), R1/preview
     ports free;
-  - teleop: the U1 port free, `python -m teleop_collect.teleop.pc_probe --check --json` (not `--mock`);
+  - teleop: the U1 port free, `python -m teleop_collect.teleop.pc_probe --check --json` (not `--mock`), `PC margins`
+    (INFO: the PC margins `teleop.motion` assumes and the risk; FAIL only if the keys are unreadable);
   - ui: the HTTP port free.
 
 ### 10.2 Fake PC
 
-Copied from pd:fake_pc/ with only the import and process-name changes. `config/fake_pc.yaml` unchanged. It already
-implements:
-- the C3 home (the REP is blocked until the move ends);
+Copied from pd:fake_pc/ with only the import and process-name changes, the plan-replacement fix
+(fake_pc/DESIGN.md), and the start pose. It already implements:
+- the C3 home (the REP is blocked until the move ends; the real PC still answers it, teleop no longer sends it);
 - the keyboard hooks;
 - the drifting clock;
 - `schemas=SHARED_SCHEMAS`.
+
+The start pose (2026-11-20): it models the PC with `homing.q_start_rad` set, by the TCP target (its C2 `q` is
+always 0), with the `config/fake_pc.yaml` keys of §3.3:
+- `keyboard_start_pose()`, the PC's `p`: refused with the PC's texts in its order (`p_pose: null` → `refused:
+  homing.q_start_rad is not set: ...`; not idle/stopped → the StateMachine text; away from `home_pose` → `refused: not
+  at home: press h first`); else a home-like move (`home_duration_s`, mode `homing`, then `idle`) to `p_pose`, the
+  hand opening to `gripper_width_max_m`.
+- A C3 `start` away from `p_pose`: `refused: not at the start pose: press h, then p on the PC`.
+- The operator stand-in (`auto_h_p_after_stop_s`): that long after an episode's stop (`holding`/`running` →
+  `stopped`), `h`, then `p` when that home ends in `idle`. `--mock` therefore starts at the start pose and returns to
+  it after every episode, with nobody at the PC.
 
 ## 11. Integration and documents (E7)
 
 - **`tests/integration/test_run_mock.py`:** `teleop_collect run --mock --no-browser` as a subprocess, driven by
   `ScriptedPage`:
   - create a task;
-  - home, start, hold `x+` for 1 s, `N`, `M`;
+  - wait until Start is allowed (the fake PC starts at its start pose), start (the start pose confirmed), hold `x+`
+    for 1 s, `N`, `M`;
   - stop as success;
   - check the episode folder: every file, both `.mkv` files demux to JPEGs, row counts plausible, `COMPLETE` last;
   - start and discard;
@@ -920,9 +997,12 @@ implements:
   - Ctrl-C: exit 0, no incomplete folder.
 - **`tests/integration/test_cross_franka_control.py`:** the same flow against
   `fd:control_deploy/franka_control/build-nolibfranka/franka_control --mock --local` (run from there, never rebuilt;
-  skipped if the binary is missing), with `launcher.fake_pc: false`.
+  skipped if the binary is missing), with `launcher.fake_pc: false`. Its station sets `franka_control: homing:
+  q_start_rad`, and its keys come from a pipe on stdin: `h`, then `p` before `run` and before each episode; the PC's
+  own refusal away from the start pose; a session started at home that takes the pose after its `p`.
 - **Multi-process rows of PLAN §7:**
-  - a camera down mid-episode (the fake Pi paused) → the episode is aborted, the app stays up;
+  - a camera down mid-episode (the fake Pi paused) → a warning, no C3 stop, the arm keeps following, the episode is
+    saved with the warning in `meta.yaml`; between episodes Start is refused until the camera is back;
   - the fake PC `restart` → conclude;
   - the fake PC `inject_fault` → conclude;
   - the page blurred → no motion.
@@ -936,8 +1016,8 @@ implements:
 |---|---|
 | E1 | station (keys, refused contract keys, ports distinct, data_root); config files load and merge; R1/U1/U2 examples (good pass, broken fail with their field and problem); the copied C0 and clock-fit tests (from pd:tests/contracts/); `test_import_rules.py`: no `policy_deploy` / `control_deploy` import anywhere, and `frames`, `teleop`, `ui`, `fake_pc` import only `teleop_collect.contracts`, `teleop_collect.common`, `deploy_contracts` and themselves |
 | E2 | the copied receiver, pair-rule, health, Pi-stream, fake-Pi and pi_collect tests, adapted; `MkvWriter` byte round trip; `FrameRecorder`: rows per camera, reused ultrawide written once, `video_index` = row, queue overflow → error, stop drains; R1 refusals; U2 only newer frames; the frames process against the fake Pi (free ports) |
-| E3 | the copied PC client, clock, listener, heartbeat, state-history, startup and failure-monitor tests, adapted; `TeleopLoop` against the fake PC (free ports) with a fake R1 and fake U1 requests: one C3 request per cycle, hello priority, start / stop / discard / abort / conclude, home refusals during homing, start refusals, the clock guard |
-| E4 | twist signs and normalisation; `advance` math (identity at tau 0, tilt and twist directions by effect, the pivot keeps the TCP position); `worst_step` and the settings refusal; the controller rules of §7.4 including the stale-state guard and release-once; `HomeReference`; the store (names, numbering never reused, delete, discard refuses outside paths, clean_incomplete); recorders' columns; `build_meta` |
+| E3 | the copied PC client, clock, listener, heartbeat, state-history, startup and failure-monitor tests, adapted; `TeleopLoop` against the fake PC (free ports) with a fake R1 and fake U1 requests: one C3 request per cycle, hello priority, start / stop / discard / abort / conclude, the start pose (learned, followed, confirmed, dropped on the PC's refusal), start refusals, the clock guard |
+| E4 | twist signs and normalisation; `advance` math (identity at tau 0, tilt and twist directions by effect, the pivot keeps the TCP position); `worst_step` and the settings refusal; the controller rules of §7.4 including the stale-state guard and release-once; `StartPoseReference`; the store (names, numbering never reused, delete, discard refuses outside paths, clean_incomplete); recorders' columns; `build_meta` |
 | E5 | server binds 127.0.0.1 only; the WebSocket protocol against fake U1/U2 servers; the deadman (silence → empty keys); `ScriptedPage` against the server; the page's JS key handling checked by reading `app.js` for the map of §4.1 (no browser in the tests) |
-| E6 | the copied launcher tests, adapted (order, ready waits, stop in reverse, FATAL line, check rows); the copied fake-PC tests with the shared examples |
+| E6 | the copied launcher tests, adapted (order, ready waits, stop in reverse, FATAL line, check rows); the copied fake-PC tests with the shared examples; the fake PC's `p`, start refusal and operator stand-in (`tests/fake_pc/test_start_pose.py`) |
 | E7 | §11 |

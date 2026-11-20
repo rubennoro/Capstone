@@ -58,7 +58,9 @@ booleans 1/0, missing values empty.
 - **meta.yaml (PLAN 6.3, 13.12):** task name and one-line description only; the full hello (with `F_T_TCP` as a 4×4
   list), the frames summary, the rig (`rig_file` path plus the parsed file as `rig`; `rig: null` and a one-line `rig_note`
   if it cannot be read, never failing the save), counts (frames' own plus `EpisodeRecording.counts()`), the teleop settings with the lead
-  and the worst step, both clock fits. `Task.episodes` reads `outcome`, `duration_s`, `counts.frames_main`.
+  and the worst step, both clock fits, and `warnings` (2026-11-20): the data problems seen while recording, one
+  `{code, what, t_s}` each (exactly those keys, else ValueError), from EpisodeFlow; `meta_version` stays 1.
+  `Task.episodes` reads `outcome`, `duration_s`, `counts.frames_main`.
 
 ## Tests
 

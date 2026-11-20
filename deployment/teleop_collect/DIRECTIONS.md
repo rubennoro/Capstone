@@ -10,8 +10,9 @@ where `echo $PYTHONPATH` prints nothing (if it shows `/opt/ros/...`, run `unset 
 > **Daily routine (once set up)**
 >
 > 1. Router on, arm controller on, user stop plugged in and within reach, table clear apart from the scene.
-> 2. **The PC first:** Desk unlocked, FCI on, then `control_deploy run` shows `control_deploy: ready` (the PC's
->    directions).
+> 2. **The PC first:** Desk unlocked, FCI on, `station.yaml` on its teleop block (the PC's directions, step 8,
+>    "Teleop settings"), then `control_deploy run` shows `control_deploy: ready`. Then on the PC: `h`, wait for
+>    `homing finished`, then `p`, wait for `start pose reached`.
 > 3. **Then the Pi:** press its C button; the LED turns blue.
 > 4. **Then the laptop:**
 >
@@ -21,11 +22,13 @@ where `echo $PYTHONPATH` prints nothing (if it shows `/opt/ros/...`, run `unset 
 >    ~/envs/teleop_collect/bin/teleop_collect run
 >    ```
 >
->    The arm homes once at start-up: **keep a hand on the user stop.** The page opens at `http://127.0.0.1:8765`.
-> 5. In the page, for every episode: **Home**, set up the scene, **Start episode**, wait about 1 s, drive, **Stop
->    episode**, then **Save: success**, **Save: fail** or **Discard**.
-> 6. Quit: Ctrl-C in the terminal (or close it). While the arm homes, Ctrl-C sends no stop: use `s` on the PC or the
->    user stop. Then the Pi's C button (LED off). End of the day, on the PC: `q`, then lock the brakes in Desk.
+>    The arm does not move: the arm's pose now becomes this session's start pose. The page opens at
+>    `http://127.0.0.1:8765`.
+> 5. For every episode: on the PC `h`, then `p`; in the page wait for `at the start pose ✓ ready to start`, set up the
+>    scene, **Start episode**, wait about 1 s, drive, **Stop episode**, then **Save: success**, **Save: fail** or
+>    **Discard**.
+> 6. Quit: Ctrl-C in the terminal (or close it). Then the Pi's C button (LED off). End of the day, on the PC: `q`, then
+>    lock the brakes in Desk.
 
 ---
 
@@ -36,7 +39,8 @@ where `echo $PYTHONPATH` prints nothing (if it shows `/opt/ros/...`, run `unset 
 - The laptop with Ubuntu 22.04 and Python 3.10 (`python3.10 --version`), internet for the install, and a browser.
 - Free disk: about 110 MB per 30 s episode, under `~/CapstoneTeleop`.
 - Wi-Fi on the lab router **ASUS_5g** (the PC and the Pi are on it too).
-- The PC set up and brought up first (`deployment/control_deploy/DIRECTIONS.md`, steps 1–10).
+- The PC set up and brought up first (`deployment/control_deploy/DIRECTIONS.md`, steps 1–10, the start pose
+  included).
 - For the first test without hardware: the recorded Pi episode `~/Downloads/data/incoming/episode_000152` (step 5 says
   how to get it).
 
@@ -143,17 +147,21 @@ address.
 In the page:
 
 1. **+ new task**, a name such as `mock_test`, **Create**.
-2. **Home**; wait for `at home ✓ ready to start`.
+2. Wait for `at the start-up pose ✓ ready to start (the PC checks it at Start)`. The fake PC starts at its start
+   pose, as if `h` and `p` had been pressed on the PC.
 3. **Start episode**; wait about 1 s; hold `W` for 1 s; press `N`, then `M`.
-4. **Stop episode**, then **Save: success**.
+4. **Stop episode**, then **Save: success**. About 3 s later the page shows `at the start pose ✓ ready to start`: the
+   fake PC stands in for you at the PC and does `h`, then `p` by itself, 1 s after every episode's stop.
 5. Ctrl-C in the terminal. The episode stays in `~/CapstoneTeleop_mock/mock_test/`.
 
 - **Good:**
   - `check --mock` ends with `teleop_collect check: ready (0 warning(s))`.
-  - `run --mock` prints `teleop_collect: all 4 processes ready (session: ...)`, then
+  - `run --mock` prints `teleop_collect: teleop: the start pose is the arm's pose at start-up: the fake PC starts at
+    its start pose`, `teleop_collect: all 4 processes ready (session: ...)`, then
     `teleop_collect: ready: open http://127.0.0.1:8765`, and the page opens.
-  - The page shows `mock PC` and `connected` at the top, both previews moving, and `cams` `ok 30 / ok 30 fps`. While
-    you hold `W`, `tcp` x grows by about 0.050 per second.
+  - The page shows `mock PC` and `connected` at the top, both previews moving, and `cams` `ok 30 / ok 30 fps`. Its
+    messages show `start pose: the arm's pose now (0.450, 0.000, 0.300 m); every episode starts here (h, then p on the
+    PC)`. While you hold `W`, `tcp` x grows by about 0.050 per second.
   - After the save, the episode list shows `episode_000 success ...`. Ctrl-C prints `teleop_collect: stopped by
     Ctrl-C`.
 - **If not:** `mock episode FAIL not found (no meta.json)`: copy the recorded episode (above), or point
@@ -233,12 +241,16 @@ the Pi streaming.
   teleop   hello equality   PASS  schemas, mock, F_T_TCP, limits and watchdog equal
   teleop   PC commit        WARN  PC commit <b> differs from laptop commit <a>+dirty
   teleop   PC mock          INFO  the PC runs the real arm
+  teleop   PC margins       INFO  teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg 10 (...)
   ```
 
   - `PC commit WARN`: the laptop runs `rnoro/teleop-collect-deploy` and the PC `rnoro/final-deployment`, so the
     commits always differ. It is recorded, never refused.
   - `commit INFO ... +dirty` after editing `link.yaml` or `station.yaml`.
   - `Wi-Fi WARN` when the laptop is wired.
+  - `PC margins INFO`: the PC's `station.yaml` must be on its teleop block, whose margins are these (the PC's
+    directions, step 8, "Teleop settings"). The PC does not report them, so nothing here can check it. With smaller PC
+    margins a key held into the floor can fault the PC.
 - **If not:** the `FAIL` row says what to fix; see "When something fails".
 
 ---
@@ -251,56 +263,84 @@ the Pi streaming.
 
 1. **Physical:** router on, arm controller on, user stop plugged in and within reach, table clear apart from the
    scene.
-2. **PC:** Desk (`https://172.16.0.2`): unlock the brakes, activate FCI, release the user stop. Then
+2. **PC:** Desk (`https://172.16.0.2`): unlock the brakes, activate FCI, release the user stop. Check that
+   `control_deploy/station.yaml` is on its teleop block (the PC's directions, step 8, "Teleop settings"). Then
    `control_deploy run` and wait for `control_deploy: ready`. The fingers home once and the arm holds. Leave it
    running all session. (It says `start policy_deploy on the laptop`: here that means `teleop_collect run`.)
-3. **Pi:** press the C button; the LED turns blue.
-4. **Laptop:**
+3. **PC, the start pose:** press `h` (all 7 joints slowly to the home pose; wait for `homing finished`), then `p` (a
+   slow move to the PC's start pose `homing.q_start_rad`, the hand opens; wait for `start pose reached`). Hand on the
+   user stop. **Do this before `teleop_collect run`:** teleop takes the arm's pose at its start-up as this session's
+   start pose.
+4. **Pi:** press the C button; the LED turns blue.
+5. **Laptop:**
 
    ```bash
    ~/envs/teleop_collect/bin/teleop_collect check
    ~/envs/teleop_collect/bin/teleop_collect run
    ```
 
-   `run` runs the same checks, then the start-up: C2 from the PC, the `hello` checks, the clock map, then **the whole
-   arm homes once** (a slow move of all 7 joints to the PC's home pose). **Keep a hand on the user stop.**
+   `run` runs the same checks, then the start-up: C2 from the PC, the `hello` checks, the clock map, both cameras,
+   then it takes the arm's pose as the start pose. **The arm does not move.**
 
-- **Good:** `teleop_collect: teleop: start-up checks, then the arm homes once (a slow move of all 7 joints): keep a
-  hand on the user stop`, the arm homes, then `teleop_collect: all 4 processes ready (session: ...)` and
-  `teleop_collect: ready: open http://127.0.0.1:8765`. The browser opens the page (if not, open that address).
+- **Good:** `teleop_collect: teleop: the start pose is the arm's pose at start-up: press h, then p on the PC first`,
+  then `teleop_collect: all 4 processes ready (session: ...)` and `teleop_collect: ready: open http://127.0.0.1:8765`.
+  The browser opens the page (if not, open that address). Its messages show `start pose: the arm's pose now (x, y, z
+  m); every episode starts here (h, then p on the PC)` and `teleop assumes the PC's safety.box_margin_m 0.05 and
+  cone_margin_deg 10 (...)`.
 - **If not:** `teleop_collect: not started: N check(s) failed (see above)` or `teleop_collect: FAILED <process> ...`:
-  "When something fails".
+  "When something fails". The message `start pose not learned: the PC is homing; ...`: `run` started while the PC
+  was still moving; the pose after that move is the start pose (nothing to do).
+
+**The start pose** is the PC's `homing.q_start_rad`, measured once on the PC (the PC's directions, step 10, "The
+start pose", with `pc_probe --start-pose` here, "The tools"). The first **Start episode** of a session confirms it
+with the PC; from then on it is fixed for the session. Once `homing.q_start_rad` is set, the PC itself refuses a
+start anywhere else.
+
+**Not measured yet** (`p` answers `key p refused: homing.q_start_rad is not set: ...`): press only `h`. The start pose
+is then home, and the PC checks nothing at Start.
+
+**Collect and deploy with the same start pose.** A policy starts where its demos started. Demos recorded with
+`homing.q_start_rad` unset start at home: deploy that policy with `homing.q_start_rad` unset too, or record them again
+after setting it. Changing `homing.q_start_rad` later means recording again. The value is committed on
+`rnoro/final-deployment` (the PC's directions, step 10), so the deployment uses the same one.
 
 ### 10. Collecting
 
-All in the page. **Start episode** stays disabled until the arm is at home and idle, the link and both cameras are
-healthy; the line under the buttons says why.
+All in the page. **Start episode** stays disabled until the arm is at the start pose and idle, the link and both
+cameras are healthy; the line under the buttons says why.
 
 1. **Task:** pick one in `task`, or **+ new task**: a name (lowercase letters, digits, `_`) and the task in one line,
    then **Create**. The list below shows that task's episodes.
-2. **Home before every episode:** **Home** in the page, or `h` on the PC's `control_deploy run`. The whole arm moves
-   slowly to the home pose. Wait for `at home ✓ ready to start`, then set up the scene.
+2. **The start pose before every episode:** on the PC, `h`, wait for `homing finished`, then `p`. Wait for the page's
+   `at the start pose ✓ ready to start`, then set up the scene. (The session's first episode shows `at the start-up
+   pose ✓ ready to start (the PC checks it at Start)` instead.)
 3. **Start episode:** the panel shows `REC episode_NNN 0:00`. **Wait about a second before the first key**, so the
    recording opens on the still scene.
 4. **Drive:** hold keys to move, release to stop (step 11). `N` closes the fingers (a grasp with force), `M` opens
    them. Hands off the keys: the arm holds at once.
 5. **Stop episode**, then **Save: success**, **Save: fail** or **Discard** (**Keep recording** goes back). Motion
    stops and the arm holds where it is. A saved episode is complete on disk at once; a discarded one is deleted.
-6. Repeat from 2: Home, scene, Start.
+6. Repeat from 2: `h`, `p` on the PC, scene, Start.
 7. **Delete** an episode: `delete` next to it in the list, then confirm. A delete is refused while an episode
    records: stop it first.
-8. **Stop arm** (button, or `Esc`) at any time, except while homing: the arm holds; an open episode is deleted. While
-   the arm homes, use `s` on the PC or the user stop.
+8. **Stop arm** (button, or `Esc`) at any time: the arm holds (a move of the PC's `h` or `p` stops too); an open
+   episode is deleted.
 9. **Quit:** Ctrl-C in the terminal (closing the terminal does the same). An open episode is deleted, the page shows
-   `disconnected`, and the PC keeps holding the arm. While the arm homes, Ctrl-C sends no stop: use `s` on the PC or
-   the user stop. Then the Pi's C button (LED off). End of the day, on the PC: `q`, then lock the brakes in Desk.
+   `disconnected`, and the PC keeps holding the arm. Then the Pi's C button (LED off). End of the day, on the PC: `q`,
+   then lock the brakes in Desk.
 
 - **Good:** after a save the list shows `episode_NNN success 12.3 s 370 frames`, and the messages
-  `episode_NNN saved: success, ...`. At a box wall or the tilt limit the arm stops in that direction and the panel
-  shows `at workspace limit`: normal.
-- **If not:** an episode that ended by itself is deleted and the messages say why in one line (for example
-  `episode_004: main camera down: check the Pi and ASUS_5g`). Fix it, then Home and Start again. A line starting
-  `FATAL` or a page showing `disconnected`: the run ended; read the terminal ("When something fails").
+  `episode_NNN saved: success, ...`. At the table (the PC's box floor) the arm stops going down and the panel shows
+  `at workspace limit`: normal. Nothing else in the software stops the arm while you drive: only Franka's own limits
+  and reflexes, you (keys released, **Stop arm**, the PC's `s`, the user stop) and a dead link (1 s).
+- **A data problem never stops the arm or the episode.** A camera down or stale shows one warn line, e.g.
+  `episode_004: main camera down: check the Pi and ASUS_5g; the episode goes on (noted in its meta.yaml)`. Keep going
+  or **Stop episode**; it is saved with the warning in its `meta.yaml` (training may leave it out: frames are
+  missing). A failed recording shows `...; the arm goes on: Stop and Discard (this episode cannot be saved)`: **Stop
+  episode**, then **Discard** (Save is refused: `this episode cannot be saved (...): Discard it`).
+- **If not:** an episode that ended by itself (the PC stopped the arm: its `s` or the watchdog) is deleted and the
+  messages say why in one line. Fix it, then `h`, `p` on the PC and Start again. A line starting `FATAL` or a page
+  showing `disconnected`: the run ended; read the terminal ("When something fails").
 
 ### 11. The keys
 
@@ -317,7 +357,7 @@ Only while the page has focus and an episode records. Clicking outside the page 
 | `N` | close the fingers (grasp with force) |
 | `M` | open the fingers fully |
 | `Shift` (held) | slow mode (a quarter of the speed) |
-| `Esc` | **Stop arm** (any time except while homing: then `s` on the PC or the user stop; an open episode is deleted) |
+| `Esc` | **Stop arm** (any time; an open episode is deleted) |
 
 Speeds: 5 cm/s per axis, 10 °/s, held keys add up per axis and opposite keys cancel. The physical user stop is the
 emergency stop: nothing in the page replaces it.
@@ -329,7 +369,7 @@ emergency stop: nothing in the page replaces it.
 | File | What's in it |
 |---|---|
 | `task.yaml` | the task's name and one-line description, when it was created, the next episode number, the settings |
-| `episode_NNN/meta.yaml` | outcome, times, duration, counts, the PC's full `hello` (with `F_T_TCP`), commits, the rig file (the deployment's `contracts/rigs/rig_pi_v3_640.yaml`), the teleop settings, both clock fits |
+| `episode_NNN/meta.yaml` | outcome, times, duration, counts, the PC's full `hello` (with `F_T_TCP`), commits, the rig file (the deployment's `contracts/rigs/rig_pi_v3_640.yaml`), the teleop settings, both clock fits, `warnings` (camera down or stale while recording: code, what, seconds into the episode) |
 | `episode_NNN/main.mkv`, `ultrawide.mkv` | every camera JPEG exactly as the Pi sent it, one video frame each (plays in any video player) |
 | `episode_NNN/main_frames.csv`, `ultrawide_frames.csv` | one row per video frame: `video_index` (its frame in the `.mkv`), frame number, Pi and laptop times, size |
 | `episode_NNN/packets.csv` | one row per Pi packet: times, frame numbers, the pairing verdict |
@@ -337,7 +377,7 @@ emergency stop: nothing in the page replaces it.
 | `episode_NNN/commands.csv` | every request sent to the PC, with its waypoints, twist and reply |
 | `episode_NNN/keys.csv` | every key change from the page |
 | `episode_NNN/clock_pi.csv`, `clock_pc.csv` | the Pi and PC clock fits (and the PC's raw samples) |
-| `episode_NNN/events.jsonl` | start and stop, with laptop times |
+| `episode_NNN/events.jsonl` | start, warnings and stop, with laptop times |
 | `episode_NNN/COMPLETE` | written last: a folder without it is incomplete and is deleted at the next start-up |
 
 `--mock` runs write the same layout under `~/CapstoneTeleop_mock/<task>/` (`station.yaml mock_data_root`) instead.
@@ -363,7 +403,8 @@ only: it never sends anything to the Pi.
 
 ### `pc_probe`: check the link to the PC
 
-**When:** at set-up (step 7), when going wired, or when runs stop with `PC not answering`. With `control_deploy run`
+**When:** at set-up (step 7), when going wired, when runs stop with `PC not answering`, and once to measure the
+start pose (below). With `control_deploy run`
 on the PC and no `teleop_collect run` going (one C3 client at a time). It never moves the arm.
 
 ```bash
@@ -382,6 +423,27 @@ home (press `h` on the PC first), add `--axes`:
 **Good:** `PASS  compare_hello: all equal`, then `TCP x axis -> ...: to the robot's right`,
 `TCP y axis -> ...: back (toward the base)`, `TCP z axis -> ...: down`. "Right" means standing behind the robot,
 facing the way it faces.
+
+**Measuring the start pose** (once, during the PC's directions step 10, "The start pose"): with the arm hand-guided to
+the pose and `control_deploy run` started again (it holds the arm there), add `--start-pose`:
+
+```bash
+~/envs/teleop_collect/bin/python -m teleop_collect.teleop.pc_probe --seconds 3 --start-pose
+```
+
+**Good:** after the checks, five lines (your numbers differ):
+
+```
+q_start_rad: [0.0000, -0.4000, 0.0000, -2.1000, 0.0000, 2.4000, 0.7854]   # paste under franka_control: homing: in the PC's control_deploy/station.yaml
+fingertip (TCP) height: z 0.160 m in the robot base frame
+fingertip direction (TCP z axis) -> base (+0.74, +0.00, -0.67): tilted 48.0 deg from straight down, pointing forward (away from the base)
+gripper width: 80.0 mm
+demos start: fingertips tilted ~48 deg from straight down (38-64), ~16 cm above the table (6-27), hand open; object ~16 cm ahead horizontally and ~17 cm below the fingertips
+```
+
+Compare the height and the tilt with the `demos start` line, then paste the `q_start_rad: [...]` line into the PC's
+`control_deploy/station.yaml`, and on the PC commit and push it on `rnoro/final-deployment` (the PC's directions, step
+10, say where and how). It is the one value that ties these demos to the deployment, so it is kept in git.
 
 ### Trying the tools without hardware
 
@@ -422,7 +484,7 @@ The first runs this package's tests, the second those of the shared C2/C3 code i
 
 `check` names the row. A run that stops prints `teleop_collect: FAILED <process> ...: FATAL <process>: <what
 failed>: <what to check>`. A message in the page that ended an episode means the episode was deleted; the app stays
-up.
+up. A warn line that says `the episode goes on` changes nothing: keep going or Stop.
 
 | You see | Do this |
 |---|---|
@@ -440,20 +502,25 @@ up.
 | `PC not answering: ...: check franka_control on the PC and the link` | is `control_deploy run` still running on the PC? Wi-Fi; then `teleop_collect run` again |
 | `franka_control restarted on the PC: restart teleop_collect run` | the PC's run was restarted: `teleop_collect run` again |
 | `the PC reports fault: ...` | on the PC: Ctrl-C, release the user stop if it was a reflex, `control_deploy run`; then `teleop_collect run` |
-| `the PC's gate rejected waypoint ...: check the workspace box and teleop.motion` | as a fault (above); then check the PC's workspace box (the PC's directions, step 8) |
+| `the PC's gate rejected waypoint ...: check the workspace box and teleop.motion` | as a fault (above); then check that the PC's `station.yaml` is on its teleop block, with `box_margin_m` 0.05 and `cone_margin_deg` 10 (the `PC margins` row; the PC's directions, step 8, "Teleop settings") |
 | `the PC is driving an episode for another C3 client` | stop the other laptop run, `pc_probe` or the PC's `console` |
 | `clock mismatch: ...` or a `hello` mismatch | `link.yaml` equal on both machines (step 4); then `pc_probe` (step 7) |
-| `hello equality FAIL` / `compare_hello FAIL` naming a schema, a limit or `F_T_TCP` | the PC's `rnoro/final-deployment` is not at `ea9f7fb`, the commit this branch's `../contracts` was copied from: on the PC, `git checkout ea9f7fb` and rebuild (the PC's directions, step 2), or re-copy `contracts/` from the PC's commit into this branch |
-| `the PC's homing failed: ...: check the arm's path to the home pose` | clear the arm's path, then `teleop_collect run` again |
+| `hello equality FAIL` / `compare_hello FAIL` naming a schema, a limit or `F_T_TCP` | the PC's `rnoro/final-deployment` has moved past `447910b` (its `contracts/` = `927a5ba`'s, which this branch's `../contracts` copies): on the PC, back to `447910b` and rebuild (the PC's directions, step 2), or re-copy `contracts/` from the PC's commit into this branch |
 | page: `select or create a task first` | pick a task, or **+ new task** |
-| page: `home the arm first (Home, or h on the PC)` | **Home** (or `h` on the PC) |
-| page: `main camera down` / `ultrawide camera stale` (or `down`) | the Pi: C button, LED blue, ASUS_5g; Start comes back once both are `ok` |
+| page: `put the arm at the start pose: h, then p on the PC` | no start pose known yet: on the PC `h`, wait for `homing finished`, then `p` |
+| page: `not at the start pose: h, then p on the PC` | on the PC `h`, then `p`. If it stays after both: this run took another pose as its start pose (it was started before `h`, `p`, with `homing.q_start_rad` unset): Ctrl-C, `h` and `p` on the PC, `teleop_collect run` again. If the arm lands a little off each time instead, raise `teleop: {start_pose: {tolerance_rad: ...}}` in `station.yaml` (default 0.01, keep it below the PC's 0.05) |
+| page: `the PC refused the start here (not the start pose): press p on the PC` | the PC refused a Start here, so this pose is not its start pose: `h` if needed, then `p` on the PC; the pose after the PC's move becomes the start pose |
+| page: `the PC refused start: refused: not at the start pose: press h, then p on the PC` | the episode was not started (nothing recorded): on the PC `h`, then `p`; then Start again |
+| page: `start pose not learned: the PC is ...; the pose after its move is the start pose` | `run` started while the PC was moving the arm; once its `h` / `p` ends, that pose is the start pose |
+| page: `main camera down` / `ultrawide camera stale` (or `down`) as the Start refusal | the Pi: C button, LED blue, ASUS_5g; Start comes back once both are `ok` |
+| page: `episode_NNN: main camera down ...; the episode goes on (noted in its meta.yaml)` (or `stale`) | during an episode: the arm and the recording go on. Keep going or Stop; the episode is saved with the warning (frames are missing there). Then the Pi: C button, LED blue, ASUS_5g |
 | page: `main camera down ... (after a Pi restart: Ctrl-C and run teleop_collect again)` | the Pi's stream restarted (C button off and on, a Pi reboot): both cameras stay down for this run. Ctrl-C, then `teleop_collect run` again |
-| page: `waiting for the PC clock map` | wait a few seconds (after every home); if it stays, `pc_probe` |
-| page: `the PC is homing` / `homing: wait, or press s on the PC (the user stop is always there)` | wait for the home to end |
+| page: `waiting for the PC clock map` | wait a few seconds; if it stays, `pc_probe` |
+| page: `the PC is homing` | the PC's `h`, `p` or `g` is moving: wait for it to end |
 | page: `the PC is fault` | as `the PC reports fault` |
-| page: ``... the PC stopped the arm (watchdog or the PC's `s`): check the link and the PC`` | the episode was deleted: someone pressed `s` on the PC, or Wi-Fi stalled over 1 s. Home, Start again |
-| page: `... recording could not keep up / disk error: ...` | the episode was deleted: free disk space, check the frames log |
+| page: ``... the PC stopped the arm (watchdog or the PC's `s`): check the link and the PC`` | the episode was deleted: someone pressed `s` on the PC, or Wi-Fi stalled over 1 s. `h`, `p` on the PC, Start again |
+| page: `episode_NNN: recording could not keep up / disk error: ...; the arm goes on: Stop and Discard (this episode cannot be saved)` | **Stop episode**, then **Discard** (Save is refused); free disk space, check the frames log |
+| page: `episode_NNN aborted and deleted: recording could not keep up / disk error: ...` | the failure showed only at Stop (after the arm stopped): the episode was deleted; free disk space, check the frames log |
 | page: `... operator stop: nothing to check: the episode was deleted` | you pressed **Stop arm** or `Esc` |
 | page: `teleop not answering` or `frames not answering` | wait a second; if it stays, the terminal shows a `FAILED` line |
 | page: `disconnected: the ui is not running (teleop_collect stopped?)` | the run ended: read the terminal, fix, `teleop_collect run` again |

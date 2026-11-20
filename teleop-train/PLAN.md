@@ -5,7 +5,8 @@ Turns the episodes recorded by `deployment/teleop_collect` into the training dat
 (`umi_policy_dunet`) or behavior prompting (`umi_policy_dunetp`).
 
 `fd:<path>` = `rnoro/final-deployment` @ `ea9f7fb` (`~/Capstone-final-deployment/deployment/<path>`), read-only.
-(Waves 0-1 copied from `2ffe641`; `ea9f7fb` changed the TCP and the deployment rig, §8.)
+(Waves 0-1 copied from `2ffe641`; `ea9f7fb` changed the TCP and the deployment rig, §8. `927a5ba` (2026-11-20)
+changed the TCP length to 235.65 mm and added the PC's start pose, §8; nothing copied here changed.)
 `up:<path>` = `rnoro/data-work-auto` @ `839d23b` (`~/Capstone-data-work/umi-processing/umiproc/dp/<path>`), read-only.
 `tr:<path>` = `rnoro/training` @ `d58817b` (`~/Capstone/<path>`).
 
@@ -135,7 +136,7 @@ happens here.
    - Keep from 0.5 s before the first moving step to 0.5 s after the last one, clamped to the window. Pauses in the
      middle are kept.
    - Why 0.5 s: an action chunk spans 0.8 s (16 steps at 20 Hz), so the still samples at the start carry the coming
-     motion and the policy learns to start from home rather than to wait. The 0.5 s at the end teaches it to stop.
+     motion and the policy learns to start from the start pose rather than to wait. The 0.5 s at the end teaches it to stop.
 6. **Main images:** for each grid step, the nearest main frame (`frames.nearest_frame_index`, at most 50 ms away).
    At 30 fps every step normally has one within 16.7 ms. 50 ms is half the 100 ms main-frame gap limit of §5.3, so
    a single dropped frame (a step up to 33 ms away) passes and the gap rule decides. At teleop speeds (at most
@@ -256,10 +257,16 @@ Notes:
   `package.json` records which one a dataset uses.
 - **TCP:** the one TCP is `deployment/contracts/frames.yaml` (a copy of `fd:contracts/frames.yaml`). Since `ea9f7fb` it
   is training's TCP axes: x = finger closing (image right), y = image down, z = toward the fingertips; +45° about
-  flange z, fingertips 150 mm out. Still `settled: false`: `policy_deploy` refuses any trained policy on the arm until
-  it is checked (`pc_probe --axes`). The PC sends every pose as `O_T_F × F_T_TCP`, and the laptop checks that the PC's
+  flange z. Since `927a5ba` the fingertips are 235.65 mm out (`F_T_TCP` z 0.23565, the printed finger adapter's CAD;
+  150 mm before), so episodes recorded with the 150 mm TCP no longer package. Still `settled: false`: `policy_deploy`
+  refuses any trained policy on the arm until it is checked (`pc_probe --axes`). The PC sends every pose as `O_T_F × F_T_TCP`, and the laptop checks that the PC's
   `F_T_TCP` equals its own at start-up. So the recorded poses are in the TCP the deployment runs, and `package` refuses a
   dataset whose `F_T_TCP` differs from `frames.yaml` (§6 step 2). `F_T_TCP` is recorded in `package.json`.
+- **Start pose:** since `927a5ba` the PC's `p` key moves the arm to `homing.q_start_rad`, and the deployed policy's
+  episodes start there. teleop_collect allows Start only at that pose (`h`, then `p` on the PC before every demo), so
+  every demo starts where the deployment starts. Collecting and deploying must use the same start pose: demos recorded
+  with `homing.q_start_rad` unset start at home, and their policy must be deployed with it unset too. Nothing in the
+  episode records which one was used apart from the poses themselves.
 - **Rotation vectors:** with the TCP pointing down, `eef_rot_axis_angle` has norm ~π and can flip sign between steps.
   Training (`sampler.py` only slices the arrays; `UmiTaskDataset` applies `pose_to_mat` before making poses relative)
   and deployment (`pose_converter.py`, 4×4 matrices) both work on matrices, so a flip changes nothing: checked
@@ -377,7 +384,7 @@ After wave 3, the first real use: record teleop episodes, `teleop_train package`
 | Separate `teleop-train/` at the repo root, copying 3 pieces instead of depending on `umi-processing/` | no SLAM / tags / calibration needed; no cross-branch import |
 | Output into `~/Capstone/data/<task>/` in the handheld layout | `train/all.sh` uses it without `--pull` / `--package` and with no change to `train/` |
 | 60 Hz grid, 224 images, ~10 Hz ultrawide, the handheld zarr keys | `task/umi.yaml` (plain and prompting) reads it unchanged |
-| Trim idle ends by translation, rotation and width speed, 0.5 s margin; keep mid-episode pauses | every episode starts still at home; untrimmed, the policy learns to wait |
+| Trim idle ends by translation, rotation and width speed, 0.5 s margin; keep mid-episode pauses | every episode starts still at the start pose; untrimmed, the policy learns to wait |
 | `success` episodes only by default (`--include-fail` to add the others) | behavior cloning copies whatever it is shown |
 | `pose_source: target` by default | matches `policy_deploy`'s default proprioception and anchor |
 | `ImagePrep` from `final-deployment`, not `umi-processing` | it is the code that runs live |

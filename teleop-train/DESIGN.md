@@ -60,7 +60,8 @@ A policy trained on this data sees in training what `policy_deploy` gives it liv
 |---|---|
 | Images | the same decoder (`cv2.imdecode` + BGR→RGB, as `policy_deploy`'s `JpegDecoder`) and the same `ImagePrep` code, copied from `final-deployment` @ `ea9f7fb`, built from the recorded rig |
 | Rig | teleop_collect records with the deployment's `contracts/rigs/rig_pi_v3_640.yaml`; `package` refuses another one, because the ultrawide prep depends on the lens model |
-| TCP | the PC sends poses as `O_T_F × F_T_TCP`; `package` refuses a dataset whose `F_T_TCP` differs from `deployment/contracts/frames.yaml` |
+| TCP | the PC sends poses as `O_T_F × F_T_TCP`; `package` refuses a dataset whose `F_T_TCP` differs from `deployment/contracts/frames.yaml` (fingertips 235.65 mm out since `final-deployment` `927a5ba`) |
+| Start pose | teleop_collect allows Start only at the PC's start pose (`h`, then `p` on the PC before every demo), where the deployed policy's episodes start too; collect and deploy with the same `homing.q_start_rad` (both unset: home) |
 | Pose | `O_T_TCP_target` by default, as `policy_deploy`'s `pose_source: target` |
 | Rotation | stored as rotation vectors; training and deployment both turn them into matrices first, so the sign flips near π change nothing (checked, 1e-15) |
 

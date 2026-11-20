@@ -29,9 +29,29 @@ is not PC code, and nothing on the PC changes.
   - a real-time loop;
   - bind addresses and the firewall.
 
-**Its C2 `q` and `dq` are always zero.** A home reference built only from joints would therefore always look "at
-home". That is why teleop's home check also uses the TCP target position (`teleop.yaml home.tolerance_m`, STRUCTURE
-§3.3).
+**Its C2 `q` and `dq` are always zero.** A reference pose built only from joints would therefore always match. That
+is why teleop's start pose check also uses the TCP target position (`teleop.yaml start_pose.tolerance_m`), and why the
+fake PC's own start pose checks use the TCP target (below).
+
+## The start pose (2026-11-20)
+
+final-deployment's start-pose work (`927a5ba`) gave the PC a key `p` and a start pose check. The fake PC
+models the PC with `homing.q_start_rad` set, by the TCP target instead of the joints:
+
+- `p_pose` (`config/fake_pc.yaml`: the same as `start_pose`, so a mock session starts at the start pose, as if `h`,
+  then `p` were pressed). `null` models `q_start_rad` unset: `p` is refused and a C3 `start` never checks the pose.
+- `keyboard_start_pose()` is the PC's `p`, with its refusals in its order: `p_pose` unset (`refused:
+  homing.q_start_rad is not set: ...`), then the mode (the StateMachine text, as `h`), then away from `home_pose`
+  (`refused: not at home: press h first`). Else a home-like move (`home_duration_s`, mode `homing`, then `idle`) to
+  `p_pose`, with the hand opening to `gripper_width_max_m`. A stop during it aborts it as a home does.
+- A C3 `start` away from `p_pose` (after the mode check): `refused: not at the start pose: press h, then p on the PC`.
+- "At a pose": the target position within `at_pose_tol_m` (0.002) and its rotation within 1 deg (`AT_POSE_TOL_DEG`).
+- The operator stand-in, `auto_h_p_after_stop_s` (1.0; `null`: off): that long after an episode's stop (`holding` /
+  `running` → `stopped` by a C3 `stop`, the PC's `s` or the watchdog), it presses `h`, and when that home ends in
+  `idle`, `p`. A stop during either cancels the rest; a start before the `h` cancels it. Under `--mock` nobody can
+  press the PC's keys, so every episode would otherwise end the session.
+- The real PC's other checks around `p` (the move's duration against `homing.timeout_s`, the box and the cone at its
+  end) are not modelled, as for `h`.
 
 ## Classes and threads
 
@@ -53,25 +73,29 @@ a handler feeds the watchdog. A broken request never does.
 - `inject_fault`, `restart` (seq from 1);
 - `stall` (C2 and/or C3), `burst_after_stall`, `delay_states`, `drop_states`, `repeat_t_ns`;
 - `set_mode`, `hold_forever`, `shift_clock`, `report_shortened`, `report_pulled_back`;
-- the PC keyboard: `keyboard_home` (`h`), `keyboard_hand_home` (`g`), `keyboard_stop` (`s`);
+- the PC keyboard: `keyboard_home` (`h`), `keyboard_start_pose` (`p`), `keyboard_hand_home` (`g`), `keyboard_stop`
+  (`s`);
 - `handle(msg)`, which answers one request in-process.
 
 ## Decisions
 
-- **Copied whole, unchanged in behaviour but for the plan-replacement fix below** (PLAN §9, STRUCTURE §10.2). It already did everything teleop needs: the
-  blocking C3 home, the keyboard hooks, the drifting clock, the shared schemas. Changing it would make `--mock` differ
-  from what policy_deploy was tested against.
-- The station section is `fake_pc:`, and `config/fake_pc.yaml` is fd:'s, unchanged.
+- **Copied whole, unchanged in behaviour but for the plan-replacement fix and the start pose** (PLAN §9, STRUCTURE
+  §10.2). It already did everything teleop needs: the keyboard hooks, the drifting clock, the shared schemas. Changing
+  it more would make `--mock` differ from what policy_deploy was tested against. The blocking C3 home stays although
+  teleop no longer sends one (the real PC still answers it).
+- The station section is `fake_pc:`, and `config/fake_pc.yaml` is fd:'s with only the start pose block appended
+  (`p_pose`, `at_pose_tol_m`, `auto_h_p_after_stop_s`).
 
 ## Copied from fd: and changed
 
 Every file is from `fd:policy_deploy/policy_deploy/fake_pc/` @ 2ffe641:
 
-- `settings.py`, `drifting_clock.py`, `fake_gate.py` and `plan_follower.py`: imports only.
-- `fake_pc.py`: imports, and one behaviour fix found by the integration tests: an accepted `set_waypoints` first
-  moves the target to "now" (as the all-skipped branch and the real PC's `plan.at(now)` do) before the new plan
-  replaces the old one. Without it, each plan started from the target of the last 100 Hz tick (up to 10 ms old)
-  stamped as "now", so teleop's plan replaced every 20 ms lost up to half its motion: x+ held 1 s moved 33 to 47 mm
+- `drifting_clock.py`, `fake_gate.py` and `plan_follower.py`: imports only.
+- `settings.py`: imports, and the start pose keys.
+- `fake_pc.py`: imports, the start pose (above), and one behaviour fix found by the integration tests: an accepted
+  `set_waypoints` first moves the target to "now" (as the all-skipped branch and the real PC's `plan.at(now)` do) before
+  the new plan replaces the old one. Without it, each plan started from the target of the last 100 Hz tick (up to 10 ms
+  old) stamped as "now", so teleop's plan replaced every 20 ms lost up to half its motion: x+ held 1 s moved 33 to 47 mm
   instead of 50 (the real franka_control: 50.0 mm/s).
 - `__init__.py` and `__main__.py`: also the module name in the docstrings and `(teleop_collect check)` in the bind
   hint.
@@ -89,6 +113,9 @@ fd:policy_deploy/STRUCTURE.md and fd:STRUCTURE.md).
   `error/v1` naming its field and never reaches a handler; the R1/U1/U2 examples are unknown schemas. The fake PC's
   clock offset is 1e6 s there, so the stored example times are in the past on any machine. With the source's 1000 s,
   that needed an uptime above about 34 h.
+- `tests/fake_pc/test_start_pose.py`: `p` (its refusals, texts and order; the move, the hand open; a stop during it),
+  the C3 start at and away from `p_pose`, `p_pose: null` as before, the operator stand-in, the settings keys.
+  `test_fake_pc.py` and `test_shared_examples.py` run with `p_pose` and the stand-in off.
 - Helpers: `tests/launcher_helpers.py` (`make_fake_pc`, `FakeLaptopClock`, `wait_for`). They run it in-process on
   `tcp://127.0.0.1:*`.
 

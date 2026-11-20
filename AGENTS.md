@@ -10,22 +10,33 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17; teleop added 2026-11-18; teleop-train 2026-11-20)
+## Current state (2026-10-17; teleop added 2026-11-18; teleop-train, start pose, no software stops 2026-11-20)
 
 - **Teleop data collection** (this branch, `rnoro/teleop-collect-deploy`): `deployment/teleop_collect/` is built and
   tested; it has not run on hardware yet.
   - What it is: keyboard teleop of the Panda from a browser page on the laptop, recording both Pi streams (MJPEG .mkv)
     and every arm state into `~/CapstoneTeleop/<task>/episode_NNN/`.
-  - The PC runs `control_deploy` from `rnoro/final-deployment`, unchanged and never modified. `deployment/contracts/`
-    here is its byte copy @ `ea9f7fb` (re-synced 2026-11-19, `fd177e1`).
-    - TCP: +45° about flange z (training's axes), still `settled: false`.
+  - The PC runs `control_deploy` from `rnoro/final-deployment` @ `447910b`, unchanged and never modified.
+    `deployment/contracts/` here is its byte copy @ `927a5ba` (re-synced 2026-11-20).
+    - TCP: +45° about flange z, fingertips 235.65 mm (printed finger adapter), still `settled: false`.
     - teleop_collect records with the deployment rig `contracts/rigs/rig_pi_v3_640.yaml`.
     - Mock episode: `~/Downloads/data/incoming/episode_000152`.
-    - `pc_probe --axes` added.
+    - `pc_probe --axes` and `--start-pose`.
+  - **Start pose (2026-11-20, `2e28bf5`):** no laptop home at all. On the PC: `h`, then `p` (to `homing.q_start_rad`),
+    then `teleop_collect run`; the arm's pose at start-up is the session's start pose, confirmed by the PC's first
+    accepted start; before every episode `h`, `p` on the PC. `q_start_rad` is not measured yet (null); once measured
+    it is committed and pushed on final-deployment (PC `control_deploy/station.yaml`). Collect and deploy with the
+    same start pose.
+  - **No software stops outside Franka's limits (2026-11-20, `2e28bf5`):** staleness 250 ms, lead 300 ms, camera /
+    recording problems only warn (`meta.yaml` `warnings:`). The PC's `station.yaml` needs the **teleop block** while
+    collecting (open box except the floor, cone 179°, margins 0.05 m / 10° = teleop.yaml's assumed margins, collision
+    thresholds 3×) and the deployment block before a policy or the console (PC DIRECTIONS "Teleop settings"). A gate
+    rejection faults the PC: the margins must match.
   - Docs: `teleop_collect/{PLAN,STRUCTURE,DESIGN,DIRECTIONS}.md` and `deployment/control_deploy/DIRECTIONS.md`.
-  - Tests: `teleop_collect` has 1301 (1295 passing at the re-sync, plus the `--axes` tests), including the mock run
-    and the cross test against `franka_control --mock`; `contracts` has 582. The env is `~/envs/teleop_collect`.
-    - Known flaky: `test_failure_rows.py::test_a_camera_down_mid_episode...`, a race in the test, not fixed.
+  - Tests: `teleop_collect` 1358 pass (1 root-only skip), including the mock run and the cross test that drives the
+    real `franka_control --mock`'s `h`/`p` keys; `contracts` 582. The env is `~/envs/teleop_collect`. When another
+    session holds ports 5620/5630, run the suite in `unshare -rn sh -c 'ip link set lo up && ...'`. The old flaky
+    camera test was rewritten (no race).
 
 - **teleop-train** (this branch, `teleop-train/`, `745390a`..`0fdec8e`, all pushed): teleop episodes → the training
   `.zarr.zip` + `package.json` that `rnoro/training`'s `train/` uses as-is. Built and checked end to end on mock
@@ -93,18 +104,19 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-- Teleop (everything is pushed; `rnoro/teleop-collect-deploy` @ `0fdec8e` + this AGENTS.md update):
-  1. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md` (the PC at `final-deployment` `ea9f7fb`, the
-     commit this branch's `contracts/` copies), measuring the workspace box first, then the `console` steps.
-  2. On the laptop: `teleop_collect/DIRECTIONS.md`. Set the real addresses in `link.yaml` on both machines and in
-     `station.yaml`. Check the TCP axes at home with `pc_probe --seconds 3 --axes` (x right, y back, z down).
-  3. First teleop: slow mode, hand on the user stop. Record a task, a few `success` demos under 60 s each.
-  4. Train it (`teleop-train/DIRECTIONS.md`): `teleop_train package <task> <dataset>`, then
-     `cd ~/Capstone && train/all.sh <task> <dataset> --policy plain`.
-  - Watch for: `final-deployment` plans a PC start-pose key (`p`), with `start` refused away from the start pose.
-    When it lands, teleop_collect's home/start flow and `contracts/` need another re-sync from it.
-  - Open: the flaky teleop_collect test `test_failure_rows.py::test_a_camera_down_mid_episode...` (a race in the
-    test).
+- Teleop (`rnoro/teleop-collect-deploy` @ `2e28bf5` + the docs commit; not pushed unless the user asked):
+  1. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md` (the PC at `final-deployment` `447910b`,
+     `build.sh` after pulling), the workspace box and floor, the `console` steps on the deployment block.
+  2. Measure the start pose (PC DIRECTIONS step 10: hand-guide, `pc_probe --start-pose`, paste `q_start_rad`, commit
+     and push on final-deployment while on the deployment block). Check the TCP axes (`pc_probe --axes`) and the
+     235.65 mm with a caliper.
+  3. Switch the PC's station.yaml to the teleop block, restart `control_deploy run`. On the laptop: real addresses in
+     `link.yaml`/`station.yaml`, `teleop_collect check` (the PC margins row), then `h`, `p` on the PC and
+     `teleop_collect run`. First demos in slow mode, hand on the user stop, under 60 s each.
+  4. Train (`teleop-train/DIRECTIONS.md`): `teleop_train package <task> <dataset>`, then
+     `cd ~/Capstone && train/all.sh <task> <dataset> --policy plain`. Deploy on the deployment block, same `q_start_rad`.
+  - Open: the reviewer's findings on `2e28bf5` (if any were left); final-deployment moves → re-sync `contracts/` and
+    the copy pins if contracts or copied files change.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.
