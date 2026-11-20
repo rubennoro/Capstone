@@ -54,7 +54,8 @@ Running status between working sessions. Update it at the end of each conversati
   `*_smoke`, `multi/run_001_2026-11-19`.
   Val MSE is only roughly comparable across runs: each holds out its own 1-3 val episodes. In PICK_DOUBLE it rises
   with size (more PICK_TEST2 episodes in val), so it cannot rank those four; compare them with offline eval on one
-  shared episode set. Local notes: `data/PICK_TEST1/RUNS.md` (gitignored, outdated: predates the PICK_DOUBLE runs).
+  shared episode set. Full notes on every policy (datasets, folder contents, best epochs, training times):
+  `data/RUNS.md` (gitignored).
 - **2026-11-19 incidents:** (1) the cluster home filled at 20:49: `run_030` packaging died and two running jobs hung at
   0% GPU; fixed by deleting checkpoints already on the laptop. After the final fetch (2026-11-20) all checkpoints were
   deleted on the cluster (`policies/` 369 MB). Keep fetched checkpoints off the cluster; check the quota on the OOD
