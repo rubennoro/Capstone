@@ -35,7 +35,7 @@ import yaml
 from scipy.spatial.transform import Rotation
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-RIG_FILE = FIXTURES / "rig_pi_v2_640.yaml"
+RIG_FILE = FIXTURES / "rig_pi_v3_640.yaml"
 
 T0_NS = 1_000_000_000_000            # episode start on the laptop clock
 PC_OFFSET_NS = 123_456_789           # t_pc_ns = t_ns + PC_OFFSET_NS
@@ -43,7 +43,9 @@ PI_OFFSET_NS = -987_654_321          # t_*_pi_ns = t_ns + PI_OFFSET_NS
 HOME_POS = np.array([0.5, 0.0, 0.4])
 HOME_ROT = Rotation.from_euler("x", 180.0, degrees=True)     # TCP pointing down
 MEASURED_OFFSET_M = np.array([0.001, 0.0, 0.0])
-F_T_TCP = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.1034], [0.0, 0.0, 0.0, 1.0]])
+# the deployment TCP, deployment/contracts/frames.yaml as of final-deployment ea9f7fb (+45 deg about flange z, 150 mm)
+F_T_TCP = np.array([[0.7071067811865476, -0.7071067811865476, 0.0, 0.0], [0.7071067811865476, 0.7071067811865476, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.150], [0.0, 0.0, 0.0, 1.0]])
 INDEX_BITS = 12
 WIDTH, HEIGHT = 640, 480
 

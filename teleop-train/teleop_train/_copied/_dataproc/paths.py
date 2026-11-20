@@ -1,4 +1,4 @@
-# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/frames/_dataproc/paths.py @ 2ffe641
+# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/frames/_dataproc/paths.py @ ea9f7fb
 # from rnoro/data-work:data-processing/dataproc/paths.py @ a1ddbbc
 # changes: only the NAME_RE line (and its imports) kept
 from __future__ import annotations

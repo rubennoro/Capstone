@@ -4,7 +4,8 @@ Turns the episodes recorded by `deployment/teleop_collect` into the training dat
 `rnoro/training` upload and train on, so a teleop dataset trains exactly like a handheld one: plain diffusion
 (`umi_policy_dunet`) or behavior prompting (`umi_policy_dunetp`).
 
-`fd:<path>` = `rnoro/final-deployment` @ `2ffe641` (`~/Capstone-final-deployment/deployment/<path>`), read-only.
+`fd:<path>` = `rnoro/final-deployment` @ `ea9f7fb` (`~/Capstone-final-deployment/deployment/<path>`), read-only.
+(Waves 0-1 copied from `2ffe641`; `ea9f7fb` changed the TCP and the deployment rig, §8.)
 `up:<path>` = `rnoro/data-work-auto` @ `839d23b` (`~/Capstone-data-work/umi-processing/umiproc/dp/<path>`), read-only.
 `tr:<path>` = `rnoro/training` @ `d58817b` (`~/Capstone/<path>`).
 
@@ -141,7 +142,7 @@ happens here.
      as `fd:policy_deploy/policy_deploy/frames/jpeg_decoder.py` does live:
      `cv2.imdecode(..., cv2.IMREAD_COLOR)` then `cv2.COLOR_BGR2RGB`. Then the pixels match the deployment bit for
      bit; `av`'s own decoder upsamples chroma differently.
-   - Check each frame against the rig's resolution (640×480 for `rig_pi_v2_640`).
+   - Check each frame against the rig's resolution (640×480 for `rig_pi_v3_640`).
    - Prepare with `ImagePrep(parse_rig(meta.rig))`: `prep_main` letterboxes to 224; `prep_ultrawide` maps the fisheye
      to the virtual pinhole, then letterboxes to 224.
 9. **Write:** `EpisodeArrays(name="<task>_episode_NNN", task_label=<task>, ...)`, then `write_episode_zarr` to
@@ -153,7 +154,7 @@ happens here.
 |---|---|
 | `COMPLETE` and a readable `meta.yaml` of version 1 | required |
 | outcome `success` (unless `package --include-fail`) | `fail` episodes are converted but marked `outcome: fail` |
-| `t_ns` / `t_mid_ns` strictly increasing; `video_index` = row number; decoded frame count = CSV rows | exact |
+| `t_ns` / `t_mid_ns` strictly increasing; `video_index` = row number; `.mkv` frame (packet) count = CSV rows | exact |
 | gap between consecutive arm states inside the kept span | ≤ 50 ms (2 s of `seq` gaps never pass) |
 | gap between consecutive main frames inside the kept span | ≤ 100 ms |
 | gap between consecutive ultrawide frames inside the kept span | ≤ 200 ms |
@@ -171,11 +172,12 @@ happens here.
 - the raw path and the sha256 of its `meta.yaml`;
 - window and kept span (ns), `n_steps`, `n_uw`;
 - `pose_source`, `F_T_TCP`, `rig_id` and the sha256 of the rig content;
-- the settings block (all §5.2 / §5.3 numbers) and `CONVERT_VERSION`;
+- the settings block (all §5.2 / §5.3 numbers), `CONVERT_VERSION` and `code_sha256` (a hash of the converting code:
+  `episode_reader`, `trajectory`, `images`, `convert` and `_copied/`);
 - the teleop_train commit and whether it was dirty.
 
 `convert` treats an episode as **up to date** when its `status.json` matches the current `CONVERT_VERSION`, settings,
-`pose_source` and raw `meta.yaml` sha256.
+`code_sha256`, `pose_source` and raw `meta.yaml` sha256. So a code change converts again even without a version bump.
 
 ## 6. Packaging
 
@@ -183,6 +185,12 @@ happens here.
    `--include-fail` is given. Then the first N with `--episodes N`.
 2. **Consistency (refuse if any differs across the selection):** `rig_id` and rig sha256, `F_T_TCP`, `pose_source`,
    `CONVERT_VERSION`. A policy can only be deployed with one TCP and one rig.
+   **The deployment's TCP:** also refuse when the shared `F_T_TCP` differs from this branch's
+   `deployment/contracts/frames.yaml` (within 1e-9 per element, as the hello check), the TCP the deployment runs (§8).
+   **The deployment's rig:** also refuse when the shared rig sha256 differs from that of
+   `deployment/contracts/rigs/rig_pi_v3_640.yaml`, the rig the deployment preps images with (§8).
+   **Fresh:** refuse a status whose settings or `code_sha256` differ from the current ones (the CLI converts first, so
+   this only matters through the Python API).
 3. **Zip:** `build_task_zarr_zip([...episode.zarr], <dataset>.zarr.zip)`, copied unchanged. The images are copied byte
    for byte; there is one task per episode, named `<task>`.
 
@@ -229,14 +237,27 @@ Notes:
 ## 8. Matching the deployment
 
 - **Images:** the same `ImagePrep` code (rule 2) and the same rig content as recorded in `meta.yaml`.
+  teleop_collect records with the deployment's rig, `deployment/contracts/rigs/rig_pi_v3_640.yaml` (training's rig with the
+  measured ultrawide lens, as `fd:policy_deploy` uses it since `ea9f7fb`), so the recorded rig is the deployment's.
+  The main image is only letterboxed, so the rig does not change it. The ultrawide is remapped through the lens model,
+  so a different rig gives different ultrawide images: with the old nominal `rig_pi_v2_640`, 75 % of the pixels
+  differ.
 - **Pose source:** the default is `target` (`O_T_TCP_target`), because `fd:policy_deploy/config/manager.yaml` uses
   `pose_source: target` for both the proprioception and the anchor. With that, the policy observes, predicts and
   commands the same quantity.
 
   `--pose-source measured` exists for comparison. The deployed `pose_source` must then be set to match.
   `package.json` records which one a dataset uses.
-- **TCP:** `F_T_TCP` from `meta.yaml` is recorded in `package.json`. A policy trained on it must be deployed with the
-  same `F_T_TCP` in `fd:contracts/frames.yaml` (the PC's).
+- **TCP:** the one TCP is `deployment/contracts/frames.yaml` (a copy of `fd:contracts/frames.yaml`). Since `ea9f7fb` it
+  is training's TCP axes: x = finger closing (image right), y = image down, z = toward the fingertips; +45° about
+  flange z, fingertips 150 mm out. Still `settled: false`: `policy_deploy` refuses any trained policy on the arm until
+  it is checked (`pc_probe --axes`). The PC sends every pose as `O_T_F × F_T_TCP`, and the laptop checks that the PC's
+  `F_T_TCP` equals its own at start-up. So the recorded poses are in the TCP the deployment runs, and `package` refuses a
+  dataset whose `F_T_TCP` differs from `frames.yaml` (§6 step 2). `F_T_TCP` is recorded in `package.json`.
+- **Rotation vectors:** with the TCP pointing down, `eef_rot_axis_angle` has norm ~π and can flip sign between steps.
+  Training (`sampler.py` only slices the arrays; `UmiTaskDataset` applies `pose_to_mat` before making poses relative)
+  and deployment (`pose_converter.py`, 4×4 matrices) both work on matrices, so a flip changes nothing: checked
+  numerically across 3 flips, obs and actions equal to 1e-15.
 - **Rates:** obs every 3rd grid step (20 Hz), ultrawide ~10 Hz. These are the same as `policy_deploy` assumes for the
   handheld policies.
 - **Gripper:** the policy predicts widths (metres) as before. How `policy_deploy` and the PC turn widths into Panda
@@ -267,7 +288,7 @@ teleop-train/
   tests/
     synthetic_episode.py         builds a raw episode folder with a known trajectory and generated JPEG frames
     test_copies.py               each _copied file equals its source apart from the header and import lines
-    test_episode_reader.py  test_trajectory.py  test_images.py  test_convert.py  test_package.py  test_cli.py
+    test_episode_reader.py  test_trajectory.py  test_images.py  test_convert.py  test_package.py
 ```
 
 ## 10. Environment
@@ -296,7 +317,8 @@ teleop-train/
   - **convert:** every §5.3 row, the up-to-date rule, `--force`, the raw folder unchanged (hash before and after).
   - **package:** selection and `--episodes N`; consistency refusals; zip keys, shapes and dtypes as `task/umi.yaml`;
     the zip read back with the vendored `ReplayBuffer`; the `package.json` fields `train/` reads; sha256 correct.
-  - **cli:** exit codes, the handheld-folder refusal, the printed next command.
+  - **cli** (in test_convert.py and test_package.py): exit codes, the handheld-folder refusal, the printed next
+    command.
 - **Copy check:** `test_copies.py` compares each copied file with its source at the recorded commit, when that worktree
   exists (skipped otherwise).
 - **Mock episode (lead, wave 3):** `teleop_collect run --mock` records a few episodes to `~/CapstoneTeleop_mock`
@@ -343,3 +365,5 @@ After wave 3, the first real use: record teleop episodes, `teleop_train package`
 | `pose_source: target` by default | matches `policy_deploy`'s default proprioception and anchor |
 | `ImagePrep` from `final-deployment`, not `umi-processing` | it is the code that runs live |
 | Refuse mixed rig / TCP / pose source in one dataset | one policy deploys with one TCP and one rig |
+| Refuse a dataset whose `F_T_TCP` differs from `deployment/contracts/frames.yaml` | a policy deployed with another TCP moves in the wrong frame |
+| teleop_collect records with the deployment rig `contracts/rigs/rig_pi_v3_640.yaml` | the ultrawide prep depends on the rig's lens model |

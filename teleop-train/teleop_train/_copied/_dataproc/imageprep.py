@@ -1,4 +1,4 @@
-# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/frames/_dataproc/imageprep.py @ 2ffe641
+# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/frames/_dataproc/imageprep.py @ ea9f7fb
 # from rnoro/data-work:data-processing/dataproc/imageprep.py @ ce9ba42
 # changes: none
 """Image preparation: raw camera frames -> the 224x224 RGB images stored in the training zarr.

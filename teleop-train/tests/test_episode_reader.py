@@ -299,7 +299,7 @@ def test_ftcp_with_int_entries_is_fine(task_dir, fresh):
 
 
 def test_rig_null_says_why(task_dir, fresh):
-    ep = fresh(task_dir, meta_edit=lambda m: m.update(rig=None, rig_note="/x/rig_pi_v2_640.yaml: FileNotFoundError"))
+    ep = fresh(task_dir, meta_edit=lambda m: m.update(rig=None, rig_note="/x/rig_pi_v3_640.yaml: FileNotFoundError"))
     msg = read_refused(ep.episode_dir, "rig is null")
     assert "FileNotFoundError" in msg
 

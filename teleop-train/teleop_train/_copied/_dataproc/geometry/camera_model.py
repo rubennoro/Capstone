@@ -1,4 +1,4 @@
-# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/frames/_dataproc/geometry/camera_model.py @ 2ffe641
+# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/frames/_dataproc/geometry/camera_model.py @ ea9f7fb
 # from rnoro/data-work:data-processing/dataproc/geometry/camera_model.py @ 3fb0ead
 # changes: none
 # Vendored from sensor_rig/sensor_rig/camera_model.py at commit 4be9982 (unchanged apart from this header).

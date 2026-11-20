@@ -26,7 +26,7 @@ CASES = [
     ("_vendor/imagecodecs_numcodecs.py", DATA_WORK, "839d23b", "rnoro/data-work-auto",
      f"{UP}/_vendor/imagecodecs_numcodecs.py", []),
 ] + [
-    (f"_dataproc/{f}", FINAL_DEPLOYMENT, "2ffe641", "rnoro/final-deployment", f"{FD}/{f}", [])
+    (f"_dataproc/{f}", FINAL_DEPLOYMENT, "ea9f7fb", "rnoro/final-deployment", f"{FD}/{f}", [])
     for f in ("__init__.py", "config.py", "paths.py", "imageprep.py", "geometry/__init__.py",
               "geometry/camera_model.py", "geometry/transforms.py")
 ]
