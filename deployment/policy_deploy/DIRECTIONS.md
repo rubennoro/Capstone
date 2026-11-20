@@ -10,87 +10,130 @@ Every command runs from **`deployment/policy_deploy` in your clone** (`~/Capston
 
 ## Running trials (once set up)
 
-The setting-up steps further down are done once. After that, every session is this loop.
+The setting-up steps further down are done once. After that, every session is this.
 
 ### 1. Before you start
 
-- **PC:** `control_deploy run` is running and shows `ready` (the PC's directions).
+- **PC:** `control_deploy run` is running and shows `ready` (the PC's directions). After a user stop or a fault: release
+  the stop, Ctrl-C and `control_deploy run` again.
 - **Pi:** on, and its camera sender running.
 - **Laptop:** on ASUS_5g, **plugged in** (on battery the policy is too slow), sleep turned off.
 
-### 2. Choose the policy (only when changing it)
+### 2. Open two terminals
 
-`use` writes the policy into `station.yaml`; it stays chosen until the next `use`. The run folder is
-`~/Capstone/data/<task>/policy/<run>/`; each one's `README.md` says what it was trained on.
-
-```bash
-~/envs/policy_deploy/bin/policy_deploy use <run folder> --precision bf16 --diffusion-steps 8 --exec-h 12
-```
-
-| Policy | Run folder |
-|---|---|
-| plain diffusion, 30 demos | `~/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19` |
-| behavior prompting, 30 demos (add `--prompt-index N` for another demo) | `~/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18` |
-| plain diffusion, 62 demos (two-object data) | `~/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19` |
-| no motion (tests cameras, link, timing) | `hold_still` instead of a folder |
-
-### 3. Terminal 1: check, then run
+Paste this start-up block into **both** terminals. `U`, `F` and `D` are shortcuts for the commands below; `RUN` is the
+policy for this session (the list in step 3).
 
 ```bash
 cd ~/Capstone/deployment/policy_deploy && unset PYTHONPATH
+U="$HOME/envs/policy_deploy/bin/policy_deploy use"; F="--precision bf16 --diffusion-steps 8 --exec-h 12"; D=~/Capstone/data
+RUN=$D/PICK_DOUBLE/policy/run_002_2026-11-19
+```
+
+- **Terminal 1** runs the policy (steps 3 and 4).
+- **Terminal 2** watches and records what the policy sees, and writes each trial's notes (step 5).
+
+### 3. Choose the policy (terminal 1, only when changing it)
+
+```bash
+$U $RUN $F
+```
+
+`use` writes the policy into `station.yaml`; it stays chosen until the next `use`. The three speed options (`$F`) are
+what this laptop's GPU needs to keep up. Set `RUN` to one of these, in **both** terminals:
+
+| Group | `RUN=` | Name | Data |
+|---|---|---|---|
+| PICK_TEST1, behavior prompting | `$D/PICK_TEST1/policy/run_020_2026-11-19` | BP-10 | pick1-ep10-v1 |
+| | `$D/PICK_TEST1/policy/run_012_2026-11-18` | BP-15 | pick1-ep15-v1 |
+| | `$D/PICK_TEST1/policy/run_014_2026-11-18` | BP-20 | pick1-ep20-v1 |
+| | `$D/PICK_TEST1/policy/run_016_2026-11-18` | BP-25 | pick1-ep25-v1 |
+| | `$D/PICK_TEST1/policy/run_006_2026-11-18` | BP-30 | pick1-v1 |
+| PICK_TEST1, plain diffusion (one day) | `$D/PICK_TEST1/policy/run_030_2026-11-19` | plain-10 | pick1-ep10-v1 |
+| | `$D/PICK_TEST1/policy/run_028_2026-11-19` | plain-15 | pick1-ep15-v1 |
+| | `$D/PICK_TEST1/policy/run_031_2026-11-19` | plain-20 | pick1-ep20-v1 |
+| | `$D/PICK_TEST1/policy/run_024_2026-11-19` | plain-25 | pick1-ep25-v1 |
+| | `$D/PICK_TEST1/policy/run_022_2026-11-19` | plain-30 | pick1-v1 |
+| PICK_DOUBLE, plain diffusion (two days) | `$D/PICK_DOUBLE/policy/run_003_2026-11-19` | double-30 | 15+15, pick1-double-ep15-v1 |
+| | `$D/PICK_DOUBLE/policy/run_004_2026-11-19` | double-40 | 20+20, pick1-double-ep20-v1 |
+| | `$D/PICK_DOUBLE/policy/run_005_2026-11-19` | double-50 | 25+25, pick1-double-ep25-v1 |
+| | `$D/PICK_DOUBLE/policy/run_002_2026-11-19` | double-62 | 30+32, pick1-double-v2: **the current deployment candidate** |
+
+A behavior-prompting (BP) policy is shown one recorded demo before each episode: the first by default, another with
+`--prompt-index N` after `$F`. No motion at all (tests the cameras, the link and the timing): `$U hold_still`.
+
+### 4. Terminal 1: check, then run
+
+```bash
 ~/envs/policy_deploy/bin/policy_deploy check
 ~/envs/policy_deploy/bin/policy_deploy run
 ```
 
 `check` must end `ready` with no `FAIL` row. `run` loads the policy (about 15 s, a warm-up included), then shows
-`[idle] arm idle | cams ok 30/ok 30 fps | ...`. Leave this terminal running for the whole session.
+`[idle] arm idle | cams ok 30/ok 30 fps | ...`. Leave it running for the whole session.
 
-### 4. Terminal 2 (optional): watch and record what the policy sees
-
-A live window of the policy's four 224×224 input images, written to the run's folder as the trial goes. Set the run
-and the trial number first:
-
-```bash
-cd ~/Capstone/deployment/policy_deploy && unset PYTHONPATH
-RUN=~/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19; TRIAL=1
-~/envs/policy_deploy_torch/bin/python -m policy_deploy.frames.probe --live 10 --save $RUN/deploy/$(date +%F_%H-%M)_trial${TRIAL}_probe_live
-```
-
-It needs the **torch** environment's python (the light one cannot open a window). Start it before `c`, stop it with
-Ctrl-C (or `q` in the window) after the episode ends: every image is already written. Next trial: `TRIAL=2`, same line.
-Details: "The frames probe".
-
-### 5. One trial
+### 5. Each trial
 
 Keep a hand on the arm's user stop.
 
-| Where | Key | What happens |
-|---|---|---|
-| PC | `h` | home; wait until it is done |
-| PC | `p` | the start pose, hand open; wait until it is done |
-| laptop | `c` | the episode starts; the policy drives the arm |
-| laptop | `s` | stop now (the first move does not head for the object, or anything looks wrong); the arm holds |
-| laptop | `y` / `n` | end the episode as a success / failure; the arm holds |
+1. **Terminal 2: start recording.** Set the trial number (1, 2, ... per policy), then start the live window. It shows
+   the policy's four 224×224 input images and writes every set into the run's folder, under `deploy/`:
 
-Next trial: again from the PC's `h`. The status line during an episode:
+   ```bash
+   TRIAL=1; SAVE=$RUN/deploy/$(date +%F_%H-%M)_trial${TRIAL}_probe_live
+   ~/envs/policy_deploy_torch/bin/python -m policy_deploy.frames.probe --live 10 --save $SAVE
+   ```
 
-```
-[ep 1 running 1.2 s] step 10 | rtt 2 ms c2 100 Hz clock ok | cycle 106 ms (policy 95) | margin +270 ms | keys: y n s q
-```
+   It needs the **torch** environment's python (the light one cannot open a window).
+2. **Run the episode:**
 
-`margin` must stay positive; `late loops` (idle line) and `rtt` should stay small.
+   | Where | Key | What happens |
+   |---|---|---|
+   | PC | `h` | home; wait until it is done |
+   | PC | `p` | the start pose, hand open; wait until it is done |
+   | laptop (terminal 1) | `c` | the episode starts; the policy drives the arm |
+   | laptop (terminal 1) | `s` | stop now (the first move does not head for the object, or anything looks wrong); the arm holds |
+   | laptop (terminal 1) | `y` / `n` | end the episode as a success / failure; the arm holds |
+
+   The status line during an episode:
+
+   ```
+   [ep 1 running 1.2 s] step 10 | rtt 2 ms c2 100 Hz clock ok | cycle 106 ms (policy 95) | margin +270 ms | keys: y n s q
+   ```
+
+   `margin` must stay positive; `late loops` (idle line) and `rtt` should stay small.
+3. **Terminal 2: stop recording** with Ctrl-C (or `q` in the window). Every image is already written.
+4. **Terminal 2: write the trial's notes.** Paste this, then replace the last line with what the arm did:
+
+   ```bash
+   S=$(ls -td ~/policy_deploy_sessions/2*/ | head -1)
+   cat > $SAVE/NOTES.md <<EOF
+   # Trial $TRIAL: $(basename $RUN), $(date '+%F %H:%M')
+   - Policy: $RUN ($F)
+   - Session: $S
+   - Last episode: $(tail -1 $S/manager/episodes.jsonl | grep -o '"outcome": "[a-z]*"\|"duration_s": [0-9.]*' | tr '\n' ' ')
+   - Chunks clamped into the workspace box (this session): $(grep -c 'clamped into the workspace box' $S/logs/manager.log)
+   - What the arm did: <write it here>
+   EOF
+   ${EDITOR:-nano} $SAVE/NOTES.md
+   ```
+
+Next trial: `TRIAL=2` in step 1, and so on. A recording you forgot to `--save` into the run's folder: move it there by
+hand with the same name (`<date>_<time>_trialN_probe_live`) and write its `NOTES.md` the same way.
 
 ### 6. Changing policy, quitting, and after a failure
 
-- **Another policy:** `q` in terminal 1, `use` (step 2), then `check` and `run` again. The PC keeps running.
+- **Another policy:** `q` in terminal 1; set `RUN` in **both** terminals; `$U $RUN $F`, then `check` and `run`. Trial
+  numbers start again at 1 for each policy (they go into that policy's own `deploy/` folder). The PC keeps running.
 - **Quit:** `q` or Ctrl-C. The PC keeps holding the arm.
 - **The run stopped by itself:** it prints one line, `policy_deploy: FAILED <process> ...: <what failed>: <what to
-  check>`, and the log path. Look the message up in "When something fails", fix it, then `run` again (step 3).
-- **After a fault on the PC** (`the PC reports fault: ...`): on the PC, Ctrl-C, release the user stop if it was a
-  reflex, `control_deploy run`; then `policy_deploy run` here.
+  check>`, and the log path. Look the message up in "When something fails", fix it, then `run` again (step 4).
+- **After the user stop or a fault on the PC** (`the PC reports fault: ...`): on the PC, release the user stop, Ctrl-C,
+  `control_deploy run`; then `policy_deploy run` here. The arm stays where it stopped until the PC's `h`.
 
 Every session is kept in `~/policy_deploy_sessions/<date>_<time>/`: `station.yaml` (which policy and demo ran),
-`logs/`, `manager/episodes.jsonl` (each episode's outcome) and `manager/steps.jsonl`.
+`logs/` (`manager.log` lists every workspace clamp), `manager/episodes.jsonl` (each episode's outcome) and
+`manager/steps.jsonl`. Each policy's recordings and notes: `<run folder>/deploy/<date>_<time>_trialN_probe_live/`.
 
 ---
 
