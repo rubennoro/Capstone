@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teleop-train"
+version = "0.1.0"
+description = "teleop_collect episodes -> the training .zarr.zip that rnoro/training's train/ scripts use"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "numpy==2.2.6",
+    "scipy==1.15.3",
+    "opencv-python-headless==4.12.0.88",
+    "av==17.1.0",
+    "pyyaml==6.0.3",
+    "zarr==2.18.3",
+    "numcodecs==0.13.1",
+    "imagecodecs==2025.3.30",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+teleop_train = "teleop_train.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["teleop_train*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"
