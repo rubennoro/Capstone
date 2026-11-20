@@ -205,6 +205,8 @@ motion:                                   # PLAN 5.2-5.3
 start_pose:                               # the arm's pose when start-up ends (h, then p on the PC first); PLAN 8
   tolerance_rad: 0.01                     # every joint within this of the start pose
   tolerance_m: 0.005                      # and the TCP target position within this (the fake PC reports q = 0)
+  reanchor_tol_rad: 0.05                  # once confirmed: a PC move ending with every joint within this of it
+                                          # re-anchors the start pose there (the PC's homing.at_pose_tol_rad)
 history_s: 1.0
 state_recv_hwm: 1000
 listener_poll_s: 0.02
@@ -577,7 +579,7 @@ The order is fixed:
 10. The start pose: `StartPoseReference.learn(q, O_T_TCP_target)` from the newest C2 when it shows `idle` or
     `stopped` (page message `start pose: the arm's pose now (x, y, z m); every episode starts here (h, then p on the
     PC)`). Otherwise nothing is learned (`start pose not learned: the PC is <mode>; the pose after its move is the start
-    pose`) and the PC's next move gives it (§6.7).
+    pose`) and the PC's next move gives it (§6.7); that C2 goes to `observe`, so the loop catches the end of that move.
 11. `session.yaml`, the ready file, phase IDLE; the assumed PC margins logged and on the page
     (`planner.assumed_margins_text`: `teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg 10 (the
     teleop block of the PC's station.yaml); with smaller PC margins a press into the floor can fault the PC`).
@@ -672,7 +674,9 @@ There is no laptop home (no `u1.home/v1`, no C3 home, no HOMING phase): homing (
 PC's keyboard keys, as in pd: since `927a5ba`. Teleop keeps a `StartPoseReference` (§7.5):
 - **Start-up step 10:** `learn` from the newest C2: the candidate.
 - **Every cycle:** `observe(mode, q, O_T_TCP_target)` of the newest C2. Until confirmed, a `homing` → `idle` in which the
-  arm moved replaces the candidate (logged `candidate: the pose after the PC's move (x, y, z m)`).
+  arm moved replaces the candidate (logged `candidate: the pose after the PC's move (x, y, z m)`). Once confirmed,
+  such a move re-anchors it only when every joint ends within `start_pose.reanchor_tol_rad` (0.05, the PC's
+  `homing.at_pose_tol_rad`) of the confirmed q (logged `re-anchored: ...`); a move ending farther away changes nothing.
 - **The C3 start's reply:** ok → `confirm()` (logged `confirmed: ...`); `refused: not at the start pose ...` →
   `refused_here(q, O_T_TCP_target)` of the newest C2 (the candidate dropped while not confirmed; this pose kept for the
   refusal text of §6.4).
@@ -792,6 +796,7 @@ When a finger command and motion come together, the new width rides on the move'
 class StartPoseSettings:            # the `start_pose:` keys of §3.3
     tolerance_rad: float
     tolerance_m: float
+    reanchor_tol_rad: float
     @classmethod
     def from_config(cls, m: Mapping[str, Any]) -> StartPoseSettings   # missing / unknown keys -> ValueError
 class StartPoseReference:
@@ -800,8 +805,9 @@ class StartPoseReference:
     def observe(self, mode: str, q: np.ndarray, T_target: np.ndarray) -> None
         # every C2. While not confirmed, a homing -> idle transition in which the arm moved (a joint > tolerance_rad
         # or the TCP target > tolerance_m, from the first homing C2 to the idle one) replaces the candidate with that
-        # idle pose (also when none is known); the PC's g moves neither and never counts. Confirmed: nothing changes
-    def confirm(self) -> None                                         # the PC accepted a start: fixed
+        # idle pose (also when none is known); the PC's g moves neither and never counts. Confirmed: such a move
+        # re-anchors to that idle pose only if every joint is within reanchor_tol_rad of the confirmed q
+    def confirm(self) -> None                                         # the PC accepted a start: confirmed
     def refused_here(self, q: np.ndarray, T_target: np.ndarray) -> None
         # the PC refused a start (not at the start pose): the candidate dropped while not confirmed; this pose kept
     @property

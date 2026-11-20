@@ -18,6 +18,7 @@ def test_defaults(settings):
     assert settings.waypoint_lead_ms == 300.0                                  # wave 3: 6 x 50 ms
     assert settings.motion.v_max_m_s == 0.05 and settings.motion.waypoints == 6
     assert settings.start_pose.tolerance_rad == 0.01 and settings.start_pose.tolerance_m == 0.005
+    assert settings.start_pose.reanchor_tol_rad == 0.05                         # the PC's homing.at_pose_tol_rad
     assert settings.u1_max_per_cycle == 4 and settings.at_limit_hold_ms == 500 and settings.messages_kept == 200
     assert settings.timeouts.frames_s == 4.0 and settings.clock.mismatch_min_lead_ms == 60.0
     assert settings.camera_down_s == 2.0
@@ -48,6 +49,7 @@ def test_overrides_merge(make_settings):
     ({"clock": {"round_trip": {"best_fraction": 2.0}}}, "must be in (0, 1]"),
     ({"motion": {"v_max_m_s": 0.2}}, "teleop.motion:"),               # the margin rule (E4's MotionSettings)
     ({"start_pose": {"tolerance_rad": -1.0}}, "teleop.start_pose:"),
+    ({"start_pose": {"reanchor_tol_rad": 0.0}}, "start_pose.reanchor_tol_rad"),
     ({"start_pose": {"on_start": True}}, "teleop.start_pose.on_start: not a key of config/teleop.yaml"),
     ({"home": {"on_start": True}}, "teleop.home: not a key of config/teleop.yaml"),   # no laptop home any more
 ])
@@ -67,5 +69,6 @@ def test_to_dict_and_task_settings_are_plain(settings):
     for doc in (settings.to_dict(), settings.task_settings()):
         assert yaml.safe_load(yaml.safe_dump(doc)) == doc
     assert settings.task_settings()["motion"]["waypoints"] == 6
-    assert settings.task_settings()["start_pose"] == {"tolerance_rad": 0.01, "tolerance_m": 0.005}
+    assert settings.task_settings()["start_pose"] == {"tolerance_rad": 0.01, "tolerance_m": 0.005,
+                                                     "reanchor_tol_rad": 0.05}
     assert "home" not in settings.task_settings()

@@ -75,19 +75,24 @@ the TCP z axis (down at home) toward +x, `tilt_left` toward +y.
     joint by more than `tolerance_rad` or the TCP target by more than `tolerance_m`, between the first `homing` C2 and
     the `idle` one) replaces the candidate with that idle pose, also when none is known: the pose after the PC's `h`,
     then `p`. The PC's `g` (the hand alone) shows the same `homing → idle` and moves neither, so it never counts. An
-    `h` alone also replaces it (with home); the `p` after it then gives the start pose. Once confirmed nothing changes.
-  - `confirm()`: the PC accepted a start at the candidate: fixed for the session. Nothing happens when none is known.
+    `h` alone also replaces it (with home); the `p` after it then gives the start pose. **Once confirmed**, such a move
+    re-anchors the reference to that idle pose only when every joint ends within `reanchor_tol_rad` (0.05, the PC's
+    `homing.at_pose_tol_rad`) of the confirmed q: the PC's `p` ends wherever its own looser check accepts, so teleop
+    follows it there; a move ending farther away (an `h`) changes nothing.
+  - `confirm()`: the PC accepted a start at the candidate: confirmed. Nothing happens when none is known.
   - `refused_here(q, T_target)`: the PC refused a start with `refused: not at the start pose`: the candidate is dropped
     (only while not confirmed) and this pose is kept; `at_refused_pose` lets the Start refusal say `the PC refused the
     start here (not the start pose): press p on the PC`.
-  - The fake PC reports q = 0 and moves only the TCP target, which is why the position is checked too.
+  - The fake PC reports q = 0 and moves only the TCP target, which is why the position is checked too (and why,
+    against it, every confirmed move re-anchors).
 
 ## Tests
 
 `tests/motion/`: key deadman and changes; twist signs, cancelling, slow, normalisation; `advance` (identity at 0,
 directions by effect, pivot, twist about own axis when tilted, rigid); settings values and the margin rule; planner
 times and poses; every controller rule; the start pose reference (`test_start_pose.py`: settings, learn = a candidate, a
-moving `homing → idle` replaces it until confirmed, a `g` never counts, confirm fixes it, refused_here drops it and
+moving `homing → idle` replaces it until confirmed, then re-anchors it only within `reanchor_tol_rad`, a `g` never
+counts, refused_here drops it and
 keeps the refused pose, the tolerances); and the bound for all 4096 key combinations × slow × state ages 0 and the
 guard, from a home and a tilted pose (the home case reaches the bound exactly). Helpers in `tests/core_helpers.py`.
 

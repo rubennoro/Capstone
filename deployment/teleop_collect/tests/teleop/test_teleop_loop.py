@@ -99,6 +99,24 @@ def test_startup_while_the_pc_moves_the_arm_learns_nothing(harness):
     assert h.loop.start_pose.known and h.loop.at_start_pose()
 
 
+def test_startup_skip_seeds_the_observe_so_a_move_ending_before_the_loop_counts(harness):
+    """The race: step 10 sees homing, and the PC's move ends before the loop's first observe (which sees idle only).
+    The skipped learn passes its homing C2 to observe, so that homing -> idle is still the candidate."""
+    from teleop_collect.teleop.startup_sequence import StartupSequence
+    h = harness()
+    h.mode_override = "homing"
+    h._sleep(0.1)
+    StartupSequence(h.loop)._learn_start_pose()
+    assert not h.loop.start_pose.known
+    h.T = h.T.copy()
+    h.T[2, 3] += 0.05
+    h.mode_override = None
+    h._sleep(0.05)
+    h.loop._observe_state(h.clock())                                    # the loop's first observe: idle, moved
+    assert h.loop.start_pose.known and h.loop.at_start_pose()
+    assert np.allclose(h.loop.start_pose.p_ref, h.T[:3, 3])
+
+
 def test_startup_deletes_incomplete_episodes(harness, make_settings):
     h = harness()
     h.store.create("pick_block", "", {})
@@ -476,7 +494,8 @@ def test_the_pcs_g_never_sets_the_start_pose(harness):
     assert h.status().start_refusal == START_REFUSED_HERE
 
 
-def test_a_confirmed_start_pose_is_fixed_for_the_session(harness):
+def test_a_confirmed_start_pose_is_kept_across_an_h(harness):
+    """Confirmed: the PC's h (home, joints far away) changes nothing; its p back to the start pose allows Start."""
     h = harness()
     h.ready()
     start = h.T.copy()
@@ -491,11 +510,35 @@ def test_a_confirmed_start_pose_is_fixed_for_the_session(harness):
     assert h.status().start_refusal == NOT_AT_START_POSE
     other = start.copy()
     other[:3, 3] = (0.30, 0.0, 0.45)
-    h.pc_move(T=other)                                                   # h: home; not the confirmed start pose
+    q_start = h.q.copy()
+    h.pc_move(T=other, q=q_start + 0.5)                                  # h: home; not the confirmed start pose
     assert h.status().start_refusal == NOT_AT_START_POSE and h.loop.start_pose.confirmed
-    h.pc_move(T=start)                                                   # p: back at the start pose
+    h.pc_move(T=start, q=q_start)                                        # p: back at the start pose
     assert h.status().start_allowed
     h.start_episode()
+
+
+def test_a_pc_move_ending_within_reanchor_tol_re_anchors_the_confirmed_pose(harness):
+    """The PC's p ends within its homing.at_pose_tol_rad (0.05) but beyond teleop's 0.01 rad / 5 mm: teleop follows
+    it (re-anchored, still confirmed) instead of refusing Start there for the rest of the session."""
+    h = harness()
+    h.ready()
+    start, q_start = h.T.copy(), h.q.copy()
+    h.start_episode()
+    assert h.loop.start_pose.confirmed
+    assert h.u1(StopEpisode(outcome="success")).ok
+    h.pc.mode = "idle"
+    h.tick(3)
+    home = start.copy()
+    home[:3, 3] = (0.30, 0.0, 0.45)
+    h.pc_move(T=home, q=q_start + 0.5)                                   # h
+    end_T, end_q = start.copy(), q_start + 0.04
+    end_T[0, 3] += 0.008
+    h.pc_move(T=end_T, q=end_q)                                          # p: within 0.05 rad of the confirmed q
+    ref = h.loop.start_pose
+    assert ref.confirmed and np.allclose(ref.q_ref, end_q) and np.allclose(ref.p_ref, end_T[:3, 3])
+    assert h.status().start_allowed
+    assert any(e["kind"] == "start_pose" and e["detail"].startswith("re-anchored") for e in h.events())
 
 
 def test_start_rule_order(harness):

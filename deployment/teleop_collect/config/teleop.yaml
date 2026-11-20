@@ -25,6 +25,8 @@ motion:                                   # PLAN 5.2-5.3
 start_pose:                               # the arm's pose when start-up ends (h, then p on the PC first)
   tolerance_rad: 0.01                     # every joint within this of the start pose
   tolerance_m: 0.005                      # and the TCP target position within this (the fake PC reports q = 0)
+  reanchor_tol_rad: 0.05                  # once confirmed: a PC move ending with every joint within this of it
+                                          # re-anchors the start pose there (the PC's homing.at_pose_tol_rad)
 history_s: 1.0                            # length of the C2 state history
 state_recv_hwm: 1000                      # C2 subscriber queue length (every message is needed for the seq check)
 listener_poll_s: 0.02                     # C2 receive timeout (how fast the listener sees its stop flag)

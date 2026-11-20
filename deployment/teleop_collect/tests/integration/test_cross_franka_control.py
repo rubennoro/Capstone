@@ -1,6 +1,7 @@
 """PLAN 10 "Across" (STRUCTURE.md 11): the laptop's processes against the REAL franka_control code with its fake arm,
 the libfranka-less build already in ~/Capstone-final-deployment (only run, never built or changed; skipped if
-missing). `teleop_collect run --mock` with `launcher: {fake_pc: false}`, so teleop talks to the binary on
+missing). Its `git status --porcelain` must be the same before and after each test (nothing here changed it); it
+need not be clean, since another session may be editing it. `teleop_collect run --mock` with `launcher: {fake_pc: false}`, so teleop talks to the binary on
 127.0.0.1:5620/5630 exactly as to the PC.
 
 The start pose (final-deployment's start-pose work, 927a5ba): the binary's station sets homing.q_start_rad and its
@@ -34,7 +35,7 @@ def franka_control(tmp_path):
     before = final_deployment_status()
     with FrankaControl(tmp_path) as fc:
         yield fc
-    assert final_deployment_status() == before == "", "~/Capstone-final-deployment changed"
+    assert final_deployment_status() == before, "~/Capstone-final-deployment changed during the test"
 
 
 def test_teleop_collect_against_the_real_franka_control(tmp_path, franka_control):

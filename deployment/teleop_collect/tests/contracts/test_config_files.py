@@ -30,8 +30,8 @@ KEYS = {
         mock.drift_ppm mock.send_hwm check.reachable_timeout_s check.subprocess_timeout_s""",
     "teleop": """motion.v_max_m_s motion.w_max_deg_s motion.slow_factor motion.waypoints motion.spacing_ms
         motion.key_stale_ms motion.state_max_age_ms motion.assumed_pc_box_margin_m motion.assumed_pc_cone_margin_deg
-        motion.margin_use start_pose.tolerance_rad start_pose.tolerance_m history_s state_recv_hwm listener_poll_s
-        link_jitter_allowance_s health_poll_ms u1_max_per_cycle at_limit_hold_ms messages_kept timeouts.health_s
+        motion.margin_use start_pose.tolerance_rad start_pose.tolerance_m start_pose.reanchor_tol_rad history_s state_recv_hwm
+        listener_poll_s link_jitter_allowance_s health_poll_ms u1_max_per_cycle at_limit_hold_ms messages_kept timeouts.health_s
         timeouts.frames_s timeouts.home_s timeouts.startup_s timeouts.pc_homing_wait_s clock.hello_period_s
         clock.startup_hello_period_s clock.round_trip.window_s clock.round_trip.best_fraction clock.one_way.window_s
         clock.one_way.best_fraction clock.drift_min_span_s clock.max_drift_ppm clock.min_samples_s clock.min_samples
@@ -91,7 +91,8 @@ def test_documented_defaults():
     assert (m["key_stale_ms"], m["state_max_age_ms"], m["margin_use"]) == (150, 250, 0.8)   # wave 3: 250 (was 50)
     # wave 3: the PC's teleop block (control_deploy/DIRECTIONS.md) sets the same margins (were 0.01 m, 2 deg)
     assert (m["assumed_pc_box_margin_m"], m["assumed_pc_cone_margin_deg"]) == (0.05, 10.0)
-    assert teleop["start_pose"] == {"tolerance_rad": 0.01, "tolerance_m": 0.005} and "home" not in teleop
+    assert teleop["start_pose"] == {"tolerance_rad": 0.01, "tolerance_m": 0.005, "reanchor_tol_rad": 0.05}
+    assert "home" not in teleop
     assert teleop["timeouts"]["pc_homing_wait_s"] == 60.0 and teleop["timeouts"]["home_s"] == 90.0
     assert teleop["timeouts"]["frames_s"] == 4.0   # raised from 2.0 in the final review: frames' stop drains up to 1 + 2 s
     assert teleop["clock"]["min_samples"] == 10 and teleop["clock"]["mismatch_min_lead_ms"] == 60.0

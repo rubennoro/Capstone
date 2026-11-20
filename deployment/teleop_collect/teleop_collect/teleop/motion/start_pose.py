@@ -9,7 +9,10 @@ The PC owns the start pose (its `p` key moves the arm there, and its C3 start re
   (a joint by more than tolerance_rad or the TCP target by more than tolerance_m, between the first `homing` C2 and the
   `idle` one) replaces the candidate with that idle pose, also when none is known: the PC's h, then p, end at the
   start pose. The PC's g (the hand alone) shows the same `homing` -> `idle` on C2 and moves neither: it never counts.
-- `confirm`: the PC accepted a start at the candidate: the pose is fixed for the session.
+- `confirm`: the PC accepted a start at the candidate: the pose is the session's reference. After that, a moving
+  `homing` -> `idle` re-anchors it to that idle pose only when every joint ends within reanchor_tol_rad (the PC's
+  homing.at_pose_tol_rad, 0.05) of the confirmed q: the PC's p ends wherever its own looser check accepts, so the
+  laptop follows it there. A move ending farther away (h, or a p elsewhere) changes nothing.
 - `refused_here`: the PC refused a start with `refused: not at the start pose`: the candidate is dropped (while not
   confirmed) and this pose is kept, so the page can say the PC refused the start here.
 """
@@ -28,10 +31,11 @@ class StartPoseSettings:
 
     tolerance_rad: float          # every joint within this of the reference
     tolerance_m: float            # and the TCP target position within this
+    reanchor_tol_rad: float       # once confirmed: a PC move ending with every joint within this re-anchors
 
     @classmethod
     def from_config(cls, m: Mapping[str, Any]) -> StartPoseSettings:
-        names = ("tolerance_rad", "tolerance_m")
+        names = ("tolerance_rad", "tolerance_m", "reanchor_tol_rad")
         missing = [n for n in names if n not in m]
         unknown = sorted(str(k) for k in m if k not in names)
         if missing:
@@ -41,7 +45,7 @@ class StartPoseSettings:
         return cls(**{n: m[n] for n in names})
 
     def __post_init__(self) -> None:
-        for name in ("tolerance_rad", "tolerance_m"):
+        for name in ("tolerance_rad", "tolerance_m", "reanchor_tol_rad"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not (math.isfinite(value)
                                                                                      and value > 0.0):
@@ -65,7 +69,7 @@ def _p(T: np.ndarray) -> np.ndarray:
 
 class StartPoseReference:
     """This session's start pose: a candidate (learned at start-up, or after the PC's h/p) until the PC accepts a start
-    there, then fixed."""
+    there, then confirmed (re-anchored only by a PC move ending within reanchor_tol_rad of it)."""
 
     def __init__(self, s: StartPoseSettings) -> None:
         self._s = s
@@ -82,19 +86,22 @@ class StartPoseReference:
 
     def observe(self, mode: str, q: np.ndarray, T_target: np.ndarray) -> None:
         """Every C2 the main loop sees. While not confirmed, a homing -> idle transition in which the arm moved
-        replaces the candidate with that idle pose (also when none is known). The PC's g (the hand alone) moves
-        neither the joints nor the TCP target, so it never counts. Once confirmed nothing changes."""
+        replaces the candidate with that idle pose (also when none is known). Once confirmed, such a move re-anchors
+        the reference to that idle pose only when every joint is within reanchor_tol_rad of the confirmed q. The PC's
+        g (the hand alone) moves neither the joints nor the TCP target, so it never counts."""
         if mode == "homing":
             if self._last_mode != "homing" or self._homing_start is None:
                 self._homing_start = (_q(q), _p(T_target))
         elif self._last_mode == "homing":
             start, self._homing_start = self._homing_start, None
-            if mode == "idle" and not self._confirmed and start is not None and self._moved(start, q, T_target):
-                self._ref = (_q(q), _p(T_target))
+            if mode == "idle" and start is not None and self._moved(start, q, T_target):
+                if not self._confirmed or self._within_reanchor(q):
+                    self._ref = (_q(q), _p(T_target))
         self._last_mode = mode
 
     def confirm(self) -> None:
-        """The PC accepted a start at the candidate: fixed for the session. Nothing to confirm when none is known."""
+        """The PC accepted a start at the candidate: the session's reference (re-anchored only by observe). Nothing to
+        confirm when none is known."""
         if self._ref is not None:
             self._confirmed = True
 
@@ -135,6 +142,10 @@ class StartPoseReference:
         if float(np.max(np.abs(_q(q) - q_ref))) > self._s.tolerance_rad:
             return False
         return float(np.linalg.norm(_p(T_target) - p_ref)) <= self._s.tolerance_m
+
+    def _within_reanchor(self, q: np.ndarray) -> bool:
+        assert self._ref is not None
+        return float(np.max(np.abs(_q(q) - self._ref[0]))) <= self._s.reanchor_tol_rad
 
     def _moved(self, start: tuple[np.ndarray, np.ndarray], q: np.ndarray, T_target: np.ndarray) -> bool:
         q0, p0 = start

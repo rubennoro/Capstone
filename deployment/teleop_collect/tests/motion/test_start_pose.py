@@ -28,11 +28,12 @@ def h_then_p(r: StartPoseReference, q_from, T_from, q_to=Q_START, T_to=T_START) 
 
 def test_settings_from_config():
     s = start_pose_settings()
-    assert s.tolerance_rad == 0.01 and s.tolerance_m == 0.005
+    assert s.tolerance_rad == 0.01 and s.tolerance_m == 0.005 and s.reanchor_tol_rad == 0.05
 
 
 @pytest.mark.parametrize("key, value", [("tolerance_rad", 0.0), ("tolerance_m", -1.0), ("tolerance_rad", True),
-                                        ("tolerance_m", float("nan")), ("tolerance_m", "0.005")])
+                                        ("tolerance_m", float("nan")), ("tolerance_m", "0.005"),
+                                        ("reanchor_tol_rad", 0.0), ("reanchor_tol_rad", float("inf"))])
 def test_bad_settings_refused(key, value):
     with pytest.raises(ValueError, match=f"start_pose.{key}"):
         start_pose_settings(**{key: value})
@@ -103,7 +104,8 @@ def test_a_moving_homing_sets_a_candidate_when_none_is_known():
 
 
 def test_g_never_counts():
-    """The PC's g (the hand alone) shows homing -> idle too, moving neither the joints nor the TCP target."""
+    """The PC's g (the hand alone) shows homing -> idle too, moving neither the joints nor the TCP target. Confirmed
+    too: a g at a pose near the confirmed one does not re-anchor."""
     r = ref()
     away_q, away_T = Q_HOME + 0.3, home_pose(x=0.6, z=0.2)
     for mode in ("idle", "homing", "homing", "idle"):
@@ -114,6 +116,11 @@ def test_g_never_counts():
                        ("idle", away_q, away_T)):
         r.observe(mode, q, T)
     assert r.at_start(Q_START, T_START) and not r.at_start(away_q, away_T)
+    r.confirm()
+    near_q = Q_START + 0.03                                         # within reanchor_tol_rad, not tolerance_rad
+    for mode in ("idle", "homing", "homing", "idle"):
+        r.observe(mode, near_q, T_START)
+    assert r.at_start(Q_START, T_START) and not r.at_start(near_q, T_START)
 
 
 def test_idle_to_idle_and_a_stopped_homing_do_not_count():
@@ -192,3 +199,69 @@ def test_refused_here_once_confirmed_keeps_the_pose():
     r.confirm()
     r.refused_here(Q_HOME, home_pose())
     assert r.confirmed and r.known and r.at_start(Q_START, T_START) and r.at_refused_pose(Q_HOME, home_pose())
+
+
+# ---- re-anchor once confirmed
+
+def p_move(r: StartPoseReference, q_to, T_to, q_from=Q_HOME, T_from=None) -> None:
+    """A PC move (its p) from home to (q_to, T_to), as C2 shows it."""
+    T_from = home_pose() if T_from is None else T_from
+    for mode, q, T in (("idle", q_from, T_from), ("homing", q_from, T_from), ("homing", q_to, T_to),
+                       ("idle", q_to, T_to)):
+        r.observe(mode, q, T)
+
+
+def test_a_move_ending_within_reanchor_tol_re_anchors_the_confirmed_pose():
+    """The PC's p ends within its own at_pose_tol_rad (0.05) of the start pose, beyond teleop's 0.01 rad: the
+    confirmed reference follows it there."""
+    r = ref()
+    r.learn(Q_START, T_START)
+    r.confirm()
+    q_end = Q_START.copy()
+    q_end[1] += 0.049
+    q_end[5] -= 0.03
+    T_end = home_pose(x=0.56, z=0.25)
+    assert not r.at_start(q_end, T_end)
+    p_move(r, q_end, T_end)
+    assert r.confirmed and r.at_start(q_end, T_end) and not r.at_start(Q_START, T_START)
+    assert np.allclose(r.q_ref, q_end) and np.allclose(r.p_ref, T_end[:3, 3])
+
+
+def test_the_re_anchor_compares_with_the_confirmed_q_not_the_original():
+    r = ref()
+    r.learn(Q_START, T_START)
+    r.confirm()
+    q1 = Q_START + 0.04
+    p_move(r, q1, T_START)
+    q2 = q1 + 0.04                                                  # 0.08 from Q_START, 0.04 from q1
+    p_move(r, q2, T_START)
+    assert r.at_start(q2, T_START)
+
+
+def test_a_move_ending_outside_reanchor_tol_changes_nothing():
+    r = ref()
+    r.learn(Q_START, T_START)
+    r.confirm()
+    q_end = Q_START.copy()
+    q_end[3] += 0.051                                               # one joint just beyond 0.05
+    p_move(r, q_end, home_pose(x=0.551, z=0.25))
+    assert r.confirmed and r.at_start(Q_START, T_START) and not r.at_start(q_end, home_pose(x=0.551, z=0.25))
+    p_move(r, Q_HOME, home_pose(), q_from=Q_START, T_from=T_START)  # h: home is far away
+    assert r.at_start(Q_START, T_START)
+
+
+def test_reanchor_follows_the_setting():
+    r = StartPoseReference(start_pose_settings(reanchor_tol_rad=0.1))
+    r.learn(Q_START, T_START)
+    r.confirm()
+    p_move(r, Q_START + 0.08, T_START)
+    assert r.at_start(Q_START + 0.08, T_START)
+
+
+def test_unconfirmed_moves_replace_the_candidate_whatever_the_distance():
+    """Before confirmation the rule is unchanged: any moving homing -> idle is the new candidate."""
+    r = ref()
+    r.learn(Q_START, T_START)
+    far_q, far_T = Q_START + 0.5, home_pose(x=0.4, z=0.4)
+    p_move(r, far_q, far_T)
+    assert not r.confirmed and r.at_start(far_q, far_T) and not r.at_start(Q_START, T_START)

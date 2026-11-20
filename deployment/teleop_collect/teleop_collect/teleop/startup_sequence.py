@@ -255,10 +255,13 @@ class StartupSequence:
     def _learn_start_pose(self) -> None:
         """The start pose is the arm's pose now: the operator pressed h, then p on the PC before `teleop_collect run`.
         The PC checks it at the first Start (StartPoseReference.confirm / refused_here). While the PC is moving the arm
-        (homing: its h, g or p) nothing is learned: the pose after that move is the start pose."""
+        (homing: its h, g or p) nothing is learned: the pose after that move is the start pose; this C2 is passed to
+        StartPoseReference.observe so the loop's observe sees the end of that move (homing -> idle)."""
         lp = self.loop
         latest = lp._history.latest()
         if latest is None or latest.mode not in ("idle", "stopped"):
+            if latest is not None:
+                lp.start_pose.observe(latest.mode, latest.q, latest.O_T_TCP_target)
             mode = latest.mode if latest is not None else "no C2"
             text = f"start pose not learned: the PC is {mode}; the pose after its move is the start pose"
             lp._log.log_event("start_pose", text)

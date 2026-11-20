@@ -413,9 +413,10 @@ class FrankaControl:
 
 
 def final_deployment_status() -> str:
-    """`git status --short` of ~/Capstone-final-deployment (read-only: must stay empty)."""
-    return subprocess.run(["git", "-C", str(Path("~/Capstone-final-deployment").expanduser()), "status", "--short"],
-                          capture_output=True, text=True, check=True).stdout
+    """`git status --porcelain` of ~/Capstone-final-deployment. Read-only from here, but another session may be editing
+    it: the test only requires it to be the same before and after (it need not be clean)."""
+    return subprocess.run(["git", "-C", str(Path("~/Capstone-final-deployment").expanduser()), "status",
+                           "--porcelain"], capture_output=True, text=True, check=True).stdout
 
 
 # ------------------------------------------------------------------------------------------------ the page's flow

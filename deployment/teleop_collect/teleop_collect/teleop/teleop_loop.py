@@ -1,28 +1,29 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/episode_loop.py @ 2ffe641
 # changes: teleop_collect STRUCTURE.md 6.3-6.7. The policy step (StepWorker, PolicyStep, the anchor, odd chunks,
 # POLICY_LATE, skips) is replaced by the teleop step: KeyState -> MotionController.step -> one set_waypoints, which is
-# then the cycle's one C3 request (hello if due, else the set, else a heartbeat; rule H1); base and now_pc come from one
-# PcClock snapshot; a C2 seq gap or an old state pauses motion (SLOW); a set skipped entirely is SET_SKIPPED (SLOW); the
-# keyboard Operator and status line are replaced by the U1 server (served from the main loop, up to u1_max_per_cycle per
-# cycle; dispatch() by request class; handler exceptions and conclude are re-raised on the main loop) and TeleopStatus;
-# the episode lifecycle moved to EpisodeFlow (start / stop / discard / abort, R1 and E4's store and recorders);
-# Kind.EPISODE problems abort the open episode and the loop goes on; R1 health (FramesHealth) every health_poll_ms;
-# every C3 request while recording goes to commands.csv, every hello sample and the clock fit to clock_pc.csv, every key
-# change to keys.csv; at_limit from C2 gate.pulled_back; Ctrl-C and SIGTERM abort (delete) an open episode; _finish
-# catches a failing stop (logged, as _conclude does); the conclude reason carries the problem's detail into
-# EpisodeFlow.abort_open; the SIGTERM text is "stopped by the launcher (Ctrl-C, or another process exited)"; up to 3 R1
-# get_health timeouts in a row are a warning, the next concludes; how long each camera has shown down (the start
-# refusal's Pi hint); _wait_until_boundary only sleeps (no worker); process name teleop. Kept from the source: the
-# rhythm (run, cycle boundary), _beat with the clock-jump log, _check_state, the C3 reply checks and the clock-mismatch
-# guard, _refusal_cause, _guard, _conclude / _finish / _shutdown, the periodic clock and link rows. + start pose
-# (final-deployment's start-pose work, 927a5ba, 2026-11-20), as the source's episode_loop now: no laptop
-# home (no u1.home, no phase HOMING, no C3 home, no re-warm after a home, no interrupt_set); homing (h) and the start
-# pose (p) are PC keyboard keys only; the StartPoseReference (learned at the end of start-up, follows the PC's h/p until
-# a start confirms it) instead of the HomeReference; status start_pose_known / start_pose_confirmed / at_start_pose
-# instead of home_known / at_home. + wave 3 (no software stops, 2026-11-20): a C2 seq gap no longer pauses motion
-# (STATE_GAP counted and logged only); STATE_OLD pauses beyond motion.state_max_age_ms (250 ms); Kind.WARN problems
-# (CAMERA_DOWN, CAMERA_STALE, RECORDING_FAILED) go to EpisodeFlow.warn (the page, meta.yaml warnings), never abort the
-# episode or send a stop. The source's own header follows.
+# then the cycle's one C3 request (hello if due, else the set, else a heartbeat; rule H1); base and now_pc come from
+# one PcClock snapshot; an old state (over motion.state_max_age_ms) pauses motion (SLOW), a C2 seq gap is counted
+# only; a set skipped entirely is SET_SKIPPED (SLOW); the keyboard Operator and status line are replaced by the U1
+# server (served from the main loop, up to u1_max_per_cycle per cycle; dispatch() by request class; handler exceptions
+# and conclude are re-raised on the main loop) and TeleopStatus; the episode lifecycle moved to EpisodeFlow (start /
+# stop / discard / abort, R1 and E4's store and recorders); Kind.EPISODE problems abort the open episode and the loop
+# goes on; R1 health (FramesHealth) every health_poll_ms; every C3 request while recording goes to commands.csv, every
+# hello sample and the clock fit to clock_pc.csv, every key change to keys.csv; at_limit from C2 gate.pulled_back;
+# Ctrl-C and SIGTERM abort (delete) an open episode; _finish catches a failing stop (logged, as _conclude does); the
+# conclude reason carries the problem's detail into EpisodeFlow.abort_open; the SIGTERM text is "stopped by the
+# launcher (Ctrl-C, or another process exited)"; up to 3 R1 get_health timeouts in a row are a warning, the next
+# concludes; how long each camera has shown down (the start refusal's Pi hint); _wait_until_boundary only sleeps (no
+# worker); process name teleop. Kept from the source: the rhythm (run, cycle boundary), _beat with the clock-jump log,
+# _check_state, the C3 reply checks and the clock-mismatch guard, _refusal_cause, _guard, _conclude / _finish /
+# _shutdown, the periodic clock and link rows. + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20),
+# as the source's episode_loop now: no laptop home (no u1.home, no phase HOMING, no C3 home, no re-warm after a home,
+# no interrupt_set); homing (h) and the start pose (p) are PC keyboard keys only; the StartPoseReference (learned at
+# the end of start-up, follows the PC's h/p until a start confirms it, then only a PC move ending within
+# start_pose.reanchor_tol_rad) instead of the HomeReference; status start_pose_known / start_pose_confirmed /
+# at_start_pose instead of home_known / at_home. + wave 3 (no software stops, 2026-11-20): a C2 seq gap no longer
+# pauses motion (STATE_GAP counted and logged only); STATE_OLD pauses beyond motion.state_max_age_ms (250 ms);
+# Kind.WARN problems (CAMERA_DOWN, CAMERA_STALE, RECORDING_FAILED) go to EpisodeFlow.warn (the page, meta.yaml
+# warnings), never abort the episode or send a stop. The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/episode_loop.py @ 91b178b
 # changes: start-up moved to StartupSequence; HeartbeatSender (a hello or a heartbeat per cycle) instead of a bare
 # heartbeat; the cycle period is link.yaml heartbeat_period_s; margins in PC time; the CLOCK_MISMATCH counter (skipped
@@ -445,7 +446,8 @@ class TeleopLoop:
                 self.flow.event(problem.code.value, verdict.what_failed)
 
     def _observe_state(self, now: int) -> None:
-        """Every cycle: the start pose reference (follows the PC's h and p until a start confirms it), at_limit."""
+        """Every cycle: the start pose reference (follows the PC's h and p until a start confirms it, then only a PC
+        move ending within start_pose.reanchor_tol_rad of it), at_limit."""
         latest = self._history.latest()
         if latest is None:
             return
@@ -453,7 +455,8 @@ class TeleopLoop:
         known, p_before = ref.known, ref.p_ref
         ref.observe(latest.mode, latest.q, latest.O_T_TCP_target)
         if ref.known and (not known or not np.array_equal(ref.p_ref, p_before)):
-            self._safe_event("start_pose", f"candidate: the pose after the PC's move ({_xyz(ref.p_ref)})")
+            what = "re-anchored" if ref.confirmed else "candidate"
+            self._safe_event("start_pose", f"{what}: the pose after the PC's move ({_xyz(ref.p_ref)})")
         pulled = int(latest.gate.pulled_back)
         if self._last_pulled_back is not None and pulled > self._last_pulled_back:
             self._limit_until_ns = now + self._s.at_limit_hold_ms * NS_PER_MS

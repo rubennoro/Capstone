@@ -85,7 +85,8 @@ stop.
   - **observe** (every cycle, step 7): until confirmed, a C2 `homing` -> `idle` transition in which the arm moved
     replaces the candidate with that idle pose (also when none was known): the pose after the PC's `h`, then `p`. The
     PC's `g` moves only the hand and never counts. A new candidate is a session-log event.
-  - **confirm**: the first C3 start the PC accepts fixes the pose for the session (`start_pose_confirmed`).
+  - **confirm**: the first C3 start the PC accepts confirms the pose (`start_pose_confirmed`); after that only a PC
+    move ending within `start_pose.reanchor_tol_rad` (0.05) of it re-anchors it (`motion/DESIGN.md`).
   - **refused_here**: a C3 start refused with `refused: not at the start pose` (`PC_NOT_AT_START_POSE`) drops the
     candidate (while not confirmed) and keeps this pose for the Start hint; then the existing drop path (folder
     deleted, page message `the PC refused start: <reason>`). Other refusals keep the candidate.
