@@ -6,13 +6,18 @@
 # gone, the restart hint names teleop_collect run; process name teleop; SKIP_CODES -> SLOW_CODES (every SLOW code,
 # SET_SKIPPED included); hint texts: GATE_REJECTED checks teleop.motion, HELLO_MISMATCH and CONTRACT_VIOLATION say
 # "the same contract files", INTERNAL_ERROR "the teleop log", LAUNCHER_STOP "(Ctrl-C, or another process exited)"
-# (the launcher sends SIGTERM for both). The source's own header follows.
+# (the launcher sends SIGTERM for both). + start pose (final-deployment's start-pose work, 927a5ba,
+# 2026-11-20): no laptop home: HOME_STOPPED, HOMING_FAILED and the c3.home branches of from_exception dropped; homing
+# (the PC's h, g or p) is followed, Start refused. + wave 3 (no software stops, 2026-11-20): CAMERA_DOWN,
+# CAMERA_STALE and RECORDING_FAILED are WARN (shown, in meta.yaml warnings; no stop, no abort, no pause; WARN outside
+# an episode is NORMAL); STATE_GAP is NORMAL (counted, logged; motion goes on); + WARN_CODES, COUNTED_CODES. The
+# source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/failure_monitor.py @ 91b178b
 # changes: the codes and texts of STRUCTURE.md 8.5; check_state takes the PC "now" (mapped) and the newest C2 arrival
 # time: STATE_LOST by laptop arrival (liveness), PC_STOPPED compares C2 t_ns with the start ack mapped to PC time;
 # from_exception: a C3 TransportTimeout (not home) is PC_NOT_ANSWERING, a RemoteError from the PC with a field is
 # CONTRACT_VIOLATION and without one PC_REFUSED, PcRestarted is PC_RESTARTED.
-"""FailureMonitor: every problem -> normal, slow, episode or conclude, in one place (STRUCTURE.md 6.5; PLAN 7).
+"""FailureMonitor: every problem -> normal, slow, warn, episode or conclude, in one place (STRUCTURE.md 6.5; PLAN 7).
 
 A new failure rule is one entry in RULES.
 """
@@ -39,19 +44,18 @@ REBOOTED = "the PC rebooted (its clock went back)"
 # code -> (kind, what failed, what to check). Templates use {process}, {detail} and {origin} ("" for this process,
 # "<process>: " for another).
 RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
-    C.CAMERA_STALE: (Kind.SLOW, "{detail}", "check the Pi stream and ASUS_5g"),
+    C.CAMERA_STALE: (Kind.WARN, "{detail}", "check the Pi stream and ASUS_5g"),
     C.CLOCK_STALE: (Kind.SLOW, "{detail}", "the PC clock map has no fresh sample: check the link (pc_probe)"),
-    C.STATE_GAP: (Kind.SLOW, "{detail}", STATE_CHECK),
+    C.STATE_GAP: (Kind.NORMAL, "{detail}", STATE_CHECK),
     C.STATE_OLD: (Kind.SLOW, "{detail}", STATE_CHECK),
     C.SET_SKIPPED: (Kind.SLOW, "{detail}", "a Wi-Fi spike: the next cycle sends a new set"),
     C.SHORTENED: (Kind.NORMAL, "{detail}", NORMAL_CHECK),
     C.PULLED_BACK: (Kind.NORMAL, "{detail}", NORMAL_CHECK),
     C.LOOP_LATE: (Kind.NORMAL, "{detail}", NORMAL_CHECK),
-    C.HOME_STOPPED: (Kind.NORMAL, "home stopped on the PC: {detail}", "the arm holds where it stopped"),
-    C.CAMERA_DOWN: (Kind.EPISODE, "{detail}", CAMERA_CHECK),
+    C.CAMERA_DOWN: (Kind.WARN, "{detail}", CAMERA_CHECK),
     C.PC_STOPPED: (Kind.EPISODE, "the PC stopped the arm (watchdog or the PC's `s`)", "check the link and the PC"),
     C.OPERATOR_ABORT: (Kind.EPISODE, "operator stop", "nothing to check: the episode was deleted"),
-    C.RECORDING_FAILED: (Kind.EPISODE, "recording could not keep up / disk error: {detail}",
+    C.RECORDING_FAILED: (Kind.WARN, "recording could not keep up / disk error: {detail}",
                          "check the free disk space under data_root and the frames log"),
     C.NO_ANSWER: (Kind.CONCLUDE, "{process}: {detail}", "check that {process} is running (see its log)"),
     C.PC_NOT_ANSWERING: (Kind.CONCLUDE, "PC not answering: {detail}", PC_LINK_CHECK),
@@ -68,7 +72,6 @@ RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
     C.PC_BUSY: (Kind.CONCLUDE, "the PC is driving an episode for another C3 client",
                 "stop the other laptop session, pc_probe or console"),
     C.CONTRACT_VIOLATION: (Kind.CONCLUDE, "{detail}", "check that both machines run the same contract files"),
-    C.HOMING_FAILED: (Kind.CONCLUDE, "the PC's homing failed: {detail}", "check the arm's path to the home pose"),
     C.STARTUP: (Kind.CONCLUDE, "startup: {detail}", "check {process}"),
     C.INTERNAL_ERROR: (Kind.CONCLUDE, "{origin}internal error: {detail}", "see the teleop log"),
     C.OPERATOR_STOP: (Kind.STOP, "{detail}", "nothing to check"),
@@ -78,6 +81,10 @@ RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
 
 # the slow problems that pause motion for a cycle (counted, shown on the page)
 SLOW_CODES = tuple(code for code, (kind, _, _) in RULES.items() if kind is Kind.SLOW)
+# the data problems: never stop or pause the arm; each shown once per episode and listed in meta.yaml `warnings`
+WARN_CODES = tuple(code for code, (kind, _, _) in RULES.items() if kind is Kind.WARN)
+# the problem counts an episode's meta.yaml `counts` keeps (by code value)
+COUNTED_CODES = SLOW_CODES + (C.STATE_GAP,) + WARN_CODES
 
 
 class FailureMonitor:
@@ -86,10 +93,10 @@ class FailureMonitor:
         self._counts: dict[ProblemCode, int] = {}
 
     def classify(self, problem: Problem, count: int = 1, episode_open: bool = True) -> Verdict:
-        """The verdict, from RULES; counts it too. An EPISODE problem with no episode open is NORMAL (nothing to
-        abort: a camera down between episodes only disables Start)."""
+        """The verdict, from RULES; counts it too. An EPISODE or WARN problem with no episode open is NORMAL
+        (nothing to abort or note: a camera down between episodes only disables Start)."""
         kind, failed, check = RULES[problem.code]
-        if kind is Kind.EPISODE and not episode_open:
+        if kind in (Kind.EPISODE, Kind.WARN) and not episode_open:
             kind = Kind.NORMAL
         values = {"process": problem.process, "detail": problem.detail,
                   "origin": "" if problem.process == SELF else f"{problem.process}: "}
@@ -105,24 +112,18 @@ class FailureMonitor:
         if isinstance(exc, TransportTimeout):
             request = exc.request or request
             within = f"within {exc.timeout_s:.1f} s"
-            if request == "c3.home/v1":
-                return Problem(C.HOMING_FAILED, PC, f"no reply {within}")
             if request.startswith("c3."):
                 return Problem(C.PC_NOT_ANSWERING, PC, f"no reply to {request} {within}")
             return Problem(C.NO_ANSWER, exc.process or process, f"no reply to {request} {within}")
         if isinstance(exc, RemoteError):
             reply = exc.reply
             req = reply.request or request
-            if exc.process == PC and req == "c3.home/v1" and not reply.field:
-                return Problem(C.HOMING_FAILED, PC, reply.error)
             if reply.field:
                 return Problem(C.CONTRACT_VIOLATION, exc.process, f"{exc.process} refused {req}: {reply.error}")
             if exc.process == PC:
                 return Problem(C.PC_REFUSED, PC, f"{req}: {reply.error}")
             return Problem(C.INTERNAL_ERROR, exc.process, reply.error, check="see its log")
         if isinstance(exc, Refused):
-            if exc.request == "c3.home/v1":
-                return Problem(C.HOMING_FAILED, exc.process, exc.reason)
             if exc.process == PC:
                 return Problem(C.PC_REFUSED, PC, f"{exc.request}: {exc.reason}")
             return Problem(C.INTERNAL_ERROR, exc.process, f"{exc.request} refused: {exc.reason}",
@@ -147,11 +148,11 @@ class FailureMonitor:
         if (latest.mode == "stopped" and episode_running and not stop_sent
                 and (start_ack_pc_ns is None or latest.t_ns >= start_ack_pc_ns)):
             return Problem(C.PC_STOPPED, PC, latest.error or "mode stopped")
-        return None                              # homing: expected in HOMING, otherwise Start and Home are refused
+        return None                              # homing (the PC's h, g or p): followed, Start refused
 
     def check_health(self, health: FramesHealth, recording: bool) -> Problem | None:
-        """R1 health. While recording: the writer's error, a camera down (EPISODE), a camera stale (SLOW). Between
-        episodes a camera down is NORMAL (Start is refused with the reason); stale is not a problem."""
+        """R1 health. While recording: the writer's error, a camera down, a camera stale (all WARN: the episode goes
+        on). Between episodes a camera down is NORMAL (Start is refused with the reason); stale is not a problem."""
         if recording:
             if health.recording_error:
                 return Problem(C.RECORDING_FAILED, "frames", health.recording_error)

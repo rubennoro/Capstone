@@ -11,15 +11,15 @@ from typing import Callable, Iterator
 from deploy_contracts import Ack, Message, RpcServer
 from station_helpers import free_port
 
-from teleop_collect.contracts import (CreateTask, DeleteEpisode, GetPreview, GetStatus, GripperCommand, HomeRequest,
-                                      KeysUpdate, Preview, SelectTask, StartEpisode, StopArm, StopEpisode,
-                                      TeleopStatus, UiMessage)
+from teleop_collect.contracts import (CreateTask, DeleteEpisode, GetPreview, GetStatus, GripperCommand, KeysUpdate,
+                                      Preview, SelectTask, StartEpisode, StopArm, StopEpisode, TeleopStatus,
+                                      UiMessage)
 from teleop_collect.contracts.examples import health, teleop_status
 from teleop_collect.ui.server import UiApp
 from teleop_collect.ui.settings import Settings
 
-U1_REQUESTS = (GetStatus, KeysUpdate, GripperCommand, SelectTask, CreateTask, HomeRequest, StartEpisode, StopEpisode,
-               DeleteEpisode, StopArm)
+U1_REQUESTS = (GetStatus, KeysUpdate, GripperCommand, SelectTask, CreateTask, StartEpisode, StopEpisode, DeleteEpisode,
+               StopArm)
 
 
 def wait_until(pred: Callable[[], bool], timeout_s: float = 3.0, what: str = "the condition") -> None:
@@ -31,9 +31,9 @@ def wait_until(pred: Callable[[], bool], timeout_s: float = 3.0, what: str = "th
 
 
 def idle_status(**change) -> TeleopStatus:
-    """teleop at home, idle, ready to start (no messages)."""
-    d = dict(phase="idle", recording_episode="", episode_s=0.0, arm_mode="idle", at_home=True, start_allowed=True,
-             start_refusal="", moving=False, messages=())
+    """teleop at the (confirmed) start pose, idle, ready to start (no messages)."""
+    d = dict(phase="idle", recording_episode="", episode_s=0.0, arm_mode="idle", at_start_pose=True,
+             start_allowed=True, start_refusal="", moving=False, messages=())
     d.update(change)
     return teleop_status(**d)
 

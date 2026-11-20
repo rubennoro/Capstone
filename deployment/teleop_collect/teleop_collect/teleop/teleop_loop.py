@@ -6,17 +6,23 @@
 # keyboard Operator and status line are replaced by the U1 server (served from the main loop, up to u1_max_per_cycle per
 # cycle; dispatch() by request class; handler exceptions and conclude are re-raised on the main loop) and TeleopStatus;
 # the episode lifecycle moved to EpisodeFlow (start / stop / discard / abort, R1 and E4's store and recorders);
-# Kind.EPISODE problems abort the open episode and the loop goes on; home is a U1 request done in the next cycle as that
-# cycle's C3 request, its wait serves U1 (status and keys only), and a home that ended in idle sets the HomeReference;
-# R1 health (FramesHealth) every health_poll_ms; every C3 request while recording goes to commands.csv, every hello
-# sample and the clock fit to clock_pc.csv, every key change to keys.csv; at_limit from C2 gate.pulled_back; Ctrl-C and
-# SIGTERM abort (delete) an open episode; _finish catches a failing stop (logged, as _conclude does); the conclude
-# reason carries the problem's detail into EpisodeFlow.abort_open; the SIGTERM text is "stopped by the launcher (Ctrl-C,
-# or another process exited)"; up to 3 R1 get_health timeouts in a row are a warning, the next concludes; how long each
-# camera has shown down (the start refusal's Pi hint); _wait_until_boundary only sleeps (no worker); process name
-# teleop. Kept from the source: the rhythm (run, cycle boundary), _beat with the clock-jump log and the re-warm after a
-# home, _check_state, the C3 reply checks and the clock-mismatch guard, _refusal_cause, _guard, _conclude / _finish /
-# _shutdown, the periodic clock and link rows. The source's own header follows.
+# Kind.EPISODE problems abort the open episode and the loop goes on; R1 health (FramesHealth) every health_poll_ms;
+# every C3 request while recording goes to commands.csv, every hello sample and the clock fit to clock_pc.csv, every key
+# change to keys.csv; at_limit from C2 gate.pulled_back; Ctrl-C and SIGTERM abort (delete) an open episode; _finish
+# catches a failing stop (logged, as _conclude does); the conclude reason carries the problem's detail into
+# EpisodeFlow.abort_open; the SIGTERM text is "stopped by the launcher (Ctrl-C, or another process exited)"; up to 3 R1
+# get_health timeouts in a row are a warning, the next concludes; how long each camera has shown down (the start
+# refusal's Pi hint); _wait_until_boundary only sleeps (no worker); process name teleop. Kept from the source: the
+# rhythm (run, cycle boundary), _beat with the clock-jump log, _check_state, the C3 reply checks and the clock-mismatch
+# guard, _refusal_cause, _guard, _conclude / _finish / _shutdown, the periodic clock and link rows. + start pose
+# (final-deployment's start-pose work, 927a5ba, 2026-11-20), as the source's episode_loop now: no laptop
+# home (no u1.home, no phase HOMING, no C3 home, no re-warm after a home, no interrupt_set); homing (h) and the start
+# pose (p) are PC keyboard keys only; the StartPoseReference (learned at the end of start-up, follows the PC's h/p until
+# a start confirms it) instead of the HomeReference; status start_pose_known / start_pose_confirmed / at_start_pose
+# instead of home_known / at_home. + wave 3 (no software stops, 2026-11-20): a C2 seq gap no longer pauses motion
+# (STATE_GAP counted and logged only); STATE_OLD pauses beyond motion.state_max_age_ms (250 ms); Kind.WARN problems
+# (CAMERA_DOWN, CAMERA_STALE, RECORDING_FAILED) go to EpisodeFlow.warn (the page, meta.yaml warnings), never abort the
+# episode or send a stop. The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/episode_loop.py @ 91b178b
 # changes: start-up moved to StartupSequence; HeartbeatSender (a hello or a heartbeat per cycle) instead of a bare
 # heartbeat; the cycle period is link.yaml heartbeat_period_s; margins in PC time; the CLOCK_MISMATCH counter (skipped
@@ -41,18 +47,17 @@ import numpy as np
 from deploy_contracts import Ack, ArmState, Message, SetWaypoints, TransportTimeout
 
 from teleop_collect.contracts import (CAMERAS, CreateTask, DeleteEpisode, FramesHealth, GetStatus, GripperCommand,
-                                      HomeRequest, KeysUpdate, NotSynced, SelectTask, StartEpisode, StopArm,
-                                      StopEpisode, TeleopStatus)
+                                      KeysUpdate, NotSynced, SelectTask, StartEpisode, StopArm, StopEpisode,
+                                      TeleopStatus)
 from teleop_collect.contracts import EpisodeInfo as EpisodeInfoRecord
 from teleop_collect.teleop.episode.store import TaskStore
-from teleop_collect.teleop.errors import RequestCancelled
 from teleop_collect.teleop.failure_monitor import FailureMonitor
 from teleop_collect.teleop.frames_client import FramesClient
 from teleop_collect.teleop.heartbeat_sender import HeartbeatSender
 from teleop_collect.teleop.link_stats import LinkStats
 from teleop_collect.teleop.motion.controller import BaseState, MotionCommand, MotionController
-from teleop_collect.teleop.motion.home import HomeReference
 from teleop_collect.teleop.motion.keys import HeldKeys, KeyState
+from teleop_collect.teleop.motion.start_pose import StartPoseReference
 from teleop_collect.teleop.pc_client import PcClient
 from teleop_collect.teleop.pc_clock import PcClock
 from teleop_collect.teleop.problems import Kind, Problem, ProblemCode, Verdict
@@ -70,7 +75,6 @@ PC = "PC"
 STOP_CALL = (PC, "c3.stop/v1")
 LAUNCHER_STOP_REASON = "stopped by the launcher (Ctrl-C, or another process exited)"
 NOT_CHECKED_PREFIX = "not checked"     # the other waypoints of a rejected request (TOP 3.7.1)
-HOMING_REFUSAL = "homing: wait, or press s on the PC (the user stop is always there)"
 STARTING_REFUSAL = "starting up: wait until teleop is ready"
 SLOW_EVENT_EVERY_NS = NS_PER_S         # a SLOW problem goes to events.jsonl at most once a second per code
 FIT_EVERY_NS = NS_PER_S                # clock_pc.csv fit rows while recording (PLAN 6.1: once per second)
@@ -86,6 +90,11 @@ def gate_rejection_detail(reply) -> str:
     return f"{issue.index}: {issue.reason}"
 
 
+def _xyz(p) -> str:
+    """A position as `x, y, z m` (3 decimals)."""
+    return ", ".join(f"{float(v):.3f}" for v in p) + " m"
+
+
 def set_waypoints_message(chunk_id: int, cmd: MotionCommand) -> SetWaypoints:
     """E4's waypoints as the C3 request (exact dtypes: int64 times, float64 poses and widths)."""
     wps = cmd.waypoints
@@ -99,7 +108,6 @@ class Phase(Enum):
     STARTING = "starting"         # start-up (STRUCTURE.md 6.4)
     IDLE = "idle"                 # no episode
     RECORDING = "recording"       # an episode: keys live, everything recorded
-    HOMING = "homing"             # a blocking C3 home
     STOPPING = "stopping"         # Stop pressed: stop, close the recording, save or discard
     DONE = "done"                 # finished; run() returns
 
@@ -129,7 +137,7 @@ class TeleopLoop:
         self._sleep = sleep
         self._keys = KeyState(settings.motion.key_stale_ms)
         self._motion = MotionController(settings.motion, settings.gripper_width_max_m)
-        self._home_ref = HomeReference(settings.home)
+        self._start_pose = StartPoseReference(settings.start_pose)
         self._messages = MessageLog(settings.messages_kept)
         self.flow = EpisodeFlow(self, store)
         self._u1 = None                   # U1Server (attach_u1); tests call dispatch() directly
@@ -145,7 +153,6 @@ class TeleopLoop:
         self._shut = False
         self._call: tuple[str, str] = ("teleop", "")
         self._beating = False             # hellos/heartbeats started (start-up step 4); nothing on C3 before
-        self._rewarm = False              # after a home: a hello every cycle until the map is ready
         self._hello = None                # the hello reply checked at start-up
         self._last_health: FramesHealth | None = None
         self._next_health_ns = 0
@@ -156,8 +163,6 @@ class TeleopLoop:
         self._start_ack_pc_ns: int | None = None
         self._next_chunk_id = 1
         self._mismatch_count = 0
-        self._home_requested = False
-        self._home_ref_pending = False    # a home ended ok: the next idle C2 is the reference
         self._deferred: BaseException | None = None   # raised by a U1 handler; re-raised on the loop
         self._gaps_seen = 0
         self._health_timeouts = 0         # consecutive R1 get_health timeouts
@@ -187,8 +192,8 @@ class TeleopLoop:
         return self._messages
 
     @property
-    def home_reference(self) -> HomeReference:
-        return self._home_ref
+    def start_pose(self) -> StartPoseReference:
+        return self._start_pose
 
     @property
     def motion(self) -> MotionController:
@@ -209,9 +214,6 @@ class TeleopLoop:
     def terminate(self) -> None:
         """SIGTERM handler: sets the terminate flag, nothing else."""
         self._terminate.set()
-
-    def interrupt_set(self) -> bool:
-        return self._interrupt.is_set() or self._terminate.is_set()
 
     def startup(self, ready_file: Path | Callable[[], None] | None) -> None:
         """STRUCTURE.md 6.4. On failure sets the verdict and phase DONE."""
@@ -256,12 +258,8 @@ class TeleopLoop:
             self._sleep(remaining / NS_PER_S)
 
     def _c3_request(self, now: int, keys: HeldKeys) -> None:
-        """Exactly one C3 request: the queued home, a hello when due, the motion set, else a heartbeat."""
+        """Exactly one C3 request: a hello when due, the motion set, else a heartbeat."""
         if not self._beating:
-            return
-        if self._home_requested:
-            self._home_requested = False
-            self._home()
             return
         if self._heartbeats.hello_due(now):
             self._beat(now)
@@ -277,7 +275,9 @@ class TeleopLoop:
 
     def _motion_inputs(self, now: int, keys: HeldKeys) -> tuple[int | None, BaseState | None]:
         """now_pc and the base from ONE PcClock snapshot and the newest C2 (the state-age guard compares them). The
-        slow problems that pause motion are counted here: no fresh clock sample, a C2 seq gap, an old state."""
+        slow problems that pause motion are counted here: no fresh clock sample, an old state (beyond
+        motion.state_max_age_ms). A C2 seq gap is only counted and logged: the planner extrapolates from the newest
+        C2's own target and time, so motion goes on."""
         latest = self._history.latest()
         gaps = self._history.gap_count()
         new_gap = gaps > self._gaps_seen
@@ -288,23 +288,23 @@ class TeleopLoop:
         try:
             snap = self._pc_clock.snapshot()
         except NotSynced:
-            self._slow(Problem(C.CLOCK_STALE, PC, "no PC clock fit"), keys)
+            self._count_problem(Problem(C.CLOCK_STALE, PC, "no PC clock fit"), keys)
             return None, base
         if not self._pc_clock.ready(now):
-            self._slow(Problem(C.CLOCK_STALE, PC, self._pc_clock.not_ready_reason(now)), keys)
+            self._count_problem(Problem(C.CLOCK_STALE, PC, self._pc_clock.not_ready_reason(now)), keys)
             return None, base
         now_pc = snap.to_pc_ns(self._clock())
         if new_gap:
-            self._slow(Problem(C.STATE_GAP, PC, "a C2 seq gap: no motion this cycle"), keys)
-            return now_pc, None
+            self._count_problem(Problem(C.STATE_GAP, PC, "a C2 seq gap (motion goes on)"), keys)
         age_ms = (now_pc - int(latest.t_ns)) / NS_PER_MS
         if age_ms > self._s.motion.state_max_age_ms:
-            self._slow(Problem(C.STATE_OLD, PC, f"newest C2 {age_ms:.0f} ms old: no motion this cycle"), keys)
+            self._count_problem(Problem(C.STATE_OLD, PC, f"newest C2 {age_ms:.0f} ms old: no motion this cycle"),
+                                keys)
         return now_pc, base
 
-    def _slow(self, problem: Problem, keys: HeldKeys | None = None) -> None:
-        """A SLOW problem: counted; logged at most once a second per code. Not counted when no key is held (nothing
-        was going to move)."""
+    def _count_problem(self, problem: Problem, keys: HeldKeys | None = None) -> None:
+        """A SLOW (or NORMAL) problem of the motion step: counted; logged at most once a second per code. Not
+        counted when no key is held (nothing was going to move)."""
         if keys is not None and not keys.held:
             return
         verdict = self._monitor.classify(problem, episode_open=self._phase is Phase.RECORDING)
@@ -333,10 +333,6 @@ class TeleopLoop:
                 self._log.log_clock({"kind": "jump", "estimator": self._pc_clock.NAME, "jump_ms": jump.jump_ms})
         else:
             self.flow.record_command(t_send, t_reply, HEARTBEAT, None, Ack(ok=True, reason=""), None, False)
-        if self._rewarm and self._pc_clock.ready(self._clock()):
-            self._rewarm = False
-            self._heartbeats.startup_mode(False)
-            self._safe_event("clock", "PC clock map ready again")
 
     def _note_request(self, name: str) -> None:
         if self._keep_requests:
@@ -376,8 +372,8 @@ class TeleopLoop:
         elif reply.accepted > 0:
             self._mismatch_count = 0
         if reply.skipped == n and not (skipped_ahead or future_state):
-            self._slow(Problem(C.SET_SKIPPED, PC, f"set {msg.chunk_id} skipped entirely by the PC (lead "
-                                                  f"{lead_ms:.0f} ms)"))
+            self._count_problem(Problem(C.SET_SKIPPED, PC, f"set {msg.chunk_id} skipped entirely by the PC "
+                                                           f"(lead {lead_ms:.0f} ms)"))
         if reply.shortened:
             self._monitor.classify(Problem(C.SHORTENED, PC, f"{reply.shortened} waypoints shortened"),
                                    count=int(reply.shortened))
@@ -431,12 +427,15 @@ class TeleopLoop:
         return report
 
     def _problem(self, problem: Problem) -> None:
-        """Act on a problem by its kind (PLAN 7): conclude, abort the open episode, or count (slow / normal)."""
+        """Act on a problem by its kind (PLAN 7): conclude, abort the open episode, note a data problem in the episode
+        (warn: the arm and the episode go on), or count (slow / normal)."""
         verdict = self._monitor.classify(problem, episode_open=self._phase is Phase.RECORDING)
         if verdict.kind is Kind.CONCLUDE:
             self._conclude(problem)
         elif verdict.kind is Kind.EPISODE:
             self.flow.abort(verdict)
+        elif verdict.kind is Kind.WARN:
+            self.flow.warn(verdict)
         elif verdict.kind is Kind.SLOW:
             now = self._clock()
             last = self._slow_logged.get(problem.code)
@@ -446,18 +445,15 @@ class TeleopLoop:
                 self.flow.event(problem.code.value, verdict.what_failed)
 
     def _observe_state(self, now: int) -> None:
-        """Every cycle: the home reference (a home of ours that ended in idle; the PC's own h), at_limit."""
+        """Every cycle: the start pose reference (follows the PC's h and p until a start confirms it), at_limit."""
         latest = self._history.latest()
         if latest is None:
             return
-        if self._home_ref_pending:
-            if latest.mode == "idle":
-                self._home_ref.set_from(latest.q, latest.O_T_TCP_target)
-                self._home_ref_pending = False
-                self._safe_event("home", "home reference set")
-            elif latest.mode != "homing":
-                self._home_ref_pending = False
-        self._home_ref.observe(latest.mode, latest.q, latest.O_T_TCP_target)
+        ref = self._start_pose
+        known, p_before = ref.known, ref.p_ref
+        ref.observe(latest.mode, latest.q, latest.O_T_TCP_target)
+        if ref.known and (not known or not np.array_equal(ref.p_ref, p_before)):
+            self._safe_event("start_pose", f"candidate: the pose after the PC's move ({_xyz(ref.p_ref)})")
         pulled = int(latest.gate.pulled_back)
         if self._last_pulled_back is not None and pulled > self._last_pulled_back:
             self._limit_until_ns = now + self._s.at_limit_hold_ms * NS_PER_MS
@@ -494,8 +490,6 @@ class TeleopLoop:
         """One U1 request -> its reply. Runs on the main thread (inside serve). An exception (a C3 timeout during
         start, a conclude) is kept and re-raised on the loop after the reply went out."""
         try:
-            if self._phase is Phase.HOMING and not isinstance(msg, (GetStatus, KeysUpdate)):
-                return Ack(ok=False, reason=HOMING_REFUSAL)
             if self._phase is Phase.STARTING and not isinstance(msg, (GetStatus, KeysUpdate)):
                 return Ack(ok=False, reason=STARTING_REFUSAL)
             if self._phase is Phase.DONE and not isinstance(msg, GetStatus):
@@ -526,17 +520,6 @@ class TeleopLoop:
 
     def _on_create(self, msg: CreateTask) -> Message:
         return self.flow.create(msg.name, msg.description)
-
-    def _on_home(self, msg: HomeRequest) -> Message:
-        if self._phase is not Phase.IDLE:
-            return Ack(ok=False, reason=f"{self._phase.value}: stop the episode first")
-        if self._home_requested:
-            return Ack(ok=False, reason="homing: already asked")
-        if self._pc_mode() == "homing":
-            return Ack(ok=False, reason="the PC is homing (its h or g key): wait for idle")
-        self._home_requested = True
-        self._messages.add("info", "homing: the whole arm moves to the home pose (keep a hand on the user stop)")
-        return Ack(ok=True, reason="")
 
     def _on_start(self, msg: StartEpisode) -> Message:
         return self.flow.start()
@@ -581,7 +564,8 @@ class TeleopLoop:
             tcp_m=np.array(latest.O_T_TCP[:3, 3], dtype=np.float64) if latest is not None else None,
             gripper_width_m=float(latest.gripper_width_m) if latest is not None else None,
             commanded_width_m=float(self._motion.commanded_width_m),
-            home_known=self._home_ref.known, at_home=self.at_home(latest),
+            start_pose_known=self._start_pose.known, start_pose_confirmed=self._start_pose.confirmed,
+            at_start_pose=self.at_start_pose(latest),
             start_allowed=not refusal, start_refusal=refusal,
             at_limit=now < self._limit_until_ns,
             moving=bool(recording and self._motion.moving), slow=bool(recording and keys.slow),
@@ -592,11 +576,11 @@ class TeleopLoop:
             pc_mock=bool(hello.mock) if hello is not None else False,
             messages=tuple(self._messages.after(after_message)), final_line=self._final_line)
 
-    def at_home(self, latest: ArmState | None = None) -> bool:
+    def at_start_pose(self, latest: ArmState | None = None) -> bool:
         latest = self._history.latest() if latest is None else latest
-        if latest is None or not self._home_ref.known:
+        if latest is None:
             return False
-        return self._home_ref.at_home(latest.q, latest.O_T_TCP_target)
+        return self._start_pose.at_start(latest.q, latest.O_T_TCP_target)
 
     def camera_down_s(self, name: str, now: int) -> float:
         """How long the health polls have shown this camera down (0 when it is not)."""
@@ -606,53 +590,7 @@ class TeleopLoop:
     def clock_ready(self, now: int) -> bool:
         return self._beating and self._pc_clock.ready(now)
 
-    # ---- home, stop, quit, launcher stop, conclude ---------------------------------------------------------------
-
-    def _home(self) -> Ack:
-        """STRUCTURE.md 6.7: heartbeats and hellos pause; the wait serves U1 (status, keys); Ctrl-C / SIGTERM cancel
-        it (no stop is sent). Returns the PC's Ack once handled (a failure concludes)."""
-        previous = self._phase
-        self._phase = Phase.HOMING
-        self._home_ref_pending = False
-        self._log.log_event("home", "homing started")
-        try:
-            ack = self._rpc(PC, "c3.home/v1", self._pc.home, self._home_interrupted)
-        except RequestCancelled:
-            self._phase = previous
-            self._log.log_event("home", "cancelled")
-            if self._terminate.is_set():
-                self._launcher_stop(send_stop=False)
-            self._quit("operator quit (Ctrl-C) while homing", send_stop=False)
-        self._note_request("c3.home/v1")
-        self._phase = previous
-        self._raise_deferred()
-        if ack.ok:
-            self._home_ref_pending = True
-            self._log.log_event("home", "home pose reached")
-            self._messages.add("info", "home pose reached")
-        elif self._pc.home_stopped(ack):
-            verdict = self._monitor.classify(Problem(C.HOME_STOPPED, PC, ack.reason))
-            self._log.log_event("home_stopped", f"{verdict.what_failed}: {verdict.what_to_check}")
-            self._messages.add("warn", f"{verdict.what_failed}: {verdict.what_to_check}")
-        elif self._pc.home_refused_homing(ack):
-            self._log.log_event("home_refused", ack.reason)
-            self._messages.add("warn", f"home: the PC is already homing (its h or g key): {ack.reason}")
-        else:
-            self._conclude(Problem(C.HOMING_FAILED, PC, ack.reason or "refused"))
-        self._rewarm = True                                  # the map had no samples during the home
-        self._heartbeats.startup_mode(True)
-        self._beat(self._clock())                            # heartbeats resume at once
-        return ack
-
-    def _home_interrupted(self) -> bool:
-        """Called by PcClient.home between its slices: serves U1 (phase HOMING: status and keys only), then says
-        whether Ctrl-C or SIGTERM came."""
-        if self._u1 is not None:
-            try:
-                self._u1.serve(self._s.u1_max_per_cycle)
-            except Exception as exc:                          # never breaks the home wait; handled after it
-                self._deferred = self._deferred or exc
-        return self.interrupt_set()
+    # ---- stop, quit, launcher stop, conclude ---------------------------------------------------------------------
 
     def _send_stop(self) -> None:
         self._rpc(PC, "c3.stop/v1", self._pc.stop)
@@ -727,10 +665,6 @@ class TeleopLoop:
             log.error("event log: %s", exc)
 
     # ---- helpers -------------------------------------------------------------------------------------------------
-
-    def _pc_mode(self) -> str:
-        latest = self._history.latest()
-        return latest.mode if latest is not None else ""
 
     def _rpc(self, process: str, request: str, fn: Callable, *args):
         """A main-thread client call, remembered so a failure names whom it went to."""
@@ -817,7 +751,6 @@ U1_HANDLERS: dict[type[Message], Callable[[TeleopLoop, Message], Message]] = {
     GripperCommand: TeleopLoop._on_gripper,
     SelectTask: TeleopLoop._on_select,
     CreateTask: TeleopLoop._on_create,
-    HomeRequest: TeleopLoop._on_home,
     StartEpisode: TeleopLoop._on_start,
     StopEpisode: TeleopLoop._on_stop,
     DeleteEpisode: TeleopLoop._on_delete,

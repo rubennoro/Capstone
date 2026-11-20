@@ -25,3 +25,13 @@ start_mode: idle              # the first mode (subprocess tests: e.g. holding f
 start_hold_s: 0.0             # with start_mode holding/running: another C3 client feeds the watchdog for this long
                               # after start-up (a large value: an episode that stays, the H2 refusal test)
 poll_s: 0.01                  # C3 serve poll (how fast the stop flag is seen)
+# + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): the fake PC as the PC with homing.q_start_rad set,
+# by the TCP target (its C2 q is always zero)
+p_pose:                       # where the PC's p takes the TCP target, row-major 4x4, m (= start_pose: a mock session
+  - [1.0, 0.0, 0.0, 0.45]     # starts at the start pose, as if h, then p were pressed); null: p refused, as
+  - [0.0, -1.0, 0.0, 0.0]     # q_start_rad unset, and C3 start never checks the pose
+  - [0.0, 0.0, -1.0, 0.30]
+  - [0.0, 0.0, 0.0, 1.0]
+at_pose_tol_m: 0.002          # "at home" for p, "at the start pose" for C3 start (and the rotation within 1 deg)
+auto_h_p_after_stop_s: 1.0    # the operator stand-in: this long after an episode's stop, h, then p when that home
+                              # ends in idle; null: nobody presses them

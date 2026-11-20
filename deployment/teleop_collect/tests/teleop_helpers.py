@@ -15,6 +15,9 @@
 # - from manager_pc_fakepc: wait_for (unchanged); the in-process FakePc is replaced by SocketPc, a small fake PC on
 #   real sockets (C2 PUB at 100 Hz, C3 REP) for the start-up, listener and pc_probe tests (the real fake PC is E6's);
 # - from manager_raw_server: RawServer, unchanged.
+# + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): FakePcClient has no home()
+#   any more (teleop sends no C3 home: no home_behaviour, during_home, interrupted_calls); + TeleopHarness.pc_move
+#   (the PC's h or p as C2 shows it: homing while the arm moves, then idle).
 # The sources' own headers: manager_fakes.py "adapted from rnoro/deployment:deployment/message_comms/tests/fakes.py
 # @ 91b178b"; manager_harness.py "adapted from rnoro/deployment:deployment/message_comms/tests/harness.py @ 91b178b";
 # manager_raw_server.py "copied from rnoro/deployment:deployment/message_comms/tests/raw_server.py @ 91b178b";
@@ -38,11 +41,9 @@ from station_helpers import write_station
 from teleop_collect.contracts import (CameraHealthReport, CameraSummary, FramesHealth, HealthReport,
                                       RecordingSummary)
 from teleop_collect.teleop.episode.store import TaskStore
-from teleop_collect.teleop.errors import RequestCancelled
 from teleop_collect.teleop.failure_monitor import FailureMonitor
 from teleop_collect.teleop.heartbeat_sender import HeartbeatSender
 from teleop_collect.teleop.link_stats import LinkStats
-from teleop_collect.teleop.pc_client import PcClient
 from teleop_collect.teleop.pc_clock import HelloSample, make_pc_clock
 from teleop_collect.teleop.session_log import SessionLog
 from teleop_collect.teleop.settings import Settings
@@ -171,9 +172,6 @@ class FakePcClient:
     """PcClient stand-in: records every call with the laptop clock time; keeps the mode the PC would broadcast; its
     clock is the laptop fake clock + PC_OFFSET_NS (+ offset changes)."""
 
-    home_stopped = staticmethod(PcClient.home_stopped)
-    home_refused_homing = staticmethod(PcClient.home_refused_homing)
-
     def __init__(self, clock: FakeClock, poll_s: float = 0.02) -> None:
         self.clock = clock
         self.calls: list[str] = []
@@ -183,14 +181,10 @@ class FakePcClient:
         self.rtt_ns = 1 * NS_PER_MS
         self.hello_change: dict = {}
         self.start_ack = Ack(ok=True, reason="")
-        self.home_behaviour = "ok"                   # "ok" | "stopped" | "refused_homing" | "refuse" | "hang"
-        self.home_s = 1.0
         self.poll_s = poll_s
         self.reply: Callable | None = None           # set_waypoints(msg) -> SetWaypointsReply; default: by time
         self.sent: list = []
         self.error: dict[str, BaseException] = {}
-        self.during_home: Callable[[], None] | None = None
-        self.interrupted_calls = 0
         self.last_rtt_ns: int | None = None
 
     def pc_ns(self, laptop_ns: int | None = None) -> int:
@@ -225,28 +219,6 @@ class FakePcClient:
         self._record("stop")
         if self.mode in ("running", "holding"):
             self.mode = "stopped"
-
-    def home(self, interrupted: Callable[[], bool]) -> Ack:
-        self._record("home")
-        if self.home_behaviour == "refused_homing":
-            return Ack(ok=False, reason="refused: mode is homing")
-        if self.home_behaviour == "refuse":
-            return Ack(ok=False, reason="homing failed: home move would take 34 s")
-        self.mode = "homing"
-        waited = 0.0
-        while self.home_behaviour == "hang" or waited < self.home_s:
-            self.clock.advance(self.poll_s)
-            waited += self.poll_s
-            if self.during_home is not None:
-                self.during_home()
-            self.interrupted_calls += 1
-            if interrupted():
-                raise RequestCancelled("PC", "c3.home/v1")
-            if self.home_behaviour == "stopped" and waited >= self.home_s / 2:
-                self.mode = "stopped"
-                return Ack(ok=False, reason="stopped: homing stopped by the PC keyboard")
-        self.mode = "idle"
-        return Ack(ok=True, reason="")
 
     def set_waypoints(self, msg) -> SetWaypointsReply:
         self._record("set_waypoints")
@@ -406,7 +378,6 @@ class TeleopHarness:
                                self.history, self.listener, self.monitor, self.log, self.checks, self.store,
                                self.clock, self._sleep)
         self.loop.keep_requests()
-        self.pc.during_home = self._home_slice
         self.seq = 0
         self.T = pose()
         self.q = np.zeros(7)
@@ -422,10 +393,6 @@ class TeleopHarness:
         values = dict(T=self.T, mode=self.mode_override or self.pc.mode, q=self.q, width=self.width, **self.gate)
         values.update(kw)
         self.listener.push(make_state(self.seq, self.pc.pc_ns() - self.state_delay_ns, **values))
-
-    def _home_slice(self) -> None:
-        if self.publish:
-            self.push_state()
 
     def _sleep(self, seconds: float) -> None:
         end = self.clock() + int(seconds * 1e9)
@@ -445,6 +412,20 @@ class TeleopHarness:
                 return
             self._sleep(self.settings.heartbeat_period_s)
             self.loop.cycle()
+
+    def pc_move(self, T=None, q=None, cycles: int = 3) -> None:
+        """The PC's h or p (or g, with neither T nor q) as C2 shows it: `homing` while the arm moves to T / q, then
+        `idle`. Each phase lasts `cycles` loop cycles."""
+        self.mode_override = "homing"
+        self.tick(cycles)
+        if T is not None:
+            self.T = T
+        if q is not None:
+            self.q = np.asarray(q, dtype=np.float64)
+        self.tick(cycles)
+        self.mode_override = None
+        self.pc.mode = "idle"
+        self.tick(cycles)
 
     def run_until(self, condition, max_cycles: int = 500) -> None:
         for _ in range(max_cycles):

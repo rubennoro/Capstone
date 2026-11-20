@@ -1,14 +1,23 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/fake_pc/fake_pc.py @ 2ffe641
 # changes: imports; _on_set_waypoints moves the target to "now" before an accepted plan replaces the old one (as
 # its all-skipped branch and the real PC's plan.at(now) do), so a plan replaced every 20 ms no longer loses the time
-# since the last C2 tick and --mock moves at the commanded speed (E7 integration seam fix).
+# since the last C2 tick and --mock moves at the commanded speed (E7 integration seam fix). + start pose
+# (final-deployment's start-pose work, 927a5ba, 2026-11-20): keyboard_start_pose (the PC's p, its
+# refusal texts and order, the hand opened to gripper_width_max_m), C3 start refused away from p_pose, and the operator
+# stand-in (auto_h_p_after_stop_s: h, then p, after an episode's stop).
 """FakePc: the PC as the laptop sees it, for --mock and the tests (STRUCTURE.md 10.1).
 
 Two threads: "fake-pc-state" publishes C2 at state_rate_hz on the drifting clock, and "fake-pc-commands" answers C3
 through deploy_contracts.RpcServer with schemas=SHARED_SCHEMAS (a laptop-only schema is unknown_schema, as on the PC).
 Replies per mode exactly as TOP 3.7.2. Every request that reaches a handler feeds the watchdog; broken ones never do.
 A C3 home blocks the REP socket until the move ends (as the PC). The test hooks (inject_fault, restart, stall, ...)
-and the PC keyboard (keyboard_home, keyboard_hand_home, keyboard_stop) are methods.
+and the PC keyboard (keyboard_home, keyboard_start_pose, keyboard_hand_home, keyboard_stop) are methods.
+
+The start pose (as the real PC with homing.q_start_rad set, by the TCP target since C2 q is always zero): the PC's p
+moves from home to p_pose like a home (mode homing, then idle) with the hand opening to gripper_width_max_m; a C3 start
+is refused unless the target is at p_pose (at_pose_tol_m and AT_POSE_TOL_DEG). With auto_h_p_after_stop_s set, the fake
+PC also stands in for the operator: that long after an episode's stop (holding/running -> stopped: a C3 stop, the PC's
+s, the watchdog) it presses h, and when that home ends in idle, p.
 
 As the real franka_control (fix wave): a set whose waypoints are all skipped freezes the arm at the current target and
 goes `holding`; C2 t_ns freezes only when the 1 kHz loop has ended (inject_fault, start_mode fault), not after a gate
@@ -22,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import subprocess
 import threading
 import time
@@ -43,6 +53,12 @@ from teleop_collect.fake_pc.settings import FakePcSettings
 
 log = logging.getLogger("fake_pc")
 HOME_STOPPED_REASON = "stopped: homing stopped by the PC keyboard (fake PC)"
+AT_POSE_TOL_DEG = 1.0      # "at a pose" also needs the rotation within this (the position: at_pose_tol_m)
+#: The real PC's texts (supervisor.cpp onStartPose / onStart, final-deployment's start-pose work, 927a5ba).
+START_POSE_UNSET = ("refused: homing.q_start_rad is not set: measure it and set it in control_deploy/station.yaml "
+                    "(franka_control: homing:)")
+NOT_AT_HOME = "refused: not at home: press h first"
+NOT_AT_START_POSE = "refused: not at the start pose: press h, then p on the PC"
 
 
 def laptop_commit() -> str:
@@ -60,13 +76,14 @@ def laptop_commit() -> str:
 
 @dataclass
 class _Homing:
-    kind: str                     # "c3" (a C3 home), "arm" (the PC's h), "hand" (the PC's g)
+    kind: str                     # "c3" (a C3 home), "arm" (the PC's h), "start" (the PC's p), "hand" (the PC's g)
     start_ns: int                 # laptop ns
     end_ns: int
     T0: np.ndarray
     T1: np.ndarray
     width_back_m: float = 0.0     # hand: the width to return to
     outcome: str | None = None    # "done" | "stopped" (read by a pending C3 home)
+    then_p: bool = False          # the operator stand-in's h: p follows when it ends in idle
 
 
 class FakePc:
@@ -86,6 +103,8 @@ class FakePc:
         self._loop_ended = settings.start_mode == "fault"   # C2 t_ns frozen (the real loop ended)
         self._stopped_detail = "stop"                # why the mode is stopped (the real PC's refusal names it)
         self._homing: _Homing | None = None
+        self._auto_h_at_ns: int | None = None        # the operator stand-in presses h at this laptop time
+        self._auto_p_due = False                     # ... and p once its h has ended in idle
         if settings.start_mode == "homing":
             now = laptop_clock()
             self._homing = _Homing("arm", now, now + int(settings.home_duration_s * 1e9), self._follower.target.copy(),
@@ -266,6 +285,7 @@ class FakePc:
         self._last_update_ns = now
         if self._hold_forever or now < self._hold_until_ns:
             self._last_request_ns = now
+        self._operator_stand_in(now)
         if self._mode == "homing" and self._homing is not None:
             h = self._homing
             a = (now - h.start_ns) / max(1, h.end_ns - h.start_ns)
@@ -275,6 +295,8 @@ class FakePc:
                 self._follower.move_width(goal, dt)
             else:
                 self._follower.target = interpolate(h.T0, h.T1, a)
+                if h.kind == "start":                     # the hand opens during the move
+                    self._follower.move_width(self._follower.commanded_width_m, dt)
             if now >= h.end_ns:
                 self._finish_homing(now)
             return
@@ -287,6 +309,7 @@ class FakePc:
                 self._follower.hold()
                 self._mode = "stopped"
                 self._stopped_detail = f"watchdog: no request for {(now - self._last_request_ns) / 1e9:.3f} s"
+                self._episode_stopped(now)
         else:
             self._follower.move_width(self._follower.commanded_width_m, dt)
 
@@ -301,6 +324,8 @@ class FakePc:
         h.outcome = "done"
         self._homing = None
         self._mode = "idle"
+        if h.kind == "arm" and h.then_p:
+            self._auto_p_due = True
 
     def _abort_homing(self, source: str) -> None:
         """A stop during homing: hold where the ramp is, mode stopped (the hand: the width where it is). source: "C3"
@@ -314,12 +339,41 @@ class FakePc:
         self._homing = None
         self._mode = "stopped"
         self._stopped_detail = f"stop during {'hand ' if h.kind == 'hand' else ''}homing ({source})"
+        self._auto_h_at_ns, self._auto_p_due = None, False   # a stopped home or p ends the stand-in's h, p
 
     def _stop_now(self) -> None:
         """idle/holding/running -> stopped, holding the current target."""
+        episode = self._mode in ("holding", "running")
         self._follower.hold()
         self._mode = "stopped"
         self._stopped_detail = "stop"
+        if episode:
+            self._episode_stopped(self._laptop())
+
+    def _at_pose(self, T: np.ndarray) -> bool:
+        """The target within at_pose_tol_m and AT_POSE_TOL_DEG of T."""
+        cur = self._follower.target
+        if not float(np.linalg.norm(cur[:3, 3] - T[:3, 3])) <= self.s.at_pose_tol_m:
+            return False
+        c = (float(np.trace(cur[:3, :3].T @ T[:3, :3])) - 1.0) / 2.0
+        return math.degrees(math.acos(min(1.0, max(-1.0, c)))) <= AT_POSE_TOL_DEG
+
+    def _episode_stopped(self, now: int) -> None:
+        """holding/running -> stopped: the operator stand-in presses h auto_h_p_after_stop_s later (if set)."""
+        if self.s.auto_h_p_after_stop_s is not None:
+            self._auto_h_at_ns = now + int(self.s.auto_h_p_after_stop_s * 1e9)
+            self._auto_p_due = False
+
+    def _operator_stand_in(self, now: int) -> None:
+        """The stand-in's h when it is due, and its p once that h has ended in idle (under the lock)."""
+        if self._auto_h_at_ns is not None and now >= self._auto_h_at_ns:
+            self._auto_h_at_ns = None
+            ack = self._arm_home(then_p=True)
+            log.info("operator stand-in: h%s", "" if ack.ok else f" refused: {ack.reason}")
+        if self._auto_p_due and self._mode != "homing":
+            self._auto_p_due = False
+            ack = self._start_pose_move()
+            log.info("operator stand-in: p%s", "" if ack.ok else f" refused: {ack.reason}")
 
     def _refused(self, why: str) -> str:
         """The real StateMachine::check refusal: "refused: mode is <mode>", then ": <fault detail>" in fault, or
@@ -389,8 +443,11 @@ class FakePc:
     def _on_start(self, msg: Start) -> Ack:
         with self._lock:
             if self._mode in ("idle", "stopped"):
+                if self.s.p_pose is not None and not self._at_pose(self.s.p_pose):
+                    return Ack(ok=False, reason=NOT_AT_START_POSE)
                 self._follower.hold()
                 self._mode = "holding"
+                self._auto_h_at_ns, self._auto_p_due = None, False
                 return Ack(ok=True, reason="")
             return Ack(ok=False, reason=self._refused({"holding": "already started", "running": "already started",
                                                        "homing": "homing in progress"}.get(self._mode, "")))
@@ -553,14 +610,39 @@ class FakePc:
     def keyboard_home(self) -> Ack:
         """The PC's h: refused unless idle/stopped; else homing (the REP keeps answering), then idle."""
         with self._lock:
-            if self._mode not in ("idle", "stopped"):
-                return Ack(ok=False, reason=self._home_refusal())
-            now = self._laptop()
-            self._homing = _Homing("arm", now, now + int(self.s.home_duration_s * 1e9),
-                                   self._follower.target.copy(), self.s.home_pose.copy())
-            self._follower.hold()
-            self._mode = "homing"
-            return Ack(ok=True, reason="")
+            return self._arm_home(then_p=False)
+
+    def _arm_home(self, then_p: bool) -> Ack:
+        if self._mode not in ("idle", "stopped"):
+            return Ack(ok=False, reason=self._home_refusal())
+        now = self._laptop()
+        self._homing = _Homing("arm", now, now + int(self.s.home_duration_s * 1e9),
+                               self._follower.target.copy(), self.s.home_pose.copy(), then_p=then_p)
+        self._follower.hold()
+        self._mode = "homing"
+        return Ack(ok=True, reason="")
+
+    def keyboard_start_pose(self) -> Ack:
+        """The PC's p, refused as the real PC in its order: p_pose unset (START_POSE_UNSET), not idle/stopped (the
+        StateMachine text), away from home_pose (NOT_AT_HOME). Else a home-like move (home_duration_s) to p_pose with
+        the hand opening to gripper_width_max_m (mode homing, then idle); a stop during it aborts it as a home."""
+        with self._lock:
+            return self._start_pose_move()
+
+    def _start_pose_move(self) -> Ack:
+        if self.s.p_pose is None:
+            return Ack(ok=False, reason=START_POSE_UNSET)
+        if self._mode not in ("idle", "stopped"):
+            return Ack(ok=False, reason=self._home_refusal())
+        if not self._at_pose(self.s.home_pose):
+            return Ack(ok=False, reason=NOT_AT_HOME)
+        now = self._laptop()
+        self._homing = _Homing("start", now, now + int(self.s.home_duration_s * 1e9),
+                               self._follower.target.copy(), self.s.p_pose.copy())
+        self._follower.hold()
+        self._follower.commanded_width_m = self.s.limits.gripper_width_max_m
+        self._mode = "homing"
+        return Ack(ok=True, reason="")
 
     def keyboard_hand_home(self) -> Ack:
         """The PC's g: refused unless idle/stopped; else homing with the arm held, the width to 0 and back."""

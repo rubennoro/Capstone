@@ -74,9 +74,16 @@ def test_offline_no_external_urls():
 
 def test_page_shows_what_it_must():
     for needle in ("REC ", "start_refusal", "at workspace limit", "teleop not answering", "disconnected",
-                   "Save: success", "Save: fail", "Discard", "Stop arm", "Start episode", "Home", "new task",
-                   "confirm("):
+                   "Save: success", "Save: fail", "Discard", "Stop arm", "Start episode", "new task",
+                   "confirm(", "at the start pose ✓ ready to start",
+                   "at the start-up pose ✓ ready to start (the PC checks it at Start)", "start_pose_confirmed"):
         assert needle in APP + HTML, needle
+
+
+def test_no_home_button():
+    """No laptop home: homing (h) and the start pose (p) are the PC's keyboard keys."""
+    assert "btn-home" not in APP + HTML and ">Home<" not in HTML and '"homing"' not in APP
+    assert "home" not in COMMANDS
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")

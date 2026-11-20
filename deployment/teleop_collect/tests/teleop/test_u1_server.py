@@ -7,7 +7,7 @@ import time
 import zmq
 from deploy_contracts import Ack, RpcClient, decode, pack_obj
 
-from teleop_collect.contracts import STATUS_MAX_MESSAGES, HomeRequest, KeysUpdate, StartEpisode
+from teleop_collect.contracts import STATUS_MAX_MESSAGES, KeysUpdate, StartEpisode, StopArm
 from teleop_collect.teleop.u1_server import U1_REQUESTS, MessageLog, U1Server
 
 
@@ -23,7 +23,7 @@ def test_serves_up_to_n_without_waiting_and_every_request_reaches_dispatch():
         assert server.serve(4) == 0                                  # nothing waiting: returns at once
         results = []
         threads = [threading.Thread(target=lambda c=c, m=m: results.append(c.request(m, Ack, 2.0)))
-                   for c, m in zip(clients, (HomeRequest(), StartEpisode(),
+                   for c, m in zip(clients, (StopArm(), StartEpisode(),
                                              KeysUpdate(held=("x+",), slow=False, focus=True)))]
         for t in threads:
             t.start()
@@ -35,12 +35,31 @@ def test_serves_up_to_n_without_waiting_and_every_request_reaches_dispatch():
         for t in threads:
             t.join(2.0)
         assert served == 3 and len(results) == 3 and all(r.ok for r in results)
-        assert sorted(seen) == sorted(["u1.home/v1", "u1.start_episode/v1", "u1.keys/v1"])
+        assert sorted(seen) == sorted(["u1.stop_arm/v1", "u1.start_episode/v1", "u1.keys/v1"])
     finally:
         for c in clients:
             c.close()
         server.close()
-    assert len(U1_REQUESTS) == 10
+    assert len(U1_REQUESTS) == 9                                    # no u1.home/v1 (no laptop home)
+
+
+def test_a_home_request_is_unknown_and_never_reaches_dispatch():
+    """There is no laptop home: u1.home/v1 is not a U1 request (homing and the start pose are the PC's h and p)."""
+    seen = []
+    server = U1Server("tcp://127.0.0.1:*", lambda m: seen.append(m) or Ack(ok=True, reason=""))
+    sock = zmq.Context.instance().socket(zmq.REQ)
+    sock.setsockopt(zmq.LINGER, 0)
+    sock.connect(server.endpoint)
+    try:
+        sock.send(pack_obj({"schema": "u1.home/v1"}))
+        deadline = time.monotonic() + 2.0
+        while not server.serve(1) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        reply = decode(sock.recv())
+        assert reply.SCHEMA == "error/v1" and seen == []
+    finally:
+        sock.close()
+        server.close()
 
 
 def test_a_broken_request_never_reaches_dispatch():

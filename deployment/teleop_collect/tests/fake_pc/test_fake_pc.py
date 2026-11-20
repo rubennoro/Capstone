@@ -1,5 +1,6 @@
 # copied from rnoro/final-deployment:deployment/policy_deploy/tests/fake_pc/test_fake_pc.py @ 2ffe641
-# changes: imports only (the helpers are in launcher_helpers.py)
+# changes: imports only (the helpers are in launcher_helpers.py); + start pose (2026-11-20): these tests run the
+# fake PC without it (p_pose and auto_h_p_after_stop_s null; test_start_pose.py has it)
 """FakePc (STRUCTURE.md 10.1, 12.2): modes and replies exactly as TOP 3.7.2, the PC keyboard hooks, hello on the
 drifting clock, the watchdog, C2 seq/t_ns, the follower and the gate. Fix wave: the real franka_control's refusal
 texts, an all-skipped set freezes and goes holding, t_ns freezes only when the loop ends."""
@@ -13,7 +14,12 @@ import pytest
 from deploy_contracts import (SHARED_SCHEMAS, Ack, ArmState, ErrorReply, GetState, Heartbeat, Hello, HelloReply,
                               Home, LinkSettings, RpcClient, SetWaypoints, SetWaypointsReply, Start, Stop, TcpFrame,
                               TransportTimeout, compare_hello, decode, encode)
-from launcher_helpers import FakeLaptopClock, make_fake_pc, wait_for
+from launcher_helpers import FakeLaptopClock, make_fake_pc as _make_fake_pc, wait_for
+
+
+def make_fake_pc(tmp_path, **overrides):
+    """The fake PC without the start pose (as before it: p_pose and the operator stand-in off)."""
+    return _make_fake_pc(tmp_path, **{"p_pose": None, "auto_h_p_after_stop_s": None, **overrides})
 
 NS = 1_000_000_000
 MS = 1_000_000

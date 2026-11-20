@@ -18,7 +18,7 @@ def test_names():
                              "tilt_left", "tilt_right")
     assert c.GRIPPER_COMMANDS == ("close", "open") and c.OUTCOMES == ("success", "fail", "discard")
     assert c.TASK_NAME_RE == r"^[a-z0-9_]{1,64}$" and c.EPISODE_NAME_RE == r"^episode_[0-9]{3,}$"
-    assert c.PHASES == ("starting", "idle", "recording", "homing", "stopping", "done")
+    assert c.PHASES == ("starting", "idle", "recording", "stopping", "done")            # no homing: no laptop home
 
 
 @pytest.mark.parametrize("name,ok", [("pick_block", True), ("a", True), ("x" * 64, True), ("x" * 65, False),
@@ -42,7 +42,7 @@ def test_episode_names(name, ok):
     c.Preview(main_jpeg=b"\xff\xd8x\xff\xd9", ultrawide_jpeg=None, main_frame_no=4, ultrawide_frame_no=-1,
               health=health("ok", "down")),
     c.GetStatus(after_message=0), c.KeysUpdate(held=["z-"], slow=False, focus=True), c.GripperCommand(command="open"),
-    c.SelectTask(name="pick_block"), c.CreateTask(name="pick_block", description=""), c.HomeRequest(),
+    c.SelectTask(name="pick_block"), c.CreateTask(name="pick_block", description=""),
     c.StartEpisode(), c.StopEpisode(outcome="fail"), c.DeleteEpisode(episode="episode_012"), c.StopArm(),
     teleop_status(),
 ], ids=lambda m: m.SCHEMA)
@@ -92,6 +92,10 @@ def test_status_rules():
     contract_error(lambda: teleop_status(arm_mode="driving"), "arm_mode", "value")
     contract_error(lambda: teleop_status(tcp_m=np.zeros(3, np.float32)), "tcp_m", "dtype")
     contract_error(lambda: teleop_status(commanded_width_m=0), "commanded_width_m", "type")
+    contract_error(lambda: teleop_status(start_pose_known=False), "start_pose_confirmed", "value")
+    contract_error(lambda: teleop_status(start_pose_known=False, start_pose_confirmed=False, at_start_pose=True),
+                   "at_start_pose", "value")
+    assert not teleop_status(start_pose_known=False, start_pose_confirmed=False).start_pose_known
     contract_error(lambda: c.EpisodeInfo(name="episode_001", outcome="discard", duration_s=1.0, frames_main=1),
                    "outcome", "value")
     assert teleop_status(tcp_m=None, cameras=None, rtt_ms=None, gripper_width_m=None).cameras is None

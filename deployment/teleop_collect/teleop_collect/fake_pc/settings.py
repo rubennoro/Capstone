@@ -1,5 +1,6 @@
 # copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/fake_pc/settings.py @ 2ffe641
-# changes: imports only
+# changes: imports only; + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20):
+# p_pose (null: as q_start_rad unset), at_pose_tol_m, auto_h_p_after_stop_s (null: no operator stand-in)
 """Settings of the fake PC: config/fake_pc.yaml + station.yaml fake_pc: section, plus the contract files
 (STRUCTURE.md 10). The ports, the watchdog limit, the limits and F_T_TCP come only from deployment/contracts/."""
 from __future__ import annotations
@@ -34,6 +35,9 @@ class FakePcSettings:
     start_mode: str
     poll_s: float
     start_hold_s: float
+    p_pose: np.ndarray | None    # where the PC's p takes the TCP target; None: as homing.q_start_rad unset
+    at_pose_tol_m: float         # "at home" for p, "at the start pose" for C3 start (and AT_POSE_TOL_DEG)
+    auto_h_p_after_stop_s: float | None   # the operator stand-in: h, then p, this long after an episode's stop
     state_endpoint: str          # tcp://127.0.0.1:<link ports.state>
     commands_endpoint: str       # tcp://127.0.0.1:<link ports.commands>
     watchdog_limit_s: float      # link.yaml
@@ -74,7 +78,7 @@ class FakePcSettings:
             max_lead_s=num("max_lead_s"), home_duration_s=num("home_duration_s"),
             start_width_m=num("start_width_m", positive=False), width_speed_m_s=num("width_speed_m_s"),
             measured_offset_m=num("measured_offset_m", positive=False), poll_s=num("poll_s"),
-            start_hold_s=num("start_hold_s", positive=False))
+            start_hold_s=num("start_hold_s", positive=False), at_pose_tol_m=num("at_pose_tol_m"))
         hwm = config.get("state_send_hwm")
         if not isinstance(hwm, int) or isinstance(hwm, bool) or hwm < 1:
             problems.append(f"fake_pc.state_send_hwm: expected an integer >= 1, got {hwm!r}")
@@ -84,13 +88,25 @@ class FakePcSettings:
             problems.append(f"fake_pc.start_mode: expected one of {', '.join(START_MODES)}, got {mode!r}")
             mode = "idle"
         home, start = pose("home_pose"), pose("start_pose")
-        known = set(values) | {"state_send_hwm", "start_mode", "home_pose", "start_pose"}
+        for key in ("p_pose", "auto_h_p_after_stop_s"):
+            if key not in config:
+                problems.append(f"fake_pc.{key}: missing (null turns it off)")
+        p_pose = None if config.get("p_pose") is None else pose("p_pose")
+        auto = config.get("auto_h_p_after_stop_s")
+        if auto is not None and (not isinstance(auto, (int, float)) or isinstance(auto, bool) or
+                                 not math.isfinite(auto) or auto < 0):
+            problems.append(f"fake_pc.auto_h_p_after_stop_s: expected null or a number >= 0, got {auto!r}")
+            auto = None
+        auto = None if auto is None else float(auto)
+        known = set(values) | {"state_send_hwm", "start_mode", "home_pose", "start_pose", "p_pose",
+                               "auto_h_p_after_stop_s"}
         for key in config:
             if key not in known:
                 problems.append(f"fake_pc.{key}: unknown key")
         if problems:
             raise StationError(problems)
         return cls(**values, state_send_hwm=hwm, start_mode=mode, home_pose=home, start_pose=start,
+                   p_pose=p_pose, auto_h_p_after_stop_s=auto,
                    state_endpoint=state_endpoint or link.state_endpoint(local=True),
                    commands_endpoint=commands_endpoint or link.commands_endpoint(local=True),
                    watchdog_limit_s=link.watchdog_limit_s, limits=limits, frame=frame, session_root=session_root)

@@ -41,8 +41,8 @@ def test_content(task_ep):
     assert h["mock"] is True and h["max_lead_s"] == 1.5 and h["commit"] == "unknown" and isinstance(h["schemas"], list)
     assert m["laptop"] == {"commit": "a" * 40, "dirty": True}
     assert m["rig_file"] == "/x/contracts/rigs/rig_pi_v3_640.yaml"
-    assert m["teleop"]["v_max_m_s"] == 0.05 and m["teleop"]["waypoints"] == 2 and m["teleop"]["lead_ms"] == 100.0
-    assert m["teleop"]["worst_step_m"] == pytest.approx(0.0075)
+    assert m["teleop"]["v_max_m_s"] == 0.05 and m["teleop"]["waypoints"] == 6 and m["teleop"]["lead_ms"] == 300.0
+    assert m["teleop"]["worst_step_m"] == pytest.approx(0.0275)                # wave 3: 0.05 m/s x 0.55 s
     assert m["clock"] == {"pi": {"offset_ns": 5, "drift_ppm": 1.0}, "pc": {"offset_ns": -7, "drift_ppm": None,
                                                                            "used": 6}}
     assert yaml.safe_load(yaml.safe_dump(m)) == m                    # plain types only
@@ -64,6 +64,18 @@ def test_validation(task_ep):
     assert m["times"]["start_pc_ns"] is None
 
 
+def test_warnings(task_ep):
+    """Wave 3 (no software stops): the data problems seen while recording, each once; [] when none."""
+    task, ep = task_ep
+    assert build(task, ep)["warnings"] == []
+    w = [{"code": "camera_down", "what": "main camera down", "t_s": 3.25},
+         {"code": "camera_stale", "what": "ultrawide camera stale, last frame 400 ms ago", "t_s": 7.5}]
+    m = build(task, ep, warnings=w)
+    assert m["warnings"] == w and yaml.safe_load(yaml.safe_dump(m))["warnings"] == w
+    with pytest.raises(ValueError, match="warnings"):
+        build(task, ep, warnings=[{"code": "camera_down", "what": "main camera down"}])
+
+
 def test_round_trip_through_finish(task_ep):
     task, ep = task_ep
     rec = EpisodeRecording(ep)
@@ -71,7 +83,8 @@ def test_round_trip_through_finish(task_ep):
     ep.finish(build(task, ep, outcome="fail", counts=rec.counts()))
     assert task.episodes() == [EpisodeInfo("episode_000", "fail", pytest.approx(24.1), 300)]
     on_disk = yaml.safe_load((ep.path / "meta.yaml").read_text())
-    assert on_disk["counts"]["c2_messages"] == 0 and on_disk["pc_hello"]["F_T_TCP"][2][3] == pytest.approx(0.15)
+    # 0.23565: deployment/contracts/frames.yaml F_T_TCP z @ final-deployment 927a5ba (was 0.150)
+    assert on_disk["counts"]["c2_messages"] == 0 and on_disk["pc_hello"]["F_T_TCP"][2][3] == pytest.approx(0.23565)
 
 
 def test_rig_embedded(task_ep):

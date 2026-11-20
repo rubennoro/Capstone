@@ -1,5 +1,6 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/tests/manager/test_startup_checks.py @ 2ffe641
-# changes: imports; the waypoint lead is K x Delta; no settled rule (+ split_commit).
+# changes: imports; the waypoint lead is K x Delta; no settled rule (+ split_commit). + start pose (2026-11-20): no
+# home timeout check (teleop sends no C3 home).
 """StartupChecks (STRUCTURE.md 6.2): the hello and budget checks of start-up step 5."""
 from __future__ import annotations
 
@@ -58,11 +59,13 @@ def test_worst_gap(settings):
     assert f.check == "raise watchdog_limit_s in link.yaml or lower the laptop timeouts"
 
 
-def test_home_timeout(settings):
+def test_no_home_timeout_check(settings):
+    """teleop sends no C3 home: timeouts.home_s is not compared with the PC's homing_timeout_s."""
     ck = checks(settings)
-    assert ck.home_timeout(hello_reply(0, homing_timeout_s=30.0)) is None
-    assert ck.home_timeout(hello_reply(0, homing_timeout_s=90.0)) is not None     # home_s == homing_timeout_s
-    assert ck.home_timeout(hello_reply(0, homing_timeout_s=120.0)) is not None
+    assert not hasattr(ck, "home_timeout")
+    c = warm_clock(settings)
+    assert ck.hello_failures(hello_reply(0, homing_timeout_s=120.0), c, c.hellos()) == []
+    assert "home timeout" not in {r.name for r in ck.rows(hello_reply(0), c, c.hellos())}
 
 
 def test_waypoint_lead_is_k_times_delta(make_settings):

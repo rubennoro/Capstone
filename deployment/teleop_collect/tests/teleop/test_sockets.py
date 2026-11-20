@@ -155,10 +155,12 @@ def test_startup_and_an_episode_over_u1(tmp_path, rigs):
     names = rig.pc.request_names()
     first_get_state = names.index("c3.get_state/v1")
     assert set(names[:first_get_state]) == {"c3.hello/v1"}
-    assert names.index("c3.home/v1") > first_get_state
+    assert "c3.home/v1" not in names                                    # no start-up home: nothing moves the arm
+    assert rig.loop.start_pose.known and not rig.loop.start_pose.confirmed
     assert rig.request(CreateTask(name="pick_block", description="pick it")).ok
     assert wait_for(lambda: rig.status().start_allowed, 5.0), rig.status().start_refusal
     assert rig.request(StartEpisode()).ok
+    assert rig.loop.start_pose.confirmed                                # the PC accepted the start there
     end = time.monotonic() + 0.6
     while time.monotonic() < end:                                       # the page's key frames
         rig.request(KeysUpdate(held=("x+",), slow=True, focus=True))
@@ -207,10 +209,11 @@ def test_pc_probe_check_rows_and_json_lines(tmp_path):
         finally:
             probe.close()
         by = {r.name: r for r in rows}
-        for name in ("H2", "hello", "C2 rate", "hello equality", "worst gap", "home timeout", "waypoint lead",
+        for name in ("H2", "hello", "C2 rate", "hello equality", "worst gap", "waypoint lead",
                      "clock agreement"):
             assert by[name].status == "pass", by[name]
         assert by["PC commit"].status == "warn" and "differs" in by["PC commit"].detail
+        assert "home timeout" not in by                                  # teleop sends no C3 home
         assert set(pc.request_names()) <= {"c3.hello/v1", "c3.heartbeat/v1"}
         buf = io.StringIO()
         emit(rows, True, buf)

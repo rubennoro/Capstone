@@ -1,5 +1,5 @@
-"""FailureMonitor (STRUCTURE.md 6.5; PLAN 7): the kinds of every code, EPISODE outside an episode, the state rules,
-R1 health and the exceptions."""
+"""FailureMonitor (STRUCTURE.md 6.5; PLAN 7): the kinds of every code, EPISODE and WARN outside an episode, the state
+rules, R1 health and the exceptions. Wave 3 (no software stops): the data problems are WARN, a C2 seq gap is NORMAL."""
 from __future__ import annotations
 
 import pytest
@@ -7,17 +7,18 @@ from deploy_contracts import ContractError, ErrorReply, RemoteError, TransportTi
 from teleop_helpers import frames_health, make_state
 
 from teleop_collect.teleop.errors import PcRestarted, Refused
-from teleop_collect.teleop.failure_monitor import RULES, FailureMonitor
+from teleop_collect.teleop.failure_monitor import COUNTED_CODES, RULES, SLOW_CODES, WARN_CODES, FailureMonitor
 from teleop_collect.teleop.problems import Kind, Problem, ProblemCode as C
 
 S = 1_000_000_000
 
 KINDS = {
-    Kind.SLOW: {C.STATE_GAP, C.STATE_OLD, C.CLOCK_STALE, C.CAMERA_STALE, C.SET_SKIPPED},
-    Kind.NORMAL: {C.PULLED_BACK, C.SHORTENED, C.LOOP_LATE, C.HOME_STOPPED},
-    Kind.EPISODE: {C.CAMERA_DOWN, C.PC_STOPPED, C.OPERATOR_ABORT, C.RECORDING_FAILED},
+    Kind.SLOW: {C.STATE_OLD, C.CLOCK_STALE, C.SET_SKIPPED},
+    Kind.NORMAL: {C.STATE_GAP, C.PULLED_BACK, C.SHORTENED, C.LOOP_LATE},
+    Kind.WARN: {C.CAMERA_DOWN, C.CAMERA_STALE, C.RECORDING_FAILED},
+    Kind.EPISODE: {C.PC_STOPPED, C.OPERATOR_ABORT},
     Kind.CONCLUDE: {C.PC_NOT_ANSWERING, C.STATE_LOST, C.PC_RESTARTED, C.ARM_FAULT, C.GATE_REJECTED, C.CLOCK_MISMATCH,
-                    C.HELLO_MISMATCH, C.PC_BUSY, C.CONTRACT_VIOLATION, C.HOMING_FAILED, C.STARTUP, C.NO_ANSWER,
+                    C.HELLO_MISMATCH, C.PC_BUSY, C.CONTRACT_VIOLATION, C.STARTUP, C.NO_ANSWER,
                     C.INTERNAL_ERROR, C.PC_REFUSED},
     Kind.STOP: {C.OPERATOR_STOP, C.LAUNCHER_STOP},
 }
@@ -28,16 +29,21 @@ def test_every_code_has_its_kind():
     for kind, codes in KINDS.items():
         for code in codes:
             assert RULES[code][0] is kind, code
+    assert set(SLOW_CODES) == KINDS[Kind.SLOW] and set(WARN_CODES) == KINDS[Kind.WARN]
+    assert set(COUNTED_CODES) == KINDS[Kind.SLOW] | KINDS[Kind.WARN] | {C.STATE_GAP}     # meta.yaml counts
 
 
-def test_episode_problems_outside_an_episode_are_normal():
+def test_episode_and_warn_problems_outside_an_episode_are_normal():
     m = FailureMonitor(2.0)
     p = Problem(C.CAMERA_DOWN, "frames", "main camera down")
-    assert m.classify(p).kind is Kind.EPISODE
+    assert m.classify(p).kind is Kind.WARN
     v = m.classify(p, episode_open=False)
     assert v.kind is Kind.NORMAL and f"{v.what_failed}: {v.what_to_check}" == \
         "main camera down: check the Pi and ASUS_5g"
     assert m.counts()[C.CAMERA_DOWN] == 2
+    stopped = Problem(C.PC_STOPPED, "PC", "mode stopped")
+    assert m.classify(stopped).kind is Kind.EPISODE
+    assert m.classify(stopped, episode_open=False).kind is Kind.NORMAL
 
 
 def test_texts_of_plan_7():
@@ -78,12 +84,10 @@ def test_check_health():
 @pytest.mark.parametrize("exc, code", [
     (PcRestarted("seq back"), C.PC_RESTARTED),
     (TransportTimeout("PC", "tcp://x", "c3.heartbeat/v1", 0.3), C.PC_NOT_ANSWERING),
-    (TransportTimeout("PC", "tcp://x", "c3.home/v1", 90.0), C.HOMING_FAILED),
     (TransportTimeout("frames", "tcp://x", "r1.get_health/v1", 0.05), C.NO_ANSWER),
     (RemoteError("PC", ErrorReply(request="c3.set_waypoints/v1", error="refused: mode is stopped", field="")),
      C.PC_REFUSED),
     (RemoteError("PC", ErrorReply(request="c3.set_waypoints/v1", error="bad", field="t_ns")), C.CONTRACT_VIOLATION),
-    (Refused("PC", "c3.home/v1", "too far"), C.HOMING_FAILED),
     (Refused("frames", "r1.start_recording/v1", "x"), C.INTERNAL_ERROR),
     (ContractError("r1.health/v1", "recording", "type", "not a bool"), C.CONTRACT_VIOLATION),
     (ValueError("oops"), C.INTERNAL_ERROR),

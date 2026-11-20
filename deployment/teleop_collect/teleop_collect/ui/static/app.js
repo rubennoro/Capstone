@@ -369,11 +369,14 @@ function render() {
   else if (recording) {
     hint.textContent = state.choosing ? "motion off: save or discard the episode" : "recording: hold keys to move";
     hint.className = "hint";
-  } else if (s.start_allowed) { hint.textContent = "at home ✓ ready to start"; hint.className = "hint ok"; }
+  } else if (s.start_allowed) {
+    hint.textContent = s.start_pose_confirmed ? "at the start pose ✓ ready to start"
+      : "at the start-up pose ✓ ready to start (the PC checks it at Start)";
+    hint.className = "hint ok";
+  }
   else { hint.textContent = s.start_refusal; hint.className = "hint refused"; }
 
-  const busy = !has || s.phase === "homing" || s.phase === "stopping" || s.phase === "done" || !s.ready;
-  $("btn-home").disabled = busy || recording;
+  const busy = !has || s.phase === "stopping" || s.phase === "done" || !s.ready;
   $("btn-start").disabled = !has || !s.start_allowed || recording;
   $("btn-start").classList.toggle("hidden", recording);
   $("btn-stop-episode").classList.toggle("hidden", !recording || state.choosing);
@@ -391,7 +394,6 @@ function hideNewTask() {
 }
 
 function setup() {
-  $("btn-home").onclick = () => command("home");
   $("btn-start").onclick = () => command("start_episode");
   $("btn-stop-episode").onclick = () => { state.choosing = true; sendKeys(false); render(); };
   $("btn-keep").onclick = () => { state.choosing = false; render(); };

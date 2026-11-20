@@ -8,7 +8,7 @@ import yaml
 from deploy_contracts import TcpFrame, frames_file
 
 R = 0.7071067811865476
-GOOD = [[R, -R, 0.0, 0.0], [R, R, 0.0, 0.0], [0.0, 0.0, 1.0, 0.150], [0.0, 0.0, 0.0, 1.0]]
+GOOD = [[R, -R, 0.0, 0.0], [R, R, 0.0, 0.0], [0.0, 0.0, 1.0, 0.23565], [0.0, 0.0, 0.0, 1.0]]
 
 
 def test_loads_the_real_file():

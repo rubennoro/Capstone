@@ -1,11 +1,16 @@
 """EpisodeFlow: tasks and the episode lifecycle on teleop's main thread (STRUCTURE.md 6.4; PLAN 4.3, 6, 7).
 
 Start: a new episode folder (E4's Task.new_episode), its EpisodeRecording, R1 start_recording, C3 start, the motion
-controller begun at the arm's width, the listener's state recorder on, phase RECORDING. Stop: phase STOPPING, motion
-off, C3 stop, the state recorder off, R1 stop_recording (the summary), the recorders closed, then discard or
-meta.yaml + COMPLETE (E4's build_meta and EpisodeDir.finish), phase IDLE. Abort (an EPISODE problem): the same, the
-folder discarded, the reason on the page and in the session log only. abort_open is the conclude / Ctrl-C path and
-never raises.
+controller begun at the arm's width, the listener's state recorder on, phase RECORDING. Start is allowed only at the
+start pose (StartPoseReference); the PC's answer to the C3 start confirms it, or (`refused: not at the start pose`)
+drops it. Stop: phase STOPPING, motion off, C3 stop, the state recorder off, R1 stop_recording (the summary), the
+recorders closed, then discard or meta.yaml + COMPLETE (E4's build_meta and EpisodeDir.finish), phase IDLE. Abort
+(an EPISODE problem: the PC stopped the arm, or Stop arm): the same, the folder discarded, the reason on the page and in
+the session log only. abort_open is the conclude / Ctrl-C path and never raises.
+
+Data problems (WARN: a camera down or stale, the recording failed) never stop the arm or end the episode: warn() shows
+each once on the page and lists it in meta.yaml `warnings`. An episode whose recording failed can only be discarded:
+Stop with success or fail is refused with the reason (the episode goes on), Discard works.
 
 It uses the loop's clients through TeleopLoop._rpc (so a failure names whom it went to); every request is made on the
 main thread.
@@ -23,7 +28,7 @@ from teleop_collect.contracts import CAMERAS, NotSynced, RecordingSummary
 from teleop_collect.teleop.episode.meta import build_meta
 from teleop_collect.teleop.episode.recorders import EpisodeRecording
 from teleop_collect.teleop.episode.store import EpisodeDir, EpisodeInfo, Task, TaskError, TaskStore
-from teleop_collect.teleop.failure_monitor import SLOW_CODES
+from teleop_collect.teleop.failure_monitor import COUNTED_CODES
 from teleop_collect.teleop.motion.keys import HeldKeys
 from teleop_collect.teleop.pc_clock import HelloSample
 from teleop_collect.teleop.problems import Problem, ProblemCode, Verdict
@@ -36,9 +41,16 @@ log = logging.getLogger("teleop.episode_flow")
 C = ProblemCode
 NS_PER_S = 1_000_000_000
 PC = "PC"
-HOME_FIRST = "home the arm first (Home, or h on the PC)"
+#: the PC's C3 start refusal away from its start pose (control_deploy supervisor onStart, once q_start_rad is set)
+PC_NOT_AT_START_POSE = "refused: not at the start pose"
+START_REFUSED_HERE = "the PC refused the start here (not the start pose): press p on the PC"
+START_POSE_UNKNOWN = "put the arm at the start pose: h, then p on the PC"
+NOT_AT_START_POSE = "not at the start pose: h, then p on the PC"
 ABORT_STOP_TIMEOUT_S = 1.0       # R1 stop_recording on the abort paths: the folder is deleted anyway (SIGTERM < 5 s)
 CAMERA_LATCHED = "{name} camera down: check the Pi (after a Pi restart: Ctrl-C and run teleop_collect again)"
+WARN_GOES_ON = "{episode}: {text}; the episode goes on (noted in its meta.yaml)"
+WARN_FAILED = "{episode}: {text}; the arm goes on: Stop and Discard (this episode cannot be saved)"
+SAVE_REFUSED = "this episode cannot be saved ({what}): Discard it"
 
 
 class EpisodeFlow:
@@ -54,6 +66,9 @@ class EpisodeFlow:
         self._tasks: list[str] | None = None            # cached: never re-read from disk while recording
         self._episodes: list[EpisodeInfo] = []
         self._write_error = ""                           # an OSError of a record_* write: RECORDING_FAILED
+        self._warnings: list[dict[str, Any]] = []        # the episode's WARN problems, for meta.yaml `warnings`
+        self._warned: set[str] = set()                   # their keys: each shown and listed once per episode
+        self._failed = ""                                # the recording failed (what): only Discard at Stop
 
     # ---- the lists the page shows --------------------------------------------------------------------------------
 
@@ -152,8 +167,6 @@ class EpisodeFlow:
             return "starting up"
         if phase in (Phase.RECORDING, Phase.STOPPING):
             return "recording"
-        if phase is Phase.HOMING or lp._home_requested:
-            return "homing"
         if phase is Phase.DONE:
             return "teleop has stopped"
         if self.task is None:
@@ -163,8 +176,13 @@ class EpisodeFlow:
             return "no C2 state from the PC yet"
         if latest.mode not in ("idle", "stopped"):
             return f"the PC is {latest.mode}"
-        if not lp.at_home(latest):
-            return HOME_FIRST
+        ref = lp.start_pose
+        if not ref.known:
+            if ref.at_refused_pose(latest.q, latest.O_T_TCP_target):
+                return START_REFUSED_HERE
+            return START_POSE_UNKNOWN
+        if not ref.at_start(latest.q, latest.O_T_TCP_target):
+            return NOT_AT_START_POSE
         health = lp._last_health
         if health is None:
             return "waiting for the cameras"
@@ -206,9 +224,14 @@ class EpisodeFlow:
         self._write_error = ""
         self.record_command(t_send, t_reply, "c3.start/v1", None, ack, None, False)
         if not ack.ok:
+            if ack.reason.startswith(PC_NOT_AT_START_POSE):
+                self._refused_here()
             self._stop_frames()
             self._drop(f"the PC refused start: {ack.reason}")
             return Ack(ok=False, reason=f"the PC refused start: {ack.reason}")
+        if not lp.start_pose.confirmed:
+            lp.start_pose.confirm()
+            lp._safe_event("start_pose", "confirmed: the PC accepted a start here; fixed for this session")
         lp._stop_sent = False
         self._t_start_ns = t_reply
         self._start_pc_ns = self._to_pc(t_reply)
@@ -235,6 +258,18 @@ class EpisodeFlow:
         lp._messages.add("info", f"REC {episode.name}: wait about a second before the first key")
         return Ack(ok=True, reason="")
 
+    def _refused_here(self) -> None:
+        """The PC refused the start away from its start pose: the learned pose is dropped (while not confirmed); the
+        next arm move of the PC (h, then p) gives the new one."""
+        lp = self.lp
+        latest = lp._history.latest()
+        if latest is None:
+            return
+        lp.start_pose.refused_here(latest.q, latest.O_T_TCP_target)
+        lp._safe_event("start_pose", "the PC refused a start here (not its start pose): "
+                                     + ("kept (confirmed)" if lp.start_pose.confirmed else
+                                        "dropped; the pose after the PC's next h, then p is the start pose"))
+
     # ---- stop, abort ---------------------------------------------------------------------------------------------
 
     def stop(self, outcome: str) -> Ack:
@@ -242,6 +277,8 @@ class EpisodeFlow:
         lp = self.lp
         if lp._phase is not Phase.RECORDING or self.recording is None:
             return Ack(ok=False, reason="no episode recording")
+        if self._failed and outcome != "discard":           # the episode goes on until Discard
+            return Ack(ok=False, reason=SAVE_REFUSED.format(what=self._failed))
         lp._phase = Phase.STOPPING                                                    # 1
         lp._motion.stop()                                                             # 2
         recording, episode, task = self.recording, self.episode, self.task
@@ -256,16 +293,16 @@ class EpisodeFlow:
             summary = lp._rpc("frames", "r1.stop_recording/v1", lp._frames.stop_recording)   # 4
         except RemoteError as exc:
             self._r1_started = False
-            return self._abort_on_stop(f"frames was not recording: {exc.reply.error}")
+            return self._abort_on_stop(f"frames was not recording: {exc.reply.error}", outcome)
         except (TransportTimeout, ContractError) as exc:    # the C3 stop went out first: the watchdog is not armed
             self._r1_started = False
-            return self._abort_on_stop(f"r1.stop_recording: {exc}")
+            return self._abort_on_stop(f"r1.stop_recording: {exc}", outcome)
         self._r1_started = False
         if summary.error:
-            return self._abort_on_stop(summary.error)
+            return self._abort_on_stop(summary.error, outcome)
         error = self.recorder_failure(lp._listener.recorder_error())
         if error:
-            return self._abort_on_stop(error)
+            return self._abort_on_stop(error, outcome)
         self._write(lambda: recording.events.write(t_stop, "stop", {"outcome": outcome, "stop_pc_ns": stop_pc}))
         counts = self._counts(recording)
         try:
@@ -273,7 +310,7 @@ class EpisodeFlow:
         except OSError as exc:
             self._write_error = self._write_error or f"closing the episode files: {exc}"
         if self._write_error:
-            return self._abort_on_stop(self._write_error)
+            return self._abort_on_stop(self._write_error, outcome)
         if outcome == "discard":                                                      # 6
             episode.discard()
             text = f"{episode.name} discarded (deleted)"
@@ -282,7 +319,7 @@ class EpisodeFlow:
             try:
                 episode.finish(meta)
             except OSError as exc:
-                return self._abort_on_stop(f"{episode.path}: meta.yaml / COMPLETE: {exc}")
+                return self._abort_on_stop(f"{episode.path}: meta.yaml / COMPLETE: {exc}", outcome)
             self._episodes.append(EpisodeInfo(episode.name, outcome, float(meta["duration_s"]),
                                               int(summary.main.frames)))
             text = (f"{episode.name} saved: {outcome}, {meta['duration_s']:.1f} s, {summary.main.frames} main "
@@ -293,10 +330,48 @@ class EpisodeFlow:
         lp._messages.add("info", text)
         return Ack(ok=True, reason="")
 
-    def _abort_on_stop(self, detail: str) -> Ack:
+    def _abort_on_stop(self, detail: str, outcome: str) -> Ack:
+        """A failure found at Stop (after the C3 stop): the episode cannot be saved, its folder is deleted. Discard
+        was going to delete it anyway: that is ok."""
+        if outcome == "discard":
+            from teleop_collect.teleop.teleop_loop import Phase
+            lp, name, task = self.lp, self.episode.name, self.task.name
+            log.warning("discard %s: %s", name, detail)
+            self._discard(f"discarded ({detail})")
+            lp._phase = Phase.IDLE
+            lp._safe_event("episode_stop", f"{task}/{name} discarded (deleted); at stop: {detail}")
+            lp._messages.add("info", f"{name} discarded (deleted)")
+            return Ack(ok=True, reason="")
         verdict = self.lp._monitor.classify(Problem(C.RECORDING_FAILED, "frames", detail))
         self.abort(verdict)
         return Ack(ok=False, reason=f"{verdict.what_failed}: the episode was deleted")
+
+    def warn(self, verdict: Verdict) -> None:
+        """A WARN problem while recording (a camera down or stale, the recording failed): the arm and the episode go
+        on. Each is shown on the page and listed in meta.yaml `warnings` once per episode (per code and camera; the
+        first recording failure). After a recording failure Stop only discards."""
+        if self.recording is None or self.episode is None:
+            return
+        problem = verdict.problem
+        if problem.code is C.RECORDING_FAILED:
+            key = problem.code.value
+        else:
+            key = f"{problem.code.value}:{problem.detail.split(',', 1)[0]}"
+        if key in self._warned:
+            return
+        self._warned.add(key)
+        lp, name = self.lp, self.episode.name
+        t_s = round(self.episode_s(lp._clock()), 3)
+        self._warnings.append({"code": problem.code.value, "what": verdict.what_failed, "t_s": t_s})
+        text = f"{verdict.what_failed}: {verdict.what_to_check}"
+        if problem.code is C.RECORDING_FAILED:
+            self._failed = verdict.what_failed
+            page = WARN_FAILED.format(episode=name, text=text)
+        else:
+            page = WARN_GOES_ON.format(episode=name, text=text)
+        lp._safe_event("episode_warning", f"{name}: {text}")
+        self.event("warning", {"code": problem.code.value, "what": verdict.what_failed})
+        lp._messages.add("warn", page)
 
     def abort(self, verdict: Verdict) -> None:
         """An EPISODE problem while recording: C3 stop, the recording closed, the folder deleted; back to IDLE."""
@@ -450,12 +525,15 @@ class EpisodeFlow:
         self.recording = None
         self._r1_started = False
         self._write_error = ""
+        self._warnings = []
+        self._warned = set()
+        self._failed = ""
         self.lp._start_ack_pc_ns = None
 
     def _counts(self, recording: EpisodeRecording) -> dict[str, int]:
         counts = dict(recording.counts())
         mon = self.lp._monitor.counts()
-        for code in SLOW_CODES:
+        for code in COUNTED_CODES:
             counts.setdefault(code.value, int(mon.get(code, 0)))
         return counts
 
@@ -467,7 +545,8 @@ class EpisodeFlow:
         return build_meta(task=task, episode=episode, outcome=outcome,
                           times={"start_ns": int(self._t_start_ns), "stop_ns": int(t_stop),
                                  "start_pc_ns": self._start_pc_ns, "stop_pc_ns": stop_pc},
-                          frames=summary, counts=counts, hello=hello, laptop_commit=commit, laptop_dirty=dirty,
+                          frames=summary, counts=counts, warnings=self._warnings, hello=hello,
+                          laptop_commit=commit, laptop_dirty=dirty,
                           rig_file=lp._s.rig_file, motion=lp._s.motion,
                           pi_fit={"offset_ns": summary.pi_clock_offset_ns, "drift_ppm": summary.pi_clock_drift_ppm},
                           pc_fit=lp.clock_row(t_stop))

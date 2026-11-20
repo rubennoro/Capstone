@@ -52,9 +52,9 @@ def test_stale_state_guard():
     c = started()
     assert c.step(None, base(), keys("x+")) is None
     assert c.step(T0_PC, None, keys("x+")) is None
-    assert c.step(T0_PC + 50 * MS + 1, base(), keys("x+")) is None
+    assert c.step(T0_PC + S.state_max_age_ns + 1, base(), keys("x+")) is None     # 250 ms (wave 3)
     assert c.moving                                                # the key is in effect, nothing could be sent
-    assert c.step(T0_PC + 50 * MS, base(), keys("x+")).kind == "move"
+    assert c.step(T0_PC + S.state_max_age_ns, base(), keys("x+")).kind == "move"
 
 
 @pytest.mark.parametrize("mode", ["idle", "stopped", "homing", "fault"])
@@ -121,8 +121,9 @@ def test_finger_command_rides_on_a_move():
 def test_finger_command_waits_through_a_stale_state():
     c = started()
     c.gripper("close")
-    assert c.step(T0_PC + 60 * MS, base(), NO_KEYS) is None
-    assert c.step(T0_PC + 60 * MS, base(t_pc_ns=T0_PC + 50 * MS), NO_KEYS).kind == "fingers"
+    late = T0_PC + S.state_max_age_ns + 10 * MS
+    assert c.step(late, base(), NO_KEYS) is None
+    assert c.step(late, base(t_pc_ns=T0_PC + 50 * MS), NO_KEYS).kind == "fingers"
 
 
 def test_gripper_rules():

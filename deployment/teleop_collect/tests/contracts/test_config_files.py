@@ -1,7 +1,9 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/tests/contracts/test_config_files.py @ ea9f7fb
 # changes: this package's five config files and their documented defaults (STRUCTURE.md 3.3); the C4 limits test
 # dropped; + every key of STRUCTURE.md 3.3 present, the merge rule, resolve_path, fake_pc.yaml and the contracts rig
-# file byte-identical to the source, ProcessArgs.
+# file byte-identical to the source, ProcessArgs. + start pose (2026-11-20): fake_pc.yaml is the source's bytes plus
+# an appended start pose block (p_pose, at_pose_tol_m, auto_h_p_after_stop_s); teleop.yaml start_pose: instead of
+# home:.
 """The config files: every config/*.yaml loads, defines no contract key, holds exactly the keys of STRUCTURE.md 3.3,
 and merges with a station section as config_merge says."""
 from __future__ import annotations
@@ -28,7 +30,7 @@ KEYS = {
         mock.drift_ppm mock.send_hwm check.reachable_timeout_s check.subprocess_timeout_s""",
     "teleop": """motion.v_max_m_s motion.w_max_deg_s motion.slow_factor motion.waypoints motion.spacing_ms
         motion.key_stale_ms motion.state_max_age_ms motion.assumed_pc_box_margin_m motion.assumed_pc_cone_margin_deg
-        motion.margin_use home.on_start home.tolerance_rad home.tolerance_m history_s state_recv_hwm listener_poll_s
+        motion.margin_use start_pose.tolerance_rad start_pose.tolerance_m history_s state_recv_hwm listener_poll_s
         link_jitter_allowance_s health_poll_ms u1_max_per_cycle at_limit_hold_ms messages_kept timeouts.health_s
         timeouts.frames_s timeouts.home_s timeouts.startup_s timeouts.pc_homing_wait_s clock.hello_period_s
         clock.startup_hello_period_s clock.round_trip.window_s clock.round_trip.best_fraction clock.one_way.window_s
@@ -85,9 +87,11 @@ def test_documented_defaults():
     teleop = load_config("teleop", None)
     m = teleop["motion"]
     assert (m["v_max_m_s"], m["w_max_deg_s"], m["slow_factor"], m["waypoints"], m["spacing_ms"]) == (
-        0.05, 10.0, 0.25, 2, 50)
-    assert (m["key_stale_ms"], m["state_max_age_ms"], m["margin_use"]) == (150, 50, 0.8)
-    assert teleop["home"] == {"on_start": True, "tolerance_rad": 0.01, "tolerance_m": 0.005}
+        0.05, 10.0, 0.25, 6, 50)                   # wave 3: lead 300 ms (was 2 x 50 ms)
+    assert (m["key_stale_ms"], m["state_max_age_ms"], m["margin_use"]) == (150, 250, 0.8)   # wave 3: 250 (was 50)
+    # wave 3: the PC's teleop block (control_deploy/DIRECTIONS.md) sets the same margins (were 0.01 m, 2 deg)
+    assert (m["assumed_pc_box_margin_m"], m["assumed_pc_cone_margin_deg"]) == (0.05, 10.0)
+    assert teleop["start_pose"] == {"tolerance_rad": 0.01, "tolerance_m": 0.005} and "home" not in teleop
     assert teleop["timeouts"]["pc_homing_wait_s"] == 60.0 and teleop["timeouts"]["home_s"] == 90.0
     assert teleop["timeouts"]["frames_s"] == 4.0   # raised from 2.0 in the final review: frames' stop drains up to 1 + 2 s
     assert teleop["clock"]["min_samples"] == 10 and teleop["clock"]["mismatch_min_lead_ms"] == 60.0
@@ -102,9 +106,17 @@ def test_documented_defaults():
 def test_copied_files_are_byte_identical():
     if not SOURCE.is_dir():
         pytest.skip("rnoro/final-deployment checkout not here")
-    assert paths.config_file("fake_pc").read_bytes() == (SOURCE / "config" / "fake_pc.yaml").read_bytes()
+    ours, source = paths.config_file("fake_pc").read_bytes(), (SOURCE / "config" / "fake_pc.yaml").read_bytes()
+    assert ours.startswith(source)          # the source's file, then the start pose block appended (2026-11-20)
+    assert ours[len(source):].startswith(b"# + start pose")
     rig = Path("contracts") / "rigs" / "rig_pi_v3_640.yaml"
     assert (paths.deployment_dir() / rig).read_bytes() == (SOURCE.parent / rig).read_bytes()
+
+
+def test_fake_pc_start_pose_keys():
+    fake_pc = load_config("fake_pc", None)
+    assert fake_pc["p_pose"] == fake_pc["start_pose"]     # a mock session starts at the start pose
+    assert fake_pc["at_pose_tol_m"] == 0.002 and fake_pc["auto_h_p_after_stop_s"] == 1.0
 
 
 def test_merge_with_the_station(tmp_path):

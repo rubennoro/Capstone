@@ -23,6 +23,6 @@ def test_files_and_rows(tmp_path, settings):
     assert names == ["clock.jsonl", "events.jsonl", "link.jsonl", "session.yaml"]
     doc = yaml.safe_load((tmp_path / "teleop" / "session.yaml").read_text())
     assert doc["hello"]["commit"] == COMMIT and len(doc["hello"]["F_T_TCP"]) == 4 and "schema" not in doc["hello"]
-    assert doc["settings"]["motion"]["waypoints"] == 2 and doc["laptop_commit"] == COMMIT
+    assert doc["settings"]["motion"]["waypoints"] == 6 and doc["laptop_commit"] == COMMIT
     events = [json.loads(x) for x in (tmp_path / "teleop" / "events.jsonl").read_text().splitlines()]
     assert [e["kind"] for e in events] == ["start"] and events[0]["t_ns"] == clock.now

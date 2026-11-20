@@ -4,7 +4,7 @@
 # ui's fake, no two-terminal refusal); Ctrl-C and SIGTERM exit 0 (were 130); + SIGHUP like SIGTERM (also with the
 # terminal gone), a second signal during the stop
 # (130), ui exiting 0 is a failure, the ready line and the browser (--no-browser, ui.open_browser, no display, no
-# browser), the teleop start note; imports.
+# browser), the teleop start note (+ start pose, 2026-11-20: the start pose note, no start-up home); imports.
 from __future__ import annotations
 
 import signal
@@ -294,14 +294,14 @@ def test_has_display_from_the_environment(monkeypatch):
     assert launcher_module._has_display() is True
 
 
-@pytest.mark.parametrize("mock,on_start,note", [
-    (False, True, "teleop_collect: teleop: start-up checks, then the arm homes once (a slow move of all 7 joints): "
-                  "keep a hand on the user stop"),
-    (True, True, "teleop_collect: teleop: start-up checks, then the fake PC homes once"),
-    (False, False, None),
+@pytest.mark.parametrize("mock,note", [
+    (False, "teleop_collect: teleop: the start pose is the arm's pose at start-up: press h, then p on the PC first"),
+    (True, "teleop_collect: teleop: the start pose is the arm's pose at start-up: the fake PC starts at its start "
+           "pose"),
 ])
-def test_the_teleop_start_note(make_station, mock, on_start, note):
-    station = Station.load(make_station(teleop={"home": {"on_start": on_start}}), mock)
+def test_the_teleop_start_note(make_station, mock, note):
+    """One note before teleop starts: no start-up home any more; its start-up takes the arm's pose as the start pose."""
+    station = Station.load(make_station(), mock)
     launcher = Launcher(station, mock)
     teleop = next(p for p in launcher.processes if p.NAME == "teleop")
     assert isinstance(teleop, TeleopProcess)

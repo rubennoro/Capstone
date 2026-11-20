@@ -1,6 +1,7 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/tests/contracts/test_examples.py @ 2ffe641
 # changes: the R1/U1/U2 examples (STRUCTURE.md 4.5) instead of C0/C1/C4; the pi_stream and c4 cases dropped (the
-# pi_stream wire cases are in test_pi_stream.py); + the broken cases STRUCTURE.md 4.5 asks for.
+# pi_stream wire cases are in test_pi_stream.py); + the broken cases STRUCTURE.md 4.5 asks for. + start pose
+# (2026-11-20): no u1.home/v1.
 from __future__ import annotations
 
 import pytest
@@ -32,7 +33,7 @@ def test_every_new_message_has_a_good_example():
     good = {e.schema for e in ALL if e.valid}
     new = {c.SCHEMA for c in registered()} - set(SHARED_SCHEMAS)
     new = {s for s in new if s.split(".")[0] in NEW}
-    assert len(new) == 18
+    assert len(new) == 17                                               # u1.home/v1 gone (start pose, 2026-11-20)
     assert new <= good, new - good
 
 
@@ -41,8 +42,9 @@ def test_every_schema_of_the_structure_is_registered():
     assert {"r1.start_recording/v1", "r1.stop_recording/v1", "r1.get_health/v1", "r1.summary/v1", "r1.health/v1",
             "u2.get_preview/v1", "u2.preview/v1",
             "u1.get_status/v1", "u1.keys/v1", "u1.gripper/v1", "u1.select_task/v1", "u1.create_task/v1",
-            "u1.home/v1", "u1.start_episode/v1", "u1.stop_episode/v1", "u1.delete_episode/v1", "u1.stop_arm/v1",
+            "u1.start_episode/v1", "u1.stop_episode/v1", "u1.delete_episode/v1", "u1.stop_arm/v1",
             "u1.status/v1"} <= names
+    assert "u1.home/v1" not in names                                    # no laptop home (start pose, 2026-11-20)
 
 
 @pytest.mark.parametrize("contract", NEW)

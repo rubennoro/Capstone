@@ -12,7 +12,7 @@ from deploy_contracts import SetWaypoints, Start
 from launcher_helpers import FakeLaptopClock, make_fake_pc
 
 V = 0.05                       # m/s along +x (v_max)
-K, SPACING_NS = 2, 50_000_000  # teleop.yaml waypoints and spacing_ms
+K, SPACING_NS = 6, 50_000_000  # teleop.yaml waypoints (6 since wave 3) and spacing_ms
 
 
 class _Recorder:

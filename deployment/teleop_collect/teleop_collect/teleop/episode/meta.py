@@ -3,13 +3,15 @@
 Only what helps training and the offline alignment: the task and its one-line description, the episode, the outcome,
 the times on the laptop and the PC, the counts, frames' summary, the full `hello` reply (with `F_T_TCP`), the laptop's
 commit, the rig file (its path and its parsed content, `rig: null` plus `rig_note` if unreadable), the teleop
-settings and the final Pi and PC clock fits. No operator names, no notes.
+settings and the final Pi and PC clock fits, and `warnings`: the data problems seen while recording (a camera down or
+stale), each once: {code, what, t_s} (t_s: seconds into the episode); empty when there were none. No operator names,
+no notes.
 `Task.episodes` reads `outcome`, `duration_s` and `counts.frames_main` back.
 """
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 import yaml
 from deploy_contracts import HelloReply
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
 
 META_VERSION = 1
 TIME_KEYS = ("start_ns", "stop_ns", "start_pc_ns", "stop_pc_ns")
+WARNING_KEYS = ("code", "what", "t_s")
 
 
 def _int_or_none(name: str, value: Any, required: bool) -> int | None:
@@ -44,11 +47,13 @@ def read_rig(rig_file: Path) -> tuple[Any, str]:
 
 def build_meta(*, task: Task, episode: EpisodeDir, outcome: str, times: Mapping[str, int], frames: RecordingSummary,
                counts: Mapping[str, int], hello: HelloReply, laptop_commit: str, laptop_dirty: bool,
-               rig_file: Path, motion: MotionSettings, pi_fit: Mapping, pc_fit: Mapping) -> dict:
+               rig_file: Path, motion: MotionSettings, pi_fit: Mapping, pc_fit: Mapping,
+               warnings: Sequence[Mapping[str, Any]] = ()) -> dict:
     """The meta.yaml content as plain YAML-able types. ValueError for an outcome that is not saved or bad times.
 
     times: start_ns, stop_ns (laptop, required), start_pc_ns, stop_pc_ns (mapped PC times, None if unknown).
     counts: EpisodeRecording.counts() plus anything the caller adds; frames' counts are added from `frames`.
+    warnings: EpisodeFlow's {code, what, t_s} per data problem seen while recording (ValueError for other keys).
     """
     if outcome not in SAVED_OUTCOMES:
         raise ValueError(f"outcome {outcome!r}: only {', '.join(SAVED_OUTCOMES)} are saved")
@@ -58,6 +63,9 @@ def build_meta(*, task: Task, episode: EpisodeDir, outcome: str, times: Mapping[
     t = {k: _int_or_none(k, times.get(k), k in ("start_ns", "stop_ns")) for k in TIME_KEYS}
     if t["stop_ns"] < t["start_ns"]:
         raise ValueError(f"times: stop_ns {t['stop_ns']} before start_ns {t['start_ns']}")
+    for w in warnings:
+        if set(w) != set(WARNING_KEYS):
+            raise ValueError(f"warnings: {dict(w)!r} must have exactly the keys {', '.join(WARNING_KEYS)}")
     frame_counts = {
         "frames_main": frames.main.frames,
         "frames_ultrawide": frames.ultrawide.frames,
@@ -96,4 +104,5 @@ def build_meta(*, task: Task, episode: EpisodeDir, outcome: str, times: Mapping[
         "teleop": {**motion.to_dict(), "lead_ms": motion.waypoints * motion.spacing_ms,
                    "worst_step_m": step_m, "worst_step_deg": step_deg},
         "clock": {"pi": to_plain(pi_fit), "pc": to_plain(pc_fit)},
+        "warnings": [{k: to_plain(w[k]) for k in WARNING_KEYS} for w in warnings],
     }

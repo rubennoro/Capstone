@@ -1,6 +1,7 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/tests/fake_pc/test_shared_examples.py @ 2ffe641
 # changes: imports (launcher_helpers, teleop_collect.contracts); the laptop-only schemas are R1/U1/U2 (not C1/C4);
-# the fake PC's clock offset 1e6 s, so the stored example times are past on any machine.
+# the fake PC's clock offset 1e6 s, so the stored example times are past on any machine; + start pose (2026-11-20):
+# p_pose and auto_h_p_after_stop_s null (a start example after a home example is still answered ok).
 """The fake PC against the stored shared examples (STRUCTURE.md 12.2; TOP 3.4, 3.11): it decodes and answers what
 franka_control does. Raw bytes over a ZeroMQ REQ socket."""
 from __future__ import annotations
@@ -26,7 +27,8 @@ LAPTOP = {e.name: e for e in build_examples()}
 def pc(tmp_path_factory):
     # clock_offset_s 1e6: the stored set_waypoints examples (t_ns about 1.2e5 s) are always in the past, whatever
     # the laptop's uptime (the source's 1000 s offset needs an uptime above about 34 h)
-    fake = make_fake_pc(tmp_path_factory.mktemp("fake_pc"), home_duration_s=0.05, clock_offset_s=1e6)
+    fake = make_fake_pc(tmp_path_factory.mktemp("fake_pc"), home_duration_s=0.05, clock_offset_s=1e6,
+                        p_pose=None, auto_h_p_after_stop_s=None)
     fake.start()
     sock = zmq.Context.instance().socket(zmq.REQ)
     sock.setsockopt(zmq.LINGER, 0)

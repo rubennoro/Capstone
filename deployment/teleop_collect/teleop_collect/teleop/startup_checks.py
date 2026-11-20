@@ -2,14 +2,15 @@
 # changes: no settled rule and no policy (teleop_collect PLAN 8, 13.9); waypoint_lead_ms = K x Delta
 # (teleop.motion.waypoints x spacing_ms); the hints name teleop.* keys and say "the same contract files" instead
 # of "the same commit" (this branch's commit differs from the PC's by design, PLAN 8); laptop_commit() counts
-# untracked files as dirty (no --untracked-files=no, as the launcher); + split_commit(); DIRTY; imports.
+# untracked files as dirty (no --untracked-files=no, as the launcher); + split_commit(); DIRTY; imports. + start pose
+# (final-deployment's start-pose work, 927a5ba, 2026-11-20): no home timeout row (teleop sends no C3
+# home, so timeouts.home_s is not compared with the PC's homing_timeout_s).
 """StartupChecks: the hello and budget checks of start-up step 5 (STRUCTURE.md 6.4), run by teleop, pc_probe --check
 and so teleop_collect check.
 
 | check           | rule                                                                                 | on failure  |
 | equality        | deploy_contracts.compare_hello(reply, mock=<own --mock>)                             | refuse      |
 | worst gap       | heartbeat + c3 timeout + health timeout + jitter allowance < reply.watchdog_limit_s  | refuse      |
-| home timeout    | timeouts.home_s > reply.homing_timeout_s                                             | refuse      |
 | waypoint lead   | motion.waypoints x motion.spacing_ms < reply.max_lead_s                              | refuse      |
 | clock agreement | |agreement_ms| of the shortest-RTT start-up hello <= clock.startup_agree_ms          | refuse      |
 | commit          | reply.commit vs git rev-parse HEAD (a different commit is expected: shown)           | warning     |
@@ -30,7 +31,7 @@ DIRTY = "+dirty"
 
 @dataclass(frozen=True)
 class CheckFailure:
-    name: str             # "equality", "worst_gap", "home_timeout", "waypoint_lead", "clock_agreement"
+    name: str             # "equality", "worst_gap", "waypoint_lead", "clock_agreement"
     what: str             # the FATAL line's "what failed"
     check: str            # its "what to check"
 
@@ -104,14 +105,6 @@ class StartupChecks:
                                          f"watchdog {reply.watchdog_limit_s:.2f} s",
                             "raise watchdog_limit_s in link.yaml or lower the laptop timeouts")
 
-    def home_timeout(self, reply: HelloReply) -> CheckFailure | None:
-        home_s = self._s.timeouts.home_s
-        if home_s > reply.homing_timeout_s:
-            return None
-        return CheckFailure("home_timeout", f"hello mismatch: teleop.timeouts.home_s {home_s:g} s is not above the "
-                                            f"PC's homing_timeout_s {reply.homing_timeout_s:g} s",
-                            "raise teleop.timeouts.home_s in station.yaml")
-
     def waypoint_lead_ms(self) -> float:
         return self._s.waypoint_lead_ms
 
@@ -151,7 +144,7 @@ class StartupChecks:
     def hello_failures(self, reply: HelloReply, pc_clock: PcClock, hellos: list[HelloSample]) -> list[CheckFailure]:
         """Every refusing row of start-up step 5, in table order."""
         out = list(self.equality(reply))
-        for f in (self.worst_gap(reply), self.home_timeout(reply), self.waypoint_lead(reply),
+        for f in (self.worst_gap(reply), self.waypoint_lead(reply),
                   self.clock_agreement(pc_clock, hellos)):
             if f is not None:
                 out.append(f)
@@ -166,8 +159,6 @@ class StartupChecks:
                              "schemas, mock, F_T_TCP, limits and watchdog equal"))
         for name, f, ok in (("worst gap", self.worst_gap(reply),
                              f"{self._s.worst_gap_s:.2f} s < watchdog {reply.watchdog_limit_s:.2f} s"),
-                            ("home timeout", self.home_timeout(reply),
-                             f"home_s {self._s.timeouts.home_s:g} s > homing_timeout_s {reply.homing_timeout_s:g} s"),
                             ("waypoint lead", self.waypoint_lead(reply),
                              f"{self.waypoint_lead_ms():.0f} ms < max_lead_s {reply.max_lead_s:g} s")):
             rows.append(CheckRow(name, "fail" if f else "pass", str(f) if f else ok))

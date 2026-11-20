@@ -15,7 +15,7 @@ from deploy_contracts import Ack, encode
 from ui_helpers import (FakeFrames, FakeTeleop, UiThread, idle_status, running_ui, ui_settings, wait_until)
 
 from station_helpers import free_port
-from teleop_collect.contracts import (CreateTask, DeleteEpisode, GripperCommand, HomeRequest, KeysUpdate, SelectTask,
+from teleop_collect.contracts import (CreateTask, DeleteEpisode, GripperCommand, KeysUpdate, SelectTask,
                                       StartEpisode, StopArm, StopEpisode)
 from teleop_collect.ui.bridge import FatalError
 from teleop_collect.ui.scripted_page import ScriptedPage
@@ -183,7 +183,7 @@ def test_teleop_gone_never_ends_the_ui(ui, page, teleop):
     s = page.wait_for(lambda s: not s["teleop_answering"], 3.0, "teleop not answering")
     assert s["teleop_error"] == "teleop not answering"
     assert s["phase"] == "idle"                               # the last status is still shown
-    ack = page.command("home")
+    ack = page.command("stop_arm")
     assert ack["ok"] is False and ack["reason"] == "teleop not answering"
     assert ui.thread.is_alive() and ui.error is None
     teleop.start()
@@ -227,7 +227,6 @@ def test_status_fields_follow_teleop(page, teleop):
 # ----------------------------------------------------------------------------------------------------- commands
 
 @pytest.mark.parametrize("name,args,cls,fields", [
-    ("home", {}, HomeRequest, {}),
     ("start_episode", {}, StartEpisode, {}),
     ("stop_arm", {}, StopArm, {}),
     ("select_task", {"name": "pick_block"}, SelectTask, {"name": "pick_block"}),
@@ -245,13 +244,13 @@ def test_each_command_reaches_teleop(page, teleop, name, args, cls, fields):
 
 
 def test_refusal_reason_comes_back(page, teleop):
-    teleop.refuse[StartEpisode] = "home the arm first (Home, or h on the PC)"
+    teleop.refuse[StartEpisode] = "not at the start pose: h, then p on the PC"
     ack = page.command("start_episode")
-    assert (ack["ok"], ack["reason"]) == (False, "home the arm first (Home, or h on the PC)")
+    assert (ack["ok"], ack["reason"]) == (False, "not at the start pose: h, then p on the PC")
 
 
 def test_acks_carry_their_ids(page):
-    a, b = page.command("home"), page.command("home")
+    a, b = page.command("stop_arm"), page.command("stop_arm")
     assert b["id"] == a["id"] + 1
 
 
@@ -260,7 +259,8 @@ def test_acks_carry_their_ids(page):
     ("delete_episode", {"episode": "../task"}, "does not match"),
     ("stop_episode", {"outcome": "maybe"}, "outcome"),
     ("select_task", {}, "missing argument 'name'"),
-    ("home", {"now": True}, "unknown argument"),
+    ("stop_arm", {"now": True}, "unknown argument"),
+    ("home", {}, "unknown command 'home'"),                             # no laptop home (the PC's h and p)
 ])
 def test_bad_commands_refused_without_reaching_teleop(page, teleop, name, args, reason):
     teleop.clear()
@@ -271,7 +271,7 @@ def test_bad_commands_refused_without_reaching_teleop(page, teleop, name, args, 
 
 
 def test_command_without_integer_id(page):
-    page.send_raw({"type": "command", "name": "home", "id": "x"})
+    page.send_raw({"type": "command", "name": "stop_arm", "id": "x"})
     wait_until(lambda: "x" in page._acks, 2.0, "the ack")
     assert page._acks["x"]["ok"] is False
 

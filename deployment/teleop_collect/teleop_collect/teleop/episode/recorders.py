@@ -9,7 +9,7 @@ writes its own files next to them):
 | commands.csv       | `CommandRecorder` | the main loop, every C3 request with its reply    |
 | keys.csv           | `KeyRecorder`     | the main loop, every key state change             |
 | clock_pc.csv       | `PcClockRecorder` | the main loop, every hello sample and the fit     |
-| events.jsonl       | `EventRecorder`   | the main loop: start, stop, home, hints, problems |
+| events.jsonl       | `EventRecorder`   | the main loop: start, stop, hints, problems       |
 
 Values: integers as written, floats in their shortest exact form (repr), booleans 1 / 0, missing values empty. Every
 row is flushed as it is written (a few hundred small writes a second at most), so at most the row being written is

@@ -5,7 +5,9 @@ integrated on the laptop. A move holds K waypoints at `now_pc + k * Delta`, each
 over `t_k - t_base`. So a waypoint sticks out past the base pose (which the PC's gate has already pulled back onto
 its box and cone) by at most `speed * (K * Delta + state age)`; the controller sends nothing while the state is older
 than `state_max_age_ms`, which makes that `worst_step`. `MotionSettings` refuses settings whose worst step exceeds
-`margin_use` of the PC's pull-back margins, so the gate pulls back and never rejects (a fault).
+`margin_use` of the PC's pull-back margins, so the gate pulls back and never rejects (a fault). Those margins are
+assumed, not read from the PC (it does not send them): `assumed_margins_text` says so at start-up and in
+`teleop_collect check`.
 """
 from __future__ import annotations
 
@@ -107,6 +109,15 @@ class MotionSettings:
     def to_dict(self) -> dict[str, float | int]:
         """Plain values, for meta.yaml and task.yaml."""
         return dataclasses.asdict(self)
+
+
+#: The start-up message and the `teleop_collect check` row (launcher/processes.py builds the same text from the config).
+ASSUMED_MARGINS = ("teleop assumes the PC's safety.box_margin_m {box:g} and cone_margin_deg {cone:g} (the teleop block "
+                   "of the PC's station.yaml); with smaller PC margins a press into the floor can fault the PC")
+
+
+def assumed_margins_text(s: MotionSettings) -> str:
+    return ASSUMED_MARGINS.format(box=s.assumed_pc_box_margin_m, cone=s.assumed_pc_cone_margin_deg)
 
 
 def worst_step(s: MotionSettings) -> tuple[float, float]:

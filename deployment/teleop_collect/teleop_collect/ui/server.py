@@ -30,8 +30,7 @@ from aiohttp import WSCloseCode, WSMsgType, web
 from deploy_contracts import ContractError, Message, RemoteError, TransportTimeout
 
 from teleop_collect.contracts import (CAMERAS, GRIPPER_COMMANDS, MOTION_KEYS, STATUS_MAX_MESSAGES, CreateTask,
-                                      DeleteEpisode, HomeRequest, SelectTask, StartEpisode, StopArm, StopEpisode,
-                                      TeleopStatus)
+                                      DeleteEpisode, SelectTask, StartEpisode, StopArm, StopEpisode, TeleopStatus)
 from teleop_collect.ui import NAME
 from teleop_collect.ui.bridge import Bridge, FatalError
 from teleop_collect.ui.settings import HTTP_HOST, Settings
@@ -61,7 +60,6 @@ def _arg(args: Mapping[str, Any], key: str) -> Any:
 #: in their own map, {"type": "command", "name": "select_task", "args": {"name": "pick_block"}, "id": 3}: flat, a
 #: task's `name` would collide with the command's `name`.
 COMMANDS: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, Any]], Message]]] = {
-    "home": ((), lambda a: HomeRequest()),
     "start_episode": ((), lambda a: StartEpisode()),
     "stop_arm": ((), lambda a: StopArm()),
     "select_task": (("name",), lambda a: SelectTask(name=_arg(a, "name"))),

@@ -1,9 +1,11 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/pc_probe.py @ ea9f7fb
+# adapted from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/pc_probe.py @ 927a5ba
 # changes: imports; the texts name teleop and teleop_collect check instead of the manager and policy_deploy check;
-# the --axes docstring points to this package's DIRECTIONS.md.
+# the --axes docstring points to this package's DIRECTIONS.md; no "(new)" marks in the docstring.
+# + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): --start-pose, start_pose_lines,
+# _horizontal_words and _DEMOS_START copied unchanged; re-pinned from ea9f7fb to 927a5ba.
 # Behaviour, rows and the --check --json line format are unchanged.
-"""python -m teleop_collect.teleop.pc_probe [--station FILE] [--seconds 30] [--local] [--check] [--json]
-(STRUCTURE.md 8.6). The read-only link probe.
+"""python -m teleop_collect.teleop.pc_probe [--station FILE] [--seconds 30] [--local] [--check] [--json] [--axes]
+[--start-pose] (STRUCTURE.md 8.6). The read-only link probe.
 
 A C3 client, so never alongside a teleop run (TOP 2.4). It follows rule H2 first: it reads C2 and sends nothing on C3
 while C2 shows running/holding (up to 2 x watchdog_limit_s, then it refuses: another client is driving) or homing (up
@@ -18,11 +20,18 @@ link.yaml clock.estimator, as `run` judges it at start-up. It exits 0 unless it 
 
 --axes also prints, at the end, where the measured TCP's x, y, z axes point in the robot's base frame, in words:
 the read-only check of contracts/frames.yaml F_T_TCP before settled: true (DIRECTIONS.md, pc_probe).
+
+--start-pose also prints, at the end, the arm's pose from the newest C2 state, for measuring the start pose by
+hand-guiding: q_start_rad (C2 q, rad, ready to paste into the PC's control_deploy/station.yaml under
+`franka_control: homing:`), the fingertip (TCP) height z in the base frame, the tilt of the fingertip direction
+(TCP z axis) from straight down and which way it points horizontally in words, the gripper width, and the training
+demos' start for comparison.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from dataclasses import dataclass
@@ -219,6 +228,41 @@ def axes_lines(O_T_TCP) -> list[str]:
     return out
 
 
+_DEMOS_START = ("demos start: fingertips tilted ~48 deg from straight down (38-64), ~16 cm above the table (6-27), "
+                "hand open; object ~16 cm ahead horizontally and ~17 cm below the fingertips")
+
+
+def _horizontal_words(x: float, y: float) -> str:
+    """Which way a horizontal direction (base x, y) points, in words: one base axis when within 25 deg of it, else the
+    two it is between."""
+    norm = math.hypot(x, y)
+    v = (x / norm, y / norm)
+    big = 0 if abs(v[0]) >= abs(v[1]) else 1
+    first = _BASE_WORDS[(big, 1 if v[big] > 0 else -1)]
+    if abs(v[big]) > 0.906:
+        return first
+    return f"between {first} and {_BASE_WORDS[(1 - big, 1 if v[1 - big] > 0 else -1)]}"
+
+
+def start_pose_lines(state) -> list[str]:
+    """--start-pose, from one C2 state: q_start_rad to paste, the fingertip height, the fingertip direction (tilt from
+    straight down, and which way it points horizontally in words), the gripper width, and the demos' start."""
+    q = ", ".join(f"{float(v):.4f}" for v in state.q)
+    T = state.O_T_TCP
+    v = [float(T[row][2]) for row in range(3)]                          # the TCP z axis: where the fingertips point
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, -v[2]))))
+    if math.hypot(v[0], v[1]) < 0.035:                                  # within 2 deg of vertical
+        words = "no horizontal direction"
+    else:
+        words = f"pointing {_horizontal_words(v[0], v[1])}"
+    return [f"q_start_rad: [{q}]   # paste under franka_control: homing: in the PC's control_deploy/station.yaml",
+            f"fingertip (TCP) height: z {float(T[2][3]):.3f} m in the robot base frame",
+            f"fingertip direction (TCP z axis) -> base ({v[0]:+.2f}, {v[1]:+.2f}, {v[2]:+.2f}): tilted {tilt:.1f} deg "
+            f"from straight down, {words}",
+            f"gripper width: {float(state.gripper_width_m) * 1000:.1f} mm",
+            _DEMOS_START]
+
+
 def emit(rows: list[PcCheck], as_json: bool, out: TextIO) -> None:
     for r in rows:
         if as_json:
@@ -237,6 +281,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="2 s, then check lines for teleop_collect check")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--axes", action="store_true", help="also print where the TCP axes point (frames.yaml check)")
+    ap.add_argument("--start-pose", action="store_true",
+                    help="also print the arm's pose as the PC's start pose (q_start_rad) and the demos' start")
     a = ap.parse_args(argv)
     local = a.local or a.mock
     try:
@@ -264,6 +310,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if a.axes:
             latest = probe.history.latest()
             for line in (axes_lines(latest.O_T_TCP) if latest is not None else ["TCP axes: no C2 state received"]):
+                print(line)
+        if a.start_pose:
+            latest = probe.history.latest()
+            for line in (start_pose_lines(latest) if latest is not None else ["start pose: no C2 state received"]):
                 print(line)
         return 1 if any(r.status == "fail" for r in rows) else 0
     finally:

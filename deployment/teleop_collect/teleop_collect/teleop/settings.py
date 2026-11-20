@@ -7,8 +7,9 @@
 # rig_file) instead of C1/C4; worst_gap_s as before; waypoint_lead_ms = K x Delta; + gripper_width_max_m (limits.yaml,
 # the width M opens to); + task_settings() (task.yaml settings); to_dict() through _plain (dataclasses, paths,
 # tuples); + camera_down_s (frames' health.down_s); the problems name teleop.*; no "path", "str", "optional",
-# "exec_h" or "pose_source" rules. The source's
-# own header follows.
+# "exec_h" or "pose_source" rules. + start pose (final-deployment's start-pose work, 927a5ba,
+# 2026-11-20): start_pose: (StartPoseSettings) instead of home: (no laptop home); timeouts.home_s only builds PcClient.
+# The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/settings.py @ 91b178b
 # changes: config/manager.yaml + station.yaml manager: (policy_deploy.contracts.load_config) + LinkSettings + TcpFrame;
 # the link values (heartbeat period, C3 timeout, state stale/lost, the clock estimator, the PC's endpoints) come only
@@ -29,20 +30,20 @@ from deploy_contracts import ContractLimits, LinkSettings, TcpFrame
 from teleop_collect.contracts import Station, StationError, load_config, resolve_path
 
 if TYPE_CHECKING:
-    from teleop_collect.teleop.motion.home import HomeSettings
     from teleop_collect.teleop.motion.planner import MotionSettings
+    from teleop_collect.teleop.motion.start_pose import StartPoseSettings
 
 NAME = "teleop"
-#: the config sections built and checked by E4's classes (MotionSettings, HomeSettings)
-DELEGATED = ("motion", "home")
+#: the config sections built and checked by their own classes (MotionSettings, StartPoseSettings)
+DELEGATED = ("motion", "start_pose")
 
 
 @dataclass(frozen=True)
 class Timeouts:
     health_s: float           # R1 get_health on the main thread (a term of the worst C3 gap)
     frames_s: float           # R1 start_recording / stop_recording
-    home_s: float             # C3 home
-    startup_s: float          # start-up steps 2-10, not counting the homing waits or the home itself
+    home_s: float             # PcClient's C3 home timeout (teleop sends no C3 home; pc_probe builds a PcClient too)
+    startup_s: float          # start-up steps 2-9, not counting the waits while C2 shows homing
     pc_homing_wait_s: float   # start-up step 3: longest wait while C2 shows homing
 
 
@@ -71,7 +72,7 @@ class ClockSettings:
 @dataclass(frozen=True, eq=False)
 class Settings:
     motion: MotionSettings
-    home: HomeSettings
+    start_pose: StartPoseSettings
     history_s: float
     state_recv_hwm: int
     listener_poll_s: float
@@ -115,9 +116,9 @@ class Settings:
         return float(self.motion.waypoints * self.motion.spacing_ms)
 
     def task_settings(self) -> dict[str, Any]:
-        """What task.yaml keeps as `settings` (the speeds, K, Delta, the home tolerances)."""
-        return {"motion": _plain(self.motion), "home": _plain(self.home), "heartbeat_period_s": self.heartbeat_period_s,
-                "rig_file": str(self.rig_file)}
+        """What task.yaml keeps as `settings` (the speeds, K, Delta, the start pose tolerances)."""
+        return {"motion": _plain(self.motion), "start_pose": _plain(self.start_pose),
+                "heartbeat_period_s": self.heartbeat_period_s, "rig_file": str(self.rig_file)}
 
     def to_dict(self) -> dict[str, Any]:
         """Plain values (for session.yaml)."""
@@ -143,8 +144,8 @@ class Settings:
     def from_station(cls, station: Station, link: LinkSettings | None = None, frame: TcpFrame | None = None,
                      state_endpoint: str | None = None, commands_endpoint: str | None = None) -> Settings:
         """The endpoints default to link.yaml's (127.0.0.1 under --mock); tests pass their own."""
-        from teleop_collect.teleop.motion.home import HomeSettings
         from teleop_collect.teleop.motion.planner import MotionSettings
+        from teleop_collect.teleop.motion.start_pose import StartPoseSettings
         link = LinkSettings.load() if link is None else link
         frame = TcpFrame.load() if frame is None else frame
         config = load_config(NAME, station)
@@ -155,8 +156,8 @@ class Settings:
         for key in flat:
             if key not in _RULES:
                 problems.append(f"config/teleop.yaml: {key}: unknown key")
-        motion = home = None
-        for name, build in (("motion", MotionSettings.from_config), ("home", HomeSettings.from_config)):
+        motion = start_pose = None
+        for name, build in (("motion", MotionSettings.from_config), ("start_pose", StartPoseSettings.from_config)):
             section = config.get(name)
             if not isinstance(section, dict):
                 problems.append(f"{NAME}.{name}: expected a map, got {section!r}")
@@ -169,7 +170,7 @@ class Settings:
             if name == "motion":
                 motion = built
             else:
-                home = built
+                start_pose = built
         rig_file = None
         camera_down_s = 0.0
         try:
@@ -197,7 +198,8 @@ class Settings:
             log_every_s=float(c["log_every_s"]))
         mock = station.mock
         return cls(
-            motion=motion, home=home, history_s=float(config["history_s"]), state_recv_hwm=config["state_recv_hwm"],
+            motion=motion, start_pose=start_pose, history_s=float(config["history_s"]),
+            state_recv_hwm=config["state_recv_hwm"],
             listener_poll_s=float(config["listener_poll_s"]),
             link_jitter_allowance_s=float(config["link_jitter_allowance_s"]),
             health_poll_ms=config["health_poll_ms"], u1_max_per_cycle=config["u1_max_per_cycle"],

@@ -2,7 +2,10 @@
 # changes: the kinds and codes of teleop_collect STRUCTURE.md 6.5: + Kind.EPISODE (abort the open episode, stay up);
 # + SET_SKIPPED, OPERATOR_ABORT, RECORDING_FAILED; the policy codes (NO_NEW_FRAME, IMAGE_OLD, ODD_CHUNK, POLICY_LATE,
 # WIDTH_CLIPPED, ANCHOR_FALLBACK, POLICY_HUNG, POLICY_ERROR, INVALID_CHUNK), TCP_UNSETTLED, OPERATOR_SCRIPT and
-# EPISODE_STOP dropped; process names frames, PC, teleop, ui, operator, launcher. The source's own header follows.
+# EPISODE_STOP dropped; process names frames, PC, teleop, ui, operator, launcher. + start pose (final-deployment's
+# start-pose work, 927a5ba, 2026-11-20): HOME_STOPPED and HOMING_FAILED dropped (no laptop home). + wave 3 (no
+# software stops, 2026-11-20): + Kind.WARN (a data problem: shown, written to meta.yaml warnings; the arm and the
+# episode go on). The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/problems.py @ 91b178b
 # changes: the codes of STRUCTURE.md 8.5 (new: CLOCK_STALE, PC_NOT_ANSWERING, PC_RESTARTED, PC_STOPPED (was
 # ARM_STOPPED), PC_REFUSED, CLOCK_MISMATCH, HELLO_MISMATCH, PC_BUSY, TCP_UNSETTLED, HOME_STOPPED, LAUNCHER_STOP (was
@@ -17,6 +20,7 @@ from enum import Enum
 class Kind(Enum):
     NORMAL = "normal"             # normal operation: counted, never stops anything
     SLOW = "slow"                 # keep going: no motion this cycle, the recording continues (PLAN 7)
+    WARN = "warn"                 # a data problem: on the page and in meta.yaml `warnings`; the arm and episode go on
     EPISODE = "episode"           # abort the open episode (C3 stop, its folder deleted); the app stays up
     CONCLUDE = "conclude"         # unrecoverable: stop, abort the open episode, FATAL, exit 1
     STOP = "stop"                 # Ctrl-C / SIGTERM: stop, abort the open episode, exit 0
@@ -32,7 +36,6 @@ class ProblemCode(Enum):
     SHORTENED = "shortened"
     PULLED_BACK = "pulled_back"
     LOOP_LATE = "loop_late"
-    HOME_STOPPED = "home_stopped"
     CAMERA_DOWN = "camera_down"
     PC_STOPPED = "pc_stopped"
     OPERATOR_ABORT = "operator_abort"
@@ -48,7 +51,6 @@ class ProblemCode(Enum):
     HELLO_MISMATCH = "hello_mismatch"
     PC_BUSY = "pc_busy"
     CONTRACT_VIOLATION = "contract_violation"
-    HOMING_FAILED = "homing_failed"
     STARTUP = "startup"
     INTERNAL_ERROR = "internal_error"
     OPERATOR_STOP = "operator_stop"       # Ctrl-C: the run ends

@@ -4,8 +4,10 @@
 # R1 and preview ports instead of the C1 port (the rig file check runs teleop_collect.frames.rig_file); teleop (from
 # ManagerProcess) without the terminal / operator-script row and without a self_check, with the U1 port and
 # `teleop_collect.teleop.pc_probe --check --json` (not --mock); ui (new) with the HTTP port; the ready hints name this
-# package's processes, and frames' real-run hint adds "(C button, LED blue)" for the Pi; imports. The source's own
-# header follows.
+# package's processes, and frames' real-run hint adds "(C button, LED blue)" for the Pi; imports. + start pose
+# (final-deployment's start-pose work, 927a5ba, 2026-11-20): no homes_on_start (no start-up home); the
+# teleop ready hint says "the start pose". + wave 3 (no software stops, 2026-11-20): teleop's INFO row "PC margins"
+# (the PC margins teleop.motion assumes, and the risk). The source's own header follows.
 # adapted from rnoro/deployment:deployment/process_frames/launch.py, policy/launch.py, message_comms/launch.py
 # @ 91b178b
 # changes: one class per laptop process in one file (FakePcProcess, FramesProcess, PolicyProcess, ManagerProcess);
@@ -27,6 +29,9 @@ from teleop_collect.launcher.managed_process import ManagedProcess
 LOCAL_HOST = "127.0.0.1"
 PC_PROBE_CHECK_TIMEOUT_S = 30.0         # pc_probe --check: up to 2 x watchdog of rule H2, then 2 s of hellos
 PC_HINT = "check that control_deploy run is running on the PC, ASUS_5g, and link.yaml pc.address"
+#: = teleop.motion.planner.ASSUMED_MARGINS (the launcher never imports teleop): teleop's start-up shows the same text
+ASSUMED_MARGINS = ("teleop assumes the PC's safety.box_margin_m {box:g} and cone_margin_deg {cone:g} (the teleop block "
+                   "of the PC's station.yaml); with smaller PC margins a press into the floor can fault the PC")
 
 
 class FakePcProcess(ManagedProcess):
@@ -93,20 +98,15 @@ class FramesProcess(ManagedProcess):
 
 class TeleopProcess(ManagedProcess):
     NAME = "teleop"
-    READY_HINT = ("start-up: C2 from the PC, hello checks, clock map, the home, both cameras ok, data_root "
-                  "writable; see the teleop log")
+    READY_HINT = ("start-up: C2 from the PC, hello checks, clock map, both cameras ok, data_root writable, the start "
+                  "pose; see the teleop log")
 
     def __init__(self, *args, fake_pc: bool = True, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.fake_pc = fake_pc                       # --mock: is the fake PC started by this run?
 
-    def homes_on_start(self) -> bool:
-        """teleop.home.on_start: the whole arm homes once during start-up (PLAN 8)."""
-        home = self.config.get("home")
-        return isinstance(home, dict) and home.get("on_start") is True
-
     def checks(self) -> list[CheckResult]:
-        out = [check_helpers.port_free(self.NAME, self.station.u1_endpoint(), "U1 port")]
+        out = [check_helpers.port_free(self.NAME, self.station.u1_endpoint(), "U1 port"), self._margins()]
         if self.mock:
             detail = ("fake PC on 127.0.0.1, started by run" if self.fake_pc
                       else "PC on 127.0.0.1 started outside the launcher (cross test)")
@@ -117,6 +117,15 @@ class TeleopProcess(ManagedProcess):
             out += check_helpers.json_check_lines(self.NAME, cmd, PC_PROBE_CHECK_TIMEOUT_S, self.folder,
                                                   label="PC", hint=PC_HINT)
         return out
+
+    def _margins(self) -> CheckResult:
+        """INFO: the PC margins teleop's worst-step bound assumes (the PC does not send them)."""
+        motion = self.config.get("motion", {})
+        try:
+            box, cone = float(motion["assumed_pc_box_margin_m"]), float(motion["assumed_pc_cone_margin_deg"])
+        except (KeyError, TypeError, ValueError) as exc:
+            return CheckResult(self.NAME, "PC margins", "fail", f"teleop.motion: {type(exc).__name__}: {exc}")
+        return CheckResult(self.NAME, "PC margins", "info", ASSUMED_MARGINS.format(box=box, cone=cone))
 
 
 class UiProcess(ManagedProcess):

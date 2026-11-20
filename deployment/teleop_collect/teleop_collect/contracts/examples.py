@@ -1,6 +1,8 @@
 # new, except _in (with its inner wrap/apply): adapted from
 # rnoro/final-deployment:deployment/policy_deploy/policy_deploy/contracts/examples.py @ 2ffe641
 # changes: _in's docstring example names an R1 field (main.frames) instead of a C0 one; the code is unchanged.
+# + start pose (2026-11-20): no u1/home example; the status examples carry start_pose_known / start_pose_confirmed /
+# at_start_pose (an idle one at the start pose, one with the start pose not known yet).
 """The laptop-only examples of R1, U1 and U2, good and deliberately broken (STRUCTURE.md 4.5).
 
 Good ones are built from the message classes; broken ones take a good message's dict and change one thing, then pack
@@ -20,8 +22,8 @@ from teleop_collect.contracts.health import CameraHealthReport, HealthReport
 from teleop_collect.contracts.r1_recorder import (CameraSummary, FramesHealth, GetFramesHealth, RecordingSummary,
                                                   StartRecording, StopRecording)
 from teleop_collect.contracts.u1_teleop import (CreateTask, DeleteEpisode, EpisodeInfo, GetStatus, GripperCommand,
-                                                HomeRequest, KeysUpdate, SelectTask, StartEpisode, StopArm,
-                                                StopEpisode, TeleopStatus, UiMessage)
+                                                KeysUpdate, SelectTask, StartEpisode, StopArm, StopEpisode,
+                                                TeleopStatus, UiMessage)
 from teleop_collect.contracts.u2_preview import GetPreview, Preview
 
 _T0 = 123_456_789_000_000          # a laptop monotonic time, ns
@@ -165,7 +167,8 @@ def teleop_status(**change: Any) -> TeleopStatus:
                   EpisodeInfo(name="episode_002", outcome="fail", duration_s=31.0, frames_main=930)),
         recording_episode="episode_003", episode_s=4.5, arm_mode="running",
         tcp_m=np.array([0.452, 0.003, 0.301]), gripper_width_m=0.08, commanded_width_m=0.08,
-        home_known=True, at_home=False, start_allowed=False, start_refusal="recording", at_limit=False,
+        start_pose_known=True, start_pose_confirmed=True, at_start_pose=False, start_allowed=False,
+        start_refusal="recording", at_limit=False,
         moving=True, slow=False, cameras=health(), c2_hz=100.0, rtt_ms=4.2, clock_ok=True, pc_mock=True,
         messages=(UiMessage(id=7, level="info", text="episode_003 started"),
                   UiMessage(id=8, level="warn", text="at workspace limit")),
@@ -177,11 +180,17 @@ def teleop_status(**change: Any) -> TeleopStatus:
 def _u1() -> list[Example]:
     keys = KeysUpdate(held=("x+", "tilt_left"), slow=True, focus=True)
     status = teleop_status()
-    idle = teleop_status(phase="idle", recording_episode="", episode_s=0.0, arm_mode="idle", at_home=True,
+    idle = teleop_status(phase="idle", recording_episode="", episode_s=0.0, arm_mode="idle", at_start_pose=True,
                          start_allowed=True, start_refusal="", moving=False, messages=())
+    no_start_pose = teleop_status(phase="idle", recording_episode="", episode_s=0.0, arm_mode="idle",
+                                  start_pose_known=False, start_pose_confirmed=False, at_start_pose=False,
+                                  start_allowed=False,
+                                  start_refusal="put the arm at the start pose: h, then p on the PC", moving=False,
+                                  messages=())
     starting = teleop_status(phase="starting", ready=False, task="", task_description="", tasks=(), episodes=(),
                              recording_episode="", episode_s=0.0, arm_mode="", tcp_m=None, gripper_width_m=None,
-                             home_known=False, at_home=False, start_refusal="starting up", moving=False,
+                             start_pose_known=False, start_pose_confirmed=False, at_start_pose=False,
+                             start_refusal="starting up", moving=False,
                              cameras=None, c2_hz=0.0, rtt_ms=None, clock_ok=False, messages=())
     done = teleop_status(phase="done", recording_episode="", episode_s=0.0, arm_mode="fault",
                          start_refusal="starting up", moving=False,
@@ -195,17 +204,19 @@ def _u1() -> list[Example]:
         good_example("u1/select_task", SelectTask(name="pick_block"), {"name": "pick_block"}),
         good_example("u1/create_task", CreateTask(name="place_cup", description="put the cup on the plate"),
                      {"name": "place_cup"}),
-        good_example("u1/home", HomeRequest()),
         good_example("u1/start_episode", StartEpisode()),
         good_example("u1/stop_episode_success", StopEpisode(outcome="success"), {"outcome": "success"}),
         good_example("u1/stop_episode_discard", StopEpisode(outcome="discard"), {"outcome": "discard"}),
         good_example("u1/delete_episode", delete, {"episode": "episode_002"}),
         good_example("u1/stop_arm", StopArm()),
-        good_example("u1/refused", Ack(ok=False, reason="home the arm first (Home, or h on the PC)"), {"ok": False}),
+        good_example("u1/refused", Ack(ok=False, reason="not at the start pose: h, then p on the PC"), {"ok": False}),
         good_example("u1/status_recording", status, {"phase": "recording", "tcp_m[2]": 0.301,
                                                       "episodes[1].name": "episode_002", "messages[1].id": 8,
                                                       "cameras.main.status": "ok"}),
-        good_example("u1/status_idle_at_home", idle, {"start_allowed": True, "start_refusal": ""}),
+        good_example("u1/status_idle_at_start_pose", idle, {"start_allowed": True, "start_refusal": "",
+                                                             "at_start_pose": True, "start_pose_confirmed": True}),
+        good_example("u1/status_start_pose_unknown", no_start_pose, {"start_allowed": False,
+                                                                     "start_pose_known": False}),
         good_example("u1/status_starting", starting, {"ready": False, "tcp_m": None, "cameras": None}),
         good_example("u1/status_done", done, {"phase": "done", "final_line": done.final_line}),
     ]
@@ -236,6 +247,11 @@ def _u1() -> list[Example]:
                        "start_refusal", "value", "a refusal text while start is allowed"),
         broken_example("u1/status_no_refusal_while_refused", status, set_key("start_refusal", ""), "start_refusal",
                        "value", "start refused without a reason"),
+        broken_example("u1/status_confirmed_unknown_start_pose", no_start_pose,
+                       set_key("start_pose_confirmed", True), "start_pose_confirmed", "value",
+                       "a start pose cannot be confirmed without being known"),
+        broken_example("u1/status_at_unknown_start_pose", no_start_pose, set_key("at_start_pose", True),
+                       "at_start_pose", "value", "at a start pose that is not known"),
         broken_example("u1/status_episode_bad_outcome", status, lambda d: d["episodes"][0].update(outcome="discard"),
                        "episodes[0].outcome", "value", "a discarded episode is never listed"),
         broken_example("u1/status_episode_bad_name", status, lambda d: d["episodes"][0].update(name="ep0"),

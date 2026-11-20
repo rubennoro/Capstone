@@ -1,5 +1,5 @@
 """teleop Settings (STRUCTURE.md 3.3, 6.2): config/teleop.yaml merged with station.yaml teleop:, link.yaml values,
-E4's MotionSettings / HomeSettings and their refusals."""
+E4's MotionSettings / StartPoseSettings and their refusals."""
 from __future__ import annotations
 
 import pytest
@@ -15,9 +15,9 @@ def test_defaults(settings):
     link = LinkSettings.load()
     assert settings.heartbeat_period_s == link.heartbeat_period_s and settings.c3_timeout_s == link.c3_timeout_s
     assert settings.worst_gap_s == pytest.approx(0.57)
-    assert settings.waypoint_lead_ms == 100.0
-    assert settings.motion.v_max_m_s == 0.05 and settings.motion.waypoints == 2
-    assert settings.home.on_start is True and settings.home.tolerance_rad == 0.01
+    assert settings.waypoint_lead_ms == 300.0                                  # wave 3: 6 x 50 ms
+    assert settings.motion.v_max_m_s == 0.05 and settings.motion.waypoints == 6
+    assert settings.start_pose.tolerance_rad == 0.01 and settings.start_pose.tolerance_m == 0.005
     assert settings.u1_max_per_cycle == 4 and settings.at_limit_hold_ms == 500 and settings.messages_kept == 200
     assert settings.timeouts.frames_s == 4.0 and settings.clock.mismatch_min_lead_ms == 60.0
     assert settings.camera_down_s == 2.0
@@ -47,7 +47,9 @@ def test_overrides_merge(make_settings):
     ({"health_poll_ms": 0.5}, "teleop.health_poll_ms: expected int"),
     ({"clock": {"round_trip": {"best_fraction": 2.0}}}, "must be in (0, 1]"),
     ({"motion": {"v_max_m_s": 0.2}}, "teleop.motion:"),               # the margin rule (E4's MotionSettings)
-    ({"home": {"tolerance_rad": -1.0}}, "teleop.home:"),
+    ({"start_pose": {"tolerance_rad": -1.0}}, "teleop.start_pose:"),
+    ({"start_pose": {"on_start": True}}, "teleop.start_pose.on_start: not a key of config/teleop.yaml"),
+    ({"home": {"on_start": True}}, "teleop.home: not a key of config/teleop.yaml"),   # no laptop home any more
 ])
 def test_refusals(make_settings, overrides, text):
     with pytest.raises(StationError) as e:
@@ -64,4 +66,6 @@ def test_unknown_key_is_refused_by_the_merge(make_settings):
 def test_to_dict_and_task_settings_are_plain(settings):
     for doc in (settings.to_dict(), settings.task_settings()):
         assert yaml.safe_load(yaml.safe_dump(doc)) == doc
-    assert settings.task_settings()["motion"]["waypoints"] == 2
+    assert settings.task_settings()["motion"]["waypoints"] == 6
+    assert settings.task_settings()["start_pose"] == {"tolerance_rad": 0.01, "tolerance_m": 0.005}
+    assert "home" not in settings.task_settings()

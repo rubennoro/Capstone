@@ -132,6 +132,11 @@ class ScriptedPage:
                 self._lock.wait(min(remaining, 0.05))
             return dict(self._status)                                     # type: ignore[arg-type]
 
+    def wait_start_allowed(self, timeout_s: float = 10.0) -> dict:
+        """Wait until teleop allows Start (idle, at the start pose, cameras and clock ok) and return that status. There
+        is no Home button: the arm reaches the start pose by the PC's h, then p (the fake PC starts there)."""
+        return self.wait_for(lambda s: s["phase"] == "idle" and s["start_allowed"], timeout_s, "Start allowed")
+
     def previews(self) -> dict[str, int]:
         """The newest frame_no received per camera ("main", "ultrawide"); a camera is absent until its first."""
         with self._lock:

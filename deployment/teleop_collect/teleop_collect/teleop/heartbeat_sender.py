@@ -1,11 +1,12 @@
-# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/heartbeat_sender.py @ 2ffe641
-# changes: imports only
+# copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/heartbeat_sender.py @ 927a5ba
+# changes: imports only (re-pinned from 2ffe641 to 927a5ba for the start pose: the source's docstring has no re-warm
+# after a home now)
 """HeartbeatSender: the cycle's one C3 keep-alive (STRUCTURE.md 8.2; TOP 3.7.3 rule H1).
 
 beat() sends exactly one request: a hello when one is due (its sample goes to the PC clock map, its round trip to
-LinkStats), else a heartbeat. In start-up mode (start-up step 4, and after every home that did not conclude, until the
-map is ready again) a hello is due every startup_hello_period_s; otherwise every hello_period_s. A hello whose t_pc_ns
-is below the previous one means the PC rebooted (CLOCK_MONOTONIC survives a franka_control restart): PcRestarted.
+LinkStats), else a heartbeat. In start-up mode (start-up step 4, until the map is ready) a hello is due every
+startup_hello_period_s; otherwise every hello_period_s. A hello whose t_pc_ns is below the previous one means the PC
+rebooted (CLOCK_MONOTONIC survives a franka_control restart): PcRestarted.
 """
 from __future__ import annotations
 

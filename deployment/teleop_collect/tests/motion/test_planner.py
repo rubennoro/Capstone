@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 from core_helpers import MS, T0_PC, home_pose, motion_config, motion_settings, rigid_error, tilted_pose, z_tilt_deg
 
-from teleop_collect.teleop.motion import MotionSettings, Twist, WaypointPlanner, advance, worst_step
+from teleop_collect.teleop.motion import (MotionSettings, Twist, WaypointPlanner, advance, assumed_margins_text,
+                                         worst_step)
 
 S = motion_settings()
 
@@ -15,9 +16,13 @@ S = motion_settings()
 # --- settings ------------------------------------------------------------------------------------------------------
 
 def test_defaults_load_and_worst_step():
-    assert S.waypoints == 2 and S.spacing_ns == 50 * MS and S.lead_ns == 100 * MS and S.state_max_age_ns == 50 * MS
+    # wave 3 (no software stops): K 6 (lead 300 ms), state_max_age_ms 250, the PC margins 0.05 m / 10 deg
+    assert S.waypoints == 6 and S.spacing_ns == 50 * MS and S.lead_ns == 300 * MS and S.state_max_age_ns == 250 * MS
+    assert S.assumed_pc_box_margin_m == 0.05 and S.assumed_pc_cone_margin_deg == 10.0
     step_m, step_deg = worst_step(S)
-    assert step_m == pytest.approx(0.0075) and step_deg == pytest.approx(1.5)
+    assert step_m == pytest.approx(0.0275) and step_deg == pytest.approx(5.5)     # <= 0.8 x 50 mm, 0.8 x 10 deg
+    assert step_m <= S.margin_use * S.assumed_pc_box_margin_m
+    assert step_deg <= S.margin_use * S.assumed_pc_cone_margin_deg
     assert isinstance(S.spacing_ms, float)
 
 
@@ -42,11 +47,11 @@ def test_bad_values_refused(key, value):
 
 
 @pytest.mark.parametrize("changes, what", [
-    ({"v_max_m_s": 0.06}, "worst step"),                       # 9 mm > 0.8 x 10 mm
-    ({"w_max_deg_s": 11.0}, "worst tilt step"),                # 1.65 deg > 0.8 x 2 deg
-    ({"waypoints": 3}, "worst step"),                          # lead 150 ms: 10 mm
-    ({"state_max_age_ms": 120}, "worst step"),
-    ({"assumed_pc_box_margin_m": 0.009}, "worst step"),
+    ({"v_max_m_s": 0.08}, "worst step"),                       # 0.08 x 0.55 s = 44 mm > 0.8 x 50 mm
+    ({"w_max_deg_s": 15.0}, "worst tilt step"),                # 15 x 0.55 s = 8.25 deg > 0.8 x 10 deg
+    ({"waypoints": 12}, "worst step"),                         # lead 600 ms: 0.05 x 0.85 s = 42.5 mm
+    ({"state_max_age_ms": 600}, "worst step"),                 # 0.05 x 0.9 s = 45 mm
+    ({"assumed_pc_box_margin_m": 0.034}, "worst step"),        # 27.5 mm > 0.8 x 34 mm
     ({"margin_use": 0.5}, "worst step"),
 ])
 def test_margin_rule_refuses(changes, what):
@@ -56,7 +61,17 @@ def test_margin_rule_refuses(changes, what):
 
 def test_margin_rule_allows_slower_settings():
     s = motion_settings(v_max_m_s=0.02, w_max_deg_s=5.0, waypoints=4)
-    assert worst_step(s)[0] == pytest.approx(0.02 * 0.25)
+    assert worst_step(s)[0] == pytest.approx(0.02 * 0.45)
+
+
+def test_assumed_margins_text_names_the_pc_margins_and_the_risk():
+    """Wave 3: shown at start-up and as teleop_collect check's INFO row (launcher/processes.py, the same text)."""
+    from teleop_collect.launcher.processes import ASSUMED_MARGINS
+    from teleop_collect.teleop.motion.planner import ASSUMED_MARGINS as PLANNER_TEXT
+    assert assumed_margins_text(S) == (
+        "teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg 10 (the teleop block of the PC's "
+        "station.yaml); with smaller PC margins a press into the floor can fault the PC")
+    assert ASSUMED_MARGINS == PLANNER_TEXT
 
 
 # --- advance -------------------------------------------------------------------------------------------------------
@@ -118,12 +133,12 @@ def test_move_times_and_poses():
     t_base = T0_PC
     now = T0_PC + 20 * MS
     wps = p.move(home_pose(), t_base, tw, now, 0.04)
-    assert [w.t_pc_ns for w in wps] == [now + 50 * MS, now + 100 * MS]
+    assert [w.t_pc_ns for w in wps] == [now + k * 50 * MS for k in range(1, 7)]
     for w in wps:
         tau = (w.t_pc_ns - t_base) / 1e9
         assert np.allclose(w.O_T_TCP, advance(home_pose(), tw, tau), rtol=0, atol=1e-15)
         assert w.width_m == 0.04 and isinstance(w.t_pc_ns, int)
-    assert wps[-1].O_T_TCP[0, 3] == pytest.approx(0.45 + 0.05 * 0.12)
+    assert wps[-1].O_T_TCP[0, 3] == pytest.approx(0.45 + 0.05 * 0.32)
 
 
 def test_release_advances_over_the_state_age_only():

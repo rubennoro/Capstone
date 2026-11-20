@@ -1,6 +1,10 @@
 """Helpers for the integration tests (tests/integration, STRUCTURE.md 11): `teleop_collect run` as a subprocess, the
-laptop's processes started one by one, an in-process fake PC and fake Pi for the failure rows, the page's button
-flow, and the checks of an episode folder on disk.
+laptop's processes started one by one, an in-process fake PC and fake Pi for the failure rows, the real franka_control
+with its keyboard on a pipe, the page's button flow, and the checks of an episode folder on disk.
+
+The start pose (2026-11-20, final-deployment's start-pose work, 927a5ba): there is no laptop home. The arm is put at
+the start pose with the PC's keys h, then p (FrankaControl.press; the fake PC's operator stand-in under --mock), and
+the page's Start waits for it (start() waits until Start is allowed).
 
 Everything binds 127.0.0.1 only. Every station is a temporary one (station_helpers.write_station) whose session_root
 and data_root are under the test's tmp_path; the C2/C3 ports are link.yaml's (5620/5630), so a test that needs them
@@ -24,7 +28,7 @@ import av
 import numpy as np
 import pytest
 import yaml
-from deploy_contracts import LinkSettings
+from deploy_contracts import Ack, LinkSettings, RpcClient, Start
 from station_helpers import RECORDED_EPISODE, free_port, write_station
 
 from teleop_collect.contracts import load_config, paths
@@ -308,20 +312,34 @@ class LaptopProcesses:
 
 FRANKA_CONTROL = (Path("~/Capstone-final-deployment/deployment/control_deploy/franka_control/build-nolibfranka/"
                       "franka_control").expanduser())
+#: The cross test's homing.q_start_rad: control_deploy's C++ test value (test_fake_arm_run.cpp, KeyP...), i.e.
+#: franka_control/config.yaml q_home_rad with joint 6 + 0.45 rad (a 2.8 s joint move from home; inside the Panda's
+#: joint limits). The fake arm's TCP ends every joint move at fake_arm.home_O_T_TCP ((0.45, 0, 0.45) m, pointing
+#: down), so the start pose's TCP is inside the box (floor z -0.005 @ 927a5ba) and tilted 0 deg from the cone axis.
+Q_START_RAD = [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 2.0207963, 0.7853982]
+#: The PC's own C3 start refusal away from its start pose (supervisor.cpp onStart, once q_start_rad is set).
+PC_NOT_AT_START_POSE_TEXT = "refused: not at the start pose: press h, then p on the PC"
+#: The binary's log line at the end of each key's arm move (supervisor.cpp tick).
+MOVE_DONE = {"h": "homing finished", "p": "start pose reached"}
 
 
 class FrankaControl:
     """The real libfranka-less franka_control (rnoro/final-deployment, already built there; only run, never built)
-    with `--mock --local`: C2/C3 on 127.0.0.1:5620/5630. Its station, session and log are under tmp_path and its cwd
-    is tmp_path, so nothing is written into ~/Capstone-final-deployment."""
+    with `--mock --local --keyboard`: C2/C3 on 127.0.0.1:5620/5630, its keyboard (h, p, g, s) a pipe on stdin (the
+    KeyboardReader reads the fd when it is not a terminal too). Its station sets `franka_control: homing: q_start_rad`
+    (the start pose: p works and C3 start is refused away from it); station, session and log are under tmp_path and
+    its cwd is tmp_path, so nothing is written into ~/Capstone-final-deployment."""
 
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, q_start_rad: Sequence[float] | None = Q_START_RAD) -> None:
         if not (FRANKA_CONTROL.is_file() and os.access(FRANKA_CONTROL, os.X_OK)):
             pytest.skip(f"no libfranka-less franka_control at {FRANKA_CONTROL}")
         self.dir = Path(tmp_path) / "fc"
         self.dir.mkdir()
         self.station = self.dir / "fc_station.yaml"
-        self.station.write_text(yaml.safe_dump({"session_root": str(self.dir / "sessions")}))
+        station: dict = {"session_root": str(self.dir / "sessions")}
+        if q_start_rad is not None:     # merged key by key into franka_control/config.yaml (config_loader mergeInto)
+            station["franka_control"] = {"homing": {"q_start_rad": [float(v) for v in q_start_rad]}}
+        self.station.write_text(yaml.safe_dump(station))
         self.ready = self.dir / "fc.ready"
         self.log_path = self.dir / "franka_control.log"
         self.proc: subprocess.Popen | None = None
@@ -329,8 +347,8 @@ class FrankaControl:
     def __enter__(self) -> FrankaControl:
         self._log = open(self.log_path, "w")
         self.proc = subprocess.Popen([str(FRANKA_CONTROL), "--station", str(self.station), "--mock", "--local",
-                                      "--ready-file", str(self.ready)], stdin=subprocess.DEVNULL, stdout=self._log,
-                                     stderr=subprocess.STDOUT, cwd=self.dir)
+                                      "--keyboard", "--ready-file", str(self.ready)], stdin=subprocess.PIPE,
+                                     stdout=self._log, stderr=subprocess.STDOUT, cwd=self.dir)
         deadline = time.monotonic() + 30.0
         while not self.ready.exists():
             if self.proc.poll() is not None or time.monotonic() > deadline:
@@ -341,6 +359,36 @@ class FrankaControl:
 
     def log(self) -> str:
         return self.log_path.read_text() if self.log_path.exists() else ""
+
+    def key(self, c: str) -> None:
+        """One key of the PC keyboard (h, p, g or s), as typed in its terminal."""
+        assert self.proc is not None and self.proc.stdin is not None and len(c) == 1
+        self.proc.stdin.write(c.encode())
+        self.proc.stdin.flush()
+
+    def wait_log(self, text: str, after: int, timeout_s: float) -> None:
+        """Wait for `text` in the log past offset `after` (len(log()) before the action)."""
+        wait_until(lambda: text in self.log()[after:], timeout_s, f"franka_control log line {text!r}")
+
+    def press(self, c: str, timeout_s: float = 15.0) -> float:
+        """The key h or p, then wait for the end of its arm move (MOVE_DONE in the log); returns the seconds taken."""
+        after = len(self.log())
+        t0 = time.monotonic()
+        self.key(c)
+        try:
+            self.wait_log(MOVE_DONE[c], after, timeout_s)
+        except TimeoutError as e:
+            raise AssertionError(f"key {c}: {e}:\n{self.log()[after:][-3000:]}") from None
+        return time.monotonic() - t0
+
+    def start_direct(self) -> Ack:
+        """A C3 start from a second client (a REQ next to teleop's; the PC's REP serves both), to see the PC's own
+        answer. Used only where the PC must refuse it."""
+        client = RpcClient("pc", LinkSettings.load().commands_endpoint(local=True))
+        try:
+            return client.request(Start(), Ack, 2.0)
+        finally:
+            client.close()
 
     def terminate(self, timeout_s: float = 10.0) -> int:
         assert self.proc is not None
@@ -356,6 +404,11 @@ class FrankaControl:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
                 self.proc.wait()
+        if self.proc is not None and self.proc.stdin is not None:
+            try:
+                self.proc.stdin.close()
+            except OSError:
+                pass
         self._log.close()
 
 
@@ -385,22 +438,24 @@ def open_page(url: str) -> ScriptedPage:
     return page
 
 
-def home(page: ScriptedPage, timeout_s: float = 60.0) -> None:
-    """The Home button; returns once the page says the home pose was reached and the arm is at home."""
-    before = newest_message_id(page)
-    ack = page.command("home")
-    assert ack["ok"], ack
-    wait_message(page, "home pose reached", before, timeout_s)
-    page.wait_for(lambda s: s["phase"] == "idle" and s["at_home"], 10.0, "idle at home after the home")
-
-
 def start(page: ScriptedPage, timeout_s: float = 20.0) -> str:
-    """Start episode once it is allowed; returns the episode name."""
-    page.wait_for(lambda s: s["start_allowed"], timeout_s, "start allowed")
+    """Start episode once it is allowed (the arm back at the start pose: the PC's h, then p); returns the episode
+    name."""
+    page.wait_start_allowed(timeout_s)
     ack = page.command("start_episode")
     assert ack["ok"], ack
     s = page.wait_for(lambda s: s["phase"] == "recording" and s["recording_episode"], 10.0, "recording")
     return s["recording_episode"]
+
+
+def wait_stand_in(page: ScriptedPage) -> dict:
+    """After an episode's stop under the fake PC's operator stand-in (config/fake_pc.yaml auto_h_p_after_stop_s, 1 s):
+    its h, then p (2 s of homing), then Start allowed again at the confirmed start pose. Also after an episode that
+    did not move the arm, so the next start never meets the stand-in's h. Returns that status."""
+    page.wait_for(lambda s: s["arm_mode"] == "homing", 5.0, "the stand-in's h")
+    s = page.wait_start_allowed(10.0)
+    assert s["at_start_pose"] and s["start_pose_confirmed"], s
+    return s
 
 
 def stop(page: ScriptedPage, outcome: str) -> dict:

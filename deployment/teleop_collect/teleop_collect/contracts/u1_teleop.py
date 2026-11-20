@@ -7,7 +7,6 @@
 | u1.gripper/v1           | ack/v1                                                  |
 | u1.select_task/v1       | ack/v1                                                  |
 | u1.create_task/v1       | ack/v1 (also selects it)                                |
-| u1.home/v1              | ack/v1: ok = homing started (the outcome shows in status) |
 | u1.start_episode/v1     | ack/v1                                                  |
 | u1.stop_episode/v1      | ack/v1                                                  |
 | u1.delete_episode/v1    | ack/v1                                                  |
@@ -15,6 +14,9 @@
 
 Refusals are ack(ok=false, reason) in plain words. Task names are checked by teleop (an ack refusal the operator can
 read), not by the contract; only delete_episode's name has a contract pattern.
+
+There is no home request: homing (h) and the start pose (p) are the PC's keyboard keys. Start is allowed only at the
+start pose (start_pose_known, at_start_pose in the status).
 """
 from __future__ import annotations
 
@@ -28,7 +30,7 @@ from teleop_collect.contracts.health import HealthReport
 from teleop_collect.contracts.keys import (EPISODE_NAME_RE, GRIPPER_COMMANDS, MOTION_KEYS, OUTCOMES, SAVED_OUTCOMES,
                                            is_episode_name)
 
-PHASES = ("starting", "idle", "recording", "homing", "stopping", "done")
+PHASES = ("starting", "idle", "recording", "stopping", "done")
 MESSAGE_LEVELS = ("info", "warn", "error")
 #: TeleopStatus.messages holds at most this many (those after the request's after_message, oldest first).
 STATUS_MAX_MESSAGES = 50
@@ -84,14 +86,6 @@ class CreateTask(Message):
     SCHEMA = "u1.create_task/v1"
     name: str = scalar("str")
     description: str = scalar("str")
-
-
-@register
-@dataclass(frozen=True, eq=False)
-class HomeRequest(Message):
-    """C3 home: the whole arm to the PC's home pose."""
-
-    SCHEMA = "u1.home/v1"
 
 
 @register
@@ -173,8 +167,9 @@ class TeleopStatus(Message):
     tcp_m: np.ndarray | None = optional(array("float64", (3,)))    # newest C2 O_T_TCP position
     gripper_width_m: float | None = optional(scalar("float64"))    # newest C2 width
     commanded_width_m: float = scalar("float64")
-    home_known: bool = scalar("bool")
-    at_home: bool = scalar("bool")
+    start_pose_known: bool = scalar("bool")                    # learned at start-up or after the PC's h/p
+    start_pose_confirmed: bool = scalar("bool")                # the PC accepted a start there: fixed for the session
+    at_start_pose: bool = scalar("bool")                       # known, and the newest C2 within its tolerances
     start_allowed: bool = scalar("bool")
     start_refusal: str = scalar("str")                         # why not, "" when allowed
     at_limit: bool = scalar("bool")                            # gate pulled_back rose within at_limit_hold_ms
@@ -191,6 +186,10 @@ class TeleopStatus(Message):
     def check_values(self) -> None:
         if self.arm_mode not in ("", *MODES):
             self.fail("arm_mode", f"{self.arm_mode!r} is not one of '', {', '.join(MODES)}")
+        if self.start_pose_confirmed and not self.start_pose_known:
+            self.fail("start_pose_confirmed", "true while start_pose_known is false")
+        if self.at_start_pose and not self.start_pose_known:
+            self.fail("at_start_pose", "true while start_pose_known is false")
         if self.start_allowed and self.start_refusal:
             self.fail("start_refusal", f"{self.start_refusal!r} while start_allowed")
         if not self.start_allowed and not self.start_refusal:

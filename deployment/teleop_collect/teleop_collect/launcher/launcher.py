@@ -3,13 +3,15 @@
 # messages start with `teleop_collect:`; the station rows of STRUCTURE.md 10.1: the install hint names
 # ~/envs/teleop_collect, the disk row looks under data_root (was session_root), + the data_root writable row; on
 # ready also `teleop_collect: ready: open <station.http_url()>` and webbrowser.open (unless --no-browser,
-# ui.open_browser false, or no display); a `starting ...` line and a note before a start-up that homes the arm; no
+# ui.open_browser false, or no display); a `starting ...` line and a note before teleop starts (the start pose); no
 # USES_TERMINAL process (no terminal check, no wait for it after a Ctrl-C); SIGHUP (the terminal closed) is handled
 # like SIGTERM, since the processes run in their own sessions and would outlive the launcher; an operator stop
 # (Ctrl-C, SIGTERM or SIGHUP to the launcher) exits 0 (was 130; PLAN 7), the last line is not printed if the
 # terminal is gone; a second signal during the stop still kills everything and exits 130;
 # teleop exiting 0 by itself is a stop (as the manager's operator quit), any other exit while running is the FAILED
-# line (PLAN 7). The source's own header follows.
+# line (PLAN 7). + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): the note before
+# teleop says the start pose is the arm's pose at start-up (h, then p on the PC first); no start-up home note. The
+# source's own header follows.
 # adapted from rnoro/deployment:deployment/deploy/deploy/launcher.py @ 91b178b
 # changes: ORDER = ("fake_pc", "frames", "policy", "manager"), fake_pc only with --mock and launcher.fake_pc true;
 # processes come from processes.py (no launch.py loader); the station rows of STRUCTURE.md 9.2 (station.yaml,
@@ -56,6 +58,7 @@ GIT_TIMEOUT_S = 5.0
 NMCLI_TIMEOUT_S = 5.0
 CONTRACTS_HINT = "~/envs/teleop_collect/bin/pip install -e deployment/contracts (PLAN 4.1)"
 EXIT_KILLED = 130                                     # a second signal during the stop
+START_POSE_NOTE = "teleop_collect: teleop: the start pose is the arm's pose at start-up"
 #: The signals that stop a run. SIGHUP: closing the terminal must stop the processes too (they run in their own
 #: sessions, so they never get the terminal's hangup themselves and would keep serving the page).
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
@@ -374,12 +377,11 @@ class Launcher:
             time.sleep(self.settings.poll_s)
 
     def _start_note(self, process: ManagedProcess) -> str | None:
-        """One line before a start-up that moves the arm (PLAN 4.2 step 5)."""
-        if isinstance(process, TeleopProcess) and process.homes_on_start():
+        """One line before teleop starts (PLAN 4.2 step 5): its start-up takes the arm's pose as the start pose."""
+        if isinstance(process, TeleopProcess):
             if self.mock:
-                return "teleop_collect: teleop: start-up checks, then the fake PC homes once"
-            return ("teleop_collect: teleop: start-up checks, then the arm homes once (a slow move of all 7 joints): "
-                    "keep a hand on the user stop")
+                return f"{START_POSE_NOTE}: the fake PC starts at its start pose"
+            return f"{START_POSE_NOTE}: press h, then p on the PC first"
         return None
 
     def _announce_page(self) -> None:

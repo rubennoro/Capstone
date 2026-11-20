@@ -1,9 +1,10 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_copies.py @ 2ffe641
-# changes: checks this package's copies of rnoro/final-deployment @ 2ffe641 or ea9f7fb (read with `git show`, never
-# changed) instead of the copies of rnoro/data-work; every frames file names its source in its first header line.
+# changes: checks this package's copies of rnoro/final-deployment @ 2ffe641, ea9f7fb or 927a5ba (read with `git show`,
+# never changed) instead of the copies of rnoro/data-work; every frames file names its source in its first header line.
 """Each file copied into teleop_collect.frames (and the copied tests) equals its source at the rnoro/final-deployment
-commit its header names (2ffe641 or the re-sync ea9f7fb), apart from the two header lines and the import paths
-(STRUCTURE.md 1, PLAN rule 1), and that source is unchanged at ea9f7fb; each adapted file names an existing source.
+commit its header names (2ffe641 or the re-syncs ea9f7fb, 927a5ba), apart from the two header lines and the import
+paths (STRUCTURE.md 1, PLAN rule 1), and that source is unchanged at 927a5ba; each adapted file names an existing
+source.
 Skipped when git or ~/Capstone-final-deployment is not available."""
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import pytest
 from frames_helpers import FOLDER
 
 REPO = Path("~/Capstone-final-deployment").expanduser()
-REFS = ("2ffe641", "ea9f7fb")   # the first copy, the re-sync (contracts/frames.yaml F_T_TCP, rig_pi_v3_640)
+REFS = ("2ffe641", "ea9f7fb", "927a5ba")   # the first copy, the re-syncs (F_T_TCP, rig_pi_v3_640; the start pose)
 LATEST = REFS[-1]
 PREFIX = "# copied from rnoro/final-deployment:deployment/"
 ADAPTED = "# adapted from rnoro/final-deployment:deployment/"

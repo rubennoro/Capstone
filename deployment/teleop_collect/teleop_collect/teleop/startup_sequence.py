@@ -1,9 +1,11 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/startup_sequence.py @ 2ffe641
-# changes: teleop_collect PLAN 8 / STRUCTURE.md 6.4: + step 1 TaskStore.clean_incomplete; no policy config (step 8 is
-# now the C3 home of home.on_start, its time not counted in timeouts.startup_s, then hellos every cycle until the map
-# is ready again); cameras from R1 FramesHealth; + step 10 data_root writable; step 11 session.yaml, phase IDLE, the
-# ready file; every wait also serves U1 (status and keys; the rest refused while starting) and follows the state
-# (home reference); TeleopLoop instead of EpisodeLoop; no operator.
+# changes: teleop_collect PLAN 8 / STRUCTURE.md 6.4: + step 1 TaskStore.clean_incomplete; no policy config; cameras
+# from R1 FramesHealth (step 8); + step 9 data_root writable; step 11 session.yaml, phase IDLE, the ready file; every
+# wait also serves U1 (status and keys; the rest refused while starting) and follows the state; TeleopLoop instead of
+# EpisodeLoop; no operator. + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): no
+# start-up home (home.on_start, its C3 home and the re-warm after it are gone); + step 10: the start pose is the arm's
+# pose now (StartPoseReference.learn from the newest C2; h, then p on the PC come first). + wave 3 (no software
+# stops, 2026-11-20): step 11 logs and shows the PC margins teleop assumes (motion.assumed_pc_*) and the risk.
 """StartupSequence: teleop's start-up order, phase STARTING (STRUCTURE.md 6.4; PLAN 8).
 
 | #  | step                                                                       | done when                |
@@ -16,14 +18,15 @@
 | 6  | get_state: idle/stopped go on; homing waits (homing_timeout_s + 5 s);      | idle or stopped          |
 |    | running/holding = another client; fault refuses                            |                          |
 | 7  | heartbeats every cycle (already since step 4)                              |                          |
-| 8  | home.on_start: the C3 home (a `stopped:` reply goes on), then hellos every | clock ready again        |
-|    | cycle until the map is ready again                                         |                          |
-| 9  | cameras: R1 get_health until both ok                                       | both ok                  |
-| 10 | data_root writable                                                         |                          |
-| 11 | session.yaml, the ready file, phase IDLE                                   |                          |
+| 8  | cameras: R1 get_health until both ok                                       | both ok                  |
+| 9  | data_root writable                                                         |                          |
+| 10 | the start pose: StartPoseReference.learn(q, O_T_TCP_target) of the newest  |                          |
+|    | C2 when it shows idle or stopped (else the PC's next h/p gives it)         |                          |
+| 11 | session.yaml, the ready file, phase IDLE; the assumed PC margins shown      |                          |
 
-Steps 2-10 must finish within timeouts.startup_s, not counting the waits while C2 shows homing (steps 3 and 6) or the
-home itself. Every cycle checks the signal flags and the state rules (fault, seq going back, no C2 for state_lost_s).
+Steps 2-9 must finish within timeouts.startup_s, not counting the waits while C2 shows homing (steps 3 and 6). No step
+moves the arm: homing (h) and the start pose (p) are the PC's keyboard keys, pressed before `teleop_collect run`.
+Every cycle checks the signal flags and the state rules (fault, seq going back, no C2 for state_lost_s).
 """
 from __future__ import annotations
 
@@ -33,6 +36,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from teleop_collect.contracts import CAMERAS
+from teleop_collect.teleop.motion.planner import assumed_margins_text
 from teleop_collect.teleop.problems import Problem, ProblemCode
 
 if TYPE_CHECKING:
@@ -85,14 +89,9 @@ class StartupSequence:
             lp._log.log_event("commit", f"warning: {warning}")
             lp._messages.add("warn", f"warning: {warning}")
         self._mode_check(reply.homing_timeout_s)                      # 6, 7
-        if s.home.on_start:                                           # 8
-            t0 = lp._clock()
-            lp._home()
-            self._deadline_ns += lp._clock() - t0
-            self._wait(lambda now: lp._pc_clock.ready(now), PC, "PC clock map not ready after the home",
-                       lambda now: lp._pc_clock.not_ready_reason(now))
-        self._wait(self._cameras_ready, "frames", "no camera ok", lambda now: self._why)   # 9
-        self._check_data_root()                                       # 10
+        self._wait(self._cameras_ready, "frames", "no camera ok", lambda now: self._why)   # 8
+        self._check_data_root()                                       # 9
+        self._learn_start_pose()                                      # 10
         now = lp._clock()                                             # 11
         lp._log.write_session(s, reply, lp._checks.commit, lp.clock_row(now))
         lp._phase = Phase.IDLE
@@ -104,6 +103,9 @@ class StartupSequence:
             Path(ready_file).write_text("ready\n", encoding="utf-8")
         lp._log.log_event("ready", f"C2 arriving, hello checked (PC {reply.commit}, mock {reply.mock}), clock map "
                                    f"{lp._pc_clock.NAME} ready, both cameras ok, data_root writable")
+        margins = assumed_margins_text(s.motion)
+        lp._log.log_event("margins", margins)
+        lp._messages.add("info", margins)
         lp._messages.add("info", "teleop ready")
 
     # ---- step 2
@@ -200,7 +202,7 @@ class StartupSequence:
             lp._serve_u1()
             lp._sleep(lp._loop_ns / NS_PER_S)
 
-    # ---- the generic wait (steps 4, 8, 9)
+    # ---- the generic wait (steps 4, 8)
 
     def _wait(self, ready: Callable[[int], bool], process: str, what: str, why: Callable[[int], str]) -> None:
         lp, s = self.loop, self.s
@@ -231,7 +233,7 @@ class StartupSequence:
         self._why = ", ".join(bad)
         return not bad
 
-    # ---- step 10
+    # ---- step 9
 
     def _check_data_root(self) -> None:
         lp = self.loop
@@ -247,3 +249,23 @@ class StartupSequence:
         except OSError as exc:
             lp._conclude(Problem(C.STARTUP, "teleop", f"data_root {root} is not writable: {exc}",
                                  check="check station.yaml data_root and the disk"))
+
+    # ---- step 10
+
+    def _learn_start_pose(self) -> None:
+        """The start pose is the arm's pose now: the operator pressed h, then p on the PC before `teleop_collect run`.
+        The PC checks it at the first Start (StartPoseReference.confirm / refused_here). While the PC is moving the arm
+        (homing: its h, g or p) nothing is learned: the pose after that move is the start pose."""
+        lp = self.loop
+        latest = lp._history.latest()
+        if latest is None or latest.mode not in ("idle", "stopped"):
+            mode = latest.mode if latest is not None else "no C2"
+            text = f"start pose not learned: the PC is {mode}; the pose after its move is the start pose"
+            lp._log.log_event("start_pose", text)
+            lp._messages.add("warn", text)
+            return
+        lp.start_pose.learn(latest.q, latest.O_T_TCP_target)
+        xyz = ", ".join(f"{float(v):.3f}" for v in latest.O_T_TCP_target[:3, 3])
+        text = f"start pose: the arm's pose now ({xyz} m); every episode starts here (h, then p on the PC)"
+        lp._log.log_event("start_pose", text)
+        lp._messages.add("info", text)

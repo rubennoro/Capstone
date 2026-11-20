@@ -2,7 +2,8 @@
 # changes: the four teleop_collect process classes (FakePcProcess, FramesProcess, TeleopProcess, UiProcess); the
 # interpreter is swapped with launcher_helpers.use_python (no station python: section); frames has the R1 and
 # preview ports (no C1 port, no imports row); teleop (was manager) has the U1 port and pc_probe, no terminal or
-# self_check rows; ui (new) has the HTTP port; the policy tests are gone; imports. The source's own header follows.
+# self_check rows; ui (new) has the HTTP port; the policy tests are gone; imports. + start pose (2026-11-20): no
+# homes_on_start (no start-up home). The source's own header follows.
 # adapted from rnoro/deployment:deployment/policy/tests/test_launch.py, process_frames/tests/test_launch.py and
 # message_comms/tests/test_launch.py @ 91b178b
 # changes: the four process classes of policy_deploy.launcher.processes (no launch.py files); the check subprocesses
@@ -155,9 +156,21 @@ def test_teleop_mock_rows(make_station, fake_python, tmp_path):
     station = load(make_station, True)
     rows = by_name(TeleopProcess(station, True, None).checks())
     assert [r for r in rows.values() if r.status == "fail"] == []
-    assert set(rows) == {"U1 port", "PC"}
+    assert set(rows) == {"U1 port", "PC margins", "PC"}
     assert rows["PC"].status == "info" and rows["PC"].detail == "fake PC on 127.0.0.1, started by run"
+    assert rows["PC margins"].status == "info" and rows["PC margins"].detail == (     # wave 3: the assumed margins
+        "teleop assumes the PC's safety.box_margin_m 0.05 and cone_margin_deg 10 (the teleop block of the PC's "
+        "station.yaml); with smaller PC margins a press into the floor can fault the PC")
     assert not any("teleop_collect.teleop.pc_probe" in c for c in calls(tmp_path))     # never under --mock
+
+
+def test_teleop_margins_row_follows_the_station(make_station, fake_python):
+    """Wave 3: the row shows the margins teleop runs with (config/teleop.yaml + the station's teleop: section)."""
+    fake_python()
+    station = load(make_station, False, teleop={"motion": {"assumed_pc_box_margin_m": 0.04,
+                                                           "assumed_pc_cone_margin_deg": 7.5}})
+    row = by_name(TeleopProcess(station, False, None).checks())["PC margins"]
+    assert row.status == "info" and "box_margin_m 0.04 and cone_margin_deg 7.5 " in row.detail
 
 
 def test_teleop_mock_cross_test_row(make_station, fake_python):
@@ -193,10 +206,12 @@ def test_teleop_busy_u1_port(make_station, fake_python):
     assert rows["U1 port"].status == "fail" and str(port) in rows["U1 port"].detail
 
 
-@pytest.mark.parametrize("on_start", [True, False])
-def test_teleop_homes_on_start_from_its_config(make_station, on_start):
-    station = load(make_station, False, teleop={"home": {"on_start": on_start}})
-    assert TeleopProcess(station, False, None).homes_on_start() is on_start
+def test_teleop_has_no_start_up_home(make_station):
+    """No laptop home: no homes_on_start; the ready hint names the start pose instead of the home."""
+    station = load(make_station, False)
+    teleop = TeleopProcess(station, False, None)
+    assert not hasattr(teleop, "homes_on_start")
+    assert "the start pose" in TeleopProcess.READY_HINT and "home" not in TeleopProcess.READY_HINT
 
 
 # ------------------------------------------------------------------------------------------------------------ ui

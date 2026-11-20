@@ -33,7 +33,7 @@ def test_a_whole_episode_round_trip(setup):
         assert page.command("select_task", name="place_cup")["ok"]
         assert teleop.of(CreateTask)[0].description == "cup on plate"
         assert teleop.of(SelectTask)[0].name == "place_cup"
-        assert page.command("home")["ok"]
+        assert page.wait_start_allowed(2.0)["start_allowed"]
         assert page.command("start_episode")["ok"]
         teleop.status = idle_status(phase="recording", recording_episode="episode_000", episode_s=0.5,
                                     start_allowed=False, start_refusal="recording")
@@ -105,7 +105,7 @@ def test_sees_the_server_go_away(setup, tmp_path):
         page.connect()
     wait_until(lambda: not page.connected, 2.0, "the close")
     with pytest.raises(ConnectionError):
-        page.command("home")
+        page.command("stop_arm")
     page.close()
 
 
@@ -114,6 +114,6 @@ def test_two_pages_at_once(setup):
     with ScriptedPage(ui.url) as a, ScriptedPage(ui.url) as b:
         a.wait_for(lambda s: "phase" in s, 2.0, "a status")
         b.wait_for(lambda s: "phase" in s, 2.0, "b status")
-        assert a.command("home")["ok"] and b.command("home")["ok"]
+        assert a.command("stop_arm")["ok"] and b.command("stop_arm")["ok"]
         time.sleep(0.1)
         assert len(ui.app.server.pages) == 2

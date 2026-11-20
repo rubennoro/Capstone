@@ -9,8 +9,8 @@ import yaml
 from deploy_contracts import SHARED_SCHEMAS, ArmState, GateCounters, HelloReply, TcpFrame
 
 from teleop_collect.contracts import CameraSummary, RecordingSummary, paths
-from teleop_collect.teleop.motion.home import HomeSettings
 from teleop_collect.teleop.motion.planner import MotionSettings
+from teleop_collect.teleop.motion.start_pose import StartPoseSettings
 
 T0_PC = 123_456_789_000_000        # a PC monotonic time, ns
 MS = 1_000_000
@@ -31,10 +31,10 @@ def motion_settings(**changes) -> MotionSettings:
     return MotionSettings.from_config(motion_config(**changes))
 
 
-def home_settings(**changes) -> HomeSettings:
-    cfg = dict(teleop_config()["home"])
+def start_pose_settings(**changes) -> StartPoseSettings:
+    cfg = dict(teleop_config()["start_pose"])
     cfg.update(changes)
-    return HomeSettings.from_config(cfg)
+    return StartPoseSettings.from_config(cfg)
 
 
 def home_pose(x: float = 0.45, y: float = 0.0, z: float = 0.30) -> np.ndarray:

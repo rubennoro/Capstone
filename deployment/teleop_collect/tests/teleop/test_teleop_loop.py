@@ -1,9 +1,13 @@
 """TeleopLoop and EpisodeFlow on the fake-clock harness (STRUCTURE.md 6.3-6.7, 12 row E3; PLAN 5, 7, 8): start-up,
-one C3 request per cycle, hello priority, the teleop step, start / stop / discard / abort / conclude, home and its
-refusals, start refusals, the guards. E4's motion and episode classes are the real ones; the PC and frames are fakes."""
+one C3 request per cycle, hello priority, the teleop step, start / stop / discard / abort / conclude, the start pose
+(learned at start-up, confirmed or dropped by the PC's start reply, no laptop home), start refusals, the guards.
+Wave 3 (no software stops): a C2 seq gap never pauses motion, an old state only beyond 250 ms; a camera down or stale
+and a recording failure warn (page, meta.yaml warnings) and the episode goes on (a failed one can only be discarded).
+E4's motion and episode classes are the real ones; the PC and frames are fakes."""
 from __future__ import annotations
 
 import csv
+import json
 
 import numpy as np
 import pytest
@@ -11,10 +15,13 @@ import yaml
 from teleop_helpers import FAST, NS_PER_MS, TeleopHarness, merge, rejecting_reply
 from deploy_contracts import SetWaypointsReply
 
-from teleop_collect.contracts import (CreateTask, DeleteEpisode, GetStatus, GripperCommand, HomeRequest, SelectTask,
-                                      StartEpisode, StopArm, StopEpisode, TeleopStatus)
+from teleop_collect.contracts import (CreateTask, DeleteEpisode, GripperCommand, SelectTask, StartEpisode, StopArm,
+                                      StopEpisode, TeleopStatus)
+from teleop_collect.teleop.episode_flow import NOT_AT_START_POSE, START_POSE_UNKNOWN, START_REFUSED_HERE
 from teleop_collect.teleop.problems import ProblemCode as C
-from teleop_collect.teleop.teleop_loop import HOMING_REFUSAL, Phase
+from teleop_collect.teleop.teleop_loop import Phase
+
+PC_REFUSAL = "refused: not at the start pose: press h, then p on the PC"   # control_deploy's onStart text
 
 
 @pytest.fixture
@@ -46,7 +53,7 @@ def ep_dir(h, name="episode_000"):
 
 # ---- start-up ------------------------------------------------------------------------------------------------------
 
-def test_startup_order_home_and_ready(harness, tmp_path):
+def test_startup_order_learns_the_start_pose_and_ready(harness, tmp_path):
     h = harness()
     ready = tmp_path / "ready" / "teleop.ready"
     h.start(ready)
@@ -54,22 +61,42 @@ def test_startup_order_home_and_ready(harness, tmp_path):
     calls = h.pc.calls
     first_get_state = calls.index("get_state")
     assert set(calls[:first_get_state]) == {"hello"} and first_get_state >= 5          # hellos until the map is ready
-    assert calls.index("home") > first_get_state                                        # then the home (on_start)
+    assert "home" not in calls and set(calls) <= {"hello", "heartbeat", "get_state"}   # no C3 home: nothing moves
     assert "get_health" in h.frames.calls and ready.read_text() == "ready\n"
     assert (h.session / "session.yaml").exists()
-    h.tick(3)
-    assert h.loop.home_reference.known and h.loop.at_home()
-    kinds = [e["kind"] for e in h.events()]
-    assert kinds[0] == "startup" and "ready" in kinds and "home" in kinds
-
-
-def test_startup_without_home_on_start(harness):
-    h = harness(home={"on_start": False})
-    h.start()
-    assert h.loop.phase is Phase.IDLE and "home" not in h.pc.calls
+    ref = h.loop.start_pose
+    assert ref.known and not ref.confirmed and h.loop.at_start_pose()
+    assert np.allclose(ref.p_ref, h.T[:3, 3])
+    text = "start pose: the arm's pose now (0.450, 0.000, 0.300 m); every episode starts here (h, then p on the PC)"
+    assert text in h.loop.messages.texts()
+    events = h.events()
+    kinds = [e["kind"] for e in events]
+    assert kinds[0] == "startup" and "ready" in kinds and "home" not in kinds
+    assert kinds.index("start_pose") < kinds.index("ready")
     h.tick(3)
     s = h.status()
-    assert not s.home_known and s.start_refusal == "select or create a task first"
+    assert s.start_pose_known and not s.start_pose_confirmed and s.at_start_pose
+    assert s.start_refusal == "select or create a task first"
+
+
+def test_startup_while_the_pc_moves_the_arm_learns_nothing(harness):
+    """Step 10 with C2 showing homing (the PC's h, g or p pressed during the camera wait): no pose is learned; the
+    pose after that move is the start pose."""
+    from teleop_collect.teleop.startup_sequence import StartupSequence
+    h = harness()
+    h.mode_override = "homing"
+    h._sleep(0.1)
+    StartupSequence(h.loop)._learn_start_pose()
+    assert not h.loop.start_pose.known
+    assert ("start pose not learned: the PC is homing; the pose after its move is the start pose"
+            in h.loop.messages.texts())
+    h.loop._observe_state(h.clock())                                    # homing seen
+    h.T = h.T.copy()
+    h.T[2, 3] += 0.05
+    h.mode_override = None
+    h._sleep(0.05)
+    h.loop._observe_state(h.clock())                                    # idle after a move: the candidate
+    assert h.loop.start_pose.known and h.loop.at_start_pose()
 
 
 def test_startup_deletes_incomplete_episodes(harness, make_settings):
@@ -89,18 +116,6 @@ def test_startup_cameras_never_ok(harness):
     h.start()
     assert h.code is C.STARTUP and "no camera ok within 1 s (ultrawide stale)" in h.loop.verdict.what_failed
     assert h.pc.calls[-1] == "stop"                                     # hellos had started: stop sent once
-
-
-def test_startup_home_failure_concludes_and_stopped_goes_on(harness):
-    h = harness()
-    h.pc.home_behaviour = "refuse"
-    h.start()
-    assert h.code is C.HOMING_FAILED
-    h2 = harness()
-    h2.pc.home_behaviour = "stopped"
-    h2.start()
-    assert h2.loop.phase is Phase.IDLE and not h2.loop.home_reference.known
-    assert any("home stopped on the PC" in t for t in h2.loop.messages.texts())
 
 
 def test_hello_mismatch_concludes(harness):
@@ -147,7 +162,7 @@ def test_keys_move_release_once_then_heartbeats(harness):
     h.start_episode()
     h.hold(["x+"], 10)
     moves = [msg for _, msg in h.pc.sent]
-    assert len(moves) >= 8 and all(len(m.t_ns) == 2 for m in moves)
+    assert len(moves) >= 8 and all(len(m.t_ns) == 6 for m in moves)                # K 6 (wave 3)
     m = moves[-1]
     assert np.all(np.diff(m.t_ns) == 50 * NS_PER_MS)                     # Delta apart
     assert m.O_T_TCP[1][0, 3] > m.O_T_TCP[0][0, 3] > h.T[0, 3]           # +x, from the PC's target
@@ -188,7 +203,7 @@ def test_focus_lost_is_released(harness):
 
 def test_no_set_while_the_newest_c2_is_too_old(harness):
     h = harness()
-    h.state_delay_ns = 80 * NS_PER_MS                                    # every C2 80 ms old (> 50 ms)
+    h.state_delay_ns = 300 * NS_PER_MS                                   # every C2 300 ms old (> 250 ms)
     h.ready()
     h.start_episode()
     h.tick(2)
@@ -196,12 +211,35 @@ def test_no_set_while_the_newest_c2_is_too_old(harness):
     h.hold(["x+"], 20)
     assert len(h.pc.sent) == n
     assert h.monitor.counts().get(C.STATE_OLD, 0) > 0 and h.loop.phase is Phase.RECORDING
-    h2 = harness(motion={"state_max_age_ms": 90, "v_max_m_s": 0.03, "w_max_deg_s": 8.0})   # within the guard
-    h2.state_delay_ns = 80 * NS_PER_MS
+    h2 = harness()                                                       # 200 ms: within state_max_age_ms 250
+    h2.state_delay_ns = 200 * NS_PER_MS
     h2.ready("second_task")
     h2.start_episode()
     h2.hold(["x+"], 5)
-    assert len(h2.pc.sent) >= 4
+    assert len(h2.pc.sent) >= 4 and h2.monitor.counts().get(C.STATE_OLD, 0) == 0
+
+
+def test_a_c2_seq_gap_never_pauses_motion(harness):
+    """Wave 3: a seq gap is counted and logged (state_gap), the set still goes out (the planner extrapolates from
+    the newest C2's own target and time)."""
+    h = harness()
+    h.ready()
+    h.start_episode()
+    h.hold(["x+"], 3)
+    sent = 0
+    for _ in range(10):
+        h.seq += 3                                                       # C2 messages lost before every cycle
+        n = len(h.pc.sent)
+        h.hold(["x+"], 1)
+        sent += len(h.pc.sent) - n
+    assert sent >= 9                                                     # (a hello may take one cycle)
+    assert h.monitor.counts().get(C.STATE_GAP, 0) >= 9 and h.loop.phase is Phase.RECORDING
+    assert any(e["kind"] == "state_gap" and "motion goes on" in e["detail"] for e in h.events())
+    h.keys()
+    h.tick(3)
+    assert h.u1(StopEpisode(outcome="success")).ok
+    meta = yaml.safe_load((ep_dir(h) / "meta.yaml").read_text())
+    assert meta["counts"]["state_gap"] >= 9 and meta["warnings"] == []
 
 
 def test_fingers(harness):
@@ -214,7 +252,7 @@ def test_fingers(harness):
     assert len(m.t_ns) == 1 and m.gripper_width_m[0] == 0.0 and np.allclose(m.O_T_TCP[0], h.T)
     h.u1(GripperCommand(command="open"))
     h.hold(["x-"], 3)
-    assert h.pc.sent[-1][1].gripper_width_m.tolist() == [0.08, 0.08]
+    assert h.pc.sent[-1][1].gripper_width_m.tolist() == [0.08] * 6
     assert h.status().commanded_width_m == 0.08
 
 
@@ -318,9 +356,9 @@ def test_start_refusals(harness):
     h.tick(3)
     assert h.u1(StartEpisode()).reason == "select or create a task first"
     h.u1(CreateTask(name="pick_block", description=""))
-    h.q = np.full(7, 0.05)                                               # moved away from home
+    h.q = np.full(7, 0.05)                                               # moved away from the start pose
     h.tick(3)
-    assert h.u1(StartEpisode()).reason == "home the arm first (Home, or h on the PC)"
+    assert h.u1(StartEpisode()).reason == "not at the start pose: h, then p on the PC" == NOT_AT_START_POSE
     h.q = np.zeros(7)
     h.frames.main = "stale"
     h.tick(10)
@@ -332,8 +370,7 @@ def test_start_refusals(harness):
     h.tick(10)
     h.mode_override = "homing"
     h.tick(2)
-    assert h.u1(StartEpisode()).reason == "the PC is homing"
-    assert not h.u1(HomeRequest()).ok
+    assert h.u1(StartEpisode()).reason == "the PC is homing"             # the PC's h, g or p: the mode rule
     h.mode_override = None
     h.tick(2)
     assert h.status().start_allowed
@@ -355,36 +392,146 @@ def test_start_refused_by_frames_or_the_pc_leaves_no_folder(harness):
     assert h.loop.phase is Phase.IDLE
 
 
-# ---- home ----------------------------------------------------------------------------------------------------------
+# ---- the start pose ------------------------------------------------------------------------------------------------
 
-def test_home_runs_in_the_next_cycle_and_serves_u1_meanwhile(harness):
+def test_an_ok_start_confirms_the_start_pose(harness):
     h = harness()
     h.ready()
-    seen = []
-
-    class U1:
-        def serve(self, n):
-            if h.loop.phase is Phase.HOMING and not seen:
-                seen.append(h.loop.dispatch(GetStatus(after_message=0)))
-                seen.append(h.loop.dispatch(StartEpisode()))
-            return 0
-    h.loop.attach_u1(U1())
-    assert h.u1(HomeRequest()).ok
-    assert "home" not in h.pc.calls[-1:]
-    assert not h.u1(HomeRequest()).ok                                    # already asked
-    n = h.pc.calls.count("home")
-    cycles = per_cycle(h, 2)
-    assert cycles[0][0] == "home" and h.pc.calls.count("home") == n + 1
-    assert isinstance(seen[0], TeleopStatus) and seen[0].phase == "homing"
-    assert seen[1].reason == HOMING_REFUSAL
-    assert h.loop.phase is Phase.IDLE
+    assert not h.loop.start_pose.confirmed and h.status().start_allowed
+    h.start_episode()
+    assert h.loop.start_pose.confirmed
+    assert any(e["kind"] == "start_pose" and e["detail"].startswith("confirmed") for e in h.events())
+    h.tick(3)
+    assert h.u1(StopEpisode(outcome="success")).ok
+    h.tick(3)
+    s = h.status()
+    assert s.start_pose_confirmed and s.start_pose_known and s.at_start_pose and s.start_allowed
 
 
-def test_home_refused_while_recording_and_stop_arm_aborts(harness):
+def test_the_pc_refusing_away_from_its_start_pose_drops_the_learned_pose(harness):
+    """Start-up learned the wrong pose (the operator forgot p); the PC refuses the start; h, then p on the PC give
+    the new candidate, and the next start the PC accepts confirms it."""
+    from deploy_contracts import Ack
+    h = harness()
+    h.ready()
+    wrong = h.T.copy()
+    h.pc.start_ack = Ack(ok=False, reason=PC_REFUSAL)
+    r = h.u1(StartEpisode())
+    assert not r.ok and r.reason == f"the PC refused start: {PC_REFUSAL}"
+    assert not ep_dir(h).exists() and h.loop.phase is Phase.IDLE
+    ref = h.loop.start_pose
+    assert not ref.known and not ref.confirmed and ref.at_refused_pose(h.q, wrong)
+    h.tick(3)
+    s = h.status()
+    assert not s.start_pose_known and not s.at_start_pose
+    assert s.start_refusal == START_REFUSED_HERE
+    assert START_REFUSED_HERE == "the PC refused the start here (not the start pose): press p on the PC"
+    assert any(e["kind"] == "start_pose" and "dropped" in e["detail"] for e in h.events())
+    home = wrong.copy()
+    home[:3, 3] = (0.30, 0.0, 0.45)
+    h.pc_move(T=home)                                                    # h on the PC: the arm goes home
+    assert h.status().start_allowed                                      # home is the candidate now; the PC decides
+    assert h.u1(StartEpisode()).reason == f"the PC refused start: {PC_REFUSAL}"
+    h.tick(3)
+    assert h.status().start_refusal == START_REFUSED_HERE                # at home: press p
+    start = wrong.copy()
+    start[:3, 3] = (0.50, 0.05, 0.25)
+    h.pc_move(T=start)                                                   # p on the PC: the start pose
+    s = h.status()
+    assert s.start_pose_known and not s.start_pose_confirmed and s.at_start_pose and s.start_allowed
+    h.pc.start_ack = Ack(ok=True, reason="")
+    h.start_episode()
+    assert h.loop.start_pose.confirmed and np.allclose(h.loop.start_pose.p_ref, start[:3, 3])
+
+
+def test_other_pc_refusals_keep_the_learned_pose(harness):
+    from deploy_contracts import Ack
+    h = harness()
+    h.ready()
+    h.pc.start_ack = Ack(ok=False, reason="refused: mode is stopped")
+    assert not h.u1(StartEpisode()).ok
+    assert h.loop.start_pose.known and not h.loop.start_pose.confirmed
+
+
+def test_not_known_and_away_from_the_refused_pose(harness):
+    from deploy_contracts import Ack
+    h = harness()
+    h.ready()
+    h.pc.start_ack = Ack(ok=False, reason=PC_REFUSAL)
+    h.u1(StartEpisode())
+    h.T = h.T.copy()
+    h.T[0, 3] += 0.02                                                    # moved, but not by the PC's h/p
+    h.tick(3)
+    assert h.status().start_refusal == START_POSE_UNKNOWN == "put the arm at the start pose: h, then p on the PC"
+
+
+def test_the_pcs_g_never_sets_the_start_pose(harness):
+    from deploy_contracts import Ack
+    h = harness()
+    h.ready()
+    h.pc.start_ack = Ack(ok=False, reason=PC_REFUSAL)
+    h.u1(StartEpisode())
+    h.pc_move()                                                          # g: homing -> idle, the arm stays
+    assert not h.loop.start_pose.known
+    assert h.status().start_refusal == START_REFUSED_HERE
+
+
+def test_a_confirmed_start_pose_is_fixed_for_the_session(harness):
+    h = harness()
+    h.ready()
+    start = h.T.copy()
+    h.start_episode()
+    h.hold(["x+"], 10)
+    h.tick(5)
+    assert h.u1(StopEpisode(outcome="success")).ok
+    h.T = h.loop._history.latest().O_T_TCP_target.copy()                # where the episode left the arm
+    h.T[0, 3] = start[0, 3] + 0.03
+    h.pc.mode = "idle"
+    h.tick(3)
+    assert h.status().start_refusal == NOT_AT_START_POSE
+    other = start.copy()
+    other[:3, 3] = (0.30, 0.0, 0.45)
+    h.pc_move(T=other)                                                   # h: home; not the confirmed start pose
+    assert h.status().start_refusal == NOT_AT_START_POSE and h.loop.start_pose.confirmed
+    h.pc_move(T=start)                                                   # p: back at the start pose
+    assert h.status().start_allowed
+    h.start_episode()
+
+
+def test_start_rule_order(harness):
+    """The mode rule, then the start pose, then the cameras, then the clock."""
+    h = harness()
+    h.ready()
+    h.frames.main = "stale"
+    h.tick(10)
+    h.q = np.full(7, 0.05)
+    h.mode_override = "homing"
+    h.tick(2)
+    assert h.status().start_refusal == "the PC is homing"
+    h.mode_override = None
+    h.tick(2)
+    assert h.status().start_refusal == NOT_AT_START_POSE
+    h.q = np.zeros(7)
+    h.tick(2)
+    assert h.status().start_refusal == "main camera stale"
+
+
+def test_there_is_no_home_request(harness):
+    """No laptop home: no U1 home request, no handler, no HOMING phase."""
+    import teleop_collect.contracts as contracts
+    from teleop_collect.contracts import PHASES
+    from teleop_collect.teleop.teleop_loop import U1_HANDLERS
+    from teleop_collect.teleop.u1_server import U1_REQUESTS
+    assert not hasattr(contracts, "HomeRequest") and "homing" not in PHASES
+    assert {cls.SCHEMA for cls in U1_HANDLERS} == {cls.SCHEMA for cls in U1_REQUESTS}
+    assert not any(cls.SCHEMA == "u1.home/v1" for cls in U1_REQUESTS)
+    assert not hasattr(Phase, "HOMING")
+
+
+def test_stop_arm_while_recording_aborts(harness):
     h = harness()
     h.ready()
     h.start_episode()
-    assert not h.u1(HomeRequest()).ok
     h.hold(["x+"], 3)
     assert h.u1(StopArm()).ok
     assert h.loop.phase is Phase.IDLE and not ep_dir(h).exists() and h.pc.calls[-1] in ("stop", "stop_recording")
@@ -400,47 +547,113 @@ def test_stop_arm_between_episodes_sends_stop(harness):
     assert h.u1(StopArm()).ok and h.pc.calls[-1] == "stop" and h.loop.phase is Phase.IDLE
 
 
-def test_the_pcs_own_home_sets_the_reference(harness):
-    h = harness(home={"on_start": False})
-    h.ready()
-    assert not h.loop.home_reference.known
-    h.q = np.full(7, 0.2)                                                # away from home
-    h.tick(2)
-    h.mode_override = "homing"                                           # the PC's h: the joints move home
-    h.tick(2)
-    h.q = np.zeros(7)
-    h.tick(2)
-    h.mode_override = None
-    h.tick(3)
-    assert h.loop.home_reference.known and h.status().start_allowed
-
-
 # ---- aborts (EPISODE) ----------------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("how, text", [
-    ("camera_down", "main camera down: check the Pi and ASUS_5g"),
-    ("recording_error", "recording could not keep up / disk error: queue full"),
-    ("pc_stopped", "the PC stopped the arm"),
-])
-def test_episode_problems_abort_and_the_app_stays_up(harness, how, text):
+def test_the_pc_stopping_the_arm_aborts_and_the_app_stays_up(harness):
     h = harness()
     h.ready()
     h.start_episode()
     h.hold(["x+"], 3)
-    if how == "camera_down":
-        h.frames.main = "down"
-    elif how == "recording_error":
-        h.frames.recording_error = "queue full"
-    else:
-        h.pc.mode = "stopped"                                            # its watchdog, or s on the PC
+    h.pc.mode = "stopped"                                                # its watchdog, or s on the PC
     h.tick(30)
     assert h.loop.phase is Phase.IDLE and h.loop.verdict is None
     assert not ep_dir(h).exists()
-    assert any(text in t for t in h.loop.messages.texts()), h.loop.messages.texts()
-    h.frames.main, h.frames.recording_error = "ok", ""
+    assert any("the PC stopped the arm" in t for t in h.loop.messages.texts()), h.loop.messages.texts()
     h.tick(10)
     h.start_episode()                                                    # ready for the next one
     assert ep_dir(h, "episode_001").exists()
+
+
+# ---- data problems (WARN, wave 3): the arm and the episode go on ----------------------------------------------------
+
+def _sets_and_stops(h):
+    return h.pc.calls.count("set_waypoints"), h.pc.calls.count("stop")
+
+
+@pytest.mark.parametrize("camera, status, text, code", [
+    ("main", "down", "main camera down: check the Pi and ASUS_5g", "camera_down"),
+    ("ultrawide", "stale", "ultrawide camera stale, last frame 500 ms ago: check the Pi stream and ASUS_5g",
+     "camera_stale"),
+])
+def test_a_camera_problem_while_recording_warns_and_the_episode_goes_on(harness, camera, status, text, code):
+    h = harness()
+    h.ready()
+    h.start_episode()
+    h.hold(["x+"], 3)
+    sets, stops = _sets_and_stops(h)
+    setattr(h.frames, camera, status)
+    h.hold(["x+"], 60)                                                   # 1.2 s: two or three health polls
+    assert h.loop.phase is Phase.RECORDING and h.loop.verdict is None
+    new_sets, new_stops = _sets_and_stops(h)
+    assert new_stops == stops and new_sets >= sets + 55                  # no C3 stop, motion never paused
+    warned = [m for m in h.loop.messages.after(0, 10**6) if code.replace("_", " ") in m.text]
+    assert [(m.level, m.text) for m in warned] == [                     # once per episode, not per poll
+        ("warn", f"episode_000: {text}; the episode goes on (noted in its meta.yaml)")]
+    assert any(e["kind"] == "episode_warning" for e in h.events())
+    setattr(h.frames, camera, "ok")
+    h.keys()
+    h.tick(5)
+    assert h.u1(StopEpisode(outcome="success")).ok                      # the operator decides: saved
+    meta = yaml.safe_load((ep_dir(h) / "meta.yaml").read_text())
+    [w] = meta["warnings"]
+    assert w["code"] == code and w["what"] == text.split(": check")[0] and 0.0 < w["t_s"] < 1.0
+    assert meta["counts"][code] >= 2
+    events = [json.loads(line) for line in (ep_dir(h) / "events.jsonl").read_text().splitlines()]
+    assert [e["detail"]["code"] for e in events if e["kind"] == "warning"] == [code]
+    h.tick(10)
+    h.start_episode()                                                    # the next episode starts clean
+    h.tick(3)
+    assert h.u1(StopEpisode(outcome="fail")).ok
+    assert yaml.safe_load((ep_dir(h, "episode_001") / "meta.yaml").read_text())["warnings"] == []
+
+
+def test_a_camera_down_still_refuses_start_between_episodes(harness):
+    h = harness()
+    h.ready()
+    h.start_episode()
+    h.frames.main = "down"
+    h.tick(30)
+    assert h.u1(StopEpisode(outcome="success")).ok                      # saved, with its warning
+    h.tick(10)
+    r = h.u1(StartEpisode())
+    assert not r.ok and r.reason == "main camera down" and h.loop.phase is Phase.IDLE
+    h.frames.main = "ok"
+    h.tick(30)
+    h.start_episode()
+
+
+def test_a_recording_failure_warns_and_only_discard_ends_the_episode(harness):
+    h = harness()
+    h.ready()
+    h.start_episode()
+    h.hold(["x+"], 3)
+    sets, stops = _sets_and_stops(h)
+    h.frames.recording_error = "queue full"                              # frames' writer failed ...
+    h.frames.summary_error = "queue full"                                # ... and its summary says so at stop
+    h.hold(["x+"], 60)
+    assert h.loop.phase is Phase.RECORDING and h.loop.verdict is None
+    new_sets, new_stops = _sets_and_stops(h)
+    assert new_stops == stops and new_sets >= sets + 55
+    warned = [m for m in h.loop.messages.after(0, 10**6) if "recording could not keep up" in m.text]
+    assert [(m.level, m.text) for m in warned] == [
+        ("warn", "episode_000: recording could not keep up / disk error: queue full: check the free disk space under "
+                 "data_root and the frames log; the arm goes on: Stop and Discard (this episode cannot be saved)")]
+    for outcome in ("success", "fail"):
+        r = h.u1(StopEpisode(outcome=outcome))
+        assert not r.ok and r.reason == ("this episode cannot be saved (recording could not keep up / disk error: "
+                                         "queue full): Discard it")
+        assert h.loop.phase is Phase.RECORDING and h.pc.calls.count("stop") == stops
+    h.keys()
+    h.tick(3)
+    assert h.u1(StopEpisode(outcome="discard")).ok                      # the summary's error: deleted anyway
+    assert h.loop.phase is Phase.IDLE and not ep_dir(h).exists() and h.loop.verdict is None
+    assert h.pc.calls.count("stop") == stops + 1                         # the operator's stop, the only one
+    assert any(t == "episode_000 discarded (deleted)" for t in h.loop.messages.texts())
+    h.frames.recording_error = h.frames.summary_error = ""
+    h.tick(10)
+    h.start_episode()                                                    # the next one can be saved again
+    h.tick(3)
+    assert h.u1(StopEpisode(outcome="success")).ok and (ep_dir(h, "episode_001") / "COMPLETE").exists()
 
 
 def test_a_set_refused_because_the_pc_stopped_aborts(harness):
@@ -522,17 +735,6 @@ def test_ctrl_c_aborts_the_episode_and_exits_0(harness):
     assert not ep_dir(h).exists() and "stop" in h.pc.calls
 
 
-def test_sigterm_during_home_exits_without_stop(harness):
-    h = harness()
-    h.ready()
-    h.pc.home_behaviour = "hang"
-    h.u1(HomeRequest())
-    h.pc.during_home = lambda: h.loop.terminate() if h.pc.interrupted_calls > 5 else None
-    n = h.pc.calls.count("stop")
-    h.tick(2)
-    assert h.code is C.LAUNCHER_STOP and h.loop._exit_code == 0 and h.pc.calls.count("stop") == n
-
-
 # ---- status --------------------------------------------------------------------------------------------------------
 
 def test_status_is_a_valid_contract_message_and_messages_page(harness):
@@ -541,7 +743,7 @@ def test_status_is_a_valid_contract_message_and_messages_page(harness):
     s = h.status()
     assert isinstance(s, TeleopStatus) and s.phase == "idle" and s.ready and s.start_allowed
     assert s.arm_mode == "idle" and s.tcp_m.shape == (3,) and s.cameras.main.status == "ok"
-    assert s.c2_hz > 50 and s.clock_ok and s.pc_mock and s.home_known and s.at_home
+    assert s.c2_hz > 50 and s.clock_ok and s.pc_mock and s.start_pose_known and s.at_start_pose
     TeleopStatus.from_dict(s.to_dict()) if hasattr(TeleopStatus, "from_dict") else None
     last = s.messages[-1].id
     h.u1(StopArm())
@@ -588,7 +790,7 @@ def test_the_lists_are_never_reread_while_recording_or_by_status(harness, monkey
     assert reads["episodes"] == 1                                         # a task change reads it once
 
 
-def test_a_write_error_on_the_main_thread_aborts_the_episode(harness):
+def test_a_write_error_on_the_main_thread_can_only_be_discarded(harness):
     h = harness()
     h.ready()
     h.start_episode()
@@ -597,10 +799,15 @@ def test_a_write_error_on_the_main_thread_aborts_the_episode(harness):
     def full(*args, **kw):
         raise OSError(28, "No space left on device")
     h.loop.flow.recording.commands.write = full
+    stops = h.pc.calls.count("stop")
     h.hold(["x+"], 3)
-    assert h.loop.phase is Phase.IDLE and h.loop.verdict is None and not ep_dir(h).exists()
-    assert any("recording could not keep up / disk error" in t and "No space left" in t
-               for t in h.loop.messages.texts())
+    assert h.loop.phase is Phase.RECORDING and h.loop.verdict is None and h.pc.calls.count("stop") == stops
+    assert sum("recording could not keep up / disk error" in t and "No space left" in t
+               for t in h.loop.messages.texts()) == 1
+    r = h.u1(StopEpisode(outcome="success"))
+    assert not r.ok and "this episode cannot be saved" in r.reason and "No space left" in r.reason
+    assert h.u1(StopEpisode(outcome="discard")).ok
+    assert h.loop.phase is Phase.IDLE and not ep_dir(h).exists()
     h.tick(5)
     h.start_episode()                                                    # the next episode records normally
     h.hold(["x+"], 3)
@@ -666,6 +873,19 @@ def test_an_r1_stop_failure_aborts_instead_of_concluding(harness, error):
     h.frames.recording = False
     h.tick(3)
     h.start_episode()                                                    # the app stays up
+
+
+def test_an_r1_stop_failure_at_discard_is_ok(harness):
+    """Discard deletes the folder anyway: a failure found at that stop is logged, the reply is ok."""
+    from deploy_contracts import TransportTimeout
+    h = harness()
+    h.ready()
+    h.start_episode()
+    h.tick(3)
+    h.frames.error["stop_recording"] = TransportTimeout("frames", "tcp://x", "r1.stop_recording/v1", 4.0)
+    assert h.u1(StopEpisode(outcome="discard")).ok
+    assert h.loop.phase is Phase.IDLE and h.loop.verdict is None and not ep_dir(h).exists()
+    assert any(e["kind"] == "episode_stop" and "r1.stop_recording" in e["detail"] for e in h.events())
 
 
 def test_delete_is_refused_while_an_episode_records(harness):
