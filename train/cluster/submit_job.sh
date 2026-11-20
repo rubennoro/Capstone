@@ -4,7 +4,7 @@
 # over ssh. Paths in config.env are relative to $HOME (absolute paths are used as they are).
 #
 #   submit_job.sh train  --folder F --label L --dataset D --mode smoke|full --epochs N --topk K --note TEXT
-#                        [--after JOBID] [-- hydra overrides...]
+#                        [--after JOBID] [--train-config NAME] [-- hydra overrides...]
 #   submit_job.sh eval   --label L --run R --dataset D --ckpt topN [--per-demo N] [--attention]
 #   submit_job.sh status --label L --run R
 #   submit_job.sh eval-status --label L --run R --ckpt topN
@@ -16,6 +16,7 @@
 #   eval-status -> the same, for the newest eval job of that checkpoint
 #
 # --epochs defaults to DEFAULT_EPOCHS (3 for smoke); --topk to TOPK (1 if unset: one checkpoint per run).
+# --train-config (submit.sh --policy) replaces TRAIN_CONFIG for this run; it is appended to the run's frozen config.
 # train: reserves $HOME/CLUSTER_RUNS/L/run_NNN_<date>[_smoke]/ (atomic mkdir, retried on collision), writes
 # train_meta.json + STATUS=queued there, and submits train.sbatch with every resource on the sbatch command line
 # (command-line options win over the #SBATCH defaults in the script).
@@ -147,7 +148,7 @@ new_run_name() {  # $1 label dir, $2 suffix
 
 # ------------------------------------------------------------------ train
 cmd_train() {
-  local folder='' label='' dataset='' mode='' epochs='' topk='' note='' after='' overrides=()
+  local folder='' label='' dataset='' mode='' epochs='' topk='' note='' after='' train_config='' overrides=()
   while [ $# -gt 0 ]; do
     case $1 in
       --folder) folder=${2?}; shift 2 ;;
@@ -158,6 +159,7 @@ cmd_train() {
       --topk) topk=${2?}; shift 2 ;;
       --note) note=${2?}; shift 2 ;;
       --after) after=${2?}; shift 2 ;;
+      --train-config) train_config=${2?}; shift 2 ;;
       --) shift; overrides=("$@"); break ;;
       -h|--help) usage 0 ;;
       *) die "train: unknown option $1" ;;
@@ -171,6 +173,10 @@ cmd_train() {
   [[ $epochs =~ ^[1-9][0-9]*$ ]] || die "--epochs must be a positive integer"
   [[ $topk =~ ^[1-9][0-9]*$ ]] || die "--topk must be a positive integer"
   [ -z "$after" ] || [[ $after =~ ^[0-9]+$ ]] || die "--after must be a job id"
+  if [ -n "$train_config" ]; then
+    [[ $train_config =~ ^[A-Za-z0-9_]+$ ]] || die "--train-config must be a config name like umi_policy_dunet (got '$train_config')"
+    TRAIN_CONFIG=$train_config
+  fi
   local o key
   for o in ${overrides[@]+"${overrides[@]}"}; do
     key=${o%%=*}; key=${key#\~}; key=${key#+}; key=${key#+}
@@ -197,8 +203,9 @@ cmd_train() {
   write_meta() {  # $1 = job id ("" before submission)
     {
       printf '{\n'
-      printf '  "folder": %s,\n  "label": %s,\n  "dataset": %s,\n  "run": %s,\n  "mode": %s,\n' \
-        "$(json_str "$folder")" "$(json_str "$label")" "$(json_str "$dataset")" "$(json_str "$run")" "$(json_str "$mode")"
+      printf '  "folder": %s,\n  "label": %s,\n  "dataset": %s,\n  "run": %s,\n  "mode": %s,\n  "train_config": %s,\n' \
+        "$(json_str "$folder")" "$(json_str "$label")" "$(json_str "$dataset")" "$(json_str "$run")" "$(json_str "$mode")" \
+        "$(json_str "$TRAIN_CONFIG")"
       printf '  "epochs": %s,\n  "topk": %s,\n  "note": %s,\n  "overrides": %s,\n' \
         "$epochs" "$topk" "$(json_str "$note")" "$(json_list ${overrides[@]+"${overrides[@]}"})"
       printf '  "submitted": %s,\n  "clone_git_commit": %s,\n  "after": %s,\n  "job_id": %s,\n  "dataset_zip": %s\n}\n' \
@@ -208,6 +215,10 @@ cmd_train() {
   write_meta ""
   echo queued > "$run_dir/STATUS"
   snapshot_config "$run_dir/run_config/submit_config.env"
+  # the job (train.sbatch) and eval's run_train_config source this copy: a later assignment wins
+  [ -z "$train_config" ] ||
+    printf '\n# ---- submit.sh --policy (replaces the TRAIN_CONFIG above for this run)\nTRAIN_CONFIG="%s"\n' \
+      "$TRAIN_CONFIG" >> "$run_dir/run_config/submit_config.env"
 
   local partition=$SLURM_PARTITION time=$SLURM_TIME
   [ "$mode" = smoke ] && { partition=$SMOKE_PARTITION; time=$SMOKE_TIME; }
@@ -223,7 +234,7 @@ cmd_train() {
     die "submission failed; released $run_dir"
   fi
   write_meta "$job"
-  echo "$mode training: job $job -> $run_dir (${epochs} epochs, top-$topk, $partition, $time${after:+, after job $after})"
+  echo "$mode training: job $job -> $run_dir ($TRAIN_CONFIG, ${epochs} epochs, top-$topk, $partition, $time${after:+, after job $after})"
   echo "RUN=$run"
   echo "JOB=$job"
 }

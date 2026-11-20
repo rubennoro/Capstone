@@ -80,6 +80,7 @@ train/all.sh $TASK_NAME $DATASET_NAME --package --no-raw --results-dir results/b
 
 - Add `--dry-run` first to see every command without running anything. `--no-eval` skips the offline eval;
   `--no-smoke` skips the smoke run.
+- **Policy type:** behavior prompting by default. Add `--policy plain` for a plain diffusion policy (see step 5).
 - **When it ends**, the last lines say `DONE: every step ok`, `DONE with N problem(s)` (the policy is on the laptop,
   but a report or the eval failed), or `STOPPED at step '...'` with the reason and what to do next.
 - **Everything is logged** in `data/$TASK_NAME/logs/`: `all_<time>_<dataset>.log` has the full output, and
@@ -154,6 +155,22 @@ train/upload.sh $TASK_NAME $DATASET_NAME
 ```bash
 train/submit.sh $TASK_NAME $DATASET_NAME --smoke-first --note "first rig data"
 ```
+
+**Which policy:** behavior prompting is the default. For a plain diffusion policy add `--policy plain`:
+
+```bash
+train/submit.sh $TASK_NAME $DATASET_NAME --smoke-first --policy plain --note "plain diffusion"
+```
+
+| `--policy` | Trains | Videos | Deploying needs |
+|---|---|---|---|
+| (none) or `prompting` | behavior prompting (`umi_policy_dunetp`) | rollout + attention, every 10 epochs | checkpoint + a prompt dataset |
+| `plain` | plain diffusion (`umi_policy_dunet`) | none (so no `--attention` eval) | checkpoint only |
+
+- `--policy` applies to that one submit; nothing to switch back afterwards. `train/go.sh` and `train/all.sh` take it too.
+- To change the default itself, set `TRAIN_CONFIG` in `train/config.local.env` (see `train/config.env`).
+- Every run records what it was trained as: `"train_config"` in `data/$TASK_NAME/policy/<run>/job.json`, and the
+  submit output says it too (`Submitting full training (umi_policy_dunet, ...)`).
 
 It prints two run names: the smoke run (ending in `_smoke`) and the full run. Save the full run's name for the
 next steps:

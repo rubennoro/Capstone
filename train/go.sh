@@ -7,12 +7,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 usage() {
   cat <<'EOF'
-usage: train/go.sh FOLDER DATASET [--pull] [--package] [--no-raw] [--no-smoke] [--epochs N] [--note TEXT]
-                   [--dry-run] [-- hydra overrides...]
+usage: train/go.sh FOLDER DATASET [--pull] [--package] [--no-raw] [--policy plain|prompting] [--no-smoke] [--epochs N]
+                   [--note TEXT] [--dry-run] [-- hydra overrides...]
 
   --pull      first pull the task folder and the existing package DATASET from the Jetson
   --package   first run `dataproc package DATASET FOLDER` on the Jetson, then pull (implies --pull)
   --no-raw    with --pull/--package: skip the raw recordings
+  --policy P  plain = plain diffusion, prompting = behavior prompting (default: TRAIN_CONFIG in config.env)
   --no-smoke  submit only the full run (default: a 3-epoch smoke run first, the full run after it)
   --epochs N  epochs of the full run (default DEFAULT_EPOCHS, lowered to fit SLURM_TIME)
   --note TEXT free text stored with the run(s)
@@ -23,13 +24,14 @@ example: train/go.sh block_raise br-nov13 --package --no-raw --note "first rig d
 EOF
 }
 
-PULL=0 PACKAGE=0 NO_RAW=0 SMOKE=1 EPOCHS="" NOTE="" HAVE_NOTE=0 ARGS=() OVERRIDES=()
+PULL=0 PACKAGE=0 NO_RAW=0 POLICY="" SMOKE=1 EPOCHS="" NOTE="" HAVE_NOTE=0 ARGS=() OVERRIDES=()
 while [ $# -gt 0 ]; do
   case $1 in
     -h|--help) usage; exit 0 ;;
     --pull) PULL=1; shift ;;
     --package) PACKAGE=1; PULL=1; shift ;;
     --no-raw) NO_RAW=1; shift ;;
+    --policy) POLICY=${2:?--policy needs plain or prompting}; shift 2 ;;
     --no-smoke) SMOKE=0; shift ;;
     --epochs) EPOCHS=${2:?--epochs needs a number}; shift 2 ;;
     --note) NOTE=${2?--note needs a text}; HAVE_NOTE=1; shift 2 ;;
@@ -45,6 +47,7 @@ check_name folder "$FOLDER"
 check_name dataset "$DATASET"
 
 [ "$NO_RAW" = 0 ] || [ "$PULL" = 1 ] || die "--no-raw only applies to pulling: add --pull or --package"
+case $POLICY in ""|plain|prompting) ;; *) die "--policy must be plain or prompting (got '$POLICY')" ;; esac
 
 dry=()
 [ "$DRY_RUN" = 0 ] || dry=(--dry-run)
@@ -60,6 +63,7 @@ bash "$TRAIN_DIR/upload.sh" "$FOLDER" "$DATASET" "${dry[@]}"
 
 sub=("$FOLDER" "$DATASET")
 if [ "$SMOKE" = 1 ]; then sub+=(--smoke-first); fi
+[ -z "$POLICY" ] || sub+=(--policy "$POLICY")
 [ -z "$EPOCHS" ] || sub+=(--epochs "$EPOCHS")
 [ "$HAVE_NOTE" = 0 ] || sub+=(--note "$NOTE")
 sub+=("${dry[@]}")

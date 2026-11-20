@@ -52,7 +52,9 @@ Details:
   overrides go after `--`, e.g. `-- training.lr_scheduler=constant`. `--smoke-first` = a 3-epoch smoke run, then the
   full run, which only starts if the smoke run succeeded. The policy type is `TRAIN_CONFIG` in `config.env`:
   `umi_policy_dunetp` (behavior prompting, the default) or `umi_policy_dunet` (plain diffusion: no rollout/attention
-  videos, so no `eval.sh --attention`).
+  videos, so no `eval.sh --attention`). `--policy plain|prompting` (also on go.sh and all.sh) picks it for one submit;
+  it reaches the cluster as `submit_job.sh train --train-config`, is appended to the run's frozen
+  `run_config/submit_config.env`, and is recorded as `train_config` in `job.json` and `train_meta.json`.
 - **status.sh** without a run name uses the newest `job.json`. `--wait` checks every 5 min until the run is `ok`,
   `failed` or `timeout`. `--eval top1` shows (and with `--wait` waits for) the newest offline-eval job of that
   checkpoint instead; a job that died without writing its result is reported from Slurm, so the wait always ends.

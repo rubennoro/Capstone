@@ -7,12 +7,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 usage() {
   cat <<'EOF'
-usage: train/submit.sh FOLDER DATASET [--smoke | --smoke-first] [--epochs N] [--topk K] [--note TEXT]
-                       [--after JOBID] [--dry-run] [-- hydra overrides...]
+usage: train/submit.sh FOLDER DATASET [--smoke | --smoke-first] [--policy plain|prompting] [--epochs N] [--topk K]
+                       [--note TEXT] [--after JOBID] [--dry-run] [-- hydra overrides...]
 
   FOLDER, DATASET  the dataset uploaded with train/upload.sh FOLDER DATASET
   --smoke          only a short test run (3 epochs on SMOKE_PARTITION, eval every epoch)
   --smoke-first    a smoke run, then the full run, which starts only if the smoke run succeeded
+  --policy P       plain = plain diffusion (umi_policy_dunet), prompting = behavior prompting (umi_policy_dunetp);
+                   for these runs only (default: TRAIN_CONFIG in config.env / config.local.env)
   --epochs N       epochs of the full run (default DEFAULT_EPOCHS); lowered if they would not fit in SLURM_TIME
   --topk K         best checkpoints to keep (default TOPK)
   --note TEXT      free text stored with the run
@@ -26,13 +28,14 @@ example: train/submit.sh block_raise br-nov13 --smoke-first --epochs 60 --note "
 EOF
 }
 
-FOLDER="" DATASET="" MODE=full EPOCHS="" TOPK_ARG="" NOTE="" AFTER=""
+FOLDER="" DATASET="" MODE=full POLICY="" EPOCHS="" TOPK_ARG="" NOTE="" AFTER=""
 ARGS=() OVERRIDES=()
 while [ $# -gt 0 ]; do
   case $1 in
     -h|--help) usage; exit 0 ;;
     --smoke) MODE=smoke; shift ;;
     --smoke-first) MODE=smoke-first; shift ;;
+    --policy) POLICY=${2:?--policy needs plain or prompting}; shift 2 ;;
     --epochs) EPOCHS=${2:?--epochs needs a number}; shift 2 ;;
     --topk) TOPK_ARG=${2:?--topk needs a number}; shift 2 ;;
     --note) NOTE=${2?--note needs a text}; shift 2 ;;
@@ -49,11 +52,19 @@ check_name folder "$FOLDER"
 check_name dataset "$DATASET"
 [ -z "$EPOCHS" ] || check_posint --epochs "$EPOCHS"
 [ -z "$AFTER" ] || [[ $AFTER =~ ^[0-9]+$ ]] || die "--after must be a Slurm job id, got '$AFTER'"
+# --policy -> the training config these runs use (passed to the cluster, frozen with each run); none = TRAIN_CONFIG
+case $POLICY in
+  "") POLICY_CONFIG="" ;;
+  plain) POLICY_CONFIG=umi_policy_dunet ;;
+  prompting) POLICY_CONFIG=umi_policy_dunetp ;;
+  *) die "--policy must be plain or prompting (got '$POLICY')" ;;
+esac
 
 load_config
 need_var CLUSTER_LOGIN CLUSTER_TOOLS LOCAL_DATA_ROOT SLURM_TIME SMOKE_TIME TIME_MARGIN_MIN \
-  MIN_PER_EPOCH_PER_10K_STEPS DEFAULT_EPOCHS TOPK
+  MIN_PER_EPOCH_PER_10K_STEPS DEFAULT_EPOCHS TOPK TRAIN_CONFIG
 TOPK_=${TOPK_ARG:-$TOPK}
+CONFIG_=${POLICY_CONFIG:-$TRAIN_CONFIG}
 check_posint --topk "$TOPK_"
 
 PKG=$LOCAL_DATA_ROOT/$FOLDER/package/$DATASET/package.json
@@ -116,8 +127,9 @@ submit_one() {
   cmd="bash $(rq "$CLUSTER_TOOLS/submit_job.sh") train $(qargs --folder "$FOLDER" --label "$LABEL" --dataset "$DATASET" \
     --mode "$mode" --epochs "$epochs" --topk "$TOPK_" --note "$NOTE")"
   [ -z "$after" ] || cmd+=" $(qargs --after "$after")"
+  [ -z "$POLICY_CONFIG" ] || cmd+=" $(qargs --train-config "$POLICY_CONFIG")"
   [ ${#OVERRIDES[@]} = 0 ] || cmd+=" -- $(qargs "${OVERRIDES[@]}")"
-  step "Submitting $mode training ($epochs epochs${after:+, after job $after})"
+  step "Submitting $mode training ($CONFIG_, $epochs epochs${after:+, after job $after})"
   if [ "$DRY_RUN" = 1 ]; then
     login_ssh "$cmd"
     SUB_RUN="<$mode run>" SUB_JOB="<$mode job id>"
@@ -132,12 +144,13 @@ submit_one() {
   local dir=$LOCAL_DATA_ROOT/$FOLDER/policy/$SUB_RUN
   mkdir -p "$dir"
   python3 -I - "$dir/job.json" "$FOLDER" "$LABEL" "$DATASET" "$SUB_RUN" "$mode" "$epochs" "$TOPK_" "$SUB_JOB" \
-    "$after" "$NOTE" "$(date -Iseconds)" "${OVERRIDES[@]}" <<'PY'
+    "$after" "$NOTE" "$(date -Iseconds)" "$CONFIG_" "${OVERRIDES[@]}" <<'PY'
 import json, sys
-(path, folder, label, dataset, run, mode, epochs, topk, job, after, note, submitted), overrides = sys.argv[1:13], sys.argv[13:]
-rec = {"folder": folder, "label": label, "dataset": dataset, "run": run, "mode": mode, "epochs": int(epochs),
-       "topk": int(topk), "job_id": job, "after": after or None, "note": note, "submitted": submitted,
-       "overrides": overrides}
+(path, folder, label, dataset, run, mode, epochs, topk, job, after, note, submitted, config), overrides = \
+    sys.argv[1:14], sys.argv[14:]
+rec = {"folder": folder, "label": label, "dataset": dataset, "run": run, "mode": mode, "train_config": config,
+       "epochs": int(epochs), "topk": int(topk), "job_id": job, "after": after or None, "note": note,
+       "submitted": submitted, "overrides": overrides}
 with open(path, "w") as f:
     json.dump(rec, f, indent=2)
     f.write("\n")

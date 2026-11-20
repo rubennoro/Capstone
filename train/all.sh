@@ -19,20 +19,22 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 usage() {
   cat <<'EOF'
-usage: train/all.sh FOLDER DATASET [--package | --pull] [--no-raw] [--no-smoke] [--epochs N] [--note TEXT]
-                    [--no-eval] [--per-demo N] [--attention] [--results-dir DIR]... [--dry-run] [-- hydra overrides...]
+usage: train/all.sh FOLDER DATASET [--package | --pull] [--no-raw] [--policy plain|prompting] [--no-smoke] [--epochs N]
+                    [--note TEXT] [--no-eval] [--per-demo N] [--attention] [--results-dir DIR]... [--dry-run]
+                    [-- hydra overrides...]
        train/all.sh FOLDER --run RUN [--no-eval] [--per-demo N] [--attention] [--results-dir DIR]... [--dry-run]
 
   --package        first run `dataproc package DATASET FOLDER` on the Jetson, then pull (DATASET must be a new name)
   --pull           first pull the task folder and the already packaged DATASET from the Jetson
                    (neither: use data/FOLDER/package/DATASET/ as it already is on the laptop)
   --no-raw         with --pull/--package: skip the raw recordings
+  --policy P       plain = plain diffusion, prompting = behavior prompting (default: TRAIN_CONFIG in config.env)
   --no-smoke       submit only the full run (default: a 3-epoch smoke run first; the full run starts if it succeeds)
   --epochs N       epochs of the full run (default DEFAULT_EPOCHS, lowered to fit SLURM_TIME)
   --note TEXT      free text stored with the run(s)
   --no-eval        stop after the run reports (no offline eval job)
   --per-demo N     offline eval: frames evaluated per demo (default 8)
-  --attention      offline eval: also render the attention rollout videos
+  --attention      offline eval: also render the attention rollout videos (behavior prompting only)
   --results-dir D  compare_runs.py also compares with the runs in D (e.g. results/block_raise); repeatable
   --run RUN        continue a run that is already submitted: wait for it, then fetch, reports and eval. Use it when
                    all.sh stopped after submitting (Ctrl-C, laptop asleep, fetch failed); the log names the command.
@@ -47,7 +49,7 @@ example (in tmux): train/all.sh eraser_pick_2 ep2-v1 --package --no-raw --note "
 EOF
 }
 
-PULL=0 PACKAGE=0 NO_RAW=0 SMOKE=1 EPOCHS="" NOTE="" HAVE_NOTE=0 EVAL=1 PER_DEMO=8 ATTENTION=0 RESUME=""
+PULL=0 PACKAGE=0 NO_RAW=0 POLICY="" SMOKE=1 EPOCHS="" NOTE="" HAVE_NOTE=0 EVAL=1 PER_DEMO=8 ATTENTION=0 RESUME=""
 RESULTS_DIRS=() ARGS=() OVERRIDES=() PRE_SUBMIT=()
 while [ $# -gt 0 ]; do
   case $1 in
@@ -55,6 +57,7 @@ while [ $# -gt 0 ]; do
     --pull) PULL=1; PRE_SUBMIT+=("$1"); shift ;;
     --package) PACKAGE=1; PULL=1; PRE_SUBMIT+=("$1"); shift ;;
     --no-raw) NO_RAW=1; PRE_SUBMIT+=("$1"); shift ;;
+    --policy) POLICY=${2:?--policy needs plain or prompting}; PRE_SUBMIT+=("$1"); shift 2 ;;
     --no-smoke) SMOKE=0; PRE_SUBMIT+=("$1"); shift ;;
     --epochs) EPOCHS=${2:?--epochs needs a number}; PRE_SUBMIT+=("$1"); shift 2 ;;
     --note) NOTE=${2?--note needs a text}; HAVE_NOTE=1; PRE_SUBMIT+=("$1"); shift 2 ;;
@@ -83,10 +86,17 @@ check_name folder "$FOLDER"
 check_posint --per-demo "$PER_DEMO"
 [ "$NO_RAW" = 0 ] || [ "$PULL" = 1 ] || die "--no-raw only applies to pulling: add --pull or --package"
 [ "$ATTENTION" = 0 ] || [ "$EVAL" = 1 ] || die "--attention only applies to the eval: drop --no-eval"
+case $POLICY in ""|plain|prompting) ;; *) die "--policy must be plain or prompting (got '$POLICY')" ;; esac
 for d in ${RESULTS_DIRS[@]+"${RESULTS_DIRS[@]}"}; do [ -d "$d" ] || die "--results-dir $d: no such folder"; done
 
 load_config
 need_var LOCAL_DATA_ROOT CLUSTER_LOGIN CLUSTER_LOGS
+# attention videos exist only for behavior prompting: refuse now, not hours later at the eval step
+if [ -z "$RESUME" ] && [ "$ATTENTION" = 1 ]; then
+  if [ "$POLICY" = plain ] || { [ -z "$POLICY" ] && [ "${TRAIN_CONFIG:-umi_policy_dunetp}" != umi_policy_dunetp ]; }; then
+    die "--attention needs behavior prompting; this would train plain diffusion (drop --attention or use --policy prompting)"
+  fi
+fi
 POLICY=$LOCAL_DATA_ROOT/$FOLDER/policy
 ANALYSIS=${TRAIN_ANALYSIS_SRC:-$TRAIN_DIR/analysis}
 if [ -n "$RESUME" ]; then
@@ -269,6 +279,7 @@ if [ -z "$RESUME" ]; then
   begin submit "$what"
   s=("$FOLDER" "$DATASET")
   [ "$SMOKE" = 0 ] || s+=(--smoke-first)
+  [ -z "$POLICY" ] || s+=(--policy "$POLICY")
   [ -z "$EPOCHS" ] || s+=(--epochs "$EPOCHS")
   [ "$HAVE_NOTE" = 0 ] || s+=(--note "$NOTE")
   s+=(${DRY[@]+"${DRY[@]}"})
