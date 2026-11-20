@@ -18,6 +18,7 @@ COMMANDS = [
     ("map", "umiproc.map.cli", "build and check the session map from a mapping recording (creates the task folder)"),
     ("calibrate", "umiproc.calibrate.cli", "fit the gripper range from a gripper calibration recording"),
     ("run", "umiproc.run.cli", "localize and check a range of demo recordings against the folder's map"),
+    ("package", "umiproc.package", "combine the finished episodes of task folders into one training .zarr.zip"),
     ("status", "umiproc.status", "show the data root (rig files, SLAM program, recordings, task folders) or one "
                                  "task folder (map, gripper calibration, episodes, waiting, failed)"),
     ("plot-run", "umiproc.viz.slam_run", "plot one SLAM run (trajectory CSV + log): tracking timeline, path, frames"),

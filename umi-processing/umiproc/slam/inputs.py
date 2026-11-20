@@ -134,7 +134,9 @@ def orbslam3_settings_text(sensors) -> str:
         "%YAML:1.0",
         "---",
         "# ORB-SLAM3 settings for UMI's fork (cheng-chi/ORB_SLAM3 b741dca + umi-processing/native/patches), written by",
-        "# umiproc.slam.inputs from the data-root rig file, SLAM config and lens file. Do not edit: change those.",
+        # the old module name is kept on purpose: this text is hashed into the SLAM fingerprint (settings.sha256),
+        # and changing it makes every earlier map "out of date"
+        "# umiproc.slam_inputs from the data-root rig file, SLAM config and lens file. Do not edit: change those.",
         f"# rig {sensors.rig_id}; ultrawide {cam.sensor} {w}x{h} @ {_real(cam.fps)} fps; lens: {lens_line}",
         'File.version: "1.0"',
         "",

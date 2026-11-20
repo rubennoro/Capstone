@@ -22,7 +22,7 @@ from typing import Callable
 from umiproc.dp import __version__
 from umiproc.dp.files import iso_utc, write_json
 from umiproc.dp.fsutil import rmdir_if_empty, sha256_file
-from umiproc.dp.package.collect import PackageError, Selection, collect_episodes
+from umiproc.dp.package.collect import ExcludedEntry, PackageError, Selection, collect_episodes
 from umiproc.dp.paths import DataRoot, validate_name
 
 __all__ = ["DATASETS_DIR", "MULTI_LABEL", "PACKAGE_FILE", "PackageResult", "dataset_label", "dataset_dir",
@@ -59,7 +59,7 @@ def dataset_dir(root: DataRoot, dataset: str, label: str) -> Path:
 
 
 def package_dataset(root: DataRoot, dataset: str, folders: list[str], overwrite: bool = False,
-                    log: Callable = print) -> PackageResult:
+                    log: Callable = print, max_episodes: int | None = None) -> PackageResult:
     """Collect the exported episodes of ``folders`` (:func:`~dataproc.package.collect.collect_episodes`), write
     ``datasets/<label>/<dataset>/<dataset>.zarr.zip`` and its ``package.json``. Raises :class:`PackageError`
     (nothing written) on a bad name, a failed check, an existing dataset without ``overwrite``, or a failed build
@@ -69,6 +69,8 @@ def package_dataset(root: DataRoot, dataset: str, folders: list[str], overwrite:
     except ValueError as e:
         raise PackageError(str(e)) from None
     sel = collect_episodes(root, list(folders))
+    if max_episodes is not None:
+        limit_episodes(sel, max_episodes)
     label = dataset_label(sel.labels)
     out_dir = dataset_dir(root, dataset, label)
     zip_path = out_dir / f"{dataset}.zarr.zip"
@@ -79,6 +81,19 @@ def package_dataset(root: DataRoot, dataset: str, folders: list[str], overwrite:
     record = package_record(dataset, label, sel, zip_path)
     write_json(out_dir / PACKAGE_FILE, record)
     return PackageResult(dataset, label, zip_path, record, sel)
+
+
+def limit_episodes(sel: Selection, n: int) -> None:
+    """umiproc ``--episodes N``: keep only the first ``n`` selected episodes (folder order, then ``episode_N``
+    order), so smaller datasets are nested subsets of larger ones; the rest are listed as excluded."""
+    if n < 1:
+        raise PackageError(f"--episodes must be at least 1 (got {n})")
+    if n > len(sel.episodes):
+        raise PackageError(f"--episodes {n}: only {len(sel.episodes)} exported episodes in "
+                           f"{', '.join(f.folder for f in sel.folders)}")
+    for e in sel.episodes[n:]:
+        sel.excluded.append(ExcludedEntry(e.folder, e.slot, "left out", f"--episodes {n} (only the first {n})"))
+    del sel.episodes[n:]
 
 
 def build_zip(sel: Selection, out_dir: Path, zip_path: Path) -> dict:

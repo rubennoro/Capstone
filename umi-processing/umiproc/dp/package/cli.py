@@ -43,10 +43,12 @@ def _summary(res: PackageResult) -> str:
     return "\n".join(lines + cluster_handoff(res))
 
 
-def cli_package(root: DataRoot, dataset: str, folders: list[str], overwrite: bool = False) -> int:
+def cli_package(root: DataRoot, dataset: str, folders: list[str], overwrite: bool = False,
+                max_episodes: int | None = None) -> int:
     """``dataproc package``; returns the exit code (0 written, 1 on any error, message on stderr)."""
     try:
-        res = package_dataset(root, dataset, folders, overwrite=overwrite, log=print)
+        res = package_dataset(root, dataset, folders, overwrite=overwrite, log=print,
+                              max_episodes=max_episodes)
     except PackageError as e:
         print(f"dataproc package: {e}", file=sys.stderr)
         return 1
