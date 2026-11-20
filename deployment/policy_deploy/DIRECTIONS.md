@@ -294,6 +294,29 @@ frames process alone in one terminal, ask it once from another, then Ctrl-C the 
 **Good:** the first prints `ready`; the probe prints both cameras `ok` at `30.0` fps, the four image times and ages,
 and writes `main_0.png`, `main_1.png`, `ultrawide_0.png`, `ultrawide_1.png` into `~/probe_images`: open them and look.
 
+### Camera constants: `deploy_rig`
+
+The frames process turns each Pi frame into the policy's 224×224 images with the camera constants in
+`../contracts/rigs/rig_pi_v3_640.yaml`. That file is **generated** from training's own files, so the robot's images
+match the training images:
+
+- `~/data/umi/rigs/rig_pi_v3.yaml`: the rig training processed the data with (source of truth);
+- `~/data/umi/rigs/rig_pi_v3.lens.yaml`: the measured ultrawide lens training applied.
+
+The tool folds the lens in and scales both cameras to the 640×480 stream; nothing else changes. Its header names both
+sources and their sha256.
+
+**When:** after either source changes (a new lens calibration, an edited rig), and only together with a policy
+trained on data processed with it: a new lens with an old policy makes the images differ from training again.
+
+```bash
+~/envs/policy_deploy/bin/python -m policy_deploy.frames.deploy_rig --check   # does the file match the sources?
+~/envs/policy_deploy/bin/python -m policy_deploy.frames.deploy_rig           # regenerate it, then commit it
+```
+
+**Good:** `deploy_rig: OK ... matches its sources`. `DIFFERS`: regenerate and commit. `FAIL ... no rig file`: the
+sources are not on this machine (`~/data/umi`). `policy_deploy check` shows the rig in use on its `rig file` row.
+
 ### Policy timing: `policy.bench`
 
 **When:** once, before choosing `exec_h` for a trained policy (it needs the torch environment, section below). Laptop
@@ -367,7 +390,9 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
    usual one: `no checkpoint in .../checkpoints` (the run was not fetched: `train/fetch.sh <folder> <run>`).
 
 3. **Try it without the arm (optional):** `policy_deploy run --mock` runs the chosen policy against a fake Pi and a
-   fake PC. It needs a recorded Pi episode in `station.yaml`: `frames: {mock_episode: <a folder with meta.json>}`.
+   fake PC. It plays the recorded Pi episode `~/Downloads/data/incoming/episode_000152` (a PICK_TEST1 demo; the
+   default in `config/frames_process.yaml`). Another one: `frames: {mock_episode: <a folder with meta.json>}` in
+   `station.yaml`.
    Good: the status line's `margin` stays positive during an episode.
 
 4. **On the real arm, once: settle the gripper axes.** `check` refuses a trained policy
@@ -443,7 +468,7 @@ Plugged in, on AC power: on battery or power-saver the start-up limits are misse
 | `the PC is driving an episode for another C3 client` | stop the other laptop run, `pc_probe` or the PC's `console` |
 | `FAILED frames during start-up: not ready after 30 s` | the Pi stream isn't arriving: `pi_collect` |
 | `main camera down` / `ultrawide camera down` | the Pi or its Wi-Fi: check the Pi, then run again |
-| `frame size ..., rig file says ...` | the Pi now streams another size: the rig file in `rigs/` must match it |
+| `frame size ..., rig file says ...` | the Pi now streams another size: regenerate the rig file for it ("Camera constants", `--size W H`) |
 | `clock mismatch: ...` or a `hello` mismatch | both machines on the same commit, `link.yaml` the same on both; then `pc_probe` |
 | `SKIPPING` or a negative `margin` on the status line | the policy or the link is too slow: the arm just holds; raise `exec_h` (policy timing) |
 
@@ -461,5 +486,6 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/policy_deploy/bin/python -m pytest tests
 |---|---|
 | `station.yaml` | this laptop's settings: the Pi's address, the policy (set it with `policy_deploy use`), overrides of `config/*.yaml` |
 | `../contracts/link.yaml` | the PC's and the laptop's addresses: the same on both machines |
+| `../contracts/rigs/rig_pi_v3_640.yaml` | the camera constants: **generated, never edited by hand** ("Camera constants") |
 
 How it is built and why: `deployment/PLAN.md` and `policy_deploy/STRUCTURE.md`.

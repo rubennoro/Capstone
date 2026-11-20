@@ -26,7 +26,7 @@ still reads it.
 | Socket | The Pi **binds a PUB** socket on port **5555**. `process_frames` connects a SUB, subscribed to everything, at `endpoints.pi_frames` (`station.yaml`, e.g. `tcp://10.42.0.78:5555`). |
 | Direction | Pi → PC only. Nothing is sent back, and there is no time-sync socket. |
 | Message | One ZeroMQ **multipart** message per main frame, delivered whole or not at all. |
-| Frames | Both cameras **640×480 (4:3) at 30 FPS**, JPEG. Rig file: `process_frames/rigs/rig_pi_v2_640.yaml`. |
+| Frames | Both cameras **640×480 (4:3) at 30 FPS**, JPEG. Rig file: `deployment/contracts/rigs/rig_pi_v3_640.yaml` (generated; DIRECTIONS.md "Camera constants"). |
 
 ### 0.2 Parts
 

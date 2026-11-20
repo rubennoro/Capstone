@@ -1,5 +1,5 @@
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_imageprep_live.py @ 91b178b
-# changes: imports; the v2 rig is rig_pi_v2_640: both cameras 640x480 (virtual ultrawide 640x480)
+# changes: imports; the live rig is ../contracts/rigs/rig_pi_v3_640.yaml: both cameras 640x480 (virtual ultrawide 640x480)
 """Live image prep at the real rig file's sizes (and others): bit-identical to iPhUMI's cv_util
 (STRUCTURE.md §13.2)."""
 
@@ -18,8 +18,8 @@ def _ref(img):
 
 
 @pytest.fixture(scope="module")
-def prep(v2_rig):
-    return ImagePrep(v2_rig)
+def prep(live_rig):
+    return ImagePrep(live_rig)
 
 
 def test_v2_imageprep_builds(prep):
@@ -64,11 +64,11 @@ def _centroid(img, around, radius):
 
 
 @pytest.mark.parametrize("P", [[0.0, 0.0, 0.5], [0.12, -0.05, 0.3], [-0.2, 0.1, 0.25]])
-def test_remap_puts_a_known_point_at_the_expected_pixel_for_the_v2_lens(v2_rig, prep, P):
-    phys, virt = physical_model(v2_rig, "ultrawide"), virtual_model(v2_rig)
+def test_remap_puts_a_known_point_at_the_expected_pixel_for_the_v2_lens(live_rig, prep, P):
+    phys, virt = physical_model(live_rig, "ultrawide"), virtual_model(live_rig)
     P = np.array(P)
     uv_phys, ok_p = phys.project(P[None])
-    uv_virt, ok_v = virt.project(P[None])                 # R_phys_virt = identity in rig_pi_v2_640
+    uv_virt, ok_v = virt.project(P[None])                 # R_phys_virt = identity in rig_pi_v3_640
     assert ok_p[0] and ok_v[0]
     v = prep.to_virtual(_blob(640, 480, uv_phys[0], sigma=3.0))
     assert np.linalg.norm(_centroid(v, uv_virt[0], 15) - uv_virt[0]) < 0.35

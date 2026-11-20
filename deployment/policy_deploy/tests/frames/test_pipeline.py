@@ -1,6 +1,6 @@
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_pipeline.py @ 91b178b
 # changes: pi_v1 + JPEG only (the h264 case and the keyframe-wait cases are gone with H.264: a lost frame now costs only
-# that frame); the shared helpers moved to tests/frames_pipeline.py; the v2 rig is rig_pi_v2_640; an ultrawide pause
+# that frame); the shared helpers moved to tests/frames_pipeline.py; the live rig is ../contracts/rigs/rig_pi_v3_640.yaml; an ultrawide pause
 # makes the fake Pi repeat its last frame, so the PairRule refuses it (pair_reused) and the ultrawide goes stale; the
 # station schema (probe gets a station with the same ports).
 """The whole process inside the test: FramesApp with --mock settings on 127.0.0.1, the real decoders, and a C1
@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from frames_helpers import V2_RIG, fast_overrides, wait_for, write_rig, write_station
+from frames_helpers import LIVE_RIG, fast_overrides, wait_for, write_rig, write_station
 from frames_pipeline import assert_every_frame_decoded_once, check_served
 
 from policy_deploy.frames._dataproc.imageprep import ImagePrep
@@ -38,9 +38,9 @@ def test_ready_valid_replies_true_times_and_bit_identical_images(running):
 
 def test_v2_sizes_end_to_end_no_ultrawide_frame_lost_or_decoded_twice(running, v2_episode):
     """FakePiSender -> receiver -> C1 at the real rig file's sizes (both cameras 640x480)."""
-    run = running(v2_episode, rig_file=str(V2_RIG))
+    run = running(v2_episode, rig_file=str(LIVE_RIG))
     run.wait_ready(timeout_s=30)
-    assert run.app.rig.rig_id == "rig_pi_v2_640"
+    assert run.app.rig.rig_id == "rig_pi_v3_640"
     prep = ImagePrep(run.app.rig)
     gaps = []
     for _ in range(3):

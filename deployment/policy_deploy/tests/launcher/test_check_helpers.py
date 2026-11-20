@@ -127,13 +127,13 @@ def test_json_check_lines_timeout(tmp_path):
 def test_rig_file_check(tmp_path):
     rig = tmp_path / "rig.yaml"
     rig.write_text("x")
-    summary = '{"ok": true, "rig_id": "rig_pi_v2_640", "cameras": {"main": {"sensor": "imx519", "width": 640, ' \
+    summary = '{"ok": true, "rig_id": "rig_pi_v3_640", "cameras": {"main": {"sensor": "imx519", "width": 640, ' \
               '"height": 480, "fps": 30.0}, "ultrawide": {"sensor": "imx219", "width": 640, "height": 480, ' \
               '"fps": 30.0}}}\n'
     py = write_fake_python(tmp_path / "py", {"policy_deploy.frames.rig_file": (summary, 0)})
     row = check_helpers.rig_file_check("frames", str(py), rig, 20.0)
     assert row.status == "pass"
-    assert row.detail == "rig_pi_v2_640: main imx519 640x480@30, ultrawide imx219 640x480@30"
+    assert row.detail == "rig_pi_v3_640: main imx519 640x480@30, ultrawide imx219 640x480@30"
     bad = write_fake_python(tmp_path / "bad", {"policy_deploy.frames.rig_file":
                                                ('{"ok": false, "error": "cameras.main.sensor: bad"}\n', 1)})
     assert check_helpers.rig_file_check("frames", str(bad), rig, 20.0).detail == "cameras.main.sensor: bad"

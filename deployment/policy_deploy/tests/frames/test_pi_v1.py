@@ -16,14 +16,15 @@ import zmq
 from deploy_contracts import ContractError
 from policy_deploy.contracts import PiFrameStamp, PiStreamHeader, PiStreamPacket
 from frames_helpers import FOLDER
+from station_helpers import RECORDED_EPISODE
 from policy_deploy.frames._dataproc.imageprep import ImagePrep
 from policy_deploy.contracts.clock_fit import OneWayClockMap
 from policy_deploy.frames.pi_recording import PiRecording, PiRecordingError
 from policy_deploy.frames.pi_stream_source import PiStreamConverter, PiStreamPacketSource
 from frames_pipeline import Running, check_served
 
-RIG_640 = FOLDER / "rigs" / "rig_pi_v2_640.yaml"
-EPISODE = Path("~/Downloads/episode_000045").expanduser()
+RIG_640 = FOLDER.parent / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
+EPISODE = RECORDED_EPISODE   # station_helpers: the --mock default recording
 
 
 def jpeg(w=640, h=480, value=100) -> bytes:
@@ -187,10 +188,10 @@ def test_pi_v1_a_reused_ultrawide_frame_keeps_serving(run_pi_v1, make_pi_episode
 
 @pytest.mark.skipif(not (EPISODE / "meta.json").is_file(), reason=f"{EPISODE} not present")
 def test_pi_v1_real_recording_at_640(run_pi_v1):
-    """episode_000045 (1600x1200 / 1280x960) delivered at 640x480 as the Pi streams it, through to C1."""
+    """A real recording (1600x1200 / 1280x960) delivered at 640x480 as the Pi streams it, through to C1."""
     run = run_pi_v1(EPISODE, rig_file=str(RIG_640), mock={"max_seconds": 3.0})
     run.wait_ready(timeout_s=60)
-    assert run.app.rig.rig_id == "rig_pi_v2_640"
+    assert run.app.rig.rig_id == "rig_pi_v3_640"
     prep = ImagePrep(run.app.rig)
     gaps = []
     for _ in range(3):

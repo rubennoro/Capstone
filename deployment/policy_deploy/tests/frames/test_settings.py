@@ -15,7 +15,7 @@ from policy_deploy.frames.settings import SCHEMA, Settings
 
 # Every key of STRUCTURE.md 4.4 with its default.
 DEFAULTS = {
-    "rig_file": "rigs/rig_pi_v2_640.yaml", "mock_episode": "~/Downloads/episode_000045",
+    "rig_file": "../contracts/rigs/rig_pi_v3_640.yaml", "mock_episode": "~/Downloads/data/incoming/episode_000152",
     "default_exposure_ns": 5000000, "receive.timeout_s": 0.1, "receive.recv_hwm": 60, "buffer.keep_s": 1.0,
     "select.main_spacing_ms": 50, "select.ultrawide_spacing_ms": 100, "select.tolerance_frames": 2.0,
     "select.pair_max_age_ms": 60, "select.pair_max_lead_ms": 25, "select.pair_max_reuse": 2,
@@ -48,7 +48,7 @@ def test_defaults_load(tmp_path):
     st = write_station(tmp_path / "station.yaml")
     s = Settings.load(st, mock=False)
     ports = yaml.safe_load(st.read_text())["ports"]
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2_640.yaml"
+    assert s.rig_file == FOLDER / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
     assert s.mock is False and s.select.tolerance_frames == 2.0
     assert (s.select.pair_max_age_ms, s.select.pair_max_lead_ms, s.select.pair_max_reuse) == (60.0, 25.0, 2)
     assert s.frames == f"tcp://127.0.0.1:{ports['frames']}" and s.session_root == tmp_path / "sessions"
@@ -99,7 +99,7 @@ def test_relative_paths_resolve_from_the_right_folder(tmp_path):
     st = write_station(tmp_path / "station.yaml", frames={"mock_episode": "eps/ep1"})
     s = Settings.load(st, mock=True)
     assert s.mock_episode == tmp_path / "eps" / "ep1"                      # station value: station's folder
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2_640.yaml"            # default: deployment/policy_deploy/
+    assert s.rig_file == FOLDER / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"            # default: deployment/policy_deploy/
     st = write_station(tmp_path / "station.yaml", frames={"rig_file": "my_rigs/r.yaml"})
     assert Settings.load(st, mock=False).rig_file == tmp_path / "my_rigs" / "r.yaml"
 

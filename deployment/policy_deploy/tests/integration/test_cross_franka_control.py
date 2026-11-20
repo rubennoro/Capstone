@@ -2,7 +2,7 @@
 franka_control code with its fake arm (the libfranka-less build of control_deploy/STRUCTURE.md 8.3).
 
 The binary comes from FRANKA_CONTROL_BIN (absolute path); skipped when it is unset, and without
-~/Downloads/episode_000045.
+the recorded episode (station_helpers.RECORDED_EPISODE).
 
 1. a temporary franka_control station with only session_root;
 2. `$FRANKA_CONTROL_BIN --station <tmp>/fc_station.yaml --mock --local --ready-file <tmp>/fc.ready`, wait for the ready

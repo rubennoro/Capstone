@@ -8,7 +8,9 @@ prompting one, the dataset it trained on (data/<folder>/package/<dataset>/<datas
 Only those two sections change; every other line of station.yaml (comments included) stays as it is. Keys of the two
 sections that are not about the policy choice (precision, diffusion_steps, exec_h, ...) are kept unless a flag sets
 them. policy.mock_kind follows policy.kind, so `run --mock` runs the chosen model. The new file is checked with
-Station.load and the policy settings check before it replaces the old one.
+Station.load (every key) before it replaces the old one; the speed flags are range-checked here. The policy section's
+values are the policy process's to check: `policy_deploy check`, the next step (the launcher never imports a process
+subpackage, tests/test_import_rules.py).
 """
 from __future__ import annotations
 
@@ -24,9 +26,8 @@ from typing import Any
 
 import yaml
 
-from policy_deploy.contracts import paths
+from policy_deploy.contracts import ACTION_STEPS, paths
 from policy_deploy.contracts.station import Station, StationError
-from policy_deploy.policy.settings import Settings, SettingsError
 
 HOLD_STILL = "hold_still"
 SECTIONS = ("policy", "manager")
@@ -257,6 +258,10 @@ def use(station_file: Path | None, target: str, *, task: str | None = None, prom
     except (OSError, yaml.YAMLError) as e:
         raise UseError(f"cannot read {path}: {e}") from None
     choice = choose(target, task, prompt_index, prompt_dataset, prompt_split)
+    if diffusion_steps is not None and diffusion_steps < 1:
+        raise UseError(f"--diffusion-steps {diffusion_steps}: must be 1 or more", "8 is what this laptop needs")
+    if exec_h is not None and not 1 <= exec_h <= ACTION_STEPS:
+        raise UseError(f"--exec-h {exec_h}: must be 1 to {ACTION_STEPS}", "12 is what this laptop needs")
     speed = {"policy": {k: v for k, v in (("precision", precision), ("diffusion_steps", diffusion_steps))
                         if v is not None},
              "manager": {} if exec_h is None else {"exec_h": exec_h}}
@@ -266,10 +271,6 @@ def use(station_file: Path | None, target: str, *, task: str | None = None, prom
     try:
         tmp.write_text(new_text, encoding="utf-8")
         Station.load(tmp)                        # every key checked, as `check` and `run` will
-        try:                                     # and the policy section's values, as the policy process will
-            Settings.load(tmp, mock=False)
-        except SettingsError as e:
-            raise StationError(e.problems) from None
         os.replace(tmp, path)
     except StationError as e:                    # name the real file, not the temporary copy
         raise StationError([p.replace(tmp.name, path.name) for p in e.problems]) from None

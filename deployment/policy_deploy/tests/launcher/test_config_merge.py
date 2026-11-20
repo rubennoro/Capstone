@@ -85,7 +85,7 @@ def test_resolve_path_by_where_the_value_came_from(make_station):
     config = load_config("policy", station)
     assert resolve_path(station, "policy", config, "checkpoint") == station.path.parent / "ckpts/best.ckpt"
     frames = load_config("frames", station)
-    assert resolve_path(station, "frames", frames, "rig_file") == paths.folder() / "rigs" / "rig_pi_v2_640.yaml"
+    assert resolve_path(station, "frames", frames, "rig_file") == paths.folder() / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
     assert resolve_path(station, "frames", frames, "mock_episode").is_absolute()          # ~ expanded
 
 

@@ -1,8 +1,8 @@
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_real_episode.py @ 91b178b
 # changes: the recording is paired by the nearest-frame rule (a main packet sent half an ultrawide period after
-# capture), pairs judged against the PairRule window; JPEG at rig_pi_v2_640 (640x480 both, as the Pi streams); the
+# capture), pairs judged against the PairRule window; JPEG at rig_pi_v3_640 (640x480 both, as the Pi streams); the
 # shared Running from tests/frames_pipeline.py.
-"""The real Pi recording ~/Downloads/episode_000045 (main imx519 1600x1200, ultrawide imx219 1280x960, both 30 FPS):
+"""A real Pi recording (station_helpers.RECORDED_EPISODE; main imx519 1600x1200, ultrawide imx219 1280x960, 30 FPS):
 paired by the nearest-frame rule, and played by FakePiSender through the whole process to C1 at the deployment rig's
 sizes. Skipped when the recording is absent. Read only: nothing is written next to it."""
 
@@ -14,13 +14,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from frames_helpers import HALF_PERIOD_NS, V2_RIG
+from frames_helpers import HALF_PERIOD_NS, LIVE_RIG
 from frames_pipeline import Running, assert_every_frame_decoded_once, check_served
+from station_helpers import RECORDED_EPISODE
 
 from policy_deploy.frames._dataproc.imageprep import ImagePrep
 from policy_deploy.frames.packet_pairer import PacketPairer
 
-EPISODE = Path("~/Downloads/episode_000045").expanduser()
+EPISODE = RECORDED_EPISODE
 P_MS = 1000 / 30
 
 pytestmark = pytest.mark.skipif(not (EPISODE / "meta.json").is_file(), reason=f"{EPISODE} not present")
@@ -61,10 +62,10 @@ def test_the_whole_recording_pairs_by_the_nearest_frame():
 
 def test_fake_pi_to_c1_at_640_with_the_real_recording(tmp_path):
     """FakePiSender (the recording re-encoded as the Pi's JPEGs at 640x480) -> receiver -> C1."""
-    run = Running(tmp_path, EPISODE, rig_file=str(V2_RIG), mock={"max_seconds": 3.0})
+    run = Running(tmp_path, EPISODE, rig_file=str(LIVE_RIG), mock={"max_seconds": 3.0})
     try:
         run.wait_ready(timeout_s=60)
-        assert run.app.rig.rig_id == "rig_pi_v2_640"
+        assert run.app.rig.rig_id == "rig_pi_v3_640"
         prep = ImagePrep(run.app.rig)
         gaps = []
         for _ in range(4):

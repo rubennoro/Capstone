@@ -21,6 +21,10 @@ deployment/
     limits.yaml                C2/C3 validator limits, read by Python and C++ (§4.1)
     frames.yaml                F_T_TCP, the one definition of the TCP, read by Python and C++ (§4.2)
     link.yaml                  addresses, ports, timing of the laptop <-> PC link, read by Python and C++ (§4.3)
+    rigs/                      the camera constants (laptop only; the PC never reads them)
+      rig_pi_v3_640.yaml       GENERATED: training's rig (~/data/umi/rigs/rig_pi_v3.yaml + its measured lens) scaled
+                               to the 640x480 stream; `python -m policy_deploy.frames.deploy_rig` (policy_deploy/
+                               DIRECTIONS.md "Camera constants"). Read by the frames process (frames_process.yaml)
     deploy_contracts/          the Python package (§3.1)
     examples/                  generated C2/C3 example files, read by the Python and the C++ tests (§5)
       index.yaml

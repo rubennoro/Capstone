@@ -2,7 +2,7 @@
 # in tests/frames/conftest.py)
 # changes: importable module (test folders have no __init__.py); RawDecoder reads "jpeg" frames (the H.264 keyframe
 # rule is gone with H.264); raw_packets pairs by the nearest frame, each main packet sent half an ultrawide period after
-# capture; V2_RIG is rigs/rig_pi_v2_640.yaml (both cameras 640x480: the only rig carried over); station files use the
+# capture; LIVE_RIG is ../contracts/rigs/rig_pi_v3_640.yaml (training's rig_pi_v3 at 640x480, generated); station files use the
 # laptop station schema (station_helpers.write_station with a frames: section); fast_overrides without the dropped
 # keys.
 """Helpers and test-only fakes for the frames tests (STRUCTURE.md 12)."""
@@ -25,12 +25,12 @@ from policy_deploy.frames.packet_pairer import PacketPairer
 
 TESTS = Path(__file__).resolve().parent / "frames"
 FOLDER = paths.folder()
-V2_RIG = FOLDER / "rigs" / "rig_pi_v2_640.yaml"
+LIVE_RIG = FOLDER.parent / "contracts" / "rigs" / "rig_pi_v3_640.yaml"   # generated: frames/deploy_rig.py
 SMALL_RIG = TESTS / "data" / "rig_small.yaml"
 MAIN_SIZE = (160, 90)          # the small rig, (width, height)
 UW_SIZE = (128, 96)
-V2_MAIN_SIZE = (640, 480)      # the real rig file
-V2_UW_SIZE = (640, 480)
+LIVE_MAIN_SIZE = (640, 480)      # the real rig file
+LIVE_UW_SIZE = (640, 480)
 PERIOD_NS = 33_333_333
 HALF_PERIOD_NS = PERIOD_NS // 2
 

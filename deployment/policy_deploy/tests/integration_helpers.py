@@ -12,11 +12,11 @@ from pathlib import Path
 import pytest
 import yaml
 from deploy_contracts import LinkSettings
-from station_helpers import free_port
+from station_helpers import RECORDED_EPISODE, free_port
 
 from policy_deploy.contracts import paths
 
-EPISODE = Path("~/Downloads/episode_000045").expanduser()
+EPISODE = RECORDED_EPISODE
 
 
 def need_episode() -> None:

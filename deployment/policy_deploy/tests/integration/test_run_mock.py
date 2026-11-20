@@ -1,5 +1,5 @@
 """`policy_deploy run --mock` end to end (STRUCTURE.md 12.3): the launcher starts the fake PC, frames with the fake
-Pi playing ~/Downloads/episode_000045, policy hold_still and the manager with a scripted operator."""
+Pi playing station_helpers.RECORDED_EPISODE, policy hold_still and the manager with a scripted operator."""
 from __future__ import annotations
 
 from integration_helpers import (jsonl, need_episode, need_pc_ports_free, run_policy_deploy, session_dir,

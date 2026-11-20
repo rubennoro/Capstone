@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 import copy
+import os
 import socket
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from policy_deploy.contracts import paths
+
+# The recorded Pi episode the real-recording tests play: the --mock default (config/frames_process.yaml
+# mock_episode), or POLICY_DEPLOY_TEST_EPISODE. Tests that need it skip when it is not on this machine.
+RECORDED_EPISODE = Path(os.environ.get("POLICY_DEPLOY_TEST_EPISODE") or yaml.safe_load(
+    (paths.folder() / "config" / "frames_process.yaml").read_text())["mock_episode"]).expanduser()
 
 
 def free_port() -> int:

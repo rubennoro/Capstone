@@ -2,6 +2,8 @@
 franka_control does. Raw bytes over a ZeroMQ REQ socket."""
 from __future__ import annotations
 
+import time
+
 import pytest
 import zmq
 from deploy_contracts import ErrorReply, decode, load_index
@@ -21,7 +23,12 @@ LAPTOP = {e.name: e for e in build_examples()}
 
 @pytest.fixture(scope="module")
 def pc(tmp_path_factory):
-    fake = make_fake_pc(tmp_path_factory.mktemp("fake_pc"), home_duration_s=0.05)
+    # The stored set_waypoints examples are timed ~123,457 s into the PC clock; the fake PC's clock starts at boot, so
+    # on a machine up less than that they were "in the future" and the gate did not skip them. A clock 10^6 s ahead
+    # keeps them long past whatever the uptime.
+    ahead_ns = 10**15
+    fake = make_fake_pc(tmp_path_factory.mktemp("fake_pc"), home_duration_s=0.05,
+                        laptop_clock=lambda: time.monotonic_ns() + ahead_ns)
     fake.start()
     sock = zmq.Context.instance().socket(zmq.REQ)
     sock.setsockopt(zmq.LINGER, 0)

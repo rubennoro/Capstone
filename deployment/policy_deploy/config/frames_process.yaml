@@ -2,8 +2,8 @@
 # override any key here, and nothing else. Durations in seconds unless the name says _ms or _ns. Relative paths: from
 # deployment/policy_deploy/. The Pi's address and every port are in station.yaml; nothing here may name a key of
 # deployment/contracts/*.yaml.
-rig_file: rigs/rig_pi_v2_640.yaml        # the rig as the Pi streams it: both cameras 640x480 @ 30 (rig_pi_v2 scaled)
-mock_episode: ~/Downloads/episode_000045 # the recorded Pi episode the fake Pi plays (--mock only)
+rig_file: ../contracts/rigs/rig_pi_v3_640.yaml   # training's rig as the Pi streams it (640x480 both): generated, deploy_rig
+mock_episode: ~/Downloads/data/incoming/episode_000152   # the recorded Pi episode the fake Pi plays (--mock only; also the tests')
 default_exposure_ns: 5000000             # used when exposure_us is 0, capped at half the rig frame period
 
 receive:
