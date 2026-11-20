@@ -10,7 +10,7 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17; teleop added 2026-11-18; teleop-train 2026-11-19)
+## Current state (2026-10-17; teleop added 2026-11-18; teleop-train 2026-11-20)
 
 - **Teleop data collection** (this branch, `rnoro/teleop-collect-deploy`): `deployment/teleop_collect/` is built and
   tested; it has not run on hardware yet.
@@ -27,19 +27,24 @@ Running status between working sessions. Update it at the end of each conversati
     and the cross test against `franka_control --mock`; `contracts` has 582. The env is `~/envs/teleop_collect`.
     - Known flaky: `test_failure_rows.py::test_a_camera_down_mid_episode...`, a race in the test, not fixed.
 
-- **teleop-train** (this branch, `teleop-train/`, commits `745390a`, `fd230a8` + wave 3): teleop episodes → the
-  training `.zarr.zip` + `package.json` that `rnoro/training`'s `train/` uses as-is.
+- **teleop-train** (this branch, `teleop-train/`, `745390a`..`0fdec8e`, all pushed): teleop episodes → the training
+  `.zarr.zip` + `package.json` that `rnoro/training`'s `train/` uses as-is. Built and checked end to end on mock
+  episodes; not yet run on real teleop data.
   - Commands: `teleop_train convert <task>`, then `teleop_train package <task> <dataset>`. Output goes into
     `~/Capstone/data/<task>/`.
-  - Training: `train/all.sh <task> <dataset>` (no `--pull`/`--package`).
+  - Training: `cd ~/Capstone && train/all.sh <task> <dataset> --policy plain|prompting` (no `--pull`/`--package`).
   - Docs: `teleop-train/{PLAN,DESIGN,DIRECTIONS}.md`.
   - Tests: 340. The env is `~/envs/teleop_train`.
   - Images match the deployment bit for bit (same decoder, same `ImagePrep` @ `ea9f7fb`). `package` refuses a TCP or
     rig other than `deployment/contracts`'.
   - Verified on real `teleop_collect run --mock` episodes, and the zip loads in `UmiTaskDataset` under
     `umi_policy_dunet` and `umi_policy_dunetp`.
-  - Policy choice on `rnoro/training`: `train/all.sh` / `submit.sh` `--policy plain|prompting` (`umi_policy_dunet` /
-    `umi_policy_dunetp`), passed to the cluster and recorded per run. The default is prompting.
+  - Policy choice: `rnoro/training` `ee168f2` (2026-11-20, pushed; `~/Capstone` is on it) adds
+    `--policy plain|prompting` to `submit.sh`, `go.sh` and `all.sh` (`umi_policy_dunet` / `umi_policy_dunetp`). It is
+    passed to the cluster and frozen with each run. Without it, `TRAIN_CONFIG` decides (behavior prompting by
+    default). `--attention` needs prompting.
+  - Other branches (`rnoro/training`, `rnoro/final-deployment`, data-work) are read only from this branch's
+    sessions: their changes are reported as dependencies, never made here.
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -88,16 +93,18 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Next time
 
-- Teleop:
-  1. Push `rnoro/teleop-collect-deploy` (all local commits so far).
-  - Other branches are read only from this branch's sessions.
-  - Train a first teleop dataset (`teleop-train/DIRECTIONS.md`): `teleop_train package <task> <dataset>`, then
-    `cd ~/Capstone && train/all.sh <task> <dataset> --policy plain`.
-  2. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md`, measuring the workspace box first, then
-     the `console` steps.
-  3. On the laptop: `teleop_collect/DIRECTIONS.md`. Set the real addresses in `link.yaml` on both machines and in
-     `station.yaml`.
-  4. First teleop: slow mode, hand on the user stop.
+- Teleop (everything is pushed; `rnoro/teleop-collect-deploy` @ `0fdec8e` + this AGENTS.md update):
+  1. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md` (the PC at `final-deployment` `ea9f7fb`, the
+     commit this branch's `contracts/` copies), measuring the workspace box first, then the `console` steps.
+  2. On the laptop: `teleop_collect/DIRECTIONS.md`. Set the real addresses in `link.yaml` on both machines and in
+     `station.yaml`. Check the TCP axes at home with `pc_probe --seconds 3 --axes` (x right, y back, z down).
+  3. First teleop: slow mode, hand on the user stop. Record a task, a few `success` demos under 60 s each.
+  4. Train it (`teleop-train/DIRECTIONS.md`): `teleop_train package <task> <dataset>`, then
+     `cd ~/Capstone && train/all.sh <task> <dataset> --policy plain`.
+  - Watch for: `final-deployment` plans a PC start-pose key (`p`), with `start` refused away from the start pose.
+    When it lands, teleop_collect's home/start flow and `contracts/` need another re-sync from it.
+  - Open: the flaky teleop_collect test `test_failure_rows.py::test_a_camera_down_mid_episode...` (a race in the
+    test).
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):
    - Decide: Panda vs FR3; gripper actuator; buy lenses (2.1 mm + ~1.55 mm fisheye M12 on IMX219); where the 1 kHz
      loop runs; v_max and the success rule for evaluation; whether to commit the new work.
