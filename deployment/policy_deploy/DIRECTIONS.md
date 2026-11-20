@@ -392,6 +392,20 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
 
 5. **Every run after that:** the daily routine at the top (`check`, then `run`). The chosen policy stays chosen.
 
+6. **Once episodes work: record what the policy sees.** Off by default. Add under `manager:` in `station.yaml`
+   (`use` keeps these lines):
+
+   ```yaml
+   manager:
+     save_tap: true          # one .npz per step sent to the arm
+     tap_images_every: 1     # the images in every one (default 10)
+   ```
+
+   Each episode goes to `<session>/manager/tap/ep_NNNN/chunk_K.npz`: the policy's exact input images (`main`,
+   `ultrawide`: the last 2 frames, 224×224 RGB), the poses, the predicted chunk, the waypoints and the PC's reply.
+   One file per policy step (a few per second, not the camera's 30 fps); about 600 KB each, tens of MB per episode.
+   Turn it off (`false`) while debugging timing.
+
 **What the laptop needs.** Measured with `run_001` (the same model size) on an RTX 3050 Ti laptop GPU (4 GB, 35 W
 power cap, a low-end GPU):
 
