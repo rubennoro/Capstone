@@ -7,9 +7,9 @@ Decided with the user on 2026-11-16. Nothing here changes without asking.
 
 ## Scope
 
-- In: lens calibration (optional), `map`, `calibrate` (gripper), `run`, `status`, the checks, DIRECTIONS.md.
-- Out for now: packaging (`umiproc/dp/package` exists as part of the copy but is not wired to a command), camera–IMU
-  calibration (OpenICC), IMU Allan variance.
+- In: lens calibration (optional), `map`, `calibrate` (gripper), `run`, `package` (the copied `umiproc/dp/package`,
+  added 2026-11-19 with `--episodes N`), `status`, the checks, the analysis commands (`viz/`), DIRECTIONS.md.
+- Out for now: camera–IMU calibration (OpenICC), IMU Allan variance.
 
 ## Self-contained: the dataproc copy
 

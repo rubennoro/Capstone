@@ -681,15 +681,42 @@ rsync -av --exclude .staging <jetson>:data/umi/tasks/<FOLDER>/ ~/Capstone/data/<
 Copies the whole folder, links included, without the work-in-progress `.staging/`. Running it again copies only
 what is new.
 
-### 8.3 Training: the missing step
+### 8.3 Package the episodes for training
 
-The training scripts are on branch `rnoro/training` (`train/README.md` there:
-`git -C ~/Capstone-data-work show rnoro/training:train/README.md`). Today they expect dataproc's layout
-(`~/data/tasks/<folder>` on the Jetson) and a dataset zip made by `dataproc package`.
+On the Jetson, once the folder's demos are done:
 
-**Packaging umiproc episodes into a training dataset is not built yet** ([TODO.md](TODO.md) "Later"). The missing
-`umiproc package` step will gather a folder's `episode_N/processed/episode.zarr` files into one `<dataset>.zarr.zip`
-plus `package.json` in the iPhUMI format, which the training scripts then upload and train on.
+```bash
+umiproc package <DATASET> <FOLDER> [<FOLDER> ...]
+```
+
+Gathers every finished `episode_N` of the folders (in recording order; `failed/` and `.staging/` never go in) into one
+training file, plus a `package.json` that lists what went in:
+
+```
+~/data/umi/datasets/<label>/<DATASET>/<DATASET>.zarr.zip
+                                      package.json
+```
+
+`<label>` is the folders' task label, or `multi` when the folders have different labels. `<DATASET>` is a new name
+(letters, digits, `_`, `-`). Options:
+
+- `--episodes N`: keep only the first N episodes. Smaller datasets are then subsets of larger ones, for comparing
+  how much data is needed.
+- `--overwrite`: replace an existing dataset with that name.
+
+When it finishes, it prints the number of episodes and steps, and the commands that copy the zip to the cluster
+(`~/CapstoneProject/datasets/<label>/<DATASET>/`) and start training there.
+
+### 8.4 Training
+
+The training scripts are on branch `rnoro/training`. Read `train/README.md` there:
+`git -C ~/Capstone-data-work show rnoro/training:train/README.md`. They expect the dataset at
+`~/Capstone/data/<FOLDER>/package/<DATASET>/` on the laptop. Copy it there:
+
+```bash
+mkdir -p ~/Capstone/data/<FOLDER>/package/<DATASET>
+rsync -av <jetson>:data/umi/datasets/<label>/<DATASET>/ ~/Capstone/data/<FOLDER>/package/<DATASET>/
+```
 
 ## Appendix A: the A/B comparison
 

@@ -10,35 +10,34 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-11-18)
+## Current state (2026-11-19)
 
-- **`umi-processing/` (package `umiproc`, branch `rnoro/data-work-auto`, local commits, NOT pushed): the active
-  Pi-rig pipeline.** Replaces dataproc's SLAM path with UMI's recipe: one mapping clip per session, every demo
-  localized in that map, then gripper calibration and run.
-  - **Start with `umi-processing/DIRECTIONS.md`** (rewritten 2026-11-18: step by step, generic placeholders; every
-    command ends with a `Next:` line), `COLLECTION.md` (real lens/map recordings and what made them good),
-    `PROBLEM.md`, `TODO.md`, `docs/DESIGN.md` (decisions; nothing changes there without asking the user).
+- **`umi-processing/` (package `umiproc`, branch `rnoro/data-work-auto`, pushed 2026-11-19): the active Pi-rig
+  pipeline.** Replaces dataproc's SLAM path with UMI's recipe: one mapping clip per session, every demo localized in
+  that map, then gripper calibration, run, package.
+  - **Start with `umi-processing/DIRECTIONS.md`** (step by step, generic placeholders; every command ends with a
+    `Next:` line), `COLLECTION.md` (real lens/map recordings, results, what made them good), `PROBLEM.md`, `TODO.md`,
+    `docs/DESIGN.md` (decisions; nothing changes there without asking the user).
   - Self-contained: dataproc is **copied** into `umiproc/dp/`. Data root `~/data/umi`. Layout: `lens/ map/ calibrate/
-    run/` (steps), `slam/` (config, inputs, runner, log, trajectory), `viz/` (analysis), shared top-level modules.
-  - Built: lens-board, lens-calibrate (checks only warn; copy to ~/data/analysis/lens_calibration/, laptop
-    `UMIPROC_ANALYSIS=~/Downloads/data/analysis`), map (several maps -> automatic cut to the longest piece,
-    `--first-map` alternative; only M1 blocks; stores the map points), calibrate, run, status, plot-run,
-    slam-video / slam-3d (task folder -> `tasks/<folder>/analysis/`; slam-3d declutters, colours points from the
-    photos, shows keyframe photos). ORB-SLAM3 fork `b741dca` + **12 patches** (0012 `System::GetAtlas` for the
-    points export), rebuilt on the laptop; **the Jetson needs `pip install -e umi-processing` + `native/build.sh`
-    again**. Full fast suite: 1124 passed before the slam/ move (re-run after it was in progress).
-  - Lens: try 175 (rigid board, 2026-11-18) is the best so far (fx 449, fit 0.48 px, but 14 views; edges and lower
-    left missing). **Applied** on the laptop (`~/data/umi/rigs/rig_pi_v3.lens.yaml`).
-  - Maps: clip 137 = task folder `PICK_TEST1` on the laptop (lens 175): one map, M1-M4 pass, **scale metric
-    (s = 0.996)**, M5 warns (19 sightings, tag spread 0.2 cm). Clip 128 (lens 126): passes only after the automatic
-    cut to 0-32 s; scale not measurable. Results: `~/Downloads/data/analysis/mapping/episode_0001{28,37}/`.
-  - `umiproc run` checked on a cut map (episode 137 against map 128: ends cleanly with stopped_lost, another
-    scene). No real demos + gripper calibration recorded yet. **Packaging episodes for training is not built.**
-  - **In progress (uncommitted): dense coloured point cloud trial** `umiproc/viz/dense_3d.py` + `dense_3d_viewer.py`
-    (EXPERIMENTAL, not a command; `python -m umiproc.viz.dense_3d PICK_TEST1`; OpenCV-only multi-view stereo from
-    the keyframes + every 5th frame with SLAM poses -> `tasks/PICK_TEST1/analysis/dense_3d.{html,ply,json}`, copy in
-    `~/Downloads/data/analysis/mapping/episode_000137/PICK_TEST1/analysis/`). Built by a subagent; check its state.
-    Upgrade path if too gappy: Gaussian splatting on the laptop GPU (separate env, torch + gsplat).
+    run/` (steps), `package.py`, `slam/` (config, inputs, runner, log, trajectory), `viz/` (analysis), shared modules.
+  - Commands: lens-board, lens-calibrate, map (automatic cut to the longest map piece, `--first-map`; only M1
+    blocks; stores the map points), calibrate, run, **package** (`DATASET FOLDER... [--episodes N]`), status,
+    plot-run, slam-video, slam-3d (analysis -> `tasks/<folder>/analysis/`). ORB-SLAM3 fork `b741dca` + 12 patches
+    (0012 `System::GetAtlas`). **The Jetson needs `pip install -e umi-processing` + `native/build.sh` again.**
+  - Note: the settings text hashed into the SLAM fingerprint keeps the old module name `umiproc.slam_inputs` on
+    purpose (changing it makes every map out of date).
+  - Full suite 1124 passed, 3 skipped after the slam/ move (`a65f99f`).
+  - Lens 175 (rigid board) applied on the laptop (`~/data/umi/rigs/rig_pi_v3.lens.yaml`).
+  - **First real sessions done on the laptop:** `PICK_TEST1` (map 137, 30 demos, 1 failed) and `PICK_TEST2` (map
+    181, 32 demos, 1 failed); both maps metric (s 0.996 / 0.955), M5 warns. Datasets in
+    `~/data/umi/datasets/multi/`: `pick1-double-v2` (62 demos) and `pick1-double-ep{15,20,25}-v1` (first N per
+    folder). Details: COLLECTION.md.
+  - **Experimental 3-D scene views** (`umiproc/viz/`, not commands, run with `python -m`): `dense_3d` (dense
+    point cloud), `mesh_3d` (TSDF textured mesh; needs scikit-image, installed in env_umiproc but not in
+    pyproject), `splat_3d` (Gaussian splatting, separate env `~/envs/env_splat`, torch + gsplat, ~8 GB; most
+    photo-like, PSNR 28 dB). Outputs for PICK_TEST1 in `~/Downloads/data/analysis/mapping/episode_000137/
+    PICK_TEST1/analysis/`.
+  - Laptop `/home` is ~98 % full.
   - The dataproc SLAM-mask work ([HANDOFF_SLAM_MASK.md](HANDOFF_SLAM_MASK.md), commit `e69b4b1`) is **parked**.
 
 - **`dataproc` (branch `rnoro/data-work`, folder `data-processing/`): Jetson-side processing of the Pi 5 rig's
@@ -121,15 +120,12 @@ Running status between working sessions. Update it at the end of each conversati
 ## Next time
 
 0. **umi-processing** (resume here; the user runs real commands on the Jetson):
-   - If the dense trial is unfinished: look at `umi-processing/umiproc/viz/dense_3d*.py` and
-     `~/data/umi/tasks/PICK_TEST1/analysis/dense_3d.*`; finish it (run `python -m umiproc.viz.dense_3d PICK_TEST1`,
-     look at headless screenshots), show the user, and if it is good make it `umiproc dense-3d FOLDER` (+ tests,
-     DIRECTIONS 4.6). If it is too gappy: propose Gaussian splatting (laptop GPU, separate env).
-   - Check the full test suite passed after the slam/ move (`a65f99f`), then push `rnoro/data-work-auto` when the
-     user says so.
-   - Jetson: pull, `pip install -e umi-processing`, `native/build.sh` (patch 0012), apply lens 175 there too, map.
-   - A real session: test demos right after a mapping clip, gripper calibration, demos (DIRECTIONS 4-7).
-   - Build `umiproc package` (episodes -> zarr zip + package.json for training; TODO.md).
+   - Train on the `pick1-double*` datasets (training branch `rnoro/training`, DIRECTIONS 8.4).
+   - Note: the `ep{15,20,25}` datasets hold the first N demos **per folder**. The committed `--episodes N` keeps
+     the first N **overall**, so they were made some other way; check before re-making them.
+   - Pick one 3-D view (likely splatting) to make into a command, or drop the experiments; free disk space.
+   - Jetson: pull, `pip install -e umi-processing`, `native/build.sh` (patch 0012), apply lens 175 there too.
+   - Record a lens calibration that reaches the edges and corners (COLLECTION.md).
 0. `dataproc` (superseded for SLAM by umi-processing; kept as is; see data-processing/README.md and docs/):
    - Confirm the 0.010 m opening tolerance.
    - On the Jetson: pull, run the tests, then the first real session: `dataproc calibrate block_raise <cal dir>`,

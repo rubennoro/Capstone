@@ -71,7 +71,8 @@ How to do each step: [DIRECTIONS.md](DIRECTIONS.md). Tick items off here as they
 
 ## Later
 
-- [ ] Packaging episodes for training (the copied `umiproc/dp/package` is a starting point).
+- [x] Packaging episodes for training: `umiproc package DATASET FOLDER... [--episodes N]` (the copied
+      `umiproc/dp/package`, wired to a command).
 - [ ] Camera–IMU calibration and time offset with a board (OpenICC / Kalibr) instead of CAD and 0.
 - [ ] IMU random walks from a long still recording (Allan variance), replacing the assumed values.
 - [ ] Deployment reads the same rig and lens files, so the robot sees images undistorted the same way as training.

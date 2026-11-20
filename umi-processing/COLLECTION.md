@@ -19,7 +19,7 @@ image edges and in all 7 cells. No recording so far reaches all of these.
 | 125 | bare paper held by one edge; it bent; never close, never lower left | 1.67 / 2.02 px | 14 | 524 px | bad: bent paper |
 | **126** | bare paper **held taut with two hands**; still not far enough into the corners or the lower left | **0.69 / 0.90 px** | 19 | 464 px | **best of the 2026-11-16 tries; used for the maps below** |
 | 127 | loose sheets on the table, rig moved over them; curled edges, board stayed in the middle | 1.83 / 4.27 px | 19 | 471 px | bad: curled sheets, no edge coverage |
-| **175** | (2026-11-18; how it was held was not written down: add it) | **0.48 / 0.64 px** | 14 | 449 px | **lowest fit error so far**, but few views; edges, lower left and top corners still missing. Not yet tried on a map |
+| **175** | (2026-11-18, rigid board; how it was held was not written down: add it) | **0.48 / 0.64 px** | 14 | 449 px | **lowest fit error so far; the lens of the `PICK_TEST1` and `PICK_TEST2` maps below** (both measure the scale correctly). Few views; edges, lower left and top corners still missing |
 
 What made the difference:
 
@@ -66,7 +66,36 @@ What went wrong:
 Results: `~/Downloads/data/analysis/mapping/episode_000128/` (attempts `1_…` to `4_…`; attempt 4 has the 3-D page
 `analysis/slam_3d.html` and the videos).
 
-### Episode 137 (2026-11-18, about 44 s)
+### Episode 137 (2026-11-18, about 44 s): task folder `PICK_TEST1`
 
-Not mapped yet. (Run against the clip-128 map as a smoke test of `umiproc run`, it failed to localize, as expected:
-a different session.)
+Lens 175, whole clip, no cut needed. **Passed, the best map so far**:
+
+- M1: one map from the start (58 keyframes, 2600 points), no resets.
+- M2 and M3 pass (every frame found again).
+- **M4 passes: the scale is metric (s = 0.996)**.
+- M5 warns only because the tag was seen 19 times (limit 20). Its position is steady (0.2 cm spread) and level (3.7°).
+
+Then 30 demos passed and 1 failed (episode 165: 9 frames lost, limit 5). Gripper calibration from episode 179
+(opening 4.4–13.4 cm).
+
+What was good: lens 175, slow strokes up/down and sideways early in the clip (that is what makes M4 measurable), a
+flat tag, no fast rises.
+
+Results: `~/Downloads/data/analysis/mapping/episode_000137/PICK_TEST1/analysis/`. That folder holds the slam-video and
+slam-3d outputs, plus the experimental 3-D scene views: `dense_3d.html` (a point cloud), `mesh_3d.html` (a textured
+surface) and `splat_3d.html` (Gaussian splatting, the most photo-like).
+
+### Episode 181 (2026-11-19, about 52 s): task folder `PICK_TEST2`
+
+Lens 175. **Passed**:
+
+- M1: one map (72 keyframes, 3107 points). Two early restarts were dropped automatically: tracking was lost right
+  after starting from the tag.
+- M2 and M3 pass.
+- **M4 passes (s = 0.955)**.
+- M5 warns: 55 sightings, but the tag's position spreads about 1.1 cm (limit 1 cm).
+
+Then 32 demos passed and 1 failed (episode 204: 10 frames lost, limit 5). Gripper calibration from episode 217.
+
+Both folders were packaged together in `~/data/umi/datasets/multi/`: `pick1-double-v2` holds all 62 demos, and
+`pick1-double-ep{15,20,25}-v1` hold the first 15/20/25 demos of each folder (a data-scaling comparison).
