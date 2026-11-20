@@ -80,8 +80,9 @@ laptop: `policy_deploy use <run folder>` (laptop directions, "A trained policy")
 
 6. **Each episode:** on the **PC**, `h` (home), then `p` (start pose: the arm goes to where the training demos
    started and the hand opens); then on the **laptop**, `c` (start), and `y` / `n` (end it as success / failure).
-   Repeat from the PC's `h`. No laptop key moves the arm to a pose. The start pose is measured once (PC directions,
-   step 10, "The start pose"); until then `p` is refused and `c` starts wherever the arm is.
+   Repeat from the PC's `h`. No laptop key moves the arm to a pose. The start pose is in the PC's `station.yaml` (a first
+   value from the simulation; checked on the arm in PC directions step 10, "The start pose"); `c` is refused until the
+   arm is there.
 
 **Always the PC first, then the laptop.** Stop the arm at any time with `s` on either machine, or the user stop.
 

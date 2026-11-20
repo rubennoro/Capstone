@@ -3,6 +3,11 @@ station_version: 1
 session_root: ~/control_deploy_sessions     # one folder per run and per console session
 franka_control:                             # overrides of franka_control/config.yaml keys (not libfranka_version)
   realtime: ignore                          # TODO: enforce once the PC runs a PREEMPT_RT kernel (PLAN §13)
+  homing:
+    # the start pose (key p). From the simulation (rnoro/main-sim: TCP 0.235 m, table at base z 0): TCP about
+    # (0.531, -0.159, 0.160) m, 48 deg from straight down, fingers toward the robot's left; the object about
+    # (0.53, 0.00) on the table. Not yet checked on the arm: control_deploy/DIRECTIONS.md step 10, "The start pose".
+    q_start_rad: [-0.5928536, 0.5219462, -0.0897168, -1.5930073, 0.6595725, 1.5068439, -1.5301472]
 console:                                    # the bring-up console's step sizes (6.5)
   hold_s: 3.0
   move_m: 0.015

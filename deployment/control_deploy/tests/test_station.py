@@ -10,7 +10,8 @@ from control_deploy.station import ConsoleSettings, Station
 
 def test_the_real_station_loads():
     s = Station.load(paths.default_station())
-    assert s.franka_control == {"realtime": "ignore"}
+    assert s.franka_control == {"realtime": "ignore", "homing": {"q_start_rad": [-0.5928536, 0.5219462, -0.0897168,
+                                -1.5930073, 0.6595725, 1.5068439, -1.5301472]}}
     assert s.console == ConsoleSettings(hold_s=3.0, move_m=0.015, rotate_deg=2.0, gripper_delta_m=0.02, segment_s=2.0,
                                         out_of_box_m=0.03)
     assert s.session_root.name == "control_deploy_sessions" and s.session_root.is_absolute()

@@ -385,7 +385,7 @@ the laptop is driving an episode; `s` and `q` are never refused):
 | Key | Does |
 |---|---|
 | `h` | home the arm: all 7 joints to `homing.q_home_rad`, slow joint move (as verified) |
-| `p` | **2026-11-20.** start pose: only from home (joints within `homing.at_pose_tol_rad`), the same joint move to `homing.q_start_rad` (to be measured on the arm with `pc_probe --start-pose`: the training demos' start, fingertips ~48° from straight down, ~16 cm above the table), the hand opened fully; at the end the TCP must be inside the box and the cone, else `fault`. `q_start_rad` is null until measured: `p` refused, `start` unchanged |
+| `p` | **2026-11-20.** start pose: only from home (joints within `homing.at_pose_tol_rad`), the same joint move to `homing.q_start_rad` (to be measured on the arm with `pc_probe --start-pose`: the training demos' start, fingertips ~48° from straight down, ~16 cm above the table), the hand opened fully; at the end the TCP must be inside the box and the cone, else `fault`. `q_start_rad` is null in config.yaml (then `p` is refused and `start` unchanged); `control_deploy/station.yaml` sets a first value from the simulation, checked on the arm with `pc_probe --start-pose` |
 | `g` | home the hand: the Franka Hand's own homing (fingers close and reopen to calibrate) |
 | `s` | stop: hold where it is |
 | `q` / Ctrl-C | stop the arm and exit |

@@ -177,8 +177,8 @@ franka_control:
     com_m: [0.0, 0.0, 0.05]        # its centre of mass from the flange (m, from CAD)
   gripper:
     width_offset_m: 0.0            # real fingertip opening minus the width the hand reports
-  # homing:                       # the start pose, once measured (step 10, "The start pose"): uncomment and paste
-  #   q_start_rad: [...]           # the line pc_probe --start-pose prints (7 joint angles, rad)
+  homing:                          # already there: the start pose (step 10, "The start pose")
+    q_start_rad: [...]             # 7 joint angles (rad): the simulation's, or the line pc_probe --start-pose prints
 ```
 
 | Value | How to get it |
@@ -187,7 +187,7 @@ franka_control:
 | the home pose (`homing.q_home_rad`) | Keep the default. In step 10, after `h`, the `tcp x y z` on the status line must be inside the box. |
 | `load.mass_kg`, `load.com_m` | Weigh the rig without the Franka Hand. While it is 0, `check` warns and the arm sags a few mm. |
 | `gripper.width_offset_m` | In step 10: measure the fingertip gap with calipers and compare it with `grip` on the status line. |
-| the start pose (`homing.q_start_rad`) | In step 10, below "The start pose". Until it is set, `p` is refused (`homing.q_start_rad is not set`) and episodes start wherever the arm is. |
+| the start pose (`homing.q_start_rad`) | Already set, from the simulation; check it in step 10, "The start pose". Without it, `p` is refused (`homing.q_start_rad is not set`) and episodes start wherever the arm is. |
 
 - **Good:** `~/envs/control_deploy/bin/control_deploy check` shows `config  PASS`, `payload  PASS`, and the `todo`
   row no longer lists these keys (it may still list the gains, collision thresholds and cone: those are fine).
@@ -202,8 +202,8 @@ Runs everything with a fake arm on this PC only, to check the install. `--local`
 ~/envs/control_deploy/bin/control_deploy run --mock --local
 ```
 
-Press `h`, wait for `homing finished`, then `g`, wait for `hand homing finished`, then `s`, then `q`. (`p` answers
-`refused: homing.q_start_rad is not set` until the start pose is measured, step 10.)
+Press `h`, wait for `homing finished`, then `p`, wait for `start pose reached`, then `g`, wait for `hand homing
+finished`, then `s`, then `q`.
 
 - **Good:** see the `run --mock` section below. It ends with `control_deploy: franka_control stopped cleanly`.
 - **If not:** "When something fails".
@@ -227,18 +227,24 @@ The first time on the real arm, test it alone with the console before any laptop
 
    | | Aim for | The demos' range |
    |---|---|---|
-   | Fingertips tilted from straight down, pointing away from the robot, camera on top | about 48° | 38–64° |
+   | Fingertips tilted from straight down, camera on top (any horizontal direction: the object goes ahead of them) | about 48° | 38–64° |
    | Fingertips above the table | about 16 cm | 6–27 cm |
    | The object | about 16 cm ahead of the fingertips (horizontally), centred left–right, on the table | 8–23 cm |
 
    Within about ±10° and ±5 cm is fine.
+
+   `station.yaml` already has a `q_start_rad` from the simulation: the TCP at about (0.53, −0.16, 0.16) m, 48°, the
+   fingers pointing to the robot's left, so the object goes at about (0.53, 0.00) m, in front of the robot's centre.
+   **Check it first:** press `h`, then `p` (hand on the user stop), then item 3 (without pasting) and item 5. If the
+   numbers and the camera view match, keep it and skip 1–3. If not, measure your own:
+
    1. Ctrl-C `run`. In Desk, put the arm in guiding mode (FCI off) and move it by hand to the pose above, with the
       object in its place. Use a ruler for the height.
    2. Back in Desk: activate FCI. Start `run` again: the arm holds where you left it.
    3. On the laptop: `~/envs/policy_deploy/bin/python -m policy_deploy.manager.pc_probe --seconds 3 --start-pose`.
       It prints the tilt, the height and the hand opening (compare them with the table), and a `q_start_rad: [...]`
-      line. On this PC, paste that line into `control_deploy/station.yaml` under `franka_control:` → `homing:`
-      (uncomment the two lines of step 8's example). Ctrl-C `run` and start it again.
+      line. On this PC, put that line in `control_deploy/station.yaml` under `franka_control:` → `homing:`, in
+      place of the `q_start_rad:` line there. Ctrl-C `run` and start it again.
       Then commit and push it (`git commit -m "control_deploy/station.yaml: measured homing.q_start_rad"
       control_deploy/station.yaml && git push`), so the laptop's clone and the simulation get the same value.
    4. Press `h`, then `p` (hand on the user stop): the arm goes to that pose and the hand opens. `p` again: refused
