@@ -105,21 +105,19 @@ left out and why, and the next command.
 
 ## 5. Train
 
-**Choose the policy** with `TRAIN_CONFIG` in `~/Capstone/train/config.local.env`. It is read by every `train/`
-script and kept until you change it:
-
-| Policy | Line in `train/config.local.env` |
-|---|---|
-| plain diffusion | `TRAIN_CONFIG="umi_policy_dunet"` |
-| behavior prompting (the default) | no line, or `TRAIN_CONFIG="umi_policy_dunetp"` |
-
-`TRAIN_CONFIG=... train/all.sh` on the command line does not work, because `config.env` sets it again; use the file.
-Check what a run will use with `grep TRAIN_CONFIG ~/Capstone/train/config.local.env`.
+**Choose the policy** with `--policy` on each run:
 
 ```bash
 cd ~/Capstone
-train/all.sh $TASK $DATASET
+train/all.sh $TASK $DATASET --policy plain        # plain diffusion (umi_policy_dunet)
+train/all.sh $TASK $DATASET --policy prompting    # behavior prompting (umi_policy_dunetp)
 ```
+
+- **Fixed per run:** `--policy` goes to the cluster with the job and is recorded with the run, so the next run can
+  use the other one. Nothing to switch back.
+- **Without `--policy`:** the scripts train behavior prompting.
+- **Plain runs:** no rollout or attention videos (`eval.sh --attention` refuses them); the offline eval works for
+  both.
 
 `all.sh` takes the package as it is in `data/$TASK/package/$DATASET/`, because it runs without `--pull` / `--package`.
 It then uploads, runs a smoke run and the full run on an H200, waits, fetches, writes the reports, and runs the
@@ -132,13 +130,16 @@ The same, one step at a time:
 | Step | Command |
 |---|---|
 | upload | `train/upload.sh $TASK $DATASET` |
-| submit (3-epoch smoke run first) | `train/submit.sh $TASK $DATASET --smoke-first --note "teleop v1"` |
+| submit (3-epoch smoke run first) | `train/submit.sh $TASK $DATASET --policy plain --smoke-first --note "teleop v1"` |
 | watch | `train/status.sh $TASK <run> --wait` |
 | fetch | `train/fetch.sh $TASK <run>` |
 | offline eval | `train/analysis/eval.sh $TASK <run> --ckpt top1 --per-demo 8` |
 
-Hydra overrides go after `--`, e.g. `train/submit.sh $TASK $DATASET -- task.shape_meta.max_sequence_length=1800`
-(prompting with demos longer than 60 s). Details: `~/Capstone/train/README.md` and `train/DIRECTIONS.md`.
+Hydra overrides go after `--`. For example, behavior prompting with demos longer than 60 s:
+
+```bash
+train/submit.sh $TASK $DATASET --policy prompting -- task.shape_meta.max_sequence_length=1800
+``` Details: `~/Capstone/train/README.md` and `train/DIRECTIONS.md`.
 
 ## 6. Run it on the arm
 
@@ -198,5 +199,6 @@ cd ~/Capstone-teleop-collect-deploy/teleop-train && unset PYTHONPATH
 | `teleop_train convert TASK [--episodes LIST] [--force]` | episodes → per-episode training zarrs, with the checks |
 | `teleop_train package TASK DATASET [--episodes N] [--include-fail] [--overwrite]` | converted episodes → `DATASET.zarr.zip` + `package.json` |
 | both: `[--pose-source target\|measured] [--raw-root DIR] [--out-root DIR]` | |
-| `train/all.sh TASK DATASET` | (in `~/Capstone`) train end to end; the policy is `TRAIN_CONFIG` in `train/config.local.env` |
+| `train/all.sh TASK DATASET --policy plain\|prompting` | (in `~/Capstone`) train end to end: plain diffusion or behavior prompting |
+| `train/submit.sh TASK DATASET --policy plain\|prompting [--smoke-first]` | (in `~/Capstone`) submit only |
 | `policy_deploy use <run folder>` | (in final-deployment) choose the trained policy |

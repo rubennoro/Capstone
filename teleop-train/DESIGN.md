@@ -37,7 +37,7 @@ short.
       │ select (success, --episodes N), check one rig / TCP, the deployment's rig and TCP
       ▼
 ~/Capstone/data/<task>/package/<dataset>/<dataset>.zarr.zip + package.json    package
-      │ cd ~/Capstone && train/all.sh <task> <dataset>   (TRAIN_CONFIG: umi_policy_dunet | umi_policy_dunetp)
+      │ cd ~/Capstone && train/all.sh <task> <dataset> --policy plain | prompting
 ```
 
 Both clocks are already mapped to the laptop's by teleop_collect, so no clock work happens here:

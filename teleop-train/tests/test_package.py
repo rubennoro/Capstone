@@ -560,9 +560,9 @@ def test_cli_package(tp, monkeypatch, capsys):
     assert any("episode_002" in line and "outcome fail (use --include-fail)" in line for line in out)
     assert any(line.startswith("warning: episode_001: 75.0 s") for line in out)
     assert any(line.startswith(f"wrote {tp.zip_path('ds1')} (") for line in out)
-    assert "  cd ~/Capstone && train/all.sh pick_test ds1" in out
-    assert any('TRAIN_CONFIG="umi_policy_dunet" in ~/Capstone/train/config.local.env' in line for line in out)
-    assert any("umi_policy_dunetp (behavior prompting)" in line for line in out)
+    assert out[out.index("next, plain diffusion:") + 1] == "  cd ~/Capstone && train/all.sh pick_test ds1 --policy plain"
+    assert out[out.index("or behavior prompting:") + 1] == (
+        "  cd ~/Capstone && train/all.sh pick_test ds1 --policy prompting")
     assert any("LOCAL_DATA_ROOT in train/config.local.env must point at " + str(tp.out_task_dir.parent) in line
                for line in out)
 
@@ -610,7 +610,7 @@ def test_cli_with_real_convert(tmp_path, monkeypatch, capsys):
     before = se.tree_hash(task_dir)
     assert cli.main(["package", TASK, "e2e", "--raw-root", str(raw_root), "--out-root", str(out_root)]) == 0
     out = capsys.readouterr().out
-    assert "  cd ~/Capstone && train/all.sh pick_test e2e" in out.splitlines()
+    assert "  cd ~/Capstone && train/all.sh pick_test e2e --policy plain" in out.splitlines()
     assert se.tree_hash(task_dir) == before
     t = paths.task_paths(TASK, raw_root, out_root)
     rec = json.loads(t.package_json("e2e").read_text())
