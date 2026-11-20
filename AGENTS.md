@@ -12,8 +12,8 @@ Running status between working sessions. Update it at the end of each conversati
 
 ## Current state (2026-11-20, 02:10)
 
-- **Branch `rnoro/training` (this checkout) holds `train/`: the training workflow for rig data.** Local commits only,
-  not pushed. Run order: [train/DIRECTIONS.md](train/DIRECTIONS.md); setup for a new machine: [train/SETUP.md](train/SETUP.md);
+- **Branch `rnoro/training` (this checkout) holds `train/`: the training workflow for rig data.** Pushed to
+  `origin/rnoro/training` (2026-11-20). Run order: [train/DIRECTIONS.md](train/DIRECTIONS.md); setup for a new machine: [train/SETUP.md](train/SETUP.md);
   script details: [train/README.md](train/README.md); analysis: [train/analysis/README.md](train/analysis/README.md).
   - Flow: `pull.sh`, `upload.sh`, `submit.sh`, `status.sh`, `fetch.sh`, `analysis/*`; `all.sh` chains them (without
     `--pull/--package` it uses `data/<folder>/package/<dataset>/` as it is, e.g. a symlink to a umiproc package).
@@ -76,4 +76,3 @@ Running status between working sessions. Update it at the end of each conversati
 2. Deployment candidate: the 62-episode plain policy `PICK_DOUBLE/run_002_2026-11-19` (or the eval winner). Check that
    `~/Capstone-final-deployment` loads a plain-diffusion checkpoint before robot trials.
 3. Laptop disk: ~18 GB free with all 14 checkpoints (~23 GB) on it; move unused ones off if space gets tight.
-4. Decide whether to push `rnoro/training`.
