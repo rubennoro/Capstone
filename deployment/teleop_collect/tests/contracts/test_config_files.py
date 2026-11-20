@@ -1,7 +1,7 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/contracts/test_config_files.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/contracts/test_config_files.py @ ea9f7fb
 # changes: this package's five config files and their documented defaults (STRUCTURE.md 3.3); the C4 limits test
-# dropped; + every key of STRUCTURE.md 3.3 present, the merge rule, resolve_path, fake_pc.yaml and the rig file
-# byte-identical to the source, ProcessArgs.
+# dropped; + every key of STRUCTURE.md 3.3 present, the merge rule, resolve_path, fake_pc.yaml and the contracts rig
+# file byte-identical to the source, ProcessArgs.
 """The config files: every config/*.yaml loads, defines no contract key, holds exactly the keys of STRUCTURE.md 3.3,
 and merges with a station section as config_merge says."""
 from __future__ import annotations
@@ -73,7 +73,7 @@ def test_folders():
     assert paths.folder().name == "teleop_collect" and (paths.folder() / "teleop_collect").is_dir()
     assert paths.deployment_dir() == paths.folder().parent
     assert (paths.deployment_dir() / "contracts" / "link.yaml").is_file()
-    assert (paths.rigs_dir() / "rig_pi_v2_640.yaml").is_file()
+    assert (paths.deployment_dir() / "contracts" / "rigs" / "rig_pi_v3_640.yaml").is_file()
     assert paths.default_station() == paths.folder() / "station.yaml"
 
 
@@ -81,7 +81,7 @@ def test_documented_defaults():
     frames = load_config("frames", None)
     assert frames["select"] == {"pair_max_age_ms": 60.0, "pair_max_lead_ms": 25.0, "pair_max_reuse": 2}
     assert frames["record"] == {"queue_max_packets": 90, "clock_log_every_s": 1.0, "playback_fps": 30}
-    assert frames["server"]["poll_s"] == 0.02 and frames["rig_file"] == "rigs/rig_pi_v2_640.yaml"
+    assert frames["server"]["poll_s"] == 0.02 and frames["rig_file"] == "../contracts/rigs/rig_pi_v3_640.yaml"
     teleop = load_config("teleop", None)
     m = teleop["motion"]
     assert (m["v_max_m_s"], m["w_max_deg_s"], m["slow_factor"], m["waypoints"], m["spacing_ms"]) == (
@@ -103,8 +103,8 @@ def test_copied_files_are_byte_identical():
     if not SOURCE.is_dir():
         pytest.skip("rnoro/final-deployment checkout not here")
     assert paths.config_file("fake_pc").read_bytes() == (SOURCE / "config" / "fake_pc.yaml").read_bytes()
-    rig = "rig_pi_v2_640.yaml"
-    assert (paths.rigs_dir() / rig).read_bytes() == (SOURCE / "rigs" / rig).read_bytes()
+    rig = Path("contracts") / "rigs" / "rig_pi_v3_640.yaml"
+    assert (paths.deployment_dir() / rig).read_bytes() == (SOURCE.parent / rig).read_bytes()
 
 
 def test_merge_with_the_station(tmp_path):
@@ -118,8 +118,8 @@ def test_merge_with_the_station(tmp_path):
     assert resolve_path(s, "frames", frames, "rig_file") == tmp_path / "my_rig.yaml"     # station: its folder
     assert resolve_path(s, "frames", frames, "mock_episode") == Path("/abs/episode")
     default = load_config("frames", None)
-    assert resolve_path(None, "frames", default, "rig_file") == paths.rigs_dir() / "rig_pi_v2_640.yaml"
-    assert resolve_path(None, "frames", default, "mock_episode") == Path("~/Downloads/episode_000045").expanduser()
+    assert resolve_path(None, "frames", default, "rig_file") == paths.folder() / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
+    assert resolve_path(None, "frames", default, "mock_episode") == Path("~/Downloads/data/incoming/episode_000152").expanduser()
 
 
 def test_merge_problems_name_the_station_and_the_file(tmp_path):

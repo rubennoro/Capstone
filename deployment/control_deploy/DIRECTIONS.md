@@ -60,12 +60,12 @@ cd deployment
 
 After every `git pull`, rebuild (step 4).
 
-**The laptop's contract files are a copy of this branch at commit `2ffe641`.** If the laptop's `teleop_collect check`
-or `pc_probe` reports a `hello` mismatch naming a schema or a limit, this branch has moved past that commit. Go back
+**The laptop's contract files are a copy of this branch at commit `ea9f7fb`.** If the laptop's `teleop_collect check`
+or `pc_probe` reports a `hello` mismatch naming a schema, a limit or `F_T_TCP`, this branch has moved past that commit. Go back
 to it, then rebuild (step 4):
 
 ```bash
-git checkout 2ffe641
+git checkout ea9f7fb
 ```
 
 git keeps your local `link.yaml` and `station.yaml` edits, unless that commit changes those files: then it refuses

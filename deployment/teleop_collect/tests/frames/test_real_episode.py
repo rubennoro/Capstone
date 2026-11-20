@@ -1,11 +1,11 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_real_episode.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_real_episode.py @ ea9f7fb
 # changes: imports; the end-to-end case records an episode through R1 (the .mkv frames are the JPEGs sent, none
 # lost or twice) instead of serving C1; the pairing case unchanged.
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_real_episode.py @ 91b178b
 # changes: the recording is paired by the nearest-frame rule (a main packet sent half an ultrawide period after
-# capture), pairs judged against the PairRule window; JPEG at rig_pi_v2_640 (640x480 both, as the Pi streams); the
+# capture), pairs judged against the PairRule window; JPEG at rig_pi_v3_640 (640x480 both, as the Pi streams); the
 # shared Running from tests/frames_pipeline.py.
-"""The real Pi recording ~/Downloads/episode_000045 (main imx519 1600x1200, ultrawide imx219 1280x960, both 30 FPS):
+"""A real Pi recording (station_helpers.RECORDED_EPISODE; main imx519 1600x1200, ultrawide imx219 1280x960, 30 FPS):
 paired by the nearest-frame rule, and played by FakePiSender through the whole process and recorded through R1 at the
 deployment rig's sizes. Skipped when the recording is absent. Read only: nothing is written next to it."""
 
@@ -16,7 +16,7 @@ import csv
 
 import numpy as np
 import pytest
-from frames_helpers import EPISODE, HALF_PERIOD_NS, V2_RIG, Running, read_csv, read_mkv, wait_for
+from frames_helpers import EPISODE, HALF_PERIOD_NS, LIVE_RIG, Running, read_csv, read_mkv, wait_for
 
 from teleop_collect.frames.packet_pairer import PacketPairer
 P_MS = 1000 / 30
@@ -60,10 +60,10 @@ def test_the_whole_recording_pairs_by_the_nearest_frame():
 def test_fake_pi_to_an_episode_at_640_with_the_real_recording(tmp_path):
     """FakePiSender (the recording re-encoded as the Pi's JPEGs at 640x480) -> receiver -> R1 recording: every
     .mkv frame is the JPEG sent, every frame of the stream is written, none twice."""
-    run = Running(tmp_path / "run", EPISODE, rig_file=str(V2_RIG), mock={"max_seconds": 3.0})
+    run = Running(tmp_path / "run", EPISODE, rig_file=str(LIVE_RIG), mock={"max_seconds": 3.0})
     try:
         run.wait_ready(timeout_s=60)
-        assert run.app.rig.rig_id == "rig_pi_v2_640"
+        assert run.app.rig.rig_id == "rig_pi_v3_640"
         ep = tmp_path / "ep"
         ep.mkdir()
         assert run.start_recording(ep).ok

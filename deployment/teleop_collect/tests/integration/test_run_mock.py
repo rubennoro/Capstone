@@ -1,5 +1,5 @@
 """`teleop_collect run --mock --no-browser` end to end (STRUCTURE.md 11, PLAN 10 "End to end"): the launcher starts the
-fake PC, frames with the fake Pi playing ~/Downloads/episode_000045, teleop and the ui; ScriptedPage drives the page
+fake PC, frames with the fake Pi playing station_helpers.RECORDED_EPISODE, teleop and the ui; ScriptedPage drives the page
 over its WebSocket exactly as the browser's app.js does."""
 from __future__ import annotations
 

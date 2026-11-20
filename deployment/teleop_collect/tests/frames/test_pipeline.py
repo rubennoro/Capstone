@@ -1,4 +1,4 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_pipeline.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_pipeline.py @ ea9f7fb
 # changes: (+ pi_to_local from tests/frames_pipeline.py) the whole process against the fake Pi through R1 and U2 instead of C1: an episode is recorded and its files
 # checked (every .mkv frame the very JPEG the fake Pi sent, video_index = row, times within 2 ms of the truth, no
 # ultrawide frame twice, the summary against the CSVs); the dropped-packet, health and stats cases through R1; a
@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import pytest
-from frames_helpers import V2_RIG, Running, read_csv, read_mkv, wait_for, write_rig
+from frames_helpers import LIVE_RIG, Running, read_csv, read_mkv, wait_for, write_rig
 
 from teleop_collect.frames.errors import FatalError
 from teleop_collect.frames.recorder import FRAME_COLUMNS, PACKET_COLUMNS, RECORDING_FILES
@@ -77,7 +77,7 @@ def test_ready_record_an_episode_and_its_files(running, tmp_path):
 
 
 def test_v2_sizes_end_to_end(running, v2_episode, tmp_path):
-    run = running(v2_episode, rig_file=str(V2_RIG))
+    run = running(v2_episode, rig_file=str(LIVE_RIG))
     run.wait_ready()
     summary = record(run, tmp_path / "ep", frames=20)
     check_episode(run, tmp_path / "ep", summary)

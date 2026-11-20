@@ -116,8 +116,9 @@ without `COMPLETE` is deleted at the next start-up. Session logs go to `session_
 | `fake_pc/` | the Python stand-in for `franka_control` under `--mock` | [fake_pc/DESIGN.md](teleop_collect/fake_pc/DESIGN.md) |
 | `deployment/contracts/` | the shared C2/C3 code, a byte-for-byte copy of `rnoro/final-deployment`'s | fd:STRUCTURE.md §3 |
 
-Copied code says so in its header (`copied from` / `adapted from rnoro/final-deployment:... @ 2ffe641`, with every
-change listed). Nothing imports `policy_deploy` or `control_deploy` (`tests/test_import_rules.py`).
+Copied code says so in its header (`copied from` / `adapted from rnoro/final-deployment:... @ 2ffe641`, or `@ ea9f7fb`
+for what the 2026-11-19 re-sync took, with every change listed). The rig file is the deployment's
+`contracts/rigs/rig_pi_v3_640.yaml`, and `F_T_TCP` is `contracts/frames.yaml`'s (+45 deg about flange z since `ea9f7fb`). Nothing imports `policy_deploy` or `control_deploy` (`tests/test_import_rules.py`).
 
 ## Tests
 

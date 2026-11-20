@@ -1,4 +1,4 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/launcher/test_processes.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/launcher/test_processes.py @ ea9f7fb
 # changes: the four teleop_collect process classes (FakePcProcess, FramesProcess, TeleopProcess, UiProcess); the
 # interpreter is swapped with launcher_helpers.use_python (no station python: section); frames has the R1 and
 # preview ports (no C1 port, no imports row); teleop (was manager) has the U1 port and pc_probe, no terminal or
@@ -22,7 +22,7 @@ from teleop_collect.contracts import Station
 from teleop_collect.launcher.processes import (PROCESS_CLASSES, FakePcProcess, FramesProcess, TeleopProcess,
                                                UiProcess)
 
-RIG_OK = json.dumps({"ok": True, "rig_id": "rig_pi_v2_640", "cameras": {
+RIG_OK = json.dumps({"ok": True, "rig_id": "rig_pi_v3_640", "cameras": {
     "main": {"sensor": "imx519", "width": 640, "height": 480, "fps": 30.0},
     "ultrawide": {"sensor": "imx219", "width": 640, "height": 480, "fps": 30.0}}}) + "\n"
 PROBE_OK = check_line("C2", "pass", "100 Hz") + "\n" + check_line("hello", "pass", "rtt 2 ms") + "\n" + \
@@ -94,9 +94,9 @@ def test_frames_mock_rows(make_station, fake_python, tmp_path):
     rows = by_name(FramesProcess(station, True, None).checks())
     assert [r for r in rows.values() if r.status == "fail"] == []
     assert set(rows) == {"rig file", "R1 port", "preview port", "mock episode", "fake Pi port"}
-    assert rows["rig file"].detail.startswith("rig_pi_v2_640: main imx519 640x480@30")
+    assert rows["rig file"].detail.startswith("rig_pi_v3_640: main imx519 640x480@30")
     [cmd] = [c for c in calls(tmp_path) if "teleop_collect.frames.rig_file" in c]
-    assert cmd[-1] == "--json" and cmd[-2].endswith("rigs/rig_pi_v2_640.yaml")
+    assert cmd[-1] == "--json" and cmd[-2].endswith("contracts/rigs/rig_pi_v3_640.yaml")
 
 
 def test_frames_mock_episode_missing(make_station, fake_python, tmp_path):

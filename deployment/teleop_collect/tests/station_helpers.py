@@ -1,12 +1,14 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/station_helpers.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/station_helpers.py @ ea9f7fb
 # changes: the teleop_collect station (data_root, mock_data_root, ports mock_pi/r1/preview/u1/http, sections frames/teleop/ui/fake_pc/
 # launcher, no python section); write_station(tmp_path, *, sections, ports, pi_address) with the Pi on 127.0.0.1 by
-# default (never the real Pi); + contract_error (from policy_deploy/tests/contract_helpers.py, unchanged).
+# default (never the real Pi); + contract_error (from policy_deploy/tests/contract_helpers.py, unchanged); RECORDED_EPISODE
+# reads this package's config/frames_process.yaml, override TELEOP_COLLECT_TEST_EPISODE.
 """Temporary station files for tests: distinct free ports on 127.0.0.1, session_root, data_root and mock_data_root under the test's
 tmp_path. Plus contract_error, the contract tests' one-line check."""
 from __future__ import annotations
 
 import copy
+import os
 import socket
 from pathlib import Path
 from typing import Any, Callable
@@ -14,6 +16,13 @@ from typing import Any, Callable
 import pytest
 import yaml
 from deploy_contracts import ContractError
+
+from teleop_collect.contracts import paths
+
+# The recorded Pi episode the real-recording tests play: the --mock default (config/frames_process.yaml
+# mock_episode), or TELEOP_COLLECT_TEST_EPISODE. Tests that need it skip when it is not on this machine.
+RECORDED_EPISODE = Path(os.environ.get("TELEOP_COLLECT_TEST_EPISODE") or yaml.safe_load(
+    (paths.folder() / "config" / "frames_process.yaml").read_text())["mock_episode"]).expanduser()
 
 PORT_KEYS = ("mock_pi", "r1", "preview", "u1", "http")
 SECTIONS = ("frames", "teleop", "ui", "fake_pc", "launcher")

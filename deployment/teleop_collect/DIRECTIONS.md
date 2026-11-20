@@ -37,8 +37,8 @@ where `echo $PYTHONPATH` prints nothing (if it shows `/opt/ros/...`, run `unset 
 - Free disk: about 110 MB per 30 s episode, under `~/CapstoneTeleop`.
 - Wi-Fi on the lab router **ASUS_5g** (the PC and the Pi are on it too).
 - The PC set up and brought up first (`deployment/control_deploy/DIRECTIONS.md`, steps 1–10).
-- For the first test without hardware: the recorded Pi episode `~/Downloads/episode_000045` (step 5 says how to get
-  it).
+- For the first test without hardware: the recorded Pi episode `~/Downloads/data/incoming/episode_000152` (step 5 says
+  how to get it).
 
 ### 2. Get the code
 
@@ -118,7 +118,7 @@ The laptop must know the PC's and the Pi's addresses, and the PC's firewall must
 
 ### 5. A first run without hardware (`--mock`)
 
-Runs everything on the laptop alone: a fake PC and a fake Pi that plays `~/Downloads/episode_000045`. Nothing
+Runs everything on the laptop alone: a fake PC and a fake Pi that plays `~/Downloads/data/incoming/episode_000152`. Nothing
 connects to the PC or the Pi. Its episodes go to `~/CapstoneTeleop_mock` (`station.yaml mock_data_root`), never
 among the real ones in `~/CapstoneTeleop`.
 
@@ -126,8 +126,8 @@ The recorded episode comes from the lab laptop (a folder recorded on the Pi: `me
 their CSVs). On a fresh machine, copy it over first:
 
 ```bash
-mkdir -p ~/Downloads
-scp -r <USER>@<LAB_LAPTOP>:~/Downloads/episode_000045 ~/Downloads/
+mkdir -p ~/Downloads/data/incoming
+scp -r <USER>@<LAB_LAPTOP>:~/Downloads/data/incoming/episode_000152 ~/Downloads/data/incoming/
 ```
 
 `<USER>@<LAB_LAPTOP>` is the lab laptop's login and address.
@@ -329,7 +329,7 @@ emergency stop: nothing in the page replaces it.
 | File | What's in it |
 |---|---|
 | `task.yaml` | the task's name and one-line description, when it was created, the next episode number, the settings |
-| `episode_NNN/meta.yaml` | outcome, times, duration, counts, the PC's full `hello` (with `F_T_TCP`), commits, the rig file, the teleop settings, both clock fits |
+| `episode_NNN/meta.yaml` | outcome, times, duration, counts, the PC's full `hello` (with `F_T_TCP`), commits, the rig file (the deployment's `contracts/rigs/rig_pi_v3_640.yaml`), the teleop settings, both clock fits |
 | `episode_NNN/main.mkv`, `ultrawide.mkv` | every camera JPEG exactly as the Pi sent it, one video frame each (plays in any video player) |
 | `episode_NNN/main_frames.csv`, `ultrawide_frames.csv` | one row per video frame: `video_index` (its frame in the `.mkv`), frame number, Pi and laptop times, size |
 | `episode_NNN/packets.csv` | one row per Pi packet: times, frame numbers, the pairing verdict |
@@ -372,6 +372,17 @@ on the PC and no `teleop_collect run` going (one C3 client at a time). It never 
 
 **Good:** as step 7.
 
+**Checking the TCP axes** (the read-only check of `contracts/frames.yaml` before `settled: true`): with the arm at
+home (press `h` on the PC first), add `--axes`:
+
+```bash
+~/envs/teleop_collect/bin/python -m teleop_collect.teleop.pc_probe --seconds 3 --axes
+```
+
+**Good:** `PASS  compare_hello: all equal`, then `TCP x axis -> ...: to the robot's right`,
+`TCP y axis -> ...: back (toward the base)`, `TCP z axis -> ...: down`. "Right" means standing behind the robot,
+facing the way it faces.
+
 ### Trying the tools without hardware
 
 The stand-ins of `--mock`, each alone, in a second terminal (stop them with Ctrl-C):
@@ -402,7 +413,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ~/envs/teleop_collect/bin/python -m pytest test
 
 The first runs this package's tests, the second those of the shared C2/C3 code in `../contracts`.
 
-- **Good:** both end `... passed` with no `failed` (about 3.5 minutes, then a few seconds). Tests that need `~/Downloads/episode_000045`, or the
+- **Good:** both end `... passed` with no `failed` (about 3.5 minutes, then a few seconds). Tests that need `~/Downloads/data/incoming/episode_000152`, or the
   libfranka-less `franka_control` already built in `~/Capstone-final-deployment`, are skipped without them.
 - **If not:** don't run it during a `teleop_collect run` or with anything on ports 5620/5630 (the integration tests
   use them, and are skipped when they are busy).
@@ -432,7 +443,7 @@ up.
 | `the PC's gate rejected waypoint ...: check the workspace box and teleop.motion` | as a fault (above); then check the PC's workspace box (the PC's directions, step 8) |
 | `the PC is driving an episode for another C3 client` | stop the other laptop run, `pc_probe` or the PC's `console` |
 | `clock mismatch: ...` or a `hello` mismatch | `link.yaml` equal on both machines (step 4); then `pc_probe` (step 7) |
-| `hello equality FAIL` / `compare_hello FAIL` naming a schema or a limit | the PC's `rnoro/final-deployment` moved past `2ffe641`, the commit this branch's `../contracts` was copied from: on the PC, `git checkout 2ffe641` and rebuild (the PC's directions, step 2), or re-copy `contracts/` from the PC's commit into this branch |
+| `hello equality FAIL` / `compare_hello FAIL` naming a schema, a limit or `F_T_TCP` | the PC's `rnoro/final-deployment` is not at `ea9f7fb`, the commit this branch's `../contracts` was copied from: on the PC, `git checkout ea9f7fb` and rebuild (the PC's directions, step 2), or re-copy `contracts/` from the PC's commit into this branch |
 | `the PC's homing failed: ...: check the arm's path to the home pose` | clear the arm's path, then `teleop_collect run` again |
 | page: `select or create a task first` | pick a task, or **+ new task** |
 | page: `home the arm first (Home, or h on the PC)` | **Home** (or `h` on the PC) |

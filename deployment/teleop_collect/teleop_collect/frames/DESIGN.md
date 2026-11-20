@@ -67,7 +67,7 @@ new ultrawide frame (pi_stream carries at most one); a reused one is `None`, so 
 | File | From fd:policy_deploy/policy_deploy/frames/ | Changes |
 |---|---|---|
 | camera_health, packet_pairer, fake_pi_sender, pi_recording, recording_packet_source | same name | imports only |
-| pair_rule, _dataproc/{\_\_init\_\_,config,paths} | same name | none |
+| pair_rule, _dataproc/{\_\_init\_\_,config,paths} | same name | none (config.py @ ea9f7fb: umiproc's parser, which reads rig_pi_v3_640) |
 | receiver | receiver.py | no decoding / PacketBuffer; JPEG-header size check; RecordItem to sinks; order check against the last accepted packet; counters `accepted` (was `buffered`), no `unusable` |
 | ultrawide_store | ultrawide_store.py | holds `EncodedFrame`s |
 | pi_stream_source, packet_source | same | keep the raw one-way sample (`last_t_send_ns`, `last_arrival_ns`) |
@@ -76,7 +76,7 @@ new ultrawide frame (pi_stream carries at most one); a reused one is `None`, so 
 | mkv_writer, recorder, preview, servers | — | new |
 
 Every file's header lists its changes exactly; `tests/frames/test_copies.py` checks the copies byte for byte against
-`git show 2ffe641:...`.
+`git show <commit>:...` (the commit its header names: 2ffe641, or ea9f7fb after the re-sync).
 
 ## Tests (`tests/frames/`, free ports only)
 
@@ -86,7 +86,7 @@ settings and main tests, adapted (no images: bytes, times and verdicts on `Recor
 `video_index` = row, column order, summary, refusals incl. teleop's files present, full queue, disk error, drain,
 flush), `test_servers` (R1 refusals in order, stop/health, U2 only newer frames), `test_pipeline` (the process
 against the fake Pi: a recorded episode's files against the bytes and times sent), `test_main` (subprocess, SIGTERM
-while recording < 5 s), `test_real_episode` (`~/Downloads/episode_000045`, skipped if absent), `test_copies`.
+while recording < 5 s), `test_real_episode` (the `mock_episode` recording, `~/Downloads/data/incoming/episode_000152`, skipped if absent), `test_copies`.
 
 ## How to extend
 

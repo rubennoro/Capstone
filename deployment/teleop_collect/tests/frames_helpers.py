@@ -1,10 +1,10 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames_helpers.py @ 2ffe641, plus Running from
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames_helpers.py @ ea9f7fb, plus Running from
 # rnoro/final-deployment:deployment/policy_deploy/tests/frames_pipeline.py @ 2ffe641
 # changes: no RawDecoder (nothing is decoded): raw_frame makes a real JPEG (cv2, cached) at the frame size, so the
 # receiver's JPEG-header size check passes, and `data` can lie about it; write_station uses this package's
 # station_helpers.write_station (a station.yaml in the given folder); fast_overrides without the dropped select keys;
 # Running drives FramesApp with an R1 and a U2 client instead of C1; + read_mkv, read_csv; the small test rig in
-# tests/frames/test_rigs/ (the root .gitignore ignores data/); imports.
+# tests/frames/test_rigs/ (the root .gitignore ignores data/); imports; EPISODE is station_helpers.RECORDED_EPISODE.
 """Helpers and test-only fakes for the frames tests (STRUCTURE.md 12 row E2)."""
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 import yaml
 from deploy_contracts import Ack, RpcClient
+from station_helpers import RECORDED_EPISODE
 from station_helpers import write_station as _write_station
 
 from teleop_collect.contracts import (EncodedFrame, FrameInfo, FramesHealth, GetFramesHealth, GetPreview, Packet,
@@ -30,15 +31,15 @@ from teleop_collect.frames.packet_pairer import PacketPairer
 
 TESTS = Path(__file__).resolve().parent / "frames"
 FOLDER = paths.folder()
-V2_RIG = FOLDER / "rigs" / "rig_pi_v2_640.yaml"
+LIVE_RIG = FOLDER.parent / "contracts" / "rigs" / "rig_pi_v3_640.yaml"   # generated: policy_deploy frames/deploy_rig.py
 SMALL_RIG = TESTS / "test_rigs" / "rig_small.yaml"        # not data/: the root .gitignore ignores data/
 MAIN_SIZE = (160, 90)          # the small rig, (width, height)
 UW_SIZE = (128, 96)
-V2_MAIN_SIZE = (640, 480)      # the real rig file
-V2_UW_SIZE = (640, 480)
+LIVE_MAIN_SIZE = (640, 480)      # the real rig file
+LIVE_UW_SIZE = (640, 480)
 PERIOD_NS = 33_333_333
 HALF_PERIOD_NS = PERIOD_NS // 2
-EPISODE = Path("~/Downloads/episode_000045").expanduser()
+EPISODE = RECORDED_EPISODE   # station_helpers: the --mock default recording
 
 
 # ------------------------------------------------------------------------------------------------ frames

@@ -1,4 +1,4 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_pi_v1.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_pi_v1.py @ ea9f7fb
 # changes: imports; the end-to-end part through R1 and U2 instead of C1 (previews are the bytes the fake Pi sent;
 # a reused ultrawide frame is recorded once; pd's `unusable == 0` becomes "every packet accepted and written",
 # nothing being decoded); conversion, clock, source and recording tests unchanged.
@@ -25,7 +25,7 @@ from teleop_collect.frames.pi_recording import PiRecording, PiRecordingError
 from teleop_collect.frames.pi_stream_source import PiStreamConverter, PiStreamPacketSource
 from frames_helpers import EPISODE, Running, read_csv, read_mkv, wait_for
 
-RIG_640 = FOLDER / "rigs" / "rig_pi_v2_640.yaml"
+RIG_640 = FOLDER.parent / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
 
 
 def jpeg(w=640, h=480, value=100) -> bytes:
@@ -215,10 +215,10 @@ def test_pi_v1_a_reused_ultrawide_frame_is_recorded_once(run_pi_v1, make_pi_epis
 
 @pytest.mark.skipif(not (EPISODE / "meta.json").is_file(), reason=f"{EPISODE} not present")
 def test_pi_v1_real_recording_at_640(run_pi_v1):
-    """episode_000045 (1600x1200 / 1280x960) delivered at 640x480 as the Pi streams it, through to U2."""
+    """A real recording (1600x1200 / 1280x960) delivered at 640x480 as the Pi streams it, through to U2."""
     run = run_pi_v1(EPISODE, rig_file=str(RIG_640), mock={"max_seconds": 3.0})
     run.wait_ready(timeout_s=60)
-    assert run.app.rig.rig_id == "rig_pi_v2_640"
+    assert run.app.rig.rig_id == "rig_pi_v3_640"
     p = wait_preview(run, timeout_s=20)
     for cam, jpeg in (("main", p.main_jpeg), ("ultrawide", p.ultrawide_jpeg)):
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)

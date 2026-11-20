@@ -65,10 +65,13 @@ Commands are answered with `ack/v1`; a broken request gets `error/v1` from `RpcS
 | `config_merge.py`, `process_args.py`, `paths.py` | `contracts/` | names: teleop_collect, its folder, its processes and configs |
 | `health.py` | `contracts/c1_frames.py` | the two health Records only; + `CAMERAS` |
 | `__init__.py` | `contracts/__init__.py` | the re-exports of this package |
-| `../../config/fake_pc.yaml`, `../../rigs/rig_pi_v2_640.yaml` | `config/`, `rigs/` | none (byte-identical, no header, so a diff stays empty) |
+| `../../config/fake_pc.yaml` | `config/` | none (byte-identical, no header, so a diff stays empty) |
 
 New: `keys.py`, `r1_recorder.py`, `u1_teleop.py`, `u2_preview.py`, `examples.py`. Each copied file's header lists its
 changes (STRUCTURE §1).
+
+The rig file is not copied: `config/frames_process.yaml` points at the deployment's
+`../contracts/rigs/rig_pi_v3_640.yaml` (fd @ ea9f7fb), so episodes record the same rig as the deployment uses.
 
 ## Tests
 

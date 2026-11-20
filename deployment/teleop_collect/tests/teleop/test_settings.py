@@ -22,7 +22,7 @@ def test_defaults(settings):
     assert settings.timeouts.frames_s == 4.0 and settings.clock.mismatch_min_lead_ms == 60.0
     assert settings.camera_down_s == 2.0
     assert settings.gripper_width_max_m == 0.08
-    assert settings.rig_file.name == "rig_pi_v2_640.yaml" and settings.rig_file.is_file()
+    assert settings.rig_file.name == "rig_pi_v3_640.yaml" and settings.rig_file.is_file()
     assert settings.data_root.name == ("data_mock" if settings.mock else "data")     # --mock: mock_data_root
 
 

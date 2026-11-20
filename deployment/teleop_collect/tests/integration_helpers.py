@@ -25,13 +25,13 @@ import numpy as np
 import pytest
 import yaml
 from deploy_contracts import LinkSettings
-from station_helpers import free_port, write_station
+from station_helpers import RECORDED_EPISODE, free_port, write_station
 
 from teleop_collect.contracts import load_config, paths
 from teleop_collect.contracts.station import Station
 from teleop_collect.ui.scripted_page import ScriptedPage
 
-EPISODE = Path("~/Downloads/episode_000045").expanduser()
+EPISODE = RECORDED_EPISODE   # station_helpers: the --mock default recording
 READY_PREFIX = "teleop_collect: ready: open "
 #: Every file of PLAN 6.1 in a saved episode folder (COMPLETE is checked to be the newest).
 EPISODE_FILES = ("meta.yaml", "main.mkv", "ultrawide.mkv", "packets.csv", "main_frames.csv", "ultrawide_frames.csv",
@@ -248,7 +248,7 @@ class InProcessFakePi:
         from teleop_collect.frames.pi_recording import PiRecording
         from teleop_collect.frames.rig_file import camera_sizes, load_live_rig
         m = load_config("frames", None)["mock"]
-        rig = load_live_rig(paths.rigs_dir() / "rig_pi_v2_640.yaml")
+        rig = load_live_rig(paths.deployment_dir() / "contracts" / "rigs" / "rig_pi_v3_640.yaml")
         recording = PiRecording.load(EPISODE, max_seconds=m["max_seconds"], jpeg_quality=m["jpeg_quality"],
                                      sizes=camera_sizes(rig))
         self.sender = FakePiSender(recording, f"tcp://127.0.0.1:{port}",

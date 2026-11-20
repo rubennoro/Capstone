@@ -1,9 +1,10 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_copies.py @ 2ffe641
-# changes: checks this package's copies of rnoro/final-deployment @ 2ffe641 (read with `git show`, never changed)
-# instead of the copies of rnoro/data-work; every frames file names its source in its first header line.
-"""Each file copied into teleop_collect.frames (and the copied tests) equals its source at rnoro/final-deployment
-@ 2ffe641, apart from the two header lines and the import paths (STRUCTURE.md 1, PLAN rule 1); each adapted file names
-an existing source. Skipped when git or ~/Capstone-final-deployment is not available."""
+# changes: checks this package's copies of rnoro/final-deployment @ 2ffe641 or ea9f7fb (read with `git show`, never
+# changed) instead of the copies of rnoro/data-work; every frames file names its source in its first header line.
+"""Each file copied into teleop_collect.frames (and the copied tests) equals its source at the rnoro/final-deployment
+commit its header names (2ffe641 or the re-sync ea9f7fb), apart from the two header lines and the import paths
+(STRUCTURE.md 1, PLAN rule 1), and that source is unchanged at ea9f7fb; each adapted file names an existing source.
+Skipped when git or ~/Capstone-final-deployment is not available."""
 
 from __future__ import annotations
 
@@ -15,7 +16,8 @@ import pytest
 from frames_helpers import FOLDER
 
 REPO = Path("~/Capstone-final-deployment").expanduser()
-REF = "2ffe641"
+REFS = ("2ffe641", "ea9f7fb")   # the first copy, the re-sync (contracts/frames.yaml F_T_TCP, rig_pi_v3_640)
+LATEST = REFS[-1]
 PREFIX = "# copied from rnoro/final-deployment:deployment/"
 ADAPTED = "# adapted from rnoro/final-deployment:deployment/"
 IMPORTS = [("from policy_deploy.", "from teleop_collect."), ("import policy_deploy.", "import teleop_collect.")]
@@ -31,23 +33,26 @@ def _available() -> bool:
     if shutil.which("git") is None or not REPO.is_dir():
         return False
     try:
-        _git("rev-parse", "--verify", f"{REF}^{{commit}}")
+        for ref in REFS:
+            _git("rev-parse", "--verify", f"{ref}^{{commit}}")
     except subprocess.CalledProcessError:
         return False
     return True
 
 
-pytestmark = pytest.mark.skipif(not _available(), reason=f"git or {REPO} @ {REF} not available")
+pytestmark = pytest.mark.skipif(not _available(), reason=f"git or {REPO} @ {LATEST} not available")
 
 
 def _files() -> list[Path]:
     return sorted([*FRAMES.rglob("*.py"), *TESTS.glob("test_*.py")])
 
 
-def _source(first_line: str, prefix: str) -> str:
+def _source(first_line: str, prefix: str) -> tuple[str, str]:
+    """(source path under deployment/, the commit named)."""
     path, at = first_line[len(prefix):].rsplit(" @ ", 1)
-    assert at.split()[0] == REF, first_line
-    return path.split(",")[0].split(" (")[0]
+    ref = at.split()[0]
+    assert ref in REFS, first_line
+    return path.split(",")[0].split(" (")[0], ref
 
 
 COPIED = [p for p in _files() if p.read_text().startswith(PREFIX)]
@@ -61,9 +66,10 @@ def test_there_are_copies():
 @pytest.mark.parametrize("path", COPIED, ids=lambda p: str(p.relative_to(FOLDER)))
 def test_copy_equals_source(path):
     lines = path.read_text().split("\n")
-    src = _source(lines[0], PREFIX)
+    src, ref = _source(lines[0], PREFIX)
     assert lines[1] in ("# changes: none", "# changes: imports only"), lines[1]
-    expected = _git("show", f"{REF}:deployment/{src}")
+    expected = _git("show", f"{ref}:deployment/{src}")
+    assert expected == _git("show", f"{LATEST}:deployment/{src}"), f"{src} changed after {ref}: re-copy it"
     if lines[1] == "# changes: imports only":
         for old, new in IMPORTS:
             expected = expected.replace(old, new)
@@ -89,4 +95,5 @@ def test_adapted_files_name_an_existing_source_and_their_changes(path):
     lines = path.read_text().split("\n")
     assert lines[0].startswith(ADAPTED), lines[0]
     assert lines[1].startswith("# changes: ")
-    _git("cat-file", "-e", f"{REF}:deployment/{_source(lines[0], ADAPTED)}")
+    src, ref = _source(lines[0], ADAPTED)
+    _git("cat-file", "-e", f"{ref}:deployment/{src}")

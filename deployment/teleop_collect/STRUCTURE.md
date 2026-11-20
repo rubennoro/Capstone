@@ -6,13 +6,15 @@ config and station keys, the Python interfaces one part calls in another, and ea
 files an executor decides the rest, and lists every deviation from this file in its report.
 
 `fd:<path>` = `rnoro/final-deployment` @ `2ffe641`, at `~/Capstone-final-deployment/deployment/<path>`, read-only.
+Re-synced to `ea9f7fb` (2026-11-19): `deployment/contracts/` (new `F_T_TCP`, `rigs/rig_pi_v3_640.yaml`), the rig file
+setting and `frames/_dataproc/config.py`; the files taken from `ea9f7fb` name it in their header.
 `pd:` = `fd:policy_deploy/policy_deploy/`. Owners: **E1** foundation, **E2** frames, **E3** teleop link, **E4** teleop
 core, **E5** ui, **E6** launcher and fake PC, **E7** integration and documents. **L** = the lead.
 
 ## 1. Conventions
 
 - **Copied files** start with a header comment, then the module docstring:
-  - `# copied from rnoro/final-deployment:deployment/<path> @ 2ffe641`, plus `# changes: imports only` when only the
+  - `# copied from rnoro/final-deployment:deployment/<path> @ 2ffe641` (or `@ ea9f7fb`), plus `# changes: imports only` when only the
     imports changed;
   - or `# adapted from ... @ 2ffe641`, with `# changes: <every change, in a few words>`;
   - a file built from several sources names each one.
@@ -35,7 +37,7 @@ core, **E5** ui, **E6** launcher and fake PC, **E7** integration and documents. 
 
 ```
 deployment/
-  contracts/                                  L (wave 0, done): byte-for-byte copy of fd:contracts/, never edited
+  contracts/                                  L (wave 0, done): byte-for-byte copy of fd:contracts/ (@ ea9f7fb), never edited
   control_deploy/DIRECTIONS.md                E7  the PC's directions (documents only, PLAN §12.5)
   teleop_collect/
     PLAN.md  STRUCTURE.md                     L
@@ -43,7 +45,6 @@ deployment/
     pyproject.toml  station.yaml              E1
     config/                                   E1  (all five files, keys and defaults exactly as §3.3)
       frames_process.yaml  teleop.yaml  ui.yaml  fake_pc.yaml  launcher.yaml
-    rigs/rig_pi_v2_640.yaml                   E1  copy of fd:policy_deploy/rigs/rig_pi_v2_640.yaml
     teleop_collect/
       __init__.py  __main__.py                E1  (__main__ calls teleop_collect.launcher.cli:main)
       common/                                 E1
@@ -159,8 +160,8 @@ is refused.
 `select.ultrawide_spacing_ms`, `select.tolerance_frames` and `probe`, plus `record`):
 
 ```yaml
-rig_file: rigs/rig_pi_v2_640.yaml
-mock_episode: ~/Downloads/episode_000045
+rig_file: ../contracts/rigs/rig_pi_v3_640.yaml     # the deployment's rig (fd:contracts/rigs/, generated)
+mock_episode: ~/Downloads/data/incoming/episode_000152
 default_exposure_ns: 5000000
 receive: {timeout_s: 0.1, recv_hwm: 60}
 buffer: {keep_s: 1.0}                     # ultrawide frames kept for pairing

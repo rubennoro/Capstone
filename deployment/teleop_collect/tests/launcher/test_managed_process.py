@@ -1,4 +1,4 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/launcher/test_managed_process.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/launcher/test_managed_process.py @ ea9f7fb
 # changes: the teleop_collect process names; cwd is deployment/teleop_collect/; the default program is
 # sys.executable -m teleop_collect.<name>; no USES_TERMINAL process (that test is gone, every process gets its own
 # group); the merged config is config/teleop.yaml's; imports. The source's own header follows.
@@ -177,7 +177,7 @@ def test_is_ready_raising_fails_at_once(station, session, running):
 def test_config_path_by_where_the_value_came_from(make_station):
     cls = make_process("frames", "serve")
     default = cls(Station.load(make_station(), False), False, None)
-    assert default.config_path("rig_file") == paths.folder() / "rigs" / "rig_pi_v2_640.yaml"
+    assert default.config_path("rig_file") == paths.folder() / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
     station = Station.load(make_station(frames={"rig_file": "my_rigs/r.yaml"}), False)
     assert cls(station, False, None).config_path("rig_file") == station.path.parent / "my_rigs" / "r.yaml"
 

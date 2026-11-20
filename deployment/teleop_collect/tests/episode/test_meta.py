@@ -21,7 +21,7 @@ def task_ep(tmp_path):
 def build(task, ep, **changes):
     args = dict(task=task, episode=ep, outcome="success", times=TIMES, frames=recording_summary(),
                 counts={"c2_messages": 2400, "sets_sent": 500}, hello=hello_reply(), laptop_commit="a" * 40,
-                laptop_dirty=True, rig_file=Path("/x/rigs/rig_pi_v2_640.yaml"), motion=motion_settings(),
+                laptop_dirty=True, rig_file=Path("/x/contracts/rigs/rig_pi_v3_640.yaml"), motion=motion_settings(),
                 pi_fit={"offset_ns": 5, "drift_ppm": 1.0}, pc_fit={"offset_ns": -7, "drift_ppm": None, "used": 6})
     args.update(changes)
     return build_meta(**args)
@@ -40,7 +40,7 @@ def test_content(task_ep):
     assert h["F_T_TCP"] == hello_reply().F_T_TCP.tolist() and len(h["F_T_TCP"]) == 4
     assert h["mock"] is True and h["max_lead_s"] == 1.5 and h["commit"] == "unknown" and isinstance(h["schemas"], list)
     assert m["laptop"] == {"commit": "a" * 40, "dirty": True}
-    assert m["rig_file"] == "/x/rigs/rig_pi_v2_640.yaml"
+    assert m["rig_file"] == "/x/contracts/rigs/rig_pi_v3_640.yaml"
     assert m["teleop"]["v_max_m_s"] == 0.05 and m["teleop"]["waypoints"] == 2 and m["teleop"]["lead_ms"] == 100.0
     assert m["teleop"]["worst_step_m"] == pytest.approx(0.0075)
     assert m["clock"] == {"pi": {"offset_ns": 5, "drift_ppm": 1.0}, "pc": {"offset_ns": -7, "drift_ppm": None,
@@ -76,7 +76,7 @@ def test_round_trip_through_finish(task_ep):
 
 def test_rig_embedded(task_ep):
     from teleop_collect.contracts import paths
-    rig_file = paths.rigs_dir() / "rig_pi_v2_640.yaml"
+    rig_file = paths.deployment_dir() / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
     m = build(*task_ep, rig_file=rig_file)
     assert m["rig_file"] == str(rig_file) and m["rig_note"] == ""
     assert m["rig"] == yaml.safe_load(rig_file.read_text()) and isinstance(m["rig"], dict)

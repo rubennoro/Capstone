@@ -1,4 +1,4 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_settings.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_settings.py @ ea9f7fb
 # changes: imports; config/frames_process.yaml of STRUCTURE.md 3.3 (no select spacing/tolerance keys, no probe, + record; server.poll_s 0.02); the R1 and U2 endpoints instead of C1; the test station's Pi is 127.0.0.1; dropped-key and record cases added
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_settings.py @ 91b178b
 # changes: config/frames_process.yaml and the laptop station (station_helpers); the dropped keys (stream, decoder,
@@ -17,7 +17,7 @@ from teleop_collect.frames.settings import SCHEMA, Settings
 
 # Every key of STRUCTURE.md 4.4 with its default.
 DEFAULTS = {
-    "rig_file": "rigs/rig_pi_v2_640.yaml", "mock_episode": "~/Downloads/episode_000045",
+    "rig_file": "../contracts/rigs/rig_pi_v3_640.yaml", "mock_episode": "~/Downloads/data/incoming/episode_000152",
     "default_exposure_ns": 5000000, "receive.timeout_s": 0.1, "receive.recv_hwm": 60, "buffer.keep_s": 1.0,
     "select.pair_max_age_ms": 60, "select.pair_max_lead_ms": 25, "select.pair_max_reuse": 2,
     "health.stale_s": 0.35, "health.down_s": 2.0, "health.fps_window_s": 1.0,
@@ -49,7 +49,7 @@ def test_defaults_load(tmp_path):
     st = write_station(tmp_path / "station.yaml")
     s = Settings.load(st, mock=False)
     ports = yaml.safe_load(st.read_text())["ports"]
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2_640.yaml"
+    assert s.rig_file == FOLDER / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"
     assert s.mock is False and s.record.queue_max_packets == 90 and s.record.playback_fps == 30
     assert (s.select.pair_max_age_ms, s.select.pair_max_lead_ms, s.select.pair_max_reuse) == (60.0, 25.0, 2)
     assert s.r1 == f"tcp://127.0.0.1:{ports['r1']}" and s.preview == f"tcp://127.0.0.1:{ports['preview']}"
@@ -104,7 +104,7 @@ def test_relative_paths_resolve_from_the_right_folder(tmp_path):
     st = write_station(tmp_path / "station.yaml", frames={"mock_episode": "eps/ep1"})
     s = Settings.load(st, mock=True)
     assert s.mock_episode == tmp_path / "eps" / "ep1"                      # station value: station's folder
-    assert s.rig_file == FOLDER / "rigs" / "rig_pi_v2_640.yaml"            # default: deployment/teleop_collect/
+    assert s.rig_file == FOLDER / ".." / "contracts" / "rigs" / "rig_pi_v3_640.yaml"   # default: deployment/teleop_collect/
     st = write_station(tmp_path / "station.yaml", frames={"rig_file": "my_rigs/r.yaml"})
     assert Settings.load(st, mock=False).rig_file == tmp_path / "my_rigs" / "r.yaml"
 

@@ -1,8 +1,8 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_rig_file.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/test_rig_file.py @ ea9f7fb
 # changes: imports; the module path teleop_collect.frames.rig_file; + --json before or after RIG (the launcher check)
 # adapted from rnoro/deployment:deployment/process_frames/tests/test_rig_file.py @ 91b178b
-# changes: imports; the v2 rig is rig_pi_v2_640 (640x480 both); the module path policy_deploy.frames.rig_file
-"""The rig file for live use: the v2 rig file loads, broken files are refused with the key named, the CLI."""
+# changes: imports; the live rig is ../contracts/rigs/rig_pi_v3_640.yaml (training's rig_pi_v3 at 640x480, generated); the module path policy_deploy.frames.rig_file
+"""The rig file for live use: the live rig file (contracts/rigs/rig_pi_v3_640.yaml) loads, broken files are refused with the key named, the CLI."""
 
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from frames_helpers import SMALL_RIG, V2_RIG, write_rig
+from frames_helpers import SMALL_RIG, LIVE_RIG, write_rig
 from frames_helpers import FOLDER
 from teleop_collect.frames._dataproc.config import ConfigError
 from teleop_collect.frames.rig_file import load_live_rig, main
 
 
-def test_v2_loads_at_its_resolutions_and_30_fps():
-    rig = load_live_rig(V2_RIG)
-    assert rig.rig_id == "rig_pi_v2_640"
+def test_live_rig_loads_at_its_resolutions_and_30_fps():
+    rig = load_live_rig(LIVE_RIG)
+    assert rig.rig_id == "rig_pi_v3_640"
     assert rig.cameras["main"].resolution == (640, 480) and rig.cameras["ultrawide"].resolution == (640, 480)
     assert rig.cameras["main"].fps == 30.0 and rig.cameras["ultrawide"].fps == 30.0
     assert rig.cameras["main"].sensor == "imx519" and rig.cameras["ultrawide"].sensor == "imx219"
@@ -79,17 +79,17 @@ def test_invalid_yaml_and_rig_id_mismatch(tmp_path):
 
 
 def test_main_json(capsys, tmp_path):
-    assert main([str(V2_RIG), "--json"]) == 0
+    assert main([str(LIVE_RIG), "--json"]) == 0
     out = json.loads(capsys.readouterr().out.strip())
-    assert out == {"ok": True, "rig_id": "rig_pi_v2_640",
+    assert out == {"ok": True, "rig_id": "rig_pi_v3_640",
                    "cameras": {"main": {"sensor": "imx519", "width": 640, "height": 480, "fps": 30.0},
                                "ultrawide": {"sensor": "imx219", "width": 640, "height": 480, "fps": 30.0}}}
     broken = write_rig(tmp_path, "rig_broken", _set(["cameras", "main", "sensor"], "imx477"))
     assert main([str(broken), "--json"]) == 1
     out = json.loads(capsys.readouterr().out.strip())
     assert out["ok"] is False and "cameras.main.sensor" in out["error"]
-    assert main([str(V2_RIG)]) == 0
-    assert capsys.readouterr().out.strip() == "rig_pi_v2_640: main imx519 640x480@30, ultrawide imx219 640x480@30"
+    assert main([str(LIVE_RIG)]) == 0
+    assert capsys.readouterr().out.strip() == "rig_pi_v3_640: main imx519 640x480@30, ultrawide imx219 640x480@30"
 
 
 def test_module_runs_as_subprocess(tmp_path):

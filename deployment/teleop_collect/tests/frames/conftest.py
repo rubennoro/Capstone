@@ -1,4 +1,4 @@
-# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/conftest.py @ 2ffe641
+# adapted from rnoro/final-deployment:deployment/policy_deploy/tests/frames/conftest.py @ ea9f7fb
 # changes: imports (teleop_collect.frames); the running fixture uses frames_helpers.Running (R1 and U2 clients).
 """Fixtures for the frames tests."""
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 import pytest
-from frames_helpers import SMALL_RIG, V2_MAIN_SIZE, V2_RIG, V2_UW_SIZE, FakeClock, Running, wait_for, write_pi_episode
+from frames_helpers import SMALL_RIG, LIVE_MAIN_SIZE, LIVE_RIG, LIVE_UW_SIZE, FakeClock, Running, wait_for, write_pi_episode
 
 from teleop_collect.frames.rig_file import load_live_rig
 
@@ -29,8 +29,8 @@ def small_rig():
 
 
 @pytest.fixture(scope="session")
-def v2_rig():
-    return load_live_rig(V2_RIG)
+def live_rig():
+    return load_live_rig(LIVE_RIG)
 
 
 @pytest.fixture(scope="session")
@@ -47,8 +47,8 @@ def pi_episode_no_exposure(tmp_path_factory) -> Path:
 @pytest.fixture(scope="session")
 def v2_episode(tmp_path_factory) -> Path:
     """15 frames per camera at the real rig file's sizes (both 640x480)."""
-    return write_pi_episode(tmp_path_factory.mktemp("pi") / "ep_v2", n_frames=15, main_size=V2_MAIN_SIZE,
-                            uw_size=V2_UW_SIZE)
+    return write_pi_episode(tmp_path_factory.mktemp("pi") / "ep_v2", n_frames=15, main_size=LIVE_MAIN_SIZE,
+                            uw_size=LIVE_UW_SIZE)
 
 
 @pytest.fixture

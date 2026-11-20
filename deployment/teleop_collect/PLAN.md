@@ -6,6 +6,8 @@ written from this plan once it is agreed, and the code only after that.
 
 Every source reference `fd:<path>` points into `rnoro/final-deployment` @ `2ffe641`
 (`~/Capstone-final-deployment/deployment/`). That branch is only read and copied from, never changed.
+Re-synced to `ea9f7fb` (2026-11-19): `deployment/contracts/` (the new `F_T_TCP`, `rigs/rig_pi_v3_640.yaml`), the rig
+file setting and `frames/_dataproc/config.py`; those files' headers name `ea9f7fb`.
 
 ## 1. Goal
 
@@ -78,7 +80,7 @@ Out of scope: converting episodes into training data (done elsewhere, later); a 
 | **teleop** | The 20 ms main loop: keep-alives and every C3 request (rule H1), the PC clock map, the C2 history. It turns the key state into waypoints (§5), runs the episode lifecycle, owns the task/episode store, and records C2 and the commands while an episode records. | fd:policy_deploy/policy_deploy/manager/ (pc_client, pc_listener, pc_clock, heartbeat_sender, startup_sequence, startup_checks, failure monitor, state history, session log) |
 | **ui** | A small web server on `127.0.0.1` only. It serves one page: task picker, episode list and buttons, two live previews, the status panel, and the key capture. It forwards the key state and button presses to teleop (U1) and pulls previews and health from frames (U2). It owns nothing; it shows and forwards. | new |
 | **fake_pc** (`--mock`) | The Python stand-in for franka_control: C2/C3 on 127.0.0.1, a drifting offset clock, the fake gate. | fd:policy_deploy/policy_deploy/fake_pc/ |
-| fake Pi (`--mock`, inside frames) | Plays the recorded Pi episode `~/Downloads/episode_000045` as a C0 stream. | fd:policy_deploy/policy_deploy/frames/fake_pi_sender.py |
+| fake Pi (`--mock`, inside frames) | Plays the recorded Pi episode `~/Downloads/data/incoming/episode_000152` as a C0 stream. | fd:policy_deploy/policy_deploy/frames/fake_pi_sender.py |
 
 The launcher starts `fake_pc` (only under `--mock`), then `frames`, `teleop` and `ui`, each after the previous one is
 ready, and stops them in reverse. Any process exiting stops the rest (fd:policy_deploy/policy_deploy/launcher/).
@@ -409,7 +411,7 @@ Candidates. The final list, file by file, is STRUCTURE.md's job.
 |---|---|
 | shared C2/C3 code and the three contract files | `contracts/`, copied whole and unchanged to `deployment/contracts/` (rule 5) |
 | C0 parsing, internal packet, clock fit, station, config merge, process args | `policy_deploy/policy_deploy/contracts/` (`pi_stream.py`, `c0_packet.py`, `clock_fit.py`, `station.py`, `config_merge.py`, `process_args.py`, `paths.py`) |
-| frames: receiver, Pi stream source, health, pair rule, rig file, fake Pi | `policy_deploy/policy_deploy/frames/` (`receiver.py`, `pi_stream_source.py`, `camera_health.py`, `pair_rule.py`, `packet_pairer.py`, `rig_file.py`, `fake_pi_sender.py`, `fake_pi.py`, `pi_recording.py`, `errors.py`), and `rigs/rig_pi_v2_640.yaml`. Changes: no image prep or selection; a recording tap on the raw JPEG bytes; the latest JPEG for the preview |
+| frames: receiver, Pi stream source, health, pair rule, rig file, fake Pi | `policy_deploy/policy_deploy/frames/` (`receiver.py`, `pi_stream_source.py`, `camera_health.py`, `pair_rule.py`, `packet_pairer.py`, `rig_file.py`, `fake_pi_sender.py`, `fake_pi.py`, `pi_recording.py`, `errors.py`); the rig file is the deployment's `contracts/rigs/rig_pi_v3_640.yaml`, read from `../contracts`. Changes: no image prep or selection; a recording tap on the raw JPEG bytes; the latest JPEG for the preview |
 | teleop: the PC link, clock map, start-up, failure monitor | `policy_deploy/policy_deploy/manager/` (`pc_client.py`, `pc_listener.py`, `pc_clock.py`, `heartbeat_sender.py`, `link_stats.py`, `state_history.py`, `startup_sequence.py`, `startup_checks.py`, `failure_monitor.py`, `problems.py`, `pose_math.py`, `session_log.py`), and `episode_loop.py`'s rhythm. Changes: no policy and no frames C1; the teleop step instead of the policy step; set_waypoints may be the cycle's keep-alive (§5.1) |
 | fake PC | `policy_deploy/policy_deploy/fake_pc/` (whole) |
 | launcher | `policy_deploy/policy_deploy/launcher/` (`launcher.py`, `managed_process.py`, `processes.py`, `check_helpers.py`, `check_result.py`, `session.py`, `cli.py`) |
@@ -489,10 +491,12 @@ them).
 
 1. **PLAN.md and STRUCTURE.md against the code:** every class, contract, config key, failure row (§7) and the episode
    layout (§6).
-2. **Copies:** each copied file diffed against its fd: source at `2ffe641`, and every difference listed in its header.
+2. **Copies:** each copied file diffed against its fd: source at the commit its header names (`2ffe641`, or `ea9f7fb`
+   after the re-sync), and every difference listed in its header.
    `deployment/contracts/` byte-identical to fd:contracts/ (only `link.yaml` addresses may differ, and only when the user
    set them).
-3. **`rnoro/final-deployment` untouched:** `~/Capstone-final-deployment` still at `2ffe641` with a clean `git status`.
+3. **`rnoro/final-deployment` untouched:** `~/Capstone-final-deployment` still at `ea9f7fb` (was `2ffe641`) with a clean
+   `git status`.
 4. **The dependency rules:** no import of `policy_deploy` or `control_deploy`; process subpackages import only
    `teleop_collect.contracts` and `deploy_contracts`.
 5. **Safety:** the §5.3 bound in code and tests (speeds, lead, state-age guard, stale keys = released, focus loss, the
@@ -558,7 +562,8 @@ All settled with the user on 2026-11-18; nothing is open.
 7. **No pre-roll:** the recording starts at the Start click, and the operator waits about a second before the first key
    (§4.3).
 8. **A lost or faulted PC is a failure:** conclude, with the one-line reason; rerun `teleop_collect run` (§7).
-9. **The TCP:** the `F_T_TCP` in `contracts/frames.yaml` as the PC runs it now. Training and the deployed policy both use
+9. **The TCP:** the `F_T_TCP` in `contracts/frames.yaml` as the PC runs it now (since `ea9f7fb`: training's TCP axes,
+   +45 deg about flange z, fingertips 150 mm out). Training and the deployed policy both use
    the same robot TCP, so the teleop data is consistent; `F_T_TCP` is saved with every episode. Not part of this branch:
    to deploy a teleop-trained policy, `policy_deploy` refuses any trained policy while `frames.yaml` says
    `settled: false`. That flag is a `rnoro/final-deployment` matter for later.
