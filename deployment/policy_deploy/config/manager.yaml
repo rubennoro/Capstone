@@ -63,3 +63,7 @@ skip_warn_s: 1.0              # steps skipped longer than this -> status line SK
 log_steps: true               # write steps.jsonl
 save_tap: false               # save each sent step's observation, chunk and waypoints to tap/ (first real-arm runs)
 tap_images_every: 10          # with save_tap: include the four images every this many steps
+workspace_clamp_m: 0.002      # pull every waypoint's position into the PC's workspace box (control_deploy/franka_control/
+                              # config.yaml safety.workspace_min_m / workspace_max_m), this far inside its faces, before
+                              # sending: the policy aiming past the box (e.g. below the table) moves to its face instead
+                              # of the PC rejecting the waypoint (a fault). null: off (the PC's gate alone)

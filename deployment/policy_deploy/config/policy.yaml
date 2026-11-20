@@ -12,12 +12,18 @@ prompt_dataset: null            # a prompting checkpoint only (refused for a pla
                                 # the demos (opened read-only); the manager's task_name / prompt_index pick the demo
 prompt_split: train             # train | val | all: the demos the model trained on, the ones it held out, or every demo
                                 # (all: a dataset the model never trained on)
+gripper_map:                    # kind diffusion only: handheld widths (training) <-> robot fingertip opening, one line
+                                # through two points (policy/gripper_map.py); null: widths pass through unchanged
+  training_closed_m: 0.051      # pick1 datasets: marker width closed on the eraser (min 0.0511)
+  training_open_m: 0.090        # pick1 datasets: marker width fully open (p95 0.088, max 0.091)
+  robot_closed_m: 0.030         # the eraser's width: the robot holding it reads this
+  robot_open_m: 0.040           # the printed fingers' max opening (contracts/limits.yaml gripper_width_max_m)
 mock_kind: hold_still           # the kind that runs under --mock; diffusion times the real model against the fake Pi
                                 # and fake PC (needs checkpoint and python.torch)
 
 # --- start-up and serving ---
 warmup_inferences: 2            # warm-up calls before ready (1st pays CUDA set-up, 2nd is representative)
-warmup_gripper_width_m: 0.05    # gripper width in the warm-up (and probe) observation, m
+warmup_gripper_width_m: 0.04    # gripper width in the warm-up (and probe) observation, m
 reset_max_s: 0.5                # a slower reset is logged as a warning (PLAN 4 limit)
 poll_s: 0.05                    # serve-loop poll; how quickly SIGINT/SIGTERM is noticed between requests
 self_check_timeout_s: 20.0      # launcher: time allowed for `python -m policy_deploy.policy.self_check`

@@ -3,7 +3,8 @@
 # policy_deploy.contracts replace the local merge); the endpoint is station.policy_endpoint() (ports.policy); the
 # checkpoint path through contracts.resolve_path; adds precision (fp32 | bf16) and mock_kind (the kind that runs
 # under --mock); the session folder is the process's (ProcessArgs), not part of the settings; session_root kept;
-# adds prompt_dataset (a path, like checkpoint) and prompt_split (train | val | all) for a prompting checkpoint.
+# adds prompt_dataset (a path, like checkpoint) and prompt_split (train | val | all) for a prompting checkpoint;
+# adds gripper_map (handheld <-> robot widths, policy/gripper_map.py).
 """Settings: config/policy.yaml + the station's `policy:` section, validated (STRUCTURE.md 5.3)."""
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any, Mapping
 
 from policy_deploy.contracts import Station, StationError, load_config, resolve_path
 from policy_deploy.policy.errors import SettingsError
+from policy_deploy.policy.gripper_map import GripperMap
 from policy_deploy.policy.policy_factory import KINDS
 
 SECTION = "policy"
@@ -45,6 +47,7 @@ class Settings:
     precision: str                         # fp32 | bf16 (autocast around predict_action)
     prompt_dataset: Path | None            # the demos a prompting checkpoint is prompted with (.zarr.zip)
     prompt_split: str                      # train | val | all
+    gripper_map: GripperMap | None         # handheld <-> robot widths (kind diffusion); None: unchanged
     warmup_inferences: int
     warmup_gripper_width_m: float
     reset_max_s: float
@@ -101,6 +104,14 @@ class Settings:
         _check(problems, source, "prompt_split", prompt_split, prompt_split in PROMPT_SPLITS,
                " or ".join(PROMPT_SPLITS))
 
+        gripper_cfg = cfg.get("gripper_map")
+        gripper_map: GripperMap | None = None
+        if gripper_cfg is not None:
+            gripper_problems = GripperMap.problems(gripper_cfg)
+            problems.extend(f"{source}: {SECTION}.gripper_map: {p}" for p in gripper_problems)
+            if not gripper_problems:
+                gripper_map = GripperMap.from_config(gripper_cfg)
+
         _check(problems, source, "device", cfg.get("device"), cfg.get("device") in ("cuda", "cpu"), "cuda or cpu")
         steps = cfg.get("diffusion_steps")
         _check(problems, source, "diffusion_steps", steps, steps is None or (_is_int(steps) and steps >= 1),
@@ -140,7 +151,7 @@ class Settings:
             kind=kind, mock=mock, mock_kind=mock_kind, active_kind=active_kind, endpoint=station.policy_endpoint(),
             session_root=station.session_root, station_file=station.path, checkpoint=checkpoint_path,
             device=cfg["device"], diffusion_steps=steps, precision=precision, prompt_dataset=prompt_dataset_path,
-            prompt_split=prompt_split, warmup_inferences=warmups,
+            prompt_split=prompt_split, gripper_map=gripper_map, warmup_inferences=warmups,
             warmup_gripper_width_m=float(width), reset_max_s=float(cfg["reset_max_s"]), poll_s=float(cfg["poll_s"]),
             self_check_timeout_s=float(cfg["self_check_timeout_s"]), training_timing=dict(timing),
             key_map={part: dict(key_map[part]) for part in ("obs", "action")},
@@ -153,6 +164,8 @@ class Settings:
             value = getattr(self, name)
             if isinstance(value, Path):
                 value = str(value)
+            elif isinstance(value, GripperMap):
+                value = value.as_dict()
             elif isinstance(value, Mapping):
                 value = copy.deepcopy(dict(value))
             out[name] = value

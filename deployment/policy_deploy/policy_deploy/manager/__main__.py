@@ -107,7 +107,7 @@ def _run(args: ProcessArgs) -> int:
         closers.append(health.close)
         frames = FramesClient(settings.frames_endpoint, settings.timeouts.frames_s)
         policy = PolicyClient(settings.policy_endpoint, settings.timeouts)
-        converter = PoseConverter(settings.exec_h, settings.lookahead_ms)
+        converter = PoseConverter(settings.exec_h, settings.lookahead_ms, settings.workspace_box)
         step = PolicyStep(frames, policy, history, converter, settings, clock, pc_clock)
         worker = StepWorker(step, policy, clock)
         closers.append(worker.stop)

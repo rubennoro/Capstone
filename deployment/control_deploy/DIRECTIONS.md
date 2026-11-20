@@ -161,7 +161,7 @@ sudo nft list table inet control_deploy
 `control_deploy check` then usually shows `firewall  WARN  cannot read the firewall without root`: that is expected
 (it can't read it without `sudo`); the `sudo nft list` above is the real check.
 
-### 8. The arm's values that must be measured (before the first real run)
+### 8. The arm's measured values (before the first real run, or leave the defaults: see the table)
 
 Some settings in `control_deploy/franka_control/config.yaml` are still marked `TODO`. Put the measured values in
 `control_deploy/station.yaml`, under `franka_control:` (it overrides `config.yaml` key by key), for example:
@@ -181,13 +181,48 @@ franka_control:
     q_start_rad: [...]             # 7 joint angles (rad): the simulation's, or the line pc_probe --start-pose prints
 ```
 
-| Value | How to get it |
+| Value | Can it stay as it is? |
 |---|---|
-| `workspace_min_m`, `workspace_max_m` | Measure around the table from the robot base (x forward, y to the left, z up), a few cm inside the real limits. `min z`: rest the fingertips on the table, read `tcp z` on the status line, and use that minus 0.005 (about `-0.005` with the arm standing on the table). Grasps end at the table, so a higher floor faults every grasp. |
+| `load.mass_kg`, `load.com_m` | Yes, for a first run. With 0, `check` warns, the rig's weight (about 4 N) is not compensated and the fingertips sit a few mm low. Well under the collision thresholds (20 N). |
+| `workspace_min_m`, `workspace_max_m` | Only if the default box (x 0.20–0.80, y −0.40–0.40, z −0.005–0.70 m) is clear: nothing in it but the table top and the object, and the robot base stands on the table top. Otherwise measure it. |
+| `gripper.width_offset_m` | Yes, if the printed fingers close flush (calipers ≈ `grip`). Otherwise every opening the policy asks for is off by the difference, and grasps may close too early or too late. |
 | the home pose (`homing.q_home_rad`) | Keep the default. In step 10, after `h`, the `tcp x y z` on the status line must be inside the box. |
-| `load.mass_kg`, `load.com_m` | Weigh the rig without the Franka Hand. While it is 0, `check` warns and the arm sags a few mm. |
-| `gripper.width_offset_m` | In step 10: measure the fingertip gap with calipers and compare it with `grip` on the status line. |
 | the start pose (`homing.q_start_rad`) | Already set, from the simulation; check it in step 10, "The start pose". Without it, `p` is refused (`homing.q_start_rad is not set`) and episodes start wherever the arm is. |
+
+#### The load (at a desk, no arm needed)
+
+- `mass_kg`: everything beyond the Franka Hand (mount, Pi, cameras, cables, printed fingers), in kg. Weigh the
+  parts on a kitchen scale. If the rig is already mounted, weigh hand + rig and subtract the hand's mass in Desk
+  (Settings → End effector, about 0.73 kg). Desk's end effector must stay "Franka Hand": this is only the extra.
+- `com_m`: its centre of mass in the flange frame (m): origin at the centre of the flange face, +z out of the flange
+  toward the fingertips, x and y the flange's axes. From CAD (`franka_mount_with_rig.STEP`): a coordinate system on
+  the flange face, each part given its weighed mass, then the mass-properties tool. Without CAD: balance the rig on a
+  ruler edge in two directions and measure the balance point from the mounting face. ±1 cm is enough.
+- Leave `inertia_kg_m2` at zero (too small to matter).
+
+#### The box (tape measure, then the arm for the floor)
+
+The robot base frame: origin at the centre of the base, on the surface it is bolted to; x forward (the way the arm
+faces at home, away from the connectors), y to the robot's left, z up.
+
+1. With a tape from the base centre: how far forward (x), left and right (y) the fingertips may go before the table
+   edge or anything on it, and a ceiling (z). Take a few cm off each. Keep `x_min` at 0.20 or lower: the demos pull
+   back toward the base after the grasp.
+2. The floor (`z_min`): in Desk, FCI off, guiding mode; bring the fingertips down until they touch the table. Activate
+   FCI, start `run` (the arm holds there), read `tcp z` on the status line. `z_min` = that minus 0.005. With the base
+   on the table top it reads about 0.000; much more (e.g. +0.02) means the base is on a plate or the TCP length
+   (contracts/frames.yaml) is wrong. Grasps end at the table, so a higher floor faults every grasp.
+3. Optional: the same way (guide, FCI on, `run`, read `tcp x y z`), check a corner or two of the box.
+
+#### The finger offset (in step 10, item 3)
+
+1. After `g`, the fingers end open. Read `grip` on the status line (the hand's reading).
+2. Measure the gap between the printed fingertips' contact faces, at the tips, with calipers.
+3. `width_offset_m` = calipers − `grip`, in metres (calipers 0.032, `grip` 0.040 → `-0.008`).
+4. If you can, measure again partly closed (the console's gripper step). Two offsets more than a couple of mm apart:
+   use the average; the fingertips are not parallel.
+
+Restart `run` after each edit. With the load set, the arm does not sag or drift in `idle`.
 
 - **Good:** `~/envs/control_deploy/bin/control_deploy check` shows `config  PASS`, `payload  PASS`, and the `todo`
   row no longer lists these keys (it may still list the gains, collision thresholds and cone: those are fine).
@@ -297,7 +332,7 @@ skips the arm rows; with `--local` it skips the address and firewall rows. `run`
 on the laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit`. Then a status line at the bottom:
 
 ```
-idle | tcp 0.307 0.000 0.354 m | grip 0.080 m | gate a0 s0 p0 r0 | late 0 (+0/10s) | C2 100 Hz | C3 peer 192.168.50.20 | h p g s q
+idle | tcp 0.307 0.000 0.354 m | grip 0.040 m | gate a0 s0 p0 r0 | late 0 (+0/10s) | C2 100 Hz | C3 peer 192.168.50.20 | h p g s q
 ```
 
 (After `h`: the home pose puts the TCP, between the fingertips, at about x 0.307, y 0, z 0.354 m.)
@@ -321,7 +356,7 @@ When it ends: `control_deploy: franka_control stopped cleanly (session ...)`.
 **Keys:** the same as `run`.
 
 **Good:** `binds 127.0.0.1` in the check table, `control_deploy: ready: C2 tcp://127.0.0.1:5620, ...`, the status line
-starting `idle | tcp 0.450 0.000 0.450 m | grip 0.080 m`. `h` prints `key h: homing the arm` then `homing finished`;
+starting `idle | tcp 0.450 0.000 0.450 m | grip 0.040 m`. `h` prints `key h: homing the arm` then `homing finished`;
 `g` prints `key g: homing the hand` (the `grip` value goes down and back up) then `hand homing finished`; `s` prints
 `key s: stopped`; `q` prints `shut down cleanly`.
 

@@ -13,6 +13,7 @@ the last obs pose, times from the last image time). Nothing is copied.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -145,6 +146,9 @@ class PolicyStep:
             waypoints = self._converter.to_waypoints(chunk, anchor, job.chunk_id)
         except ContractError as exc:
             raise RuntimeError(f"building the waypoints: {exc}") from exc
+        if self._converter.last_clamped:
+            logging.getLogger(__name__).info("chunk %d: clamped into the workspace box: %s", job.chunk_id,
+                                             ", ".join(self._converter.last_clamped))
         t_end = self._clock()
         timing = StepTiming(t_begin, t_frames, t_policy, t_end, age_ms)
         return StepDone(job, waypoints, anchor, health, timing, dev_m, obs, chunk,

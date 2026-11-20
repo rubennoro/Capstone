@@ -12,11 +12,14 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from deploy_contracts import LinkSettings, TcpFrame
 
 from policy_deploy.contracts import ACTION_STEPS, Station, StationError, load_config, resolve_path
 
 NAME = "manager"
+PC_CONFIG = Path(__file__).resolve().parents[3] / "control_deploy" / "franka_control" / "config.yaml"
 POSE_SOURCES = ("target", "measured")
 EXEC_H_RANGE = (1, ACTION_STEPS)
 
@@ -82,6 +85,7 @@ class Settings:
     log_steps: bool
     save_tap: bool
     tap_images_every: int
+    workspace_box: list[list[float]] | None   # [min xyz, max xyz] the waypoints are clamped into (the PC's box, inset)
     # from link.yaml (never from a station or config file)
     heartbeat_period_s: float
     c3_timeout_s: float
@@ -142,6 +146,12 @@ class Settings:
         for key in flat:
             if key not in _RULES:
                 problems.append(f"config/manager.yaml: {key}: unknown key")
+        box = None
+        if flat.get("workspace_clamp_m") is not None:
+            if flat["workspace_clamp_m"] < 0:
+                problems.append(f"manager.workspace_clamp_m: must be >= 0 or null, got {flat['workspace_clamp_m']!r}")
+            else:
+                box = _workspace_box(float(flat["workspace_clamp_m"]), problems)
         if problems:
             raise StationError(problems)
         script = resolve_path(station, NAME, config, "operator_script")
@@ -174,6 +184,7 @@ class Settings:
             task_name=config["task_name"], prompt_index=config["prompt_index"], operator_script=script,
             operator_script_wait_s=float(config["operator_script_wait_s"]), skip_warn_s=float(config["skip_warn_s"]),
             log_steps=config["log_steps"], save_tap=config["save_tap"], tap_images_every=config["tap_images_every"],
+            workspace_box=box,
             heartbeat_period_s=link.heartbeat_period_s, c3_timeout_s=link.c3_timeout_s,
             state_stale_s=link.state_stale_s, state_lost_s=link.state_lost_s, watchdog_limit_s=link.watchdog_limit_s,
             state_endpoint=state_endpoint or link.state_endpoint(local=mock),
@@ -225,7 +236,24 @@ _RULES: dict[str, tuple[str, str]] = {
     "log_steps": ("bool", ""),
     "save_tap": ("bool", ""),
     "tap_images_every": ("int", "ge1"),
+    "workspace_clamp_m": ("float", "optional"),
 }
+
+
+def _workspace_box(inset_m: float, problems: list[str]) -> list[list[float]] | None:
+    """The PC's safety.workspace_min_m / workspace_max_m (same commit on both machines), moved inset_m inwards."""
+    where = f"manager.workspace_clamp_m: {PC_CONFIG}"
+    try:
+        safety = yaml.safe_load(PC_CONFIG.read_text(encoding="utf-8"))["safety"]
+        lo = [float(v) + inset_m for v in safety["workspace_min_m"]]
+        hi = [float(v) - inset_m for v in safety["workspace_max_m"]]
+    except (OSError, yaml.YAMLError, KeyError, TypeError, ValueError) as exc:
+        problems.append(f"{where}: cannot read safety.workspace_min_m / workspace_max_m ({exc})")
+        return None
+    if len(lo) != 3 or len(hi) != 3 or any(a >= b for a, b in zip(lo, hi)):
+        problems.append(f"{where}: the box {lo}..{hi} (after the inset) is empty or not 3-D")
+        return None
+    return [lo, hi]
 
 
 def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:

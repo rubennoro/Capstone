@@ -1,50 +1,96 @@
 # The laptop: run the policy
 
 The laptop receives the Pi's two cameras, runs the policy and sends the moves to the PC, which drives the arm
-(`deployment/control_deploy/DIRECTIONS.md`). The laptop never starts or stops anything on the PC. Copy the commands in
-order.
+(`deployment/control_deploy/DIRECTIONS.md`). The laptop never starts or stops anything on the PC.
 
-Every command below runs from `~/Capstone/deployment/policy_deploy` (step 2), in a terminal where `echo $PYTHONPATH`
-prints nothing (if it shows `/opt/ros/...`, run `unset PYTHONPATH` first).
+Every command runs from **`deployment/policy_deploy` in your clone** (`~/Capstone/deployment/policy_deploy` after step
+2; a worktree such as `~/Capstone-final-deployment/deployment/policy_deploy` works the same), in a terminal where
+`echo $PYTHONPATH` prints nothing. `station.yaml` is found from that folder: from anywhere else the commands fail with
+`station.yaml: not found`.
 
-> **Daily routine (once set up)**
->
-> 1. **The PC first:** `control_deploy run` is running there and shows `ready` (the PC's directions).
-> 2. The Pi is on and its camera sender is running. The laptop is on ASUS_5g and plugged in.
-> 3. On the laptop:
->
->    ```bash
->    cd ~/Capstone/deployment/policy_deploy && unset PYTHONPATH
->    ~/envs/policy_deploy/bin/policy_deploy check
->    ~/envs/policy_deploy/bin/policy_deploy run
->    ```
->
-> 4. Drive it with the keys. Keep a hand on the arm's user stop.
->
-> | Key | What it does |
-> |---|---|
-> | `c` | start an episode from where the arm is |
-> | `y` / `n` | end the episode as a success / failure; the arm holds |
-> | `s` | stop: the arm holds, the episode is recorded as stopped |
-> | `q` or Ctrl-C | quit the laptop. The PC keeps running and holding the arm. |
->
-> No laptop key moves the arm to a pose: homing and the start pose are the PC's keys.
-> Usual cycle: **PC `h`** (home), **PC `p`** (start pose, hand open), then here `c`, ..., `y` or `n`; again from the PC's
-> `h`. `q` when done. Once the start pose is set, `c` before `p` gets `c: the PC refused start: refused: not at the start pose: ...`.
+## Running trials (once set up)
 
-The policy that runs is the one `policy_deploy use` last chose. **`hold_still`** (the start) keeps the arm at the pose
-where the episode started: it tests the cameras, the link and the timing without moving anything.
+The setting-up steps further down are done once. After that, every session is this loop.
 
-> **Plug in a trained policy** (details: "A trained policy" below)
->
-> ```bash
-> ~/envs/policy_deploy/bin/policy_deploy use ~/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18 --precision bf16 --diffusion-steps 8 --exec-h 12
-> ~/envs/policy_deploy/bin/policy_deploy check
-> ~/envs/policy_deploy/bin/policy_deploy run
-> ```
->
-> Another run: the same `use` line with its folder. Back to holding still: `policy_deploy use hold_still`.
-> On the real arm `check` refuses it until `../contracts/frames.yaml` says `settled: true` (step 4 there).
+### 1. Before you start
+
+- **PC:** `control_deploy run` is running and shows `ready` (the PC's directions).
+- **Pi:** on, and its camera sender running.
+- **Laptop:** on ASUS_5g, **plugged in** (on battery the policy is too slow), sleep turned off.
+
+### 2. Choose the policy (only when changing it)
+
+`use` writes the policy into `station.yaml`; it stays chosen until the next `use`. The run folder is
+`~/Capstone/data/<task>/policy/<run>/`; each one's `README.md` says what it was trained on.
+
+```bash
+~/envs/policy_deploy/bin/policy_deploy use <run folder> --precision bf16 --diffusion-steps 8 --exec-h 12
+```
+
+| Policy | Run folder |
+|---|---|
+| plain diffusion, 30 demos | `~/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19` |
+| behavior prompting, 30 demos (add `--prompt-index N` for another demo) | `~/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18` |
+| plain diffusion, 62 demos (two-object data) | `~/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19` |
+| no motion (tests cameras, link, timing) | `hold_still` instead of a folder |
+
+### 3. Terminal 1: check, then run
+
+```bash
+cd ~/Capstone/deployment/policy_deploy && unset PYTHONPATH
+~/envs/policy_deploy/bin/policy_deploy check
+~/envs/policy_deploy/bin/policy_deploy run
+```
+
+`check` must end `ready` with no `FAIL` row. `run` loads the policy (about 15 s, a warm-up included), then shows
+`[idle] arm idle | cams ok 30/ok 30 fps | ...`. Leave this terminal running for the whole session.
+
+### 4. Terminal 2 (optional): watch and record what the policy sees
+
+A live window of the policy's four 224×224 input images, written to the run's folder as the trial goes. Set the run
+and the trial number first:
+
+```bash
+cd ~/Capstone/deployment/policy_deploy && unset PYTHONPATH
+RUN=~/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19; TRIAL=1
+~/envs/policy_deploy_torch/bin/python -m policy_deploy.frames.probe --live 10 --save $RUN/deploy/$(date +%F_%H-%M)_trial${TRIAL}_probe_live
+```
+
+It needs the **torch** environment's python (the light one cannot open a window). Start it before `c`, stop it with
+Ctrl-C (or `q` in the window) after the episode ends: every image is already written. Next trial: `TRIAL=2`, same line.
+Details: "The frames probe".
+
+### 5. One trial
+
+Keep a hand on the arm's user stop.
+
+| Where | Key | What happens |
+|---|---|---|
+| PC | `h` | home; wait until it is done |
+| PC | `p` | the start pose, hand open; wait until it is done |
+| laptop | `c` | the episode starts; the policy drives the arm |
+| laptop | `s` | stop now (the first move does not head for the object, or anything looks wrong); the arm holds |
+| laptop | `y` / `n` | end the episode as a success / failure; the arm holds |
+
+Next trial: again from the PC's `h`. The status line during an episode:
+
+```
+[ep 1 running 1.2 s] step 10 | rtt 2 ms c2 100 Hz clock ok | cycle 106 ms (policy 95) | margin +270 ms | keys: y n s q
+```
+
+`margin` must stay positive; `late loops` (idle line) and `rtt` should stay small.
+
+### 6. Changing policy, quitting, and after a failure
+
+- **Another policy:** `q` in terminal 1, `use` (step 2), then `check` and `run` again. The PC keeps running.
+- **Quit:** `q` or Ctrl-C. The PC keeps holding the arm.
+- **The run stopped by itself:** it prints one line, `policy_deploy: FAILED <process> ...: <what failed>: <what to
+  check>`, and the log path. Look the message up in "When something fails", fix it, then `run` again (step 3).
+- **After a fault on the PC** (`the PC reports fault: ...`): on the PC, Ctrl-C, release the user stop if it was a
+  reflex, `control_deploy run`; then `policy_deploy run` here.
+
+Every session is kept in `~/policy_deploy_sessions/<date>_<time>/`: `station.yaml` (which policy and demo ran),
+`logs/`, `manager/episodes.jsonl` (each episode's outcome) and `manager/steps.jsonl`.
 
 ---
 
@@ -285,6 +331,17 @@ laptop accepts an ultrawide up to `pair_max_lead_ms` (25 ms) newer and up to `pa
 
 The headers and a few images are saved in `~/policy_deploy_sessions/<date>_<time>_pi_collect/`.
 
+**The raw camera images live:** add `--show` (a window, main | ultrawide, `q` stops) and `--save-every 0` (every
+frame's JPEGs, not one every 5 s); the window needs the torch environment's python:
+
+```bash
+~/envs/policy_deploy_torch/bin/python -m policy_deploy.frames.pi_collect --station station.yaml --show --save-every 0
+```
+
+Nothing arrives (`waiting for the first packet ...` over and over): the Pi's sender is not running. `connected SUB`
+alone proves nothing (ZeroMQ connects in the background); `nc -zv <PI> 5555` answering `Connection refused` means the
+Pi is up but nothing listens on 5555.
+
 ### The frames probe
 
 **When:** to look at the images the policy gets (camera mount, lighting), with `policy_deploy run` stopped. Start the
@@ -297,6 +354,18 @@ frames process alone in one terminal, ask it once from another, then Ctrl-C the 
 
 **Good:** the first prints `ready`; the probe prints both cameras `ok` at `30.0` fps, the four image times and ages,
 and writes `main_0.png`, `main_1.png`, `ultrawide_0.png`, `ultrawide_1.png` into `~/probe_images`: open them and look.
+
+**Live, during a run:** `--live [HZ]` keeps asking (default 5 times a second) and shows the four images in a window,
+2×2 (rows main and ultrawide, columns the two observation steps), each with its age. With `--save DIR` every set is
+written as it arrives (`NNNNNN_main_0.png`, ...), so stopping with Ctrl-C loses nothing. It asks the `frames` of the
+running `policy_deploy run` (no frames process of its own), and needs the torch environment's python:
+
+```bash
+~/envs/policy_deploy_torch/bin/python -m policy_deploy.frames.probe --live 10 --save <folder>
+```
+
+It shares `frames` with the policy (about 7 ms per request), so keep it at 10 or less and watch `late loops`. The window
+may be one step behind the images a step used; the exact ones are in the tap ("A trained policy", step 6).
 
 ### Camera constants: `deploy_rig`
 
@@ -424,7 +493,7 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
    5. First trained episode: PC `h`, PC `p`, then `c` here, hand on the user stop. If the first move does not head for
       the object, press `s`.
 
-5. **Every run after that:** the daily routine at the top (`check`, then `run`). The chosen policy stays chosen.
+5. **Every run after that:** "Running trials" at the top. The chosen policy stays chosen.
 
 6. **Once episodes work: record what the policy sees.** Off by default. Add under `manager:` in `station.yaml`
    (`use` keeps these lines):
@@ -467,8 +536,9 @@ Plugged in, on AC power: on battery or power-saver the start-up limits are misse
 | `laptop address FAIL none of link.yaml laptop.addresses ... is on this laptop` | step 4: the laptop's address changed or `link.yaml` is wrong (then also the PC's firewall) |
 | `Pi reachable FAIL no TCP connection to <PI>:5555` | the Pi is on, on ASUS_5g, its sender is running; `station.yaml pi: address` (step 4) |
 | `Wi-Fi WARN not on ASUS_5g` | fine when wired; otherwise join ASUS_5g |
+| `station.yaml: not found: .../deployment/station.yaml` | you are in the wrong folder: `cd` into `deployment/policy_deploy` |
 | `terminal FAIL no terminal for the keyboard` | run it in a normal terminal window, not through a pipe |
-| `... cannot bind tcp://127.0.0.1:56..: is another policy_deploy run ... still running?` | another `policy_deploy run` (or a `control_deploy run --mock` on this laptop) is still open: quit it |
+| `... cannot bind tcp://127.0.0.1:56..: is another policy_deploy run ... still running?` | another `policy_deploy run` (or a `control_deploy run --mock`, or a `python -m policy_deploy.frames` started by hand) is still open: quit it. To find it: `ss -ltnp \| grep 56` |
 | `settled FAIL trained policy refused on the real arm` | `policy_deploy use hold_still`, or settle the axes first ("A trained policy", step 4) |
 | `PC not answering: ...: check franka_control on the PC and the link` | is `control_deploy run` still running? Wi-Fi; then run again |
 | `the PC stopped the arm (watchdog or the PC's 's')` | a Wi-Fi stall over 1 s, or someone pressed `s` on the PC: run again |
@@ -476,6 +546,9 @@ Plugged in, on AC power: on battery or power-saver the start-up limits are misse
 | `franka_control restarted on the PC` | the PC was restarted during the run: run again |
 | `the PC is driving an episode for another C3 client` | stop the other laptop run, `pc_probe` or the PC's `console` |
 | `c: the PC refused start: refused: not at the start pose: press h, then p on the PC` | on the PC: `h`, wait, `p`; then `c` here |
+| `warm-up inference failed: ...` | the policy failed on its test input before the run: the message says what; `gripper_map` and `warmup_gripper_width_m` in `config/policy.yaml` |
+| `field 'eef_rot6d': ... vectors not perpendicular` during an episode | the model's rotation output went bad (its two vectors more than about 6° off square, `rot6d_dot_max` 0.1): the policy is unsure of what it sees. Look at its images (`probe --live`), try `--precision fp32` and more `--diffusion-steps` if the timing allows |
+| `the PC's gate rejected waypoint N: outside workspace box ...` | the policy aimed outside the PC's box. The laptop now clamps every waypoint into it first (`workspace_clamp_m` in `config/manager.yaml`; the manager log lists each clamp), so this should not happen; if it does, the laptop's `control_deploy/franka_control/config.yaml` differs from the PC's: `git pull` on both. Fault on the PC: Ctrl-C and `control_deploy run` there |
 | `FAILED frames during start-up: not ready after 30 s` | the Pi stream isn't arriving: `pi_collect` |
 | `main camera down` / `ultrawide camera down` | the Pi or its Wi-Fi: check the Pi, then run again |
 | `frame size ..., rig file says ...` | the Pi now streams another size: regenerate the rig file for it ("Camera constants", `--size W H`) |

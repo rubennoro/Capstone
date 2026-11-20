@@ -9,4 +9,4 @@ F_T_TCP:
   - [0.7071067811865476, 0.7071067811865476, 0.0, 0.0]
   - [0.0, 0.0, 1.0, 0.23565]
   - [0.0, 0.0, 0.0, 1.0]
-settled: false     # true once PLAN §9 is done and checked on the arm
+settled: true     # true once PLAN §9 is done and checked on the arm

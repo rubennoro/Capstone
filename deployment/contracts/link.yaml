@@ -1,8 +1,8 @@
 # The laptop <-> PC link (PLAN §6). One set of timing values, safe on Wi-Fi, used wired too.
 pc:
-  address: 192.168.50.10          # PLACEHOLDER: the PC's reserved ASUS_5g address (PLAN §15). franka_control binds it.
+  address: 192.168.50.186         # the PC's reserved ASUS_5g address (PLAN §15). franka_control binds it.
 laptop:
-  addresses: [192.168.50.20]      # PLACEHOLDER: the laptop's Wi-Fi address; add its wired one when cabled
+  addresses: [192.168.50.227]     # the laptop's reserved Wi-Fi address; add its wired one when cabled
 ports:
   state: 5620                     # C2
   commands: 5630                  # C3

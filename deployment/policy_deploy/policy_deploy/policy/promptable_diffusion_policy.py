@@ -1,7 +1,7 @@
 # adapted from rnoro/deployment:behavior_prompting/behavior_prompting/deployment/detached_inference.py @ edfe8bd
 # changes: PolicyInferenceNodeRealEnv's policy_prompt / policy_reset topics as a PromptablePolicy over DiffusionPolicy
 # (the same ModelRunner and predict_action); prompts from PromptSource; the warm-up prompt is the longest demo; no
-# --vis-prompt, attention visualisation or tokenizer (STRUCTURE.md 5.2)
+# --vis-prompt, attention visualisation or tokenizer (STRUCTURE.md 5.2); passes policy.gripper_map on to DiffusionPolicy
 """PromptableDiffusionPolicy: a trained prompting diffusion checkpoint, kind diffusion (torch; STRUCTURE.md 5.2).
 
 The order is reset -> prompt -> predict_action..., as in training's evaluator (umi_prompting_runner.py) and
@@ -21,6 +21,7 @@ from deploy_contracts import ContractLimits
 
 from policy_deploy.policy.checkpoint_loader import LoadedModel
 from policy_deploy.policy.diffusion_policy import DiffusionPolicy
+from policy_deploy.policy.gripper_map import GripperMap
 from policy_deploy.policy.key_map import KeyMap
 from policy_deploy.policy.model_runner import ModelRunner
 from policy_deploy.policy.prompt_source import PromptSource
@@ -37,8 +38,8 @@ class PromptableDiffusionPolicy(DiffusionPolicy, PromptablePolicy):
     USES_PROMPT = True
 
     def __init__(self, runner: ModelRunner, model: torch.nn.Module, source: PromptSource, gripper_width_max_m: float,
-                 info: Mapping[str, Any] | None = None) -> None:
-        super().__init__(runner, model.reset, gripper_width_max_m, info=info)
+                 info: Mapping[str, Any] | None = None, gripper_map: GripperMap | None = None) -> None:
+        super().__init__(runner, model.reset, gripper_width_max_m, info=info, gripper_map=gripper_map)
         self._model = model
         self._source = source
         self.last_prompt: dict[str, Any] | None = None       # the prompt in effect (None after a reset)
@@ -53,7 +54,8 @@ class PromptableDiffusionPolicy(DiffusionPolicy, PromptablePolicy):
                                    loaded.model.get_training_split_info(), settings.device)
         log.info("prompt dataset %s (%s split) loaded in %.2f s: %s", settings.prompt_dataset, settings.prompt_split,
                  time.monotonic() - t0, ", ".join(f"{t} ({n} demos)" for t, n in source.tasks().items()))
-        return cls(runner, loaded.model, source, ContractLimits.load().gripper_width_max_m, info=loaded.info)
+        return cls(runner, loaded.model, source, ContractLimits.load().gripper_width_max_m, info=loaded.info,
+                   gripper_map=settings.gripper_map)
 
     def reset(self) -> None:
         self.last_prompt = None

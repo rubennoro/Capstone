@@ -100,6 +100,6 @@ fake_arm:                             # only with --mock and in tests
   inertia_kg_m2: 1.0
 
 fake_gripper:
-  start_width_m: 0.08                 # also where the fake's home() ends
+  start_width_m: 0.04                 # also where the fake's home() ends
   speed_m_per_s: 0.1
   object_width_m: null                # fingers stop here when closing (null: no object)

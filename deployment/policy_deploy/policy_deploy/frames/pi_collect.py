@@ -287,7 +287,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--station", type=Path, default=None,
                    help="optional: take the Pi's address (pi.address, pi.port) and the output root (session_root) "
                         "from this station file when --endpoint / --out are not given")
+    p.add_argument("--show", action="store_true",
+                   help="also show both cameras live in a window (main | ultrawide); q or Esc in it stops. Needs an "
+                        "OpenCV with a GUI: run it with the torch environment's python")
     args = p.parse_args(argv)
+    if args.show and not _has_gui():
+        print("pi_collect: --show needs an OpenCV with a GUI (this python's has none); use "
+              "~/envs/policy_deploy_torch/bin/python", file=sys.stderr)
+        return 1
     stamp = f"{_dt.datetime.now():%Y-%m-%d_%H-%M-%S}"
     if args.station is not None:
         try:
@@ -342,12 +349,45 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if last_save is None or time.monotonic() - last_save >= args.save_every:
                     last_save = time.monotonic()
                     _save_jpegs(out / "jpeg", r)
+                if args.show and _show(r):
+                    break
     finally:
         collector.close()
+        if args.show:
+            cv2.destroyAllWindows()
     print(stats.summary(), flush=True)
     print(stats.pair_gap.text(), flush=True)
     (out / "pair_gap.json").write_text(json.dumps(stats.pair_gap.summary(), indent=2) + "\n", encoding="utf-8")
     return 0 if stats.total["packets"] else 2
+
+
+WINDOW = "pi_collect: main | ultrawide (q to stop)"
+
+
+def _has_gui() -> bool:
+    """True if this OpenCV was built with a GUI backend (the light environment's headless one is not)."""
+    info = cv2.getBuildInformation()
+    gui = info.split("GUI:", 1)[1].split("\n\n", 1)[0] if "GUI:" in info else ""
+    return any(name in gui for name in ("GTK", "QT", "Cocoa", "Win32"))
+
+
+def _show(r: PacketReport) -> bool:
+    """Show the packet's two images side by side (a missing one as black); True when q or Esc is pressed."""
+    imgs = [r.images[cam] for cam in CAMERAS]
+    h = max((img.shape[0] for img in imgs if img is not None), default=0)
+    if h:
+        tiles = []
+        for img in imgs:
+            if img is None:
+                img = np.zeros((h, h * 4 // 3, 3), np.uint8)
+            elif img.shape[0] != h:
+                img = cv2.resize(img, (img.shape[1] * h // img.shape[0], h))
+            tiles.append(img)
+        frame = np.hstack(tiles)
+        tag = _int(r.header, "packet_no")
+        cv2.putText(frame, f"packet {tag}", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.imshow(WINDOW, frame)
+    return (cv2.waitKey(1) & 0xFF) in (ord("q"), 27)
 
 
 def _save_jpegs(folder: Path, r: PacketReport) -> None:

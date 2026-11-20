@@ -31,9 +31,12 @@ class Anchor:
 class PoseConverter:
     """Keeps no state between calls. The Anchor returned by to_observation is the only one to_waypoints accepts."""
 
-    def __init__(self, exec_h: int, lookahead_ms: int) -> None:
+    def __init__(self, exec_h: int, lookahead_ms: int, workspace_box=None) -> None:
         self._exec_h = exec_h
         self._lookahead_ns = int(lookahead_ms) * NS_PER_MS
+        self._box = None if workspace_box is None else (np.asarray(workspace_box[0], dtype=np.float64),
+                                                        np.asarray(workspace_box[1], dtype=np.float64))
+        self.last_clamped: list[str] = []   # the last to_waypoints' clamps, e.g. "waypoint 10 z -0.019 -> -0.003"
 
     def to_observation(self, poses: np.ndarray, widths: np.ndarray, start_pose: np.ndarray,
                        frames: FramesReply, anchor_t_ns: int, anchor_t_pc_ns: int,
@@ -68,6 +71,13 @@ class PoseConverter:
         T_rel[:, :3, 3] = np.asarray(chunk.eef_pos[:h], dtype=np.float64)
         T_rel[:, 3, 3] = 1.0
         T_abs = pose_math.absolute(anchor.T, T_rel)
+        self.last_clamped = []
+        if self._box is not None:
+            pos = T_abs[:, :3, 3]
+            clamped = np.clip(pos, self._box[0], self._box[1])
+            for i, ax in zip(*np.nonzero(clamped != pos)):
+                self.last_clamped.append(f"waypoint {i} {'xyz'[ax]} {pos[i, ax]:+.3f} -> {clamped[i, ax]:+.3f}")
+            T_abs[:, :3, 3] = clamped
         k = np.arange(h, dtype=np.int64)
         t_ns = np.int64(anchor.t_pc_ns) + k * np.int64(STEP_MS * NS_PER_MS) + np.int64(self._lookahead_ns)
         width = np.asarray(chunk.gripper_width_m[:h, 0], dtype=np.float64)
