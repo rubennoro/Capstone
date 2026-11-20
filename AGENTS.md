@@ -10,43 +10,37 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-11-15)
+## Current state (2026-11-19)
 
 - **Branch `rnoro/training` (this checkout) holds `train/`: the training workflow for rig data.** Local commits only,
-  not pushed. Run order for Ruben's (already configured) setup: [train/DIRECTIONS.md](train/DIRECTIONS.md); one-time setup
-  for a new machine: [train/SETUP.md](train/SETUP.md); script details in
-  [train/README.md](train/README.md), analysis in [train/analysis/README.md](train/analysis/README.md).
-  - Flow: `pull.sh` (Jetson task folder + `dataproc package` -> `data/<folder>/`), `upload.sh`, `submit.sh`
-    (smoke-first Slurm chain), `status.sh`, `fetch.sh` (-> `data/<folder>/policy/<run>/`), `analysis/*`.
-  - `all.sh` (2026-11-15) chains all of it, incl. waiting and the offline eval, for good data / little time (run in
-    tmux). Logs to `data/<folder>/logs/all_<time>_<dataset>.{log,steps}`; exit 0 ok, 1 stopped (no policy), 2 policy
-    fetched but a report/eval failed; `--run <full run>` continues after a stop. Needed `submit.sh` to print
-    `SMOKE_RUN=`/`FULL_RUN=`, a cluster `submit_job.sh eval-status` (+ `eval/<ckpt>/JOB` file) and `status.sh --eval`.
-  - Decisions: data lives in gitignored `~/Capstone/data/<folder>/`; one slim checkpoint per run (TOPK=1, ~2.5 GB);
-    cluster runs in `~/CapstoneProject/policies/` (not the clone); tools synced to `~/CapstoneProject/train_tools/` on
-    every submit, so the cluster clone stays on main; the new job does not git-push; `scripts/cluster/` untouched.
-  - Tests (all offline): `train/tests/run_tests.sh` (140 with `SHELLCHECK=`; 139 without),
-    `train/tests/cluster/run_tests.sh` (177 with shellcheck on PATH; 174 without), `train/analysis/tests/run.sh` (20).
-    shellcheck is not installed system-wide (`pip install shellcheck-py` in a throwaway venv works).
-- **Connections verified 2026-11-15:**
-  - Jetson `capstone-gripper@129.10.156.38` (NEU IP, may change), key login, in gitignored `train/config.local.env`.
-    dataproc defaults (`~/data`, `~/envs/env_dataproc`) confirmed.
-  - Explorer needs the Research Computing key since 2026-11-06 (downloaded via OOD, `~/.ssh/config` block); login and
-    xfer both work, xfer accepts commands, `gpu` and `gpu-short` have H200s, `bp` has robotmq.
-  - Cluster clone already on `main` at `1e4dc64` (>= `4be9982`), clean, has `controlSW/franka_deploy`: offline
-    eval is ready (no pull needed).
-- **Blocker: no trainable rig data.** Jetson tasks `eraser_pick_1` (eps 61-65) and `eraser_pick_2` (117-121): calibration
-  done, every episode failed at SLAM ("orbslam3: never initialised, 0 keyframes"). That is dataproc work on
-  `rnoro/data-work` (`~/Capstone-data-work`), not `train/`.
-- Other branches: dataproc on `rnoro/data-work`; deployment on `rnoro/deployment`. Each has its own AGENTS.md.
-- Earlier iPhone-era results stay in `results/block_raise/` (best: run_001, val action MSE 0.000148 at epoch 50 of 140;
-  overfit after ~50). Old pipeline: root [DIRECTIONS.md](DIRECTIONS.md).
+  not pushed. Run order: [train/DIRECTIONS.md](train/DIRECTIONS.md); setup for a new machine: [train/SETUP.md](train/SETUP.md);
+  script details: [train/README.md](train/README.md); analysis: [train/analysis/README.md](train/analysis/README.md).
+  - Flow: `pull.sh`, `upload.sh`, `submit.sh`, `status.sh`, `fetch.sh`, `analysis/*`; `all.sh` chains them (without
+    `--pull/--package` it uses `data/<folder>/package/<dataset>/` as it is, e.g. a symlink to a umiproc package).
+  - `TRAIN_CONFIG` picks the policy (`umi_policy_dunetp` behavior prompting = default, `umi_policy_dunet` plain
+    diffusion); set it in `train/config.local.env`, it is frozen per run on submit.
+  - 0f0863b: datasets with several labels (`label_dir multi`, e.g. packaged from PICK_TEST1 + PICK_TEST2) are allowed.
+- **Data now comes from umi-processing on the laptop** (`umiproc package`, `~/data/umi/datasets/`), not the Jetson's dataproc.
+- **PICK_TEST1 (one day, 30 eps):** scaling study 10/15/20/25/30 eps. Behavior prompting done (val MSE 0.00084 at 10
+  -> 0.00020 at 30, no overfit in 60 epochs); plain diffusion `run_022`..`run_030` submitted 2026-11-19 18:00. Which run
+  is which: [data/PICK_TEST1/RUNS.md](data/PICK_TEST1/RUNS.md) (gitignored).
+- **PICK_DOUBLE (PICK_TEST1 + PICK_TEST2, plain diffusion), started 2026-11-19, paused on the laptop side:**
+  - Packages in `~/data/umi/datasets/multi/`, linked in `data/PICK_DOUBLE/package/`: `pick1-double-v2` (62 = 30+32),
+    `pick1-double-ep15-v1` / `-ep20-v1` / `-ep25-v1` (first 15/20/25 of each day; built with a temporary
+    `UMIPROC_ROOT` whose task folders link only those episodes).
+  - Submitted: `pick1-double-v2` -> `multi/run_001_2026-11-19`, job 12000883 (queued behind the 4-running limit).
+  - Not submitted yet: the three subsets. `train/config.local.env` still has the TEMPORARY
+    `TRAIN_CONFIG="umi_policy_dunet"` line they need (the driver deletes it after its last submit).
+- Explorer queue: `gpu` QOS 4 running / 8 queued per user; account `eece5640.202530` (in config.local.env).
+- Other branches: umi-processing + dataproc on `rnoro/data-work*` (`~/Capstone-data-work`); deployment on
+  `rnoro/final-deployment` (`~/Capstone-final-deployment`). Each has its own AGENTS.md.
 
 ## Next time
 
-1. Fix SLAM initialisation on the Jetson (read `orbslam3.log` under `~/data/tasks/<folder>/.staging/<ep>/processed/slam/work/`),
-   until `dataproc status <folder>` shows exported episodes.
-2. First real run, in tmux: `train/all.sh <folder> <new-dataset> --package --no-raw --results-dir results/block_raise
-   --note "..."` (or step by step with `go.sh`). The smoke run is the first time the trainer reads a dataproc zip, and
-   the eval the first time `offline_eval` runs on a rig-trained policy.
-3. Decide whether to push `rnoro/training`.
+1. Queue the rest (laptop must stay awake while it runs; it only submits when <= 5 of your jobs are queued):
+   `setsid nohup data/PICK_DOUBLE/run_sweep.sh > data/PICK_DOUBLE/logs/sweep_driver.log 2>&1 < /dev/null &`
+   and finish the 62-episode run: `train/all.sh PICK_DOUBLE --run run_001_2026-11-19` (wait, fetch, reports, eval).
+2. Fetch the PICK_TEST1 plain-diffusion runs (`train/fetch.sh PICK_TEST1 <run>`) and update RUNS.md.
+3. Compare: plain 15+15 (two days) vs `pick1-v1` (30, one day); the 62-episode policy is the deployment candidate.
+   Check that `~/Capstone-final-deployment` loads a plain-diffusion checkpoint before robot trials.
+4. Decide whether to push `rnoro/training`.
