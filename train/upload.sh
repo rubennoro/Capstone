@@ -41,7 +41,6 @@ if [ -f "$PKG/package.json" ] && [ -f "$ZIP" ]; then
   LABEL=$(json_get "$PKG/package.json" label_dir)
   WANT=$(json_get "$PKG/package.json" zip.sha256)
   [ -n "$LABEL" ] || die "no label_dir in $PKG/package.json"
-  [ "$LABEL" != multi ] || die "$DATASET has several labels (label_dir multi); only single-label datasets are supported"
   check_name label "$LABEL"
   step "Checking the local zip ($(human_bytes "$(stat -c %s "$ZIP")"))"
   GOT=$(sha256_of "$ZIP")

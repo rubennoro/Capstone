@@ -61,7 +61,6 @@ N_STEPS=""
 if [ -f "$PKG" ]; then
   LABEL=$(json_get "$PKG" label_dir)
   N_STEPS=$(json_get "$PKG" totals.n_steps)
-  [ "$LABEL" != multi ] || die "$DATASET has several labels; only single-label datasets are supported"
   check_name label "$LABEL"
 elif [ "$DRY_RUN" = 1 ]; then
   warn "$PKG is not there yet (it would be pulled first); epoch check skipped"
