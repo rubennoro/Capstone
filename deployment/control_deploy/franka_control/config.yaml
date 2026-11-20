@@ -40,8 +40,9 @@ load:                                 # payload beyond the hand configured in De
     - [0.0, 0.0, 0.0]
 
 safety:                               # the gate (old-S §6); defaults from main-sim bridge.yaml
-  workspace_min_m: [0.25, -0.40, -0.005]    # TODO: measure around the table; z: 5 mm below the TCP z with the
-                                            # fingertips on the table (base on the table top: about 0), grasps end there
+  workspace_min_m: [0.20, -0.40, -0.005]    # TODO: measure around the table; z: 5 mm below the TCP z with the
+                                            # fingertips on the table (base on the table top: about 0), grasps end there;
+                                            # x: demos pull back toward the base after the grasp (sim: to 0.198 from home)
   workspace_max_m: [0.80, 0.40, 0.70]       # TODO: measure around the table
   cone_axis: [0.0, 0.0, -1.0]               # the hand's approach axis at home (normalised by the loader)
   cone_max_deg: 60.0                        # TODO: check around the table
