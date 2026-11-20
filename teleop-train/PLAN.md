@@ -24,15 +24,19 @@ Turns the episodes recorded by `deployment/teleop_collect` into the training dat
 - mixing teleop and handheld episodes in one dataset;
 - the dataset report's teleop-specific sections (it fails soft, §7).
 
-## 2. Assumption: the training side
+## 2. The training side: `TRAIN_CONFIG`
 
-This plan assumes `rnoro/training` gets a **`--config NAME` option** on `train/submit.sh` and `train/all.sh` (built
-separately, not part of this plan):
+`rnoro/training` picks the policy with the setting **`TRAIN_CONFIG`** (`18eae9d`, 2026-11-19; it replaces the
+`--config` option this plan first assumed). It is not built here: other branches are read only.
 
-- `NAME` is `umi_policy_dunet` (plain diffusion) or `umi_policy_dunetp` (behavior prompting, the current default).
-- `train.sbatch` runs `train.py --config-name=NAME`.
-- `job.json` / `job_info.json` record it.
-- `eval.sbatch` skips its attention-video step for a plain run.
+- `train/config.env` sets `TRAIN_CONFIG="umi_policy_dunetp"` (behavior prompting, the default). A line in
+  `train/config.local.env` (untracked, one per machine) overrides it. `TRAIN_CONFIG="umi_policy_dunet"` trains the
+  plain diffusion policy, with that config's own settings: batch 32, fp32, lr 7.5e-5.
+- `train.sbatch` runs `train.py --config-name=$TRAIN_CONFIG`.
+- `submit_job.sh` refuses `eval.sh --attention` for a plain run, because there are no videos; the offline eval works
+  for both.
+- `config.env` is sourced over the environment, so `TRAIN_CONFIG=... train/all.sh` does **not** work: the line goes
+  in `config.local.env`.
 
 Both configs read the same zip (§6), so nothing here depends on which one is chosen.
 
@@ -70,7 +74,7 @@ Both configs read the same zip (§6), so nothing here depends on which one is ch
         ▼
 ~/Capstone/data/<task>/package/<dataset>/<dataset>.zarr.zip + package.json
         │
-        │  cd ~/Capstone && train/all.sh <task> <dataset> --config umi_policy_dunet
+        │  cd ~/Capstone && train/all.sh <task> <dataset>   (TRAIN_CONFIG picks the policy, §2)
         ▼
 cluster training → ~/Capstone/data/<task>/policy/<run>/
 ```
@@ -218,8 +222,8 @@ happens here.
 
 ```bash
 cd ~/Capstone
-train/all.sh <task> <dataset> --config umi_policy_dunet     # plain diffusion
-train/all.sh <task> <dataset> --config umi_policy_dunetp    # behavior prompting
+train/all.sh <task> <dataset>     # the policy TRAIN_CONFIG names (§2): plain diffusion with
+                                  # TRAIN_CONFIG="umi_policy_dunet" in train/config.local.env
 ```
 
 With neither `--pull` nor `--package`, `all.sh` takes `data/<task>/package/<dataset>/` as it is and runs the usual
@@ -363,8 +367,8 @@ their task's files. The executor that dispatched them owns the result and report
   - The local env has no `lmdb`, so the check swapped only the LMDB cache for an in-memory copy, using the same
     `ReplayBuffer.copy_from_store`.
 
-After wave 3, the first real use: record teleop episodes, `teleop_train package`, then `train/all.sh` with the
-`--config` option of §2 (once it exists on `rnoro/training`).
+After wave 3, the first real use: record teleop episodes, `teleop_train package`, then `train/all.sh` with
+`TRAIN_CONFIG` set as in §2.
 
 ## 13. Decisions
 

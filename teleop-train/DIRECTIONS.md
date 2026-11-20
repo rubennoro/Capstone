@@ -105,13 +105,20 @@ left out and why, and the next command.
 
 ## 5. Train
 
-Needs the `--config` option of `rnoro/training` (PLAN.md §2). Until it is there, leave `--config` out: the scripts
-train behavior prompting (`umi_policy_dunetp`), their default.
+**Choose the policy** with `TRAIN_CONFIG` in `~/Capstone/train/config.local.env`. It is read by every `train/`
+script and kept until you change it:
+
+| Policy | Line in `train/config.local.env` |
+|---|---|
+| plain diffusion | `TRAIN_CONFIG="umi_policy_dunet"` |
+| behavior prompting (the default) | no line, or `TRAIN_CONFIG="umi_policy_dunetp"` |
+
+`TRAIN_CONFIG=... train/all.sh` on the command line does not work, because `config.env` sets it again; use the file.
+Check what a run will use with `grep TRAIN_CONFIG ~/Capstone/train/config.local.env`.
 
 ```bash
 cd ~/Capstone
-train/all.sh $TASK $DATASET --config umi_policy_dunet      # plain diffusion
-train/all.sh $TASK $DATASET --config umi_policy_dunetp     # behavior prompting
+train/all.sh $TASK $DATASET
 ```
 
 `all.sh` takes the package as it is in `data/$TASK/package/$DATASET/`, because it runs without `--pull` / `--package`.
@@ -191,5 +198,5 @@ cd ~/Capstone-teleop-collect-deploy/teleop-train && unset PYTHONPATH
 | `teleop_train convert TASK [--episodes LIST] [--force]` | episodes → per-episode training zarrs, with the checks |
 | `teleop_train package TASK DATASET [--episodes N] [--include-fail] [--overwrite]` | converted episodes → `DATASET.zarr.zip` + `package.json` |
 | both: `[--pose-source target\|measured] [--raw-root DIR] [--out-root DIR]` | |
-| `train/all.sh TASK DATASET --config umi_policy_dunet\|umi_policy_dunetp` | (in `~/Capstone`) train end to end |
+| `train/all.sh TASK DATASET` | (in `~/Capstone`) train end to end; the policy is `TRAIN_CONFIG` in `train/config.local.env` |
 | `policy_deploy use <run folder>` | (in final-deployment) choose the trained policy |

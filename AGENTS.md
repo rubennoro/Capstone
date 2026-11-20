@@ -38,8 +38,9 @@ Running status between working sessions. Update it at the end of each conversati
     rig other than `deployment/contracts`'.
   - Verified on real `teleop_collect run --mock` episodes, and the zip loads in `UmiTaskDataset` under
     `umi_policy_dunet` and `umi_policy_dunetp`.
-  - Not built yet: the `--config` option on `rnoro/training`. `train.sbatch` hard-codes `umi_policy_dunetp`, so a
-    plain-diffusion run needs it.
+  - Policy choice on `rnoro/training`: `TRAIN_CONFIG` (`18eae9d`). Put `TRAIN_CONFIG="umi_policy_dunet"` in
+    `~/Capstone/train/config.local.env` for plain diffusion; the default is `umi_policy_dunetp`. It must go in the
+    file: a command-line env var is overwritten by `config.env`.
 
 - **Custom sensor rig (Jetson Orin Nano + 2 IMX219 CSI cameras + ICM-42688-P IMU): software done and verified, not
   yet run on hardware.** Status, commands, decisions and risks are in [ROADMAP.md](ROADMAP.md) ("Status" section).
@@ -90,10 +91,9 @@ Running status between working sessions. Update it at the end of each conversati
 
 - Teleop:
   1. Push `rnoro/teleop-collect-deploy` (all local commits so far).
-  - Other branches are read only from this branch's sessions. The `--config umi_policy_dunet|umi_policy_dunetp`
-    option belongs to `rnoro/training` (`submit.sh`/`all.sh` → `train.sbatch`; `eval.sbatch` skips its attention
-    step for plain) and is not built here. Until it exists, `train/all.sh` trains behavior prompting. Then train a
-    first teleop dataset (`teleop-train/DIRECTIONS.md`).
+  - Other branches are read only from this branch's sessions.
+  - Train a first teleop dataset (`teleop-train/DIRECTIONS.md`): `teleop_train package`, then `TRAIN_CONFIG` in
+    `config.local.env`, then `train/all.sh`.
   2. On the PC: the bring-up in `deployment/control_deploy/DIRECTIONS.md`, measuring the workspace box first, then
      the `console` steps.
   3. On the laptop: `teleop_collect/DIRECTIONS.md`. Set the real addresses in `link.yaml` on both machines and in

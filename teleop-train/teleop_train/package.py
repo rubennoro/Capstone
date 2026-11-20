@@ -425,10 +425,17 @@ def _record(tp: TaskPaths, dataset: str, chosen: list[_Chosen], excluded: list[d
 
 # --------------------------------------------------------------------------------------------- command line
 
+#: rnoro/training's policy setting (train/config.env, overridden by train/config.local.env; 18eae9d)
+TRAIN_CONFIG_PLAIN = "umi_policy_dunet"
+TRAIN_CONFIG_PROMPTING = "umi_policy_dunetp"
+
+
 def next_commands(task: str, dataset: str) -> list[str]:
-    """The ``train/all.sh`` lines to run next (PLAN §7): plain diffusion, then behavior prompting."""
-    return [f"cd ~/Capstone && train/all.sh {task} {dataset} --config umi_policy_dunet",
-            f"cd ~/Capstone && train/all.sh {task} {dataset} --config umi_policy_dunetp"]
+    """What to run next (PLAN §7): the ``train/all.sh`` line, then how ``TRAIN_CONFIG`` picks the policy."""
+    return [f"cd ~/Capstone && train/all.sh {task} {dataset}",
+            f'it trains the policy TRAIN_CONFIG names: for plain diffusion put TRAIN_CONFIG="{TRAIN_CONFIG_PLAIN}" in '
+            f"~/Capstone/train/config.local.env first; without that line it is train/config.env's "
+            f"{TRAIN_CONFIG_PROMPTING} (behavior prompting)"]
 
 
 def format_summary(res: PackageResult, out_root: Path) -> str:
@@ -452,8 +459,8 @@ def format_summary(res: PackageResult, out_root: Path) -> str:
     lines += [f"wrote {res.zip_path} ({rec['zip']['size_bytes'] / 1e6:.1f} MB, {rec['totals']['episodes']} "
               f"episodes, {rec['totals']['n_steps']} steps)",
               f"      {res.package_json}", ""]
-    plain, prompting = next_commands(rec["label_dir"], rec["dataset"])
-    lines += ["next, plain diffusion:", f"  {plain}", "or behavior prompting:", f"  {prompting}"]
+    command, policy = next_commands(rec["label_dir"], rec["dataset"])
+    lines += ["next:", f"  {command}", f"({policy})"]
     if out_root != paths.DEFAULT_OUT_ROOT.expanduser().resolve():
         lines.append(f"(--out-root is not {paths.DEFAULT_OUT_ROOT}: LOCAL_DATA_ROOT in train/config.local.env "
                      f"must point at {out_root})")
