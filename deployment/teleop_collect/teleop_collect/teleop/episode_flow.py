@@ -4,13 +4,18 @@ Start: a new episode folder (E4's Task.new_episode), its EpisodeRecording, R1 st
 controller begun at the arm's width, the listener's state recorder on, phase RECORDING. Start is allowed only at the
 start pose (StartPoseReference); the PC's answer to the C3 start confirms it, or (`refused: not at the start pose`)
 drops it. Stop: phase STOPPING, motion off, C3 stop, the state recorder off, R1 stop_recording (the summary), the
-recorders closed, then discard or meta.yaml + COMPLETE (E4's build_meta and EpisodeDir.finish), phase IDLE. Abort
-(an EPISODE problem: the PC stopped the arm, or Stop arm): the same, the folder discarded, the reason on the page and in
-the session log only. abort_open is the conclude / Ctrl-C path and never raises.
+recorders closed, then discard or meta.yaml + COMPLETE (E4's build_meta and EpisodeDir.finish), phase IDLE.
+
+No episode is ever deleted or refused a save automatically: only the operator's Discard or delete removes one.
+- abort (an EPISODE problem: the PC stopped the arm, or Stop arm): the same stop, then the episode is kept unsaved
+  (meta.yaml with outcome `unsaved`, no COMPLETE; the reason in its `warnings`); the episode list offers Save success,
+  Save fail and delete (label()).
+- abort_open (conclude, Ctrl-C, SIGTERM; never raises): the same, with short waits; the next run lists it.
+- A failure found at Stop (frames' summary, a recorder or disk error) is listed in meta.yaml `warnings` and the
+  episode is saved as asked. Only a meta.yaml that cannot be written leaves the folder without it: unsaved, delete only.
 
 Data problems (WARN: a camera down or stale, the recording failed) never stop the arm or end the episode: warn() shows
-each once on the page and lists it in meta.yaml `warnings`. An episode whose recording failed can only be discarded:
-Stop with success or fail is refused with the reason (the episode goes on), Discard works.
+each once on the page and lists it in meta.yaml `warnings`.
 
 It uses the loop's clients through TeleopLoop._rpc (so a failure names whom it went to); every request is made on the
 main thread.
@@ -24,10 +29,10 @@ from typing import TYPE_CHECKING, Any
 
 from deploy_contracts import Ack, ContractError, HelloReply, RemoteError, SetWaypoints, TransportTimeout
 
-from teleop_collect.contracts import CAMERAS, NotSynced, RecordingSummary
+from teleop_collect.contracts import CAMERAS, UNSAVED, CameraSummary, NotSynced, RecordingSummary
 from teleop_collect.teleop.episode.meta import build_meta
 from teleop_collect.teleop.episode.recorders import EpisodeRecording
-from teleop_collect.teleop.episode.store import EpisodeDir, EpisodeInfo, Task, TaskError, TaskStore
+from teleop_collect.teleop.episode.store import EpisodeDir, EpisodeInfo, Task, TaskError, TaskStore, episode_number
 from teleop_collect.teleop.failure_monitor import COUNTED_CODES
 from teleop_collect.teleop.motion.keys import HeldKeys
 from teleop_collect.teleop.pc_clock import HelloSample
@@ -46,11 +51,19 @@ PC_NOT_AT_START_POSE = "refused: not at the start pose"
 START_REFUSED_HERE = "the PC refused the start here (not the start pose): press p on the PC"
 START_POSE_UNKNOWN = "put the arm at the start pose: h, then p on the PC"
 NOT_AT_START_POSE = "not at the start pose: h, then p on the PC"
-ABORT_STOP_TIMEOUT_S = 1.0       # R1 stop_recording on the abort paths: the folder is deleted anyway (SIGTERM < 5 s)
+ABORT_STOP_TIMEOUT_S = 1.0       # R1 stop_recording on the quit / conclude paths (SIGTERM < 5 s)
 CAMERA_LATCHED = "{name} camera down: check the Pi (after a Pi restart: Ctrl-C and run teleop_collect again)"
 WARN_GOES_ON = "{episode}: {text}; the episode goes on (noted in its meta.yaml)"
-WARN_FAILED = "{episode}: {text}; the arm goes on: Stop and Discard (this episode cannot be saved)"
-SAVE_REFUSED = "this episode cannot be saved ({what}): Discard it"
+WARN_FAILED = "{episode}: {text}; the episode goes on (data may be missing; noted in its meta.yaml)"
+KEPT_UNSAVED = "{episode} ended: {reason}. Kept unsaved: in the episode list, Save success, Save fail or delete it"
+KEPT_UNSAVED_NEXT_RUN = ("{episode} ended: {reason}. Kept unsaved: at the next run, select its task, then Save "
+                         "success, Save fail or delete it in the episode list")
+#: The summary in meta.yaml when frames gave none (R1 stop failed): zero counts; the failure is in `warnings`.
+_EMPTY_CAMERA = CameraSummary(frames=0, frame_no_gaps=0, bytes=0, first_t_mid_ns=None, last_t_mid_ns=None)
+NO_SUMMARY = RecordingSummary(main=_EMPTY_CAMERA, ultrawide=_EMPTY_CAMERA, packets=0, packet_no_gaps=0, uw_reused=0,
+                              pair_refused=0, error="no summary from frames", pi_clock_offset_ns=None,
+                              pi_clock_drift_ppm=None)
+ENDED_CODE = "episode_ended"     # meta.yaml warnings code: why an unsaved episode ended (quit, conclude)
 
 
 class EpisodeFlow:
@@ -68,7 +81,6 @@ class EpisodeFlow:
         self._write_error = ""                           # an OSError of a record_* write: RECORDING_FAILED
         self._warnings: list[dict[str, Any]] = []        # the episode's WARN problems, for meta.yaml `warnings`
         self._warned: set[str] = set()                   # their keys: each shown and listed once per episode
-        self._failed = ""                                # the recording failed (what): only Discard at Stop
 
     # ---- the lists the page shows --------------------------------------------------------------------------------
 
@@ -88,7 +100,8 @@ class EpisodeFlow:
         return list(self._tasks)
 
     def episodes(self) -> list[EpisodeInfo]:
-        return list(self._episodes)
+        open_name = self.episode.name if self.episode is not None else None
+        return [e for e in self._episodes if e.name != open_name]
 
     def recording_name(self) -> str:
         return self.episode.name if self.episode is not None else ""
@@ -96,14 +109,15 @@ class EpisodeFlow:
     def episode_s(self, now: int) -> float:
         return max(0.0, (now - self._t_start_ns) / NS_PER_S) if self.recording is not None else 0.0
 
-    def clean_incomplete(self) -> list[Path]:
-        """Start-up step 1: every episode folder without COMPLETE is deleted (a crash mid-episode), each logged."""
-        deleted = self.store.clean_incomplete()
+    def report_unsaved(self) -> list[Path]:
+        """Start-up step 1: every episode folder without COMPLETE is kept and named on the page (label or delete it)."""
+        found = self.store.unsaved()
         self._reload_tasks()
-        for path in deleted:
-            self.lp._safe_event("incomplete_deleted", str(path))
-            self.lp._messages.add("warn", f"deleted an incomplete episode (a crash mid-episode): {path}")
-        return deleted
+        for path in found:
+            self.lp._safe_event("unsaved_kept", str(path))
+            self.lp._messages.add("warn", f"unsaved episode kept from an earlier run: {path.parent.name}/{path.name} "
+                                          "(select its task: Save success, Save fail or delete it in the list)")
+        return found
 
     # ---- tasks ---------------------------------------------------------------------------------------------------
 
@@ -154,6 +168,23 @@ class EpisodeFlow:
         self._episodes = [e for e in self._episodes if e.name != episode]
         self.lp._safe_event("episode_deleted", f"{self.task.name}/{episode}")
         self.lp._messages.add("info", f"{episode} deleted")
+        return Ack(ok=True, reason="")
+
+    def label(self, episode: str, outcome: str) -> Ack:
+        """Save an unsaved episode as success or fail."""
+        if self._busy():
+            return Ack(ok=False, reason="stop the episode first")
+        if self.task is None:
+            return Ack(ok=False, reason="select a task first")
+        if self.episode is not None and episode == self.episode.name:
+            return Ack(ok=False, reason=f"{episode} is being recorded")
+        try:
+            info = self.task.label(episode, outcome)
+        except (TaskError, OSError) as exc:
+            return Ack(ok=False, reason=str(exc))
+        self._put_episode(info)
+        self.lp._safe_event("episode_labeled", f"{self.task.name}/{episode}: {outcome}")
+        self.lp._messages.add("info", f"{episode} saved: {outcome}")
         return Ack(ok=True, reason="")
 
     # ---- start -----------------------------------------------------------------------------------------------------
@@ -273,83 +304,102 @@ class EpisodeFlow:
     # ---- stop, abort ---------------------------------------------------------------------------------------------
 
     def stop(self, outcome: str) -> Ack:
+        """Stop episode, then success / fail (saved) or discard (deleted). Never refused for a data problem: a failure
+        found here is listed in meta.yaml `warnings` and the episode is saved as asked."""
         from teleop_collect.teleop.teleop_loop import Phase
         lp = self.lp
         if lp._phase is not Phase.RECORDING or self.recording is None:
             return Ack(ok=False, reason="no episode recording")
-        if self._failed and outcome != "discard":           # the episode goes on until Discard
-            return Ack(ok=False, reason=SAVE_REFUSED.format(what=self._failed))
         lp._phase = Phase.STOPPING                                                    # 1
         lp._motion.stop()                                                             # 2
-        recording, episode, task = self.recording, self.episode, self.task
         t_send = lp._clock()
         lp._send_stop()                                                               # 3
         t_stop = lp._clock()
         self.record_command(t_send, t_stop, "c3.stop/v1", None, Ack(ok=True, reason=""), None, False)
+        text = self._end(outcome, t_stop, None)                                       # 4-6
+        lp._phase = Phase.IDLE                                                        # 7
+        lp._messages.add("info", text)
+        return Ack(ok=True, reason="")
+
+    def _end(self, outcome: str, t_stop: int, r1_timeout_s: float | None) -> str:
+        """After the C3 stop: the state recorder off, R1 stop_recording, the files closed, then the episode discarded,
+        saved (success, fail) or kept unsaved. Every failure on the way is a meta.yaml warning, never a deletion.
+        Returns the page line."""
+        lp, recording, episode, task = self.lp, self.recording, self.episode, self.task
         stop_pc = self._to_pc(t_stop)
         lp._listener.set_recorder(None)
         self._flush_keys()
-        try:
-            summary = lp._rpc("frames", "r1.stop_recording/v1", lp._frames.stop_recording)   # 4
-        except RemoteError as exc:
+        summary = None
+        if self._r1_started:                                                          # 4
             self._r1_started = False
-            return self._abort_on_stop(f"frames was not recording: {exc.reply.error}", outcome)
-        except (TransportTimeout, ContractError) as exc:    # the C3 stop went out first: the watchdog is not armed
-            self._r1_started = False
-            return self._abort_on_stop(f"r1.stop_recording: {exc}", outcome)
-        self._r1_started = False
-        if summary.error:
-            return self._abort_on_stop(summary.error, outcome)
+            try:
+                if r1_timeout_s is None:
+                    summary = lp._rpc("frames", "r1.stop_recording/v1", lp._frames.stop_recording)
+                else:
+                    summary = lp._rpc("frames", "r1.stop_recording/v1", lp._frames.stop_recording, r1_timeout_s)
+            except RemoteError as exc:
+                self._failure(f"frames was not recording: {exc.reply.error}")
+            except (TransportTimeout, ContractError) as exc:   # the C3 stop went out first: the watchdog is not armed
+                self._failure(f"r1.stop_recording: {exc}")
+        if summary is not None and summary.error:
+            self._failure(summary.error)
         error = self.recorder_failure(lp._listener.recorder_error())
         if error:
-            return self._abort_on_stop(error, outcome)
+            self._failure(error)
         self._write(lambda: recording.events.write(t_stop, "stop", {"outcome": outcome, "stop_pc_ns": stop_pc}))
         counts = self._counts(recording)
         try:
             recording.close()                                                         # 5
         except OSError as exc:
-            self._write_error = self._write_error or f"closing the episode files: {exc}"
-        if self._write_error:
-            return self._abort_on_stop(self._write_error, outcome)
+            self._failure(f"closing the episode files: {exc}")
+        summary = summary if summary is not None else NO_SUMMARY
+        name = episode.name
         if outcome == "discard":                                                      # 6
             episode.discard()
-            text = f"{episode.name} discarded (deleted)"
+            text = f"{name} discarded (deleted)"
         else:
-            meta = self._meta(task, episode, outcome, t_stop, stop_pc, summary, counts)
             try:
-                episode.finish(meta)
-            except OSError as exc:
-                return self._abort_on_stop(f"{episode.path}: meta.yaml / COMPLETE: {exc}", outcome)
-            self._episodes.append(EpisodeInfo(episode.name, outcome, float(meta["duration_s"]),
-                                              int(summary.main.frames)))
-            text = (f"{episode.name} saved: {outcome}, {meta['duration_s']:.1f} s, {summary.main.frames} main "
-                    f"frames")
+                meta = self._meta(task, episode, outcome, t_stop, stop_pc, summary, counts)
+                if outcome == UNSAVED:
+                    episode.keep_unsaved(meta)
+                else:
+                    episode.finish(meta)
+            except Exception as exc:                          # the folder stays: listed unsaved, delete only
+                log.error("%s: meta.yaml / COMPLETE: %s", episode.path, exc)
+                info = EpisodeInfo(name, UNSAVED, 0.0, 0)
+                text = (f"{name} kept unsaved, but its meta.yaml could not be written ({exc}): it can only be "
+                        "deleted")
+            else:
+                info = EpisodeInfo(name, outcome, float(meta["duration_s"]), int(summary.main.frames))
+                text = (f"{name} saved: {outcome}, {meta['duration_s']:.1f} s, {summary.main.frames} main frames"
+                        if outcome != UNSAVED else f"{name} kept unsaved")
+                if self._warnings:
+                    text += f" ({len(self._warnings)} warning(s) in its meta.yaml)"
+            self._put_episode(info)
         self._clear()
-        lp._phase = Phase.IDLE                                                        # 7
         lp._safe_event("episode_stop", f"{task.name}/{text}")
-        lp._messages.add("info", text)
-        return Ack(ok=True, reason="")
+        return text
 
-    def _abort_on_stop(self, detail: str, outcome: str) -> Ack:
-        """A failure found at Stop (after the C3 stop): the episode cannot be saved, its folder is deleted. Discard
-        was going to delete it anyway: that is ok."""
-        if outcome == "discard":
-            from teleop_collect.teleop.teleop_loop import Phase
-            lp, name, task = self.lp, self.episode.name, self.task.name
-            log.warning("discard %s: %s", name, detail)
-            self._discard(f"discarded ({detail})")
-            lp._phase = Phase.IDLE
-            lp._safe_event("episode_stop", f"{task}/{name} discarded (deleted); at stop: {detail}")
-            lp._messages.add("info", f"{name} discarded (deleted)")
-            return Ack(ok=True, reason="")
-        verdict = self.lp._monitor.classify(Problem(C.RECORDING_FAILED, "frames", detail))
-        self.abort(verdict)
-        return Ack(ok=False, reason=f"{verdict.what_failed}: the episode was deleted")
+    def _failure(self, detail: str) -> None:
+        """A recording failure found at the end: listed in meta.yaml `warnings` (each text once)."""
+        log.warning("episode %s: %s", self.episode.name if self.episode else "-", detail)
+        self._add_warning(C.RECORDING_FAILED.value, detail, f"{C.RECORDING_FAILED.value}:{detail}")
+
+    def _add_warning(self, code: str, what: str, key: str) -> bool:
+        if key in self._warned:
+            return False
+        self._warned.add(key)
+        self._warnings.append({"code": code, "what": what, "t_s": round(self.episode_s(self.lp._clock()), 3)})
+        return True
+
+    def _put_episode(self, info: EpisodeInfo) -> None:
+        eps = [e for e in self._episodes if e.name != info.name] + [info]
+        self._episodes = sorted(eps, key=lambda e: episode_number(e.name))
 
     def warn(self, verdict: Verdict) -> None:
         """A WARN problem while recording (a camera down or stale, the recording failed): the arm and the episode go
         on. Each is shown on the page and listed in meta.yaml `warnings` once per episode (per code and camera; the
-        first recording failure). After a recording failure Stop only discards."""
+        first recording failure)."""
         if self.recording is None or self.episode is None:
             return
         problem = verdict.problem
@@ -357,15 +407,11 @@ class EpisodeFlow:
             key = problem.code.value
         else:
             key = f"{problem.code.value}:{problem.detail.split(',', 1)[0]}"
-        if key in self._warned:
+        if not self._add_warning(problem.code.value, verdict.what_failed, key):
             return
-        self._warned.add(key)
         lp, name = self.lp, self.episode.name
-        t_s = round(self.episode_s(lp._clock()), 3)
-        self._warnings.append({"code": problem.code.value, "what": verdict.what_failed, "t_s": t_s})
         text = f"{verdict.what_failed}: {verdict.what_to_check}"
         if problem.code is C.RECORDING_FAILED:
-            self._failed = verdict.what_failed
             page = WARN_FAILED.format(episode=name, text=text)
         else:
             page = WARN_GOES_ON.format(episode=name, text=text)
@@ -374,7 +420,8 @@ class EpisodeFlow:
         lp._messages.add("warn", page)
 
     def abort(self, verdict: Verdict) -> None:
-        """An EPISODE problem while recording: C3 stop, the recording closed, the folder deleted; back to IDLE."""
+        """An EPISODE problem while recording (the PC stopped the arm, Stop arm): C3 stop, the recording closed, the
+        episode kept unsaved with the reason in its `warnings`; back to IDLE. The list offers Save and delete."""
         from teleop_collect.teleop.teleop_loop import Phase
         lp = self.lp
         if self.episode is None:
@@ -383,38 +430,44 @@ class EpisodeFlow:
         lp._motion.stop()
         if not lp._stop_sent and lp._beating:
             lp._send_stop()
-        lp._listener.set_recorder(None)
-        self._stop_frames()
+        t_stop = lp._clock()
+        problem = verdict.problem
+        self._add_warning(problem.code.value, verdict.what_failed, f"ended:{problem.code.value}")
+        self.event("ended", {"code": problem.code.value, "what": verdict.what_failed})
         reason = f"{verdict.what_failed}: {verdict.what_to_check}"
         name = self.episode.name
-        self._discard(reason)
+        self._end(UNSAVED, t_stop, None)
         lp._phase = Phase.IDLE
-        lp._safe_event("episode_aborted", f"{name}: {reason}")
-        lp._messages.add("error", f"{name} aborted and deleted: {reason}")
+        lp._safe_event("episode_ended", f"{name}: {reason}")
+        lp._messages.add("warn", KEPT_UNSAVED.format(episode=name, reason=reason))
 
     def abort_open(self, reason: str, frames_ok: bool = True) -> None:
-        """Conclude, Ctrl-C, SIGTERM: whatever episode is open is deleted. Never raises (the loop is ending)."""
+        """Conclude, Ctrl-C, SIGTERM: whatever episode is open is kept unsaved (the next run lists it; short waits).
+        Never raises (the loop is ending); on an error the folder is left as it is, never deleted."""
         lp = self.lp
         if self.episode is None:
             return
         name = self.episode.name
         try:
             lp._motion.stop()
-            lp._listener.set_recorder(None)
         except Exception as exc:
             log.error("abort: %s", exc)
-        if frames_ok:
-            try:
-                self._stop_frames()
-            except Exception as exc:
-                log.error("abort: R1 stop_recording: %s", exc)
-        self._r1_started = False
+        if not frames_ok:
+            self._r1_started = False                     # frames failed: no R1 request
         try:
-            self._discard(reason)
+            self._add_warning(ENDED_CODE, reason, f"ended:{ENDED_CODE}")
+            self.event("ended", {"code": ENDED_CODE, "what": reason})
+            self._end(UNSAVED, lp._clock(), ABORT_STOP_TIMEOUT_S)
         except Exception as exc:
-            log.error("abort: discard %s: %s", name, exc)
-        lp._safe_event("episode_aborted", f"{name}: {reason}")
-        lp._messages.add("error", f"{name} aborted and deleted: {reason}")
+            log.error("abort: keeping %s: %s", name, exc)
+            try:
+                if self.recording is not None:
+                    self.recording.close()
+            except Exception:
+                pass
+            self._clear()
+        lp._safe_event("episode_ended", f"{name}: {reason}")
+        lp._messages.add("warn", KEPT_UNSAVED_NEXT_RUN.format(episode=name, reason=reason))
 
     # ---- the recorders -------------------------------------------------------------------------------------------
 
@@ -487,8 +540,8 @@ class EpisodeFlow:
             self.record_keys(t_ns, keys, focus)
 
     def _stop_frames(self) -> RecordingSummary | None:
-        """R1 stop_recording if it was started (abort paths: the folder is deleted next). Not recording, a timeout or a
-        broken reply is logged, never raised: the C3 stop went out first, so the PC's watchdog is not armed."""
+        """R1 stop_recording if it was started (a refused start: the folder is deleted next). Not recording, a
+        timeout or a broken reply is logged, never raised: the C3 stop went out first, so the PC's watchdog is not armed."""
         if not self._r1_started:
             return None
         self._r1_started = False
@@ -527,7 +580,6 @@ class EpisodeFlow:
         self._write_error = ""
         self._warnings = []
         self._warned = set()
-        self._failed = ""
         self.lp._start_ack_pc_ns = None
 
     def _counts(self, recording: EpisodeRecording) -> dict[str, int]:

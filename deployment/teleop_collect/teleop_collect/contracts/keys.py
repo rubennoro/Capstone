@@ -14,8 +14,13 @@ MOTION_KEYS = ("x+", "x-", "y+", "y-", "z+", "z-", "twist+", "twist-",
 GRIPPER_COMMANDS = ("close", "open")
 #: U1 `stop_episode.outcome`; a discarded episode is deleted, the others are saved.
 OUTCOMES = ("success", "fail", "discard")
-#: The outcome of a saved episode (EpisodeInfo.outcome).
+#: The outcome of a saved episode (meta.yaml with COMPLETE).
 SAVED_OUTCOMES = ("success", "fail")
+#: An episode that ended without a choice (the PC stopped the arm, Stop arm, a fatal problem, Ctrl-C): kept on disk
+#: without COMPLETE until the operator labels it (U1 label_episode) or deletes it. Training never reads it.
+UNSAVED = "unsaved"
+#: EpisodeInfo.outcome: saved or unsaved.
+LISTED_OUTCOMES = (*SAVED_OUTCOMES, UNSAVED)
 TASK_NAME_RE = r"^[a-z0-9_]{1,64}$"
 EPISODE_NAME_RE = r"^episode_[0-9]{3,}$"
 

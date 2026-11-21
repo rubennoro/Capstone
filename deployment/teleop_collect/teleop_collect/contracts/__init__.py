@@ -17,7 +17,7 @@ from teleop_collect.contracts.clock_fit import (ClockFit, ClockMap, ClockSample,
 from teleop_collect.contracts.config_merge import load_config, resolve_path
 from teleop_collect.contracts.health import CAMERAS, CameraHealthReport, HealthReport
 from teleop_collect.contracts.keys import (EPISODE_NAME_RE, GRIPPER_COMMANDS, MOTION_KEYS, OUTCOMES, SAVED_OUTCOMES,
-                                           TASK_NAME_RE, is_episode_name, is_task_name)
+                                           LISTED_OUTCOMES, UNSAVED, TASK_NAME_RE, is_episode_name, is_task_name)
 from teleop_collect.contracts.pi_stream import PiFrameStamp, PiStreamHeader, PiStreamPacket, jpeg_size
 from teleop_collect.contracts.process_args import ProcessArgs, fatal_line, print_fatal, setup_logging
 from teleop_collect.contracts.r1_recorder import (CameraSummary, FramesHealth, GetFramesHealth, RecordingSummary,
@@ -25,8 +25,8 @@ from teleop_collect.contracts.r1_recorder import (CameraSummary, FramesHealth, G
 from teleop_collect.contracts.station import Station, StationError
 from teleop_collect.contracts.u1_teleop import (MESSAGE_LEVELS, PHASES, STATUS_MAX_MESSAGES, CreateTask,
                                                 DeleteEpisode, EpisodeInfo, GetStatus, GripperCommand, KeysUpdate,
-                                                SelectTask, StartEpisode, StopArm, StopEpisode, TeleopStatus,
-                                                UiMessage)
+                                                LabelEpisode, SelectTask, StartEpisode, StopArm, StopEpisode,
+                                                TeleopStatus, UiMessage)
 from teleop_collect.contracts.u2_preview import NO_FRAME, GetPreview, Preview
 
 __all__ = [
@@ -36,11 +36,12 @@ __all__ = [
     "PiStreamPacket", "PiStreamHeader", "PiFrameStamp", "jpeg_size",
     "ClockSample", "ClockStats", "ClockFit", "ClockMap", "OneWayClockMap", "NotSynced",
     "CAMERAS", "CameraHealthReport", "HealthReport",
-    "MOTION_KEYS", "GRIPPER_COMMANDS", "OUTCOMES", "SAVED_OUTCOMES", "TASK_NAME_RE", "EPISODE_NAME_RE",
+    "MOTION_KEYS", "GRIPPER_COMMANDS", "OUTCOMES", "SAVED_OUTCOMES", "LISTED_OUTCOMES", "UNSAVED", "TASK_NAME_RE",
+    "EPISODE_NAME_RE",
     "is_task_name", "is_episode_name",
     "StartRecording", "StopRecording", "GetFramesHealth", "CameraSummary", "RecordingSummary", "FramesHealth",
     "GetPreview", "Preview", "NO_FRAME",
     "GetStatus", "KeysUpdate", "GripperCommand", "SelectTask", "CreateTask", "StartEpisode",
-    "StopEpisode", "DeleteEpisode", "StopArm", "EpisodeInfo", "UiMessage", "TeleopStatus",
+    "StopEpisode", "DeleteEpisode", "LabelEpisode", "StopArm", "EpisodeInfo", "UiMessage", "TeleopStatus",
     "PHASES", "MESSAGE_LEVELS", "STATUS_MAX_MESSAGES",
 ]

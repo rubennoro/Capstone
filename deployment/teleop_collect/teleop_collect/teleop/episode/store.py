@@ -8,8 +8,11 @@
 - Task names match TASK_NAME_RE; episode names are `episode_%03d` (more digits beyond 999).
 - Episode numbers only count up: `next_episode` in task.yaml is advanced (atomically: temp file, then rename) before
   the folder is made, so a deleted or discarded number is never reused, not even the highest.
-- An episode is complete once `COMPLETE` exists; `finish` writes meta.yaml, then COMPLETE, each fsynced. Folders
-  without it are deleted by `clean_incomplete` at start-up (a crash mid-episode).
+- An episode is complete (saved) once `COMPLETE` exists; `finish` writes meta.yaml, then COMPLETE, each fsynced.
+- A folder without COMPLETE is an unsaved episode: it ended without the operator's choice (the PC stopped the arm,
+  Stop arm, a fatal problem, Ctrl-C; `keep_unsaved` writes its meta.yaml with outcome `unsaved`), or a crash left it.
+  Nothing deletes it automatically: `Task.label` saves it (outcome success or fail, then COMPLETE), `Task.delete`
+  removes it. Training reads only folders with COMPLETE.
 - Every removal goes through `_remove_episode_dir`: only a real (not symlinked) `episode_*` folder directly inside its
   own task folder, after resolving symlinks.
 """
@@ -29,7 +32,8 @@ from typing import Any, Mapping
 import numpy as np
 import yaml
 
-from teleop_collect.contracts import SAVED_OUTCOMES, TASK_NAME_RE, is_episode_name, is_task_name
+from teleop_collect.contracts import (LISTED_OUTCOMES, SAVED_OUTCOMES, TASK_NAME_RE, UNSAVED, is_episode_name,
+                                      is_task_name)
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +52,8 @@ class TaskError(ValueError):
 
 @dataclass(frozen=True)
 class EpisodeInfo:
-    """One complete episode, read from its meta.yaml (E3 turns it into the U1 EpisodeInfo record)."""
+    """One episode, read from its meta.yaml (E3 turns it into the U1 EpisodeInfo record). outcome is `unsaved` for
+    a folder without COMPLETE (duration_s and frames_main 0 when its meta.yaml is missing or broken)."""
 
     name: str
     outcome: str
@@ -89,6 +94,9 @@ def write_yaml_atomic(path: Path, data: Mapping[str, Any]) -> None:
     """Replace path with data: a temp file in the same folder, fsynced, then renamed over it."""
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
+        umask = os.umask(0)
+        os.umask(umask)
+        os.fchmod(fd, 0o666 & ~umask)                    # mkstemp makes 0600: the usual mode, as open() would
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             yaml.safe_dump(dict(data), f, sort_keys=False, allow_unicode=True)
             f.flush()
@@ -162,6 +170,14 @@ class EpisodeDir:
                           yaml.safe_dump(dict(meta), sort_keys=False, allow_unicode=True))
         write_file_synced(self.path / COMPLETE_FILE, "")
 
+    def keep_unsaved(self, meta: Mapping[str, Any]) -> None:
+        """Write meta.yaml (outcome unsaved) without COMPLETE: the episode stays until it is labeled or deleted."""
+        if not self.path.is_dir():
+            raise TaskError(f"{self.path}: missing, cannot keep")
+        if self.complete:
+            raise TaskError(f"{self.name}: already complete")
+        write_yaml_atomic(self.path / META_FILE, meta)
+
     def discard(self) -> None:
         """Delete the folder (nothing outside its task folder is ever touched). No-op if it is already gone."""
         _remove_episode_dir(self.task_dir, self.path)
@@ -187,7 +203,8 @@ class Task:
         return [p for p in entries if is_episode_name(p.name) and not p.is_symlink() and p.is_dir()]
 
     def episodes(self) -> list[EpisodeInfo]:
-        """The complete episodes, by number. One with an unreadable meta.yaml is skipped (and logged once).
+        """Every episode, by number: the complete ones (one with an unreadable meta.yaml is skipped and logged once)
+        and the unsaved ones (no COMPLETE: listed as `unsaved` whatever their meta.yaml says).
 
         Cheap enough for the 20 ms loop: each meta.yaml is parsed once and its EpisodeInfo cached by folder name,
         keyed on the stat of COMPLETE and meta.yaml; a later call only lists the folder and stats two files each.
@@ -196,20 +213,25 @@ class Task:
         seen = set()
         for path in sorted(self._episode_dirs(), key=lambda p: episode_number(p.name)):
             try:
-                complete = os.stat(path / COMPLETE_FILE)
+                complete_ns: int | None = os.stat(path / COMPLETE_FILE).st_mtime_ns
             except OSError:
-                continue
+                complete_ns = None
             try:
                 m = os.stat(path / META_FILE)
-                key: tuple = (complete.st_mtime_ns, m.st_mtime_ns, m.st_size, m.st_ino)
+                key: tuple = (complete_ns, m.st_mtime_ns, m.st_size, m.st_ino)
             except OSError:
-                key = (complete.st_mtime_ns, None)
+                key = (complete_ns, None)
             seen.add(path.name)
             cached = self._info_cache.get(path.name)
             if cached is not None and cached[0] == key:
                 info = cached[1]
             else:
                 info = read_episode_info(path)
+                if complete_ns is None:
+                    info = (EpisodeInfo(path.name, UNSAVED, 0.0, 0) if info is None
+                            else dataclasses.replace(info, outcome=UNSAVED))
+                elif info is not None and info.outcome not in SAVED_OUTCOMES:
+                    info = None
                 self._info_cache[path.name] = (key, info)
                 if info is None:
                     log.warning("%s: COMPLETE but meta.yaml unreadable; not listed", path)
@@ -237,15 +259,41 @@ class Task:
         return episode
 
     def delete(self, episode: str) -> None:
-        """Delete a complete episode. TaskError when the name is bad, it is missing or not complete."""
+        """Delete a saved or an unsaved episode (the caller never passes the one recording). TaskError when the name
+        is bad or it is missing."""
+        path = self._episode_path(episode)
+        _remove_episode_dir(self.dir, path)
+
+    def label(self, episode: str, outcome: str) -> EpisodeInfo:
+        """Save an unsaved episode: its meta.yaml outcome set to success or fail (atomically), then COMPLETE. TaskError
+        when it is missing, already saved, or has no readable meta.yaml (a crash: only delete)."""
+        if outcome not in SAVED_OUTCOMES:
+            raise TaskError(f"outcome {outcome!r}: only {', '.join(SAVED_OUTCOMES)}")
+        path = self._episode_path(episode)
+        if (path / COMPLETE_FILE).exists():
+            raise TaskError(f"{self.name}/{episode}: already saved")
+        try:
+            meta = yaml.load((path / META_FILE).read_text(encoding="utf-8"), Loader=_SAFE_LOADER)
+        except (OSError, yaml.YAMLError) as exc:
+            raise TaskError(f"{self.name}/{episode}: no readable meta.yaml (the run crashed): it can only be "
+                            f"deleted ({type(exc).__name__})") from None
+        if not isinstance(meta, dict) or meta.get("outcome") not in LISTED_OUTCOMES:
+            raise TaskError(f"{self.name}/{episode}: meta.yaml is broken: it can only be deleted")
+        meta["outcome"] = outcome
+        write_yaml_atomic(path / META_FILE, meta)
+        write_file_synced(path / COMPLETE_FILE, "")
+        info = read_episode_info(path)
+        if info is None:
+            raise TaskError(f"{self.name}/{episode}: saved, but meta.yaml does not read back")
+        return info
+
+    def _episode_path(self, episode: str) -> Path:
         if not is_episode_name(episode):
             raise TaskError(f"{episode!r} is not an episode name")
         path = self.dir / episode
         if not path.is_dir() or path.is_symlink():
             raise TaskError(f"{self.name}/{episode}: no such episode")
-        if not (path / COMPLETE_FILE).exists():
-            raise TaskError(f"{self.name}/{episode}: not complete (being recorded?), not deleted")
-        _remove_episode_dir(self.dir, path)
+        return path
 
     def __repr__(self) -> str:
         return f"Task({self.name!r})"
@@ -260,7 +308,7 @@ def read_episode_info(path: Path) -> EpisodeInfo | None:
         frames_main = meta["counts"]["frames_main"]
     except (OSError, yaml.YAMLError, KeyError, TypeError):
         return None
-    if outcome not in SAVED_OUTCOMES or isinstance(duration, bool) or not isinstance(duration, (int, float)) \
+    if outcome not in LISTED_OUTCOMES or isinstance(duration, bool) or not isinstance(duration, (int, float)) \
             or isinstance(frames_main, bool) or not isinstance(frames_main, int) or frames_main < 0 \
             or not duration >= 0:
         return None
@@ -317,16 +365,15 @@ class TaskStore:
             raise TaskError(f"no task {name} under {self.root}")
         return Task(task_dir, data.get("description", "") or "")
 
-    def clean_incomplete(self) -> list[Path]:
-        """Delete every episode_* folder without COMPLETE in every task; return the deleted paths."""
-        deleted = []
+    def unsaved(self) -> list[Path]:
+        """Every episode_* folder without COMPLETE in every task (kept: never deleted automatically)."""
+        found = []
         for name in self.tasks():
             task = Task(self.root / name, "")
             for path in sorted(task._episode_dirs(), key=lambda p: episode_number(p.name)):
                 if not (path / COMPLETE_FILE).exists():
-                    _remove_episode_dir(task.dir, path)
-                    deleted.append(path)
-        return deleted
+                    found.append(path)
+        return found
 
 
 def to_plain(value: Any) -> Any:

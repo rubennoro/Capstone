@@ -23,6 +23,13 @@ const STOP_ARM_KEY = "Escape";                                  // Esc: stop_arm
 const MOTION_KEY_ORDER = ["x+", "x-", "y+", "y-", "z+", "z-", "twist+", "twist-",
                           "tilt_fwd", "tilt_back", "tilt_left", "tilt_right"];
 
+// Display only: how the held motion names read in the page (the names sent stay as above).
+const MOTION_KEY_WORDS = Object.freeze({
+  "x+": "forward", "x-": "back", "y+": "left", "y-": "right", "z+": "up", "z-": "down",
+  "twist+": "twist", "twist-": "twist back",
+  tilt_fwd: "tilt forward", tilt_back: "tilt back", tilt_left: "tilt left", tilt_right: "tilt right",
+});
+
 const RECONNECT_MS = 1000;
 const MESSAGES_SHOWN = 30;
 
@@ -242,9 +249,10 @@ function camText(h) {
 function renderKeys(msg) {
   const el = $("keys-state");
   if (!el) return;
-  if (!msg.focus) { el.textContent = "· keys off (page not focused)"; return; }
-  if (!keysEnabled()) { el.textContent = "· keys off (not recording)"; return; }
-  el.textContent = msg.held.length ? `· held: ${msg.held.join(" ")}${msg.slow ? " (slow)" : ""}` : "· keys live";
+  if (!msg.focus) { el.textContent = "keys off (page not focused)"; return; }
+  if (!keysEnabled()) { el.textContent = "keys off (not recording)"; return; }
+  const words = msg.held.map((k) => MOTION_KEY_WORDS[k] || k);
+  el.textContent = words.length ? `held: ${words.join(", ")}${msg.slow ? " (slow)" : ""}` : "keys live";
 }
 
 function renderBanner(s) {
@@ -313,7 +321,19 @@ function renderEpisodes(s) {
         command("delete_episode", { episode: ep.name });
       }
     };
-    li.append(name, outcome, dur, frames, del);
+    li.append(name, outcome, dur, frames);
+    if (ep.outcome === "unsaved") {             // ended without a choice: label it here (or delete it)
+      for (const [label, value] of [["save success", "success"], ["save fail", "fail"]]) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = label;
+        b.className = `label-${value}`;
+        b.disabled = recording;
+        b.onclick = () => command("label_episode", { episode: ep.name, outcome: value });
+        li.append(b);
+      }
+    }
+    li.append(del);
     list.append(li);
   }
 }

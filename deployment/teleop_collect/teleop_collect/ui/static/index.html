@@ -70,12 +70,36 @@
     </div>
     <div id="hint" class="hint"></div>
     <div id="last-action" class="muted"></div>
-    <p class="keys">
-      keys: <kbd>W</kbd>/<kbd>S</kbd> <kbd>A</kbd>/<kbd>D</kbd> <kbd>R</kbd>/<kbd>F</kbd> move ·
-      <kbd>I</kbd>/<kbd>K</kbd> <kbd>J</kbd>/<kbd>L</kbd> tilt · <kbd>U</kbd>/<kbd>O</kbd> twist ·
-      <kbd>N</kbd> close · <kbd>M</kbd> open fingers · hold <kbd>Shift</kbd> slow · <kbd>Esc</kbd> stop arm
-      <span id="keys-state" class="muted"></span>
-    </p>
+    <div class="keys">
+      <div class="keys-grid">
+        <div class="keys-group">
+          <h3>move the gripper (directions seen from behind the robot)</h3>
+          <div><kbd>W</kbd> forward (away from the base)</div>
+          <div><kbd>S</kbd> back (toward the base)</div>
+          <div><kbd>A</kbd> left</div>
+          <div><kbd>D</kbd> right</div>
+          <div><kbd>R</kbd> up (away from the table)</div>
+          <div><kbd>F</kbd> down (toward the table)</div>
+        </div>
+        <div class="keys-group">
+          <h3>rotate the hand</h3>
+          <div><kbd>I</kbd> tilt forward</div>
+          <div><kbd>K</kbd> tilt back</div>
+          <div><kbd>J</kbd> tilt left</div>
+          <div><kbd>L</kbd> tilt right</div>
+          <div><kbd>U</kbd> twist one way (about the fingers' axis)</div>
+          <div><kbd>O</kbd> twist the other way</div>
+        </div>
+        <div class="keys-group">
+          <h3>fingers and speed</h3>
+          <div><kbd>N</kbd> close fingers (grasp)</div>
+          <div><kbd>M</kbd> open fingers</div>
+          <div>hold <kbd>Shift</kbd> slow mode (¼ speed)</div>
+          <div><kbd>Esc</kbd> stop arm</div>
+        </div>
+      </div>
+      <div id="keys-state" class="muted"></div>
+    </div>
   </section>
 
   <section class="lists">

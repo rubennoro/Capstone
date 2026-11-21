@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 import yaml
 from deploy_contracts import HelloReply
 
-from teleop_collect.contracts import SAVED_OUTCOMES, RecordingSummary
+from teleop_collect.contracts import LISTED_OUTCOMES, RecordingSummary
 from teleop_collect.teleop.episode.store import episode_number, to_plain
 from teleop_collect.teleop.motion.planner import MotionSettings, worst_step
 
@@ -49,14 +49,15 @@ def build_meta(*, task: Task, episode: EpisodeDir, outcome: str, times: Mapping[
                counts: Mapping[str, int], hello: HelloReply, laptop_commit: str, laptop_dirty: bool,
                rig_file: Path, motion: MotionSettings, pi_fit: Mapping, pc_fit: Mapping,
                warnings: Sequence[Mapping[str, Any]] = ()) -> dict:
-    """The meta.yaml content as plain YAML-able types. ValueError for an outcome that is not saved or bad times.
+    """The meta.yaml content as plain YAML-able types. ValueError for an outcome that is not success, fail or
+    unsaved, or bad times.
 
     times: start_ns, stop_ns (laptop, required), start_pc_ns, stop_pc_ns (mapped PC times, None if unknown).
     counts: EpisodeRecording.counts() plus anything the caller adds; frames' counts are added from `frames`.
     warnings: EpisodeFlow's {code, what, t_s} per data problem seen while recording (ValueError for other keys).
     """
-    if outcome not in SAVED_OUTCOMES:
-        raise ValueError(f"outcome {outcome!r}: only {', '.join(SAVED_OUTCOMES)} are saved")
+    if outcome not in LISTED_OUTCOMES:
+        raise ValueError(f"outcome {outcome!r}: only {', '.join(LISTED_OUTCOMES)} are written")
     unknown = sorted(set(times) - set(TIME_KEYS))
     if unknown:
         raise ValueError(f"times: unknown {', '.join(unknown)}")

@@ -103,6 +103,10 @@ button.quiet { font-weight: 400; background: transparent; }
 .hint.ok { color: var(--go); }
 .hint.refused { color: var(--warn); }
 .keys { color: var(--muted); margin: 8px 0 0; }
+.keys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 16px; }
+.keys-group h3 { font-size: 12px; font-weight: 600; color: var(--text); margin: 4px 0 2px; }
+.keys-group div { line-height: 1.7; }
+#keys-state { margin-top: 4px; }
 kbd {
   font-family: var(--mono); font-size: 12px; padding: 0 4px;
   border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--card);
@@ -118,7 +122,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 .episodes .outcome-success { color: var(--go); }
 .episodes .outcome-fail { color: var(--warn); }
-.episodes button { margin-left: auto; padding: 2px 10px; font-weight: 400; }
+.episodes button { margin-left: 4px; padding: 2px 10px; font-weight: 400; }
+.episodes span + button { margin-left: auto; }
+.episodes .outcome-unsaved { color: var(--warn); font-weight: 600; }
+.episodes button.label-success { border-color: var(--go); color: var(--go); }
 .messages { max-height: 260px; overflow-y: auto; }
 .messages .warn { color: var(--warn); }
 .messages .error { color: var(--stop); }

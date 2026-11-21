@@ -6,10 +6,11 @@
 # only; a set skipped entirely is SET_SKIPPED (SLOW); the keyboard Operator and status line are replaced by the U1
 # server (served from the main loop, up to u1_max_per_cycle per cycle; dispatch() by request class; handler exceptions
 # and conclude are re-raised on the main loop) and TeleopStatus; the episode lifecycle moved to EpisodeFlow (start /
-# stop / discard / abort, R1 and E4's store and recorders); Kind.EPISODE problems abort the open episode and the loop
-# goes on; R1 health (FramesHealth) every health_poll_ms; every C3 request while recording goes to commands.csv, every
-# hello sample and the clock fit to clock_pc.csv, every key change to keys.csv; at_limit from C2 gate.pulled_back;
-# Ctrl-C and SIGTERM abort (delete) an open episode; _finish catches a failing stop (logged, as _conclude does); the
+# stop / discard / abort, R1 and E4's store and recorders); Kind.EPISODE problems end the open episode (kept
+# unsaved) and the loop goes on; R1 health (FramesHealth) every health_poll_ms; every C3 request while recording goes
+# to commands.csv, every hello sample and the clock fit to clock_pc.csv, every key change to keys.csv; at_limit from
+# C2 gate.pulled_back; Ctrl-C and SIGTERM end an open episode (kept unsaved, labeled at the next run); _finish
+# catches a failing stop (logged, as _conclude does); the
 # conclude reason carries the problem's detail into EpisodeFlow.abort_open; the SIGTERM text is "stopped by the
 # launcher (Ctrl-C, or another process exited)"; up to 3 R1 get_health timeouts in a row are a warning, the next
 # concludes; how long each camera has shown down (the start refusal's Pi hint); _wait_until_boundary only sleeps (no
@@ -48,8 +49,8 @@ import numpy as np
 from deploy_contracts import Ack, ArmState, Message, SetWaypoints, TransportTimeout
 
 from teleop_collect.contracts import (CAMERAS, CreateTask, DeleteEpisode, FramesHealth, GetStatus, GripperCommand,
-                                      KeysUpdate, NotSynced, SelectTask, StartEpisode, StopArm, StopEpisode,
-                                      TeleopStatus)
+                                      KeysUpdate, LabelEpisode, NotSynced, SelectTask, StartEpisode, StopArm,
+                                      StopEpisode, TeleopStatus)
 from teleop_collect.contracts import EpisodeInfo as EpisodeInfoRecord
 from teleop_collect.teleop.episode.store import TaskStore
 from teleop_collect.teleop.failure_monitor import FailureMonitor
@@ -533,6 +534,9 @@ class TeleopLoop:
     def _on_delete(self, msg: DeleteEpisode) -> Message:
         return self.flow.delete(msg.episode)
 
+    def _on_label(self, msg: LabelEpisode) -> Message:
+        return self.flow.label(msg.episode, msg.outcome)
+
     def _on_stop_arm(self, msg: StopArm) -> Message:
         if self._phase is Phase.RECORDING:
             self._problem(Problem(C.OPERATOR_ABORT, "operator", "Stop arm"))
@@ -601,11 +605,11 @@ class TeleopLoop:
         self._stop_sent = True
 
     def _quit(self, reason: str, send_stop: bool = True) -> None:
-        """Ctrl-C: stop first, an open episode aborted (deleted, "operator quit"), exit 0."""
+        """Ctrl-C: stop first, an open episode kept unsaved ("operator quit"), exit 0."""
         self._finish(reason, Problem(C.OPERATOR_STOP, "operator", reason), send_stop)
 
     def _launcher_stop(self, send_stop: bool = True) -> None:
-        """SIGTERM: stop first, an open episode aborted (deleted), exit 0."""
+        """SIGTERM: stop first, an open episode kept unsaved, exit 0."""
         self._finish(LAUNCHER_STOP_REASON, Problem(C.LAUNCHER_STOP, "launcher", LAUNCHER_STOP_REASON), send_stop)
 
     def _finish(self, reason: str, problem: Problem, send_stop: bool) -> None:
@@ -624,7 +628,7 @@ class TeleopLoop:
         raise _Finished
 
     def _conclude(self, problem: Problem, skip_stop: bool = False) -> None:
-        """Stop once (if C3 was started), abort (delete) an open episode, stop everything, exit 1 (the FATAL line is
+        """Stop once (if C3 was started), keep an open episode unsaved, stop everything, exit 1 (the FATAL line is
         __main__'s). The PC keeps running, holding the arm."""
         verdict = self._monitor.classify(problem)
         if verdict.kind is not Kind.CONCLUDE:
@@ -690,7 +694,7 @@ class TeleopLoop:
 
     def _guard(self, fn: Callable, *args) -> None:
         """Any exception on the main thread is a conclude, except an EPISODE problem while recording (the PC stopped
-        the arm and refused our next set): that aborts the episode and the loop goes on."""
+        the arm and refused our next set): that ends the episode (kept unsaved) and the loop goes on."""
         try:
             fn(*args)
         except _Finished:
@@ -757,5 +761,6 @@ U1_HANDLERS: dict[type[Message], Callable[[TeleopLoop, Message], Message]] = {
     StartEpisode: TeleopLoop._on_start,
     StopEpisode: TeleopLoop._on_stop,
     DeleteEpisode: TeleopLoop._on_delete,
+    LabelEpisode: TeleopLoop._on_label,
     StopArm: TeleopLoop._on_stop_arm,
 }

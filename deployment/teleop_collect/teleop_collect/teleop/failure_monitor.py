@@ -10,8 +10,9 @@
 # 2026-11-20): no laptop home: HOME_STOPPED, HOMING_FAILED and the c3.home branches of from_exception dropped; homing
 # (the PC's h, g or p) is followed, Start refused. + wave 3 (no software stops, 2026-11-20): CAMERA_DOWN,
 # CAMERA_STALE and RECORDING_FAILED are WARN (shown, in meta.yaml warnings; no stop, no abort, no pause; WARN outside
-# an episode is NORMAL); STATE_GAP is NORMAL (counted, logged; motion goes on); + WARN_CODES, COUNTED_CODES. The
-# source's own header follows.
+# an episode is NORMAL); STATE_GAP is NORMAL (counted, logged; motion goes on); + WARN_CODES, COUNTED_CODES.
+# + keep episodes (2026-11-20): an EPISODE problem keeps the episode unsaved (EpisodeFlow.abort). The source's own
+# header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/failure_monitor.py @ 91b178b
 # changes: the codes and texts of STRUCTURE.md 8.5; check_state takes the PC "now" (mapped) and the newest C2 arrival
 # time: STATE_LOST by laptop arrival (liveness), PC_STOPPED compares C2 t_ns with the start ack mapped to PC time;
@@ -54,7 +55,7 @@ RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
     C.LOOP_LATE: (Kind.NORMAL, "{detail}", NORMAL_CHECK),
     C.CAMERA_DOWN: (Kind.WARN, "{detail}", CAMERA_CHECK),
     C.PC_STOPPED: (Kind.EPISODE, "the PC stopped the arm (watchdog or the PC's `s`)", "check the link and the PC"),
-    C.OPERATOR_ABORT: (Kind.EPISODE, "operator stop", "nothing to check: the episode was deleted"),
+    C.OPERATOR_ABORT: (Kind.EPISODE, "operator stop", "nothing to check"),
     C.RECORDING_FAILED: (Kind.WARN, "recording could not keep up / disk error: {detail}",
                          "check the free disk space under data_root and the frames log"),
     C.NO_ANSWER: (Kind.CONCLUDE, "{process}: {detail}", "check that {process} is running (see its log)"),

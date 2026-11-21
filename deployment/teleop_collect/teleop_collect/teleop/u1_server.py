@@ -14,11 +14,12 @@ from collections.abc import Callable
 from deploy_contracts import Message, RpcServer
 
 from teleop_collect.contracts import (STATUS_MAX_MESSAGES, CreateTask, DeleteEpisode, GetStatus, GripperCommand,
-                                      KeysUpdate, SelectTask, StartEpisode, StopArm, StopEpisode, UiMessage)
+                                      KeysUpdate, LabelEpisode, SelectTask, StartEpisode, StopArm, StopEpisode,
+                                      UiMessage)
 
 #: Every U1 request (STRUCTURE.md 4.4).
 U1_REQUESTS: tuple[type[Message], ...] = (GetStatus, KeysUpdate, GripperCommand, SelectTask, CreateTask, StartEpisode,
-                                          StopEpisode, DeleteEpisode, StopArm)
+                                          StopEpisode, DeleteEpisode, LabelEpisode, StopArm)
 
 
 class U1Server:

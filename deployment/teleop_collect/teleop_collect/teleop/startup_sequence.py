@@ -1,5 +1,6 @@
 # adapted from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/manager/startup_sequence.py @ 2ffe641
-# changes: teleop_collect PLAN 8 / STRUCTURE.md 6.4: + step 1 TaskStore.clean_incomplete; no policy config; cameras
+# changes: teleop_collect PLAN 8 / STRUCTURE.md 6.4: + step 1 TaskStore.clean_incomplete (now
+# TaskStore.unsaved: kept, 2026-11-20); no policy config; cameras
 # from R1 FramesHealth (step 8); + step 9 data_root writable; step 11 session.yaml, phase IDLE, the ready file; every
 # wait also serves U1 (status and keys; the rest refused while starting) and follows the state; TeleopLoop instead of
 # EpisodeLoop; no operator. + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): no
@@ -9,7 +10,7 @@
 """StartupSequence: teleop's start-up order, phase STARTING (STRUCTURE.md 6.4; PLAN 8).
 
 | #  | step                                                                       | done when                |
-| 1  | TaskStore.clean_incomplete (each deletion logged)                          |                          |
+| 1  | TaskStore.unsaved: kept, each named on the page (never deleted)            |                          |
 | 2  | C2 arriving                                                                | a valid C2 message       |
 | 3  | H2 wait: nothing on C3 while C2 shows running/holding (2 x watchdog), or   | mode idle or stopped     |
 |    | homing (timeouts.pc_homing_wait_s); fault refuses                          |                          |
@@ -64,7 +65,7 @@ class StartupSequence:
         from teleop_collect.teleop.teleop_loop import Phase
         lp, s = self.loop, self.s
         lp._log.log_event("startup", "starting")
-        lp.flow.clean_incomplete()                                    # 1
+        lp.flow.report_unsaved()                                      # 1
         lp._listener.start()
         self._deadline_ns = lp._clock() + int(s.timeouts.startup_s * NS_PER_S)
 

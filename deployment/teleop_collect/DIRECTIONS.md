@@ -27,6 +27,8 @@ where `echo $PYTHONPATH` prints nothing (if it shows `/opt/ros/...`, run `unset 
 > 5. For every episode: on the PC `h`, then `p`; in the page wait for `at the start pose ✓ ready to start`, set up the
 >    scene, **Start episode**, wait about 1 s, drive, **Stop episode**, then **Save: success**, **Save: fail** or
 >    **Discard**.
+>    An episode that ended by itself (Stop arm, the PC's `s`, the watchdog, a crash, Ctrl-C) is never deleted: it is
+>    listed `unsaved` with **save success**, **save fail** and **delete**.
 > 6. Quit: Ctrl-C in the terminal (or close it). Then the Pi's C button (LED off). End of the day, on the PC: `q`, then
 >    lock the brakes in Desk.
 
@@ -324,22 +326,27 @@ cameras are healthy; the line under the buttons says why.
 7. **Delete** an episode: `delete` next to it in the list, then confirm. A delete is refused while an episode
    records: stop it first.
 8. **Stop arm** (button, or `Esc`) at any time: the arm holds (a move of the PC's `h` or `p` stops too); an open
-   episode is deleted.
-9. **Quit:** Ctrl-C in the terminal (closing the terminal does the same). An open episode is deleted, the page shows
-   `disconnected`, and the PC keeps holding the arm. Then the Pi's C button (LED off). End of the day, on the PC: `q`,
-   then lock the brakes in Desk.
+   episode ends and is kept **unsaved** (below).
+9. **Quit:** Ctrl-C in the terminal (closing the terminal does the same). An open episode is kept unsaved, the page
+   shows `disconnected`, and the PC keeps holding the arm. Then the Pi's C button (LED off). End of the day, on the
+   PC: `q`, then lock the brakes in Desk.
+10. **Unsaved episodes:** nothing ever deletes an episode except your **Discard** or **delete**. One that ended
+    without your choice (Stop arm, the PC's `s`, the watchdog, a PC fault, Ctrl-C, a crash) is listed `unsaved`:
+    click **save success** or **save fail** next to it (or **delete**). One left by an earlier run is named in the
+    messages at start-up: select its task to see it. Training reads only saved ones. A row with `0.0 s` has no
+    meta.yaml (a hard crash): it can only be deleted.
 
 - **Good:** after a save the list shows `episode_NNN success 12.3 s 370 frames`, and the messages
   `episode_NNN saved: success, ...`. At the table (the PC's box floor) the arm stops going down and the panel shows
   `at workspace limit`: normal. Nothing else in the software stops the arm while you drive: only Franka's own limits
   and reflexes, you (keys released, **Stop arm**, the PC's `s`, the user stop) and a dead link (1 s).
-- **A data problem never stops the arm or the episode.** A camera down or stale shows one warn line, e.g.
+- **A data problem never stops the arm or the episode, and never blocks Save.** A camera down or stale shows one warn line, e.g.
   `episode_004: main camera down: check the Pi and ASUS_5g; the episode goes on (noted in its meta.yaml)`. Keep going
   or **Stop episode**; it is saved with the warning in its `meta.yaml` (training may leave it out: frames are
-  missing). A failed recording shows `...; the arm goes on: Stop and Discard (this episode cannot be saved)`: **Stop
-  episode**, then **Discard** (Save is refused: `this episode cannot be saved (...): Discard it`).
-- **If not:** an episode that ended by itself (the PC stopped the arm: its `s` or the watchdog) is deleted and the
-  messages say why in one line. Fix it, then `h`, `p` on the PC and Start again. A line starting `FATAL` or a page
+  missing). A failed recording shows `...; the episode goes on (data may be missing; noted in its meta.yaml)`: Save
+  still works; check the episode before training on it.
+- **If not:** an episode that ended by itself (the PC stopped the arm: its `s` or the watchdog) is kept unsaved and
+  the messages say why in one line. Save or delete it in the list, then `h`, `p` on the PC and Start again. A line starting `FATAL` or a page
   showing `disconnected`: the run ended; read the terminal ("When something fails").
 
 ### 11. The keys
@@ -357,7 +364,7 @@ Only while the page has focus and an episode records. Clicking outside the page 
 | `N` | close the fingers (grasp with force) |
 | `M` | open the fingers fully |
 | `Shift` (held) | slow mode (a quarter of the speed) |
-| `Esc` | **Stop arm** (any time; an open episode is deleted) |
+| `Esc` | **Stop arm** (any time; an open episode is kept unsaved) |
 
 Speeds: 5 cm/s per axis, 10 °/s, held keys add up per axis and opposite keys cancel. The physical user stop is the
 emergency stop: nothing in the page replaces it.
@@ -378,7 +385,7 @@ emergency stop: nothing in the page replaces it.
 | `episode_NNN/keys.csv` | every key change from the page |
 | `episode_NNN/clock_pi.csv`, `clock_pc.csv` | the Pi and PC clock fits (and the PC's raw samples) |
 | `episode_NNN/events.jsonl` | start, warnings and stop, with laptop times |
-| `episode_NNN/COMPLETE` | written last: a folder without it is incomplete and is deleted at the next start-up |
+| `episode_NNN/COMPLETE` | written last, when saved: a folder without it is unsaved (listed with save / delete buttons, never deleted automatically, never read by training) |
 
 `--mock` runs write the same layout under `~/CapstoneTeleop_mock/<task>/` (`station.yaml mock_data_root`) instead.
 Episode numbers only count up: a deleted or discarded number is never reused, so gaps are normal. The logs of every
@@ -483,8 +490,8 @@ The first runs this package's tests, the second those of the shared C2/C3 code i
 ## 15. When something fails
 
 `check` names the row. A run that stops prints `teleop_collect: FAILED <process> ...: FATAL <process>: <what
-failed>: <what to check>`. A message in the page that ended an episode means the episode was deleted; the app stays
-up. A warn line that says `the episode goes on` changes nothing: keep going or Stop.
+failed>: <what to check>`. A message in the page that ended an episode means the episode was kept unsaved (save or
+delete it in the list); the app stays up. A warn line that says `the episode goes on` changes nothing: keep going or Stop.
 
 | You see | Do this |
 |---|---|
@@ -518,10 +525,11 @@ up. A warn line that says `the episode goes on` changes nothing: keep going or S
 | page: `waiting for the PC clock map` | wait a few seconds; if it stays, `pc_probe` |
 | page: `the PC is homing` | the PC's `h`, `p` or `g` is moving: wait for it to end |
 | page: `the PC is fault` | as `the PC reports fault` |
-| page: ``... the PC stopped the arm (watchdog or the PC's `s`): check the link and the PC`` | the episode was deleted: someone pressed `s` on the PC, or Wi-Fi stalled over 1 s. `h`, `p` on the PC, Start again |
-| page: `episode_NNN: recording could not keep up / disk error: ...; the arm goes on: Stop and Discard (this episode cannot be saved)` | **Stop episode**, then **Discard** (Save is refused); free disk space, check the frames log |
-| page: `episode_NNN aborted and deleted: recording could not keep up / disk error: ...` | the failure showed only at Stop (after the arm stopped): the episode was deleted; free disk space, check the frames log |
-| page: `... operator stop: nothing to check: the episode was deleted` | you pressed **Stop arm** or `Esc` |
+| page: ``... the PC stopped the arm (watchdog or the PC's `s`): check the link and the PC`` | the episode was kept unsaved (save or delete it in the list): someone pressed `s` on the PC, or Wi-Fi stalled over 1 s. `h`, `p` on the PC, Start again |
+| page: `episode_NNN: recording could not keep up / disk error: ...; the episode goes on (data may be missing; noted in its meta.yaml)` | keep going or Stop; Save works (the failure is in its meta.yaml `warnings`); free disk space, check the frames log |
+| page: `episode_NNN saved: ... (N warning(s) in its meta.yaml)` | a failure found at Stop is listed in its meta.yaml `warnings`; check the episode before training on it |
+| page: `episode_NNN ended: operator stop: nothing to check. Kept unsaved: ...` | you pressed **Stop arm** or `Esc`: **save success**, **save fail** or **delete** it in the list |
+| page: `unsaved episode kept from an earlier run: <task>/episode_NNN ...` | select that task; save or delete it in the list |
 | page: `teleop not answering` or `frames not answering` | wait a second; if it stays, the terminal shows a `FAILED` line |
 | page: `disconnected: the ui is not running (teleop_collect stopped?)` | the run ended: read the terminal, fix, `teleop_collect run` again |
 | `teleop_collect: could not open a browser` / `no display` | open `http://127.0.0.1:8765` by hand |

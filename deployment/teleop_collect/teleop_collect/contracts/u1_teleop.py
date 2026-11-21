@@ -10,6 +10,7 @@
 | u1.start_episode/v1     | ack/v1                                                  |
 | u1.stop_episode/v1      | ack/v1                                                  |
 | u1.delete_episode/v1    | ack/v1                                                  |
+| u1.label_episode/v1     | ack/v1 (an unsaved episode -> success or fail, saved)   |
 | u1.stop_arm/v1          | ack/v1                                                  |
 
 Refusals are ack(ok=false, reason) in plain words. Task names are checked by teleop (an ack refusal the operator can
@@ -27,8 +28,8 @@ from deploy_contracts import MODES, Message, Record, register
 from deploy_contracts.fields import array, list_of, nested, optional, scalar, str_list
 
 from teleop_collect.contracts.health import HealthReport
-from teleop_collect.contracts.keys import (EPISODE_NAME_RE, GRIPPER_COMMANDS, MOTION_KEYS, OUTCOMES, SAVED_OUTCOMES,
-                                           is_episode_name)
+from teleop_collect.contracts.keys import (EPISODE_NAME_RE, GRIPPER_COMMANDS, LISTED_OUTCOMES, MOTION_KEYS, OUTCOMES,
+                                           SAVED_OUTCOMES, is_episode_name)
 
 PHASES = ("starting", "idle", "recording", "stopping", "done")
 MESSAGE_LEVELS = ("info", "warn", "error")
@@ -106,6 +107,8 @@ class StopEpisode(Message):
 @register
 @dataclass(frozen=True, eq=False)
 class DeleteEpisode(Message):
+    """A saved or an unsaved episode of the selected task (never the one recording)."""
+
     SCHEMA = "u1.delete_episode/v1"
     episode: str = scalar("str")
 
@@ -116,8 +119,22 @@ class DeleteEpisode(Message):
 
 @register
 @dataclass(frozen=True, eq=False)
+class LabelEpisode(Message):
+    """Save an unsaved episode of the selected task as success or fail (its meta.yaml outcome, then COMPLETE)."""
+
+    SCHEMA = "u1.label_episode/v1"
+    episode: str = scalar("str")
+    outcome: str = scalar("str", choices=SAVED_OUTCOMES)
+
+    def check_values(self) -> None:
+        if not is_episode_name(self.episode):
+            self.fail("episode", f"{self.episode!r} does not match {EPISODE_NAME_RE}")
+
+
+@register
+@dataclass(frozen=True, eq=False)
 class StopArm(Message):
-    """Stop arm / Esc: C3 stop; an open episode is aborted (deleted)."""
+    """Stop arm / Esc: C3 stop; an open episode ends and is kept unsaved (label it or delete it)."""
 
     SCHEMA = "u1.stop_arm/v1"
 
@@ -126,10 +143,11 @@ class StopArm(Message):
 
 @dataclass(frozen=True, eq=False)
 class EpisodeInfo(Record):
-    """One complete episode of the selected task."""
+    """One episode of the selected task: saved (success, fail) or unsaved (ended without a choice; duration_s and
+    frames_main are 0 when its meta.yaml could not be written)."""
 
     name: str = scalar("str")
-    outcome: str = scalar("str", choices=SAVED_OUTCOMES)
+    outcome: str = scalar("str", choices=LISTED_OUTCOMES)
     duration_s: float = scalar("float64", min=0.0)
     frames_main: int = scalar("uint64")
 
@@ -160,7 +178,7 @@ class TeleopStatus(Message):
     task: str = scalar("str")                                  # "" when none selected
     task_description: str = scalar("str")
     tasks: tuple[str, ...] = str_list()                        # every task under data_root
-    episodes: tuple[EpisodeInfo, ...] = list_of(EpisodeInfo)   # the selected task's complete episodes, oldest first
+    episodes: tuple[EpisodeInfo, ...] = list_of(EpisodeInfo)   # the selected task's episodes (+ unsaved), oldest first
     recording_episode: str = scalar("str")                     # "" unless recording
     episode_s: float = scalar("float64", min=0.0)              # 0 when not recording
     arm_mode: str = scalar("str")                              # newest C2 mode, "" before any

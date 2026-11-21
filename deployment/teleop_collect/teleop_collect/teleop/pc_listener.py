@@ -3,8 +3,8 @@
 # lock, called per C2 message with (state, arrival_ns, t_ns mapped to the laptop or None); a recorder write error is
 # kept apart (recorder_error(), the main loop aborts the episode with RECORDING_FAILED) and drops the recorder, the
 # thread goes on; logger name teleop.pc_listener; imports. + wave 3 (no software stops, 2026-11-20): the main loop no
-# longer aborts on a recorder error: RECORDING_FAILED is a warning and the episode can only be discarded. The
-# source's own header follows.
+# longer aborts on a recorder error: RECORDING_FAILED is a warning. + keep episodes (2026-11-20): an episode with a
+# recorder error can still be saved (the error is in its meta.yaml warnings). The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/state_listener.py @ 91b178b
 # changes: renamed PcListener, process name "PC"; each message's laptop arrival is stamped; PcClock.add_state when t_ns
 # advanced; arrival and seq to LinkStats; history.add raises PcRestarted on seq going back.
@@ -103,7 +103,7 @@ class PcListener:
                 t_ns = None
             try:
                 recorder.write(state, arrival, t_ns)
-            except Exception as exc:          # RECORDING_FAILED on the main loop (Discard only); the link goes on
+            except Exception as exc:          # RECORDING_FAILED on the main loop (a warning); the link goes on
                 log.error("state recorder failed: %s", exc)
                 self._recorder_error = exc
                 self._recorder = None
