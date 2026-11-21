@@ -117,6 +117,14 @@ Keep a hand on the arm's user stop.
    EOF
    ${EDITOR:-nano} $SAVE/NOTES.md
    ```
+5. **Terminal 2: make the trial's video** (`$SAVE/<folder name>.mp4`, the four images as a 2×2 grid at 10 fps; the
+   PNGs stay), then add a row to [TRIALS.md](TRIALS.md):
+
+   ```bash
+   ~/envs/policy_deploy/bin/python -m policy_deploy.frames.trial_video $SAVE
+   ```
+
+   Without a folder it makes the video of every trial folder under `~/Capstone/data/` that has none yet.
 
 Next trial: `TRIAL=2` in step 1, and so on. A recording you forgot to `--save` into the run's folder: move it there by
 hand with the same name (`<date>_<time>_trialN_probe_live`) and write its `NOTES.md` the same way.
@@ -133,7 +141,7 @@ hand with the same name (`<date>_<time>_trialN_probe_live`) and write its `NOTES
 
 Every session is kept in `~/policy_deploy_sessions/<date>_<time>/`: `station.yaml` (which policy and demo ran),
 `logs/` (`manager.log` lists every workspace clamp), `manager/episodes.jsonl` (each episode's outcome) and
-`manager/steps.jsonl`. Each policy's recordings and notes: `<run folder>/deploy/<date>_<time>_trialN_probe_live/`.
+`manager/steps.jsonl`. Each policy's recordings and notes: `<run folder>/deploy/<date>_<time>_trialN_probe_live/`. Every trial so far, by policy: [TRIALS.md](TRIALS.md).
 
 ---
 
@@ -409,6 +417,16 @@ running `policy_deploy run` (no frames process of its own), and needs the torch 
 
 It shares `frames` with the policy (about 7 ms per request), so keep it at 10 or less and watch `late loops`. The window
 may be one step behind the images a step used; the exact ones are in the tap ("A trained policy", step 6).
+
+### Trial videos: `trial_video`
+
+Turns trial folders written by `probe --live --save` into videos, one per folder (`<folder>/<folder name>.mp4`, 2×2
+grid: main on top, ultrawide below; MPEG-4, plays in VLC). With no folder: every
+`~/Capstone/data/*/policy/*/deploy/*_probe_live` without a video; `--force` rebuilds, `--fps` (default 10) sets the rate.
+
+```bash
+~/envs/policy_deploy/bin/python -m policy_deploy.frames.trial_video [FOLDER ...] [--fps 10] [--force]
+```
 
 ### Camera constants: `deploy_rig`
 

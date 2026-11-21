@@ -82,7 +82,7 @@ deployment/policy_deploy/
       __main__.py app.py settings.py errors.py rig_file.py packet_source.py pi_stream_source.py
       recording_packet_source.py frame_decoder.py jpeg_decoder.py ultrawide_store.py pair_rule.py packet_buffer.py
       packet_selector.py camera_health.py receiver.py frames_server.py pi_recording.py packet_pairer.py
-      fake_pi_sender.py fake_pi.py probe.py pi_collect.py deploy_rig.py _dataproc/
+      fake_pi_sender.py fake_pi.py probe.py pi_collect.py trial_video.py deploy_rig.py _dataproc/
     policy/                    process "policy" (§5)
       __main__.py app.py settings.py errors.py policy_server.py policy_factory.py base_policy.py
       promptable_policy.py hold_still_policy.py key_map.py neutral_observation.py self_check.py probe.py
