@@ -5,7 +5,7 @@ session_root: ~/teleop_collect_sessions   # logs of every run (one folder per ru
 data_root: ~/CapstoneTeleop               # the episodes: <data_root>/<task>/episode_NNN/
 mock_data_root: ~/CapstoneTeleop_mock     # the episodes of --mock runs (never mixed with the real ones)
 pi:
-  address: 192.168.50.30                  # PLACEHOLDER: the Pi's ASUS_5g address
+  address: 192.168.50.59                  # the Pi's reserved ASUS_5g address
   port: 5555                              # fixed by the Pi
 wifi_ssid: ASUS_5g
 ports:                                    # all on 127.0.0.1
