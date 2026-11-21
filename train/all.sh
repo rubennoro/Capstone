@@ -97,12 +97,12 @@ if [ -z "$RESUME" ] && [ "$ATTENTION" = 1 ]; then
     die "--attention needs behavior prompting; this would train plain diffusion (drop --attention or use --policy prompting)"
   fi
 fi
-POLICY=$LOCAL_DATA_ROOT/$FOLDER/policy
+POLICY_DIR=$LOCAL_DATA_ROOT/$FOLDER/policy
 ANALYSIS=${TRAIN_ANALYSIS_SRC:-$TRAIN_DIR/analysis}
 if [ -n "$RESUME" ]; then
-  [ -f "$POLICY/$RESUME/job.json" ] ||
+  [ -f "$POLICY_DIR/$RESUME/job.json" ] ||
     die "no data/$FOLDER/policy/$RESUME/job.json: --run needs a run submitted from this laptop (train/submit.sh or all.sh)"
-  DATASET=$(json_get "$POLICY/$RESUME/job.json" dataset)
+  DATASET=$(json_get "$POLICY_DIR/$RESUME/job.json" dataset)
 fi
 
 # ---- logging: run this script again with its output going through tee into the log file (also stderr, in order)
@@ -215,13 +215,13 @@ py() {  # python3 SCRIPT ARGS... (only printed in a dry-run)
 }
 slurm_log() {  # RUN KIND(train|eval) [JOB]: where the job's Slurm log is on the cluster
   local label job
-  label=$(json_get "$POLICY/$1/job.json" label "?")
-  job=${3:-$(json_get "$POLICY/$1/job.json" job_id "?")}
+  label=$(json_get "$POLICY_DIR/$1/job.json" label "?")
+  job=${3:-$(json_get "$POLICY_DIR/$1/job.json" job_id "?")}
   printf '%s' "$CLUSTER_LOGIN:$(rpath "$CLUSTER_LOGS")/bp_$2_${label}_${job}.out"
 }
 # smoke run of a full run, from the job ids in the local job.json files ("after" = the smoke job)
 find_smoke() {
-  python3 -I - "$POLICY" "$1" <<'PY'
+  python3 -I - "$POLICY_DIR" "$1" <<'PY'
 import json, os, sys
 pol, run = sys.argv[1:3]
 after = json.load(open(os.path.join(pol, run, "job.json"))).get("after")
@@ -330,7 +330,7 @@ fi
 # training_failed STATUS: find out why (the smoke run, or the full run itself), fetch the run's files for the logs, stop
 training_failed() {
   local st=$1 cause next sst="" sjob fjob note
-  fjob=$(json_get "$POLICY/$FULL_RUN/job.json" job_id "?")
+  fjob=$(json_get "$POLICY_DIR/$FULL_RUN/job.json" job_id "?")
   note=$(line_of train_status note)
   cause="the full run $FULL_RUN ended with STATUS=${st:-?}${note:+ ($note)}"
   next="its Slurm log: $(slurm_log "$FULL_RUN" train)"
@@ -342,7 +342,7 @@ training_failed() {
     elif [ "$sst" != ok ] || [[ $note == *"(--after)"* ]]; then
       # the smoke run is the cause: it failed, or its Slurm job did not succeed although it wrote STATUS=ok
       # (train.sbatch exits 1 on packaging problems), so Slurm never started the full job
-      sjob=$(json_get "$POLICY/$SMOKE_RUN/job.json" job_id "?")
+      sjob=$(json_get "$POLICY_DIR/$SMOKE_RUN/job.json" job_id "?")
       if [ "$sst" != ok ]; then
         cause="the smoke run $SMOKE_RUN ended with STATUS=$sst, so the full run $FULL_RUN never started (smoke log tail in the output/log)"
       else
@@ -379,7 +379,7 @@ esac
 begin fetch "policy -> data/$FOLDER/policy/$FULL_RUN/"
 bash "$TRAIN_DIR/fetch.sh" "$FOLDER" "$FULL_RUN" ||
   stop "fetch.sh failed (its error is above)" "fix the cause (disk space?), then continue with: $(continue_cmd) (the fetch resumes)"
-CKPT=$(ls "$POLICY/$FULL_RUN"/checkpoints/top1_*.ckpt 2>/dev/null | head -1)
+CKPT=$(ls "$POLICY_DIR/$FULL_RUN"/checkpoints/top1_*.ckpt 2>/dev/null | head -1)
 [ -n "$CKPT" ] ||
   stop "no checkpoints/top1_*.ckpt in data/$FOLDER/policy/$FULL_RUN/ after the fetch" \
     "the run packaged no checkpoint: see data/$FOLDER/policy/$FULL_RUN/ (README.md, logs/) and $(slurm_log "$FULL_RUN" train)"
