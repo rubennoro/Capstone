@@ -41,6 +41,8 @@ Running status between working sessions. Update it at the end of each conversati
   - Data: `~/CapstoneTeleop/teleoppick1/` (1 episode, eraser) and **`~/CapstoneTeleop/teleop_marker/`: 24 success
     episodes** (19-45 s, 10.1 min; cameras and arm data clean, all start at the same pose).
   - Docs: `teleop_collect/{PLAN,STRUCTURE,DESIGN,DIRECTIONS}.md` and `deployment/control_deploy/DIRECTIONS.md`.
+    `teleop_collect/DIRECTIONS.md` session part (2026-11-22): §9 hardware ready, §10 laptop, §11 location, §12 task,
+    §13 repeated episodes, §14 keys, §15 quit; in the redesigned page's words.
   - The env is `~/envs/teleop_collect`. When another session holds the ports, run things in
     `unshare -rn sh -c 'ip link set lo up && ...'`.
 
@@ -119,8 +121,6 @@ Running status between working sessions. Update it at the end of each conversati
   2. Deploy the best policy on the deployment block (PC station.yaml), same `q_start_rad`.
   3. Update the teleop_collect tests to the keep-unsaved behavior (only when asked); 32 old tests fail for this and
      other stale expectations (0.04 width, settled, Pi .59).
-  4. `teleop_collect/DIRECTIONS.md` still uses the old page words (+ new task, `cams`, Keep recording, save success /
-     save fail, the panel's REC line): refresh to the redesigned page.
   - Open: measure `gripper.width_offset_m` on the PC (the closed hand reads ~0 mm around the eraser);
     final-deployment moves → re-sync `contracts/` and the copy pins.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):

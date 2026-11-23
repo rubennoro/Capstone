@@ -63,9 +63,10 @@ ABORT_STOP_TIMEOUT_S = 1.0       # R1 stop_recording on the quit / conclude path
 CAMERA_LATCHED = "{name} camera down: check the Pi (after a Pi restart: Ctrl-C and run teleop_collect again)"
 WARN_GOES_ON = "{episode}: {text}; the episode goes on (noted in its meta.yaml)"
 WARN_FAILED = "{episode}: {text}; the episode goes on (data may be missing; noted in its meta.yaml)"
-KEPT_UNSAVED = "{episode} ended: {reason}. Kept unsaved: in the episode list, Save success, Save fail or delete it"
-KEPT_UNSAVED_NEXT_RUN = ("{episode} ended: {reason}. Kept unsaved: at the next run, select its task, then Save "
-                         "success, Save fail or delete it in the episode list")
+KEPT_UNSAVED = ("{episode} ended: {reason}. Kept unsaved: in its row under Episodes, Save ✓ (success), "
+                "Save ✗ (fail) or the trash icon")
+KEPT_UNSAVED_NEXT_RUN = ("{episode} ended: {reason}. Kept unsaved: at the next run, select its task, then in its "
+                         "row under Episodes Save ✓ (success), Save ✗ (fail) or the trash icon")
 #: The summary in meta.yaml when frames gave none (R1 stop failed): zero counts; the failure is in `warnings`.
 _EMPTY_CAMERA = CameraSummary(frames=0, frame_no_gaps=0, bytes=0, first_t_mid_ns=None, last_t_mid_ns=None)
 NO_SUMMARY = RecordingSummary(main=_EMPTY_CAMERA, ultrawide=_EMPTY_CAMERA, packets=0, packet_no_gaps=0, uw_reused=0,
@@ -130,7 +131,7 @@ class EpisodeFlow:
         for path in found:
             self.lp._safe_event("unsaved_kept", str(path))
             self.lp._messages.add("warn", f"unsaved episode kept from an earlier run: {path.parent.name}/{path.name} "
-                                          "(select its task: Save success, Save fail or delete it in the list)")
+                                          "(select its task: Save ✓, Save ✗ or the trash icon in its row)")
         return found
 
     # ---- tasks ---------------------------------------------------------------------------------------------------
