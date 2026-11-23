@@ -15,8 +15,8 @@ from deploy_contracts import Ack, encode
 from ui_helpers import (FakeFrames, FakeTeleop, UiThread, idle_status, running_ui, ui_settings, wait_until)
 
 from station_helpers import free_port
-from teleop_collect.contracts import (CreateTask, DeleteEpisode, GripperCommand, KeysUpdate, SelectTask,
-                                      StartEpisode, StopArm, StopEpisode)
+from teleop_collect.contracts import (CreateTask, DeleteEpisode, DeleteTask, GripperCommand, KeysUpdate, SelectTask,
+                                      SetDataRoot, StartEpisode, StopArm, StopEpisode)
 from teleop_collect.ui.bridge import FatalError
 from teleop_collect.ui.scripted_page import ScriptedPage
 from teleop_collect.ui.server import build_command
@@ -279,6 +279,14 @@ def test_command_without_integer_id(page):
 def test_build_command_covers_every_page_command():
     assert isinstance(build_command("stop_arm", {}), StopArm)
     assert build_command("create_task", {"name": "a"}).description == ""
+
+
+def test_build_command_delete_task_and_set_data_root():
+    assert build_command("delete_task", {"name": "pick_block"}) == DeleteTask(name="pick_block")
+    assert build_command("set_data_root", {"path": "~/CapstoneTeleop"}) == SetDataRoot(path="~/CapstoneTeleop")
+    for name, args in (("delete_task", {}), ("set_data_root", {}), ("delete_task", {"name": "a", "episode": "b"})):
+        with pytest.raises(ValueError):
+            build_command(name, args)
 
 
 def test_stop_arm_does_not_wait_behind_a_slow_command(teleop, frames, tmp_path):

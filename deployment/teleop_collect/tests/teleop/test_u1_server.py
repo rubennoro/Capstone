@@ -40,7 +40,7 @@ def test_serves_up_to_n_without_waiting_and_every_request_reaches_dispatch():
         for c in clients:
             c.close()
         server.close()
-    assert len(U1_REQUESTS) == 9                                    # no u1.home/v1 (no laptop home)
+    assert len(U1_REQUESTS) == 12       # no u1.home/v1 (no laptop home); + label, delete_task, set_data_root
 
 
 def test_a_home_request_is_unknown_and_never_reaches_dispatch():

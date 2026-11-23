@@ -4,7 +4,8 @@ The operator's page and the small web server behind it (STRUCTURE.md §9, PLAN.m
 
 ## What it does and does not do
 
-- Serves one offline page (plain HTML/CSS/JS in `static/`, no CDN, no build) on `127.0.0.1:<ports.http>` **only**.
+- Serves one offline page (plain HTML/CSS/JS in `static/`, no CDN, no build; the IBM Plex Sans font bundled) on
+  `127.0.0.1:<ports.http>` **only**.
 - Forwards the page's key state, finger commands and buttons to teleop (U1), and pushes teleop's status to the page.
 - Pulls the newest JPEG of each camera from frames (U2) and pushes it to the page.
 - Enforces a **deadman** on the key state.
@@ -25,7 +26,7 @@ The operator's page and the small web server behind it (STRUCTURE.md §9, PLAN.m
 | `bridge.py` | `U1Client`, `U2Client` (RpcClient, one REQ socket per thread), `Bridge` (awaitable calls on lanes), `FatalError` |
 | `server.py` | `UiServer` (HTTP, WebSocket, pollers, `KeysArbiter` + deadman, `KeysSender`), `UiApp` (the process: loop, ready file, stop) |
 | `scripted_page.py` | `ScriptedPage`: the page's protocol from Python, synchronous, for tests (E7) |
-| `static/` | `index.html`, `app.js`, `style.css` |
+| `static/` | `index.html`, `app.js`, `style.css`, `theme.js` (sets the theme in `<head>`, before the first paint); `fonts/ibm-plex-sans-latin-wght-normal.woff2` (IBM Plex Sans variable, latin, from `@fontsource-variable/ibm-plex-sans@5.2.8`) and its SIL OFL `fonts/LICENSE.txt` from the same package |
 
 ## Threads and data flow
 
@@ -55,7 +56,11 @@ are dropped when a page is 6 sends behind (acks never are).
 - server → page: `ack {id, ok, reason}`; `error {text}` for a message the server could not use — **added**.
 - page → server: `keys {held, slow, focus}`, `gripper {command}`, and
   `command {name, args: {...}, id}` — **changed**: the arguments travel in their own `args` map, because a flat
-  `name` (select_task, create_task) collides with the command's `name`.
+  `name` (select_task, create_task) collides with the command's `name`. The commands: start_episode, stop_episode
+  `{outcome}`, stop_arm, select_task `{name}`, create_task `{name, description}`, delete_episode `{episode}`,
+  label_episode `{episode, outcome}`, delete_task `{name}` (the folder and all its episodes; refused while recording)
+  and set_data_root `{path}` (absolute or `~`, writable; refused while recording; on ok the task is deselected and the
+  lists reload). The status's `data_root` is the storage folder (the page shows `-` when it is missing).
 
 ## Decisions
 
@@ -68,13 +73,50 @@ are dropped when a page is 6 sends behind (acks never are).
   Auto-repeat ignored; keydown/keyup maintain the held set; Shift = slow. Motion and N/M count only while the page has
   focus, teleop answers, the phase is `recording` and the save choice is not open; a key held before that must be
   pressed again. `blur` and a hidden tab send `held:[], focus:false` at once; the resend (every `keys_resend_ms`) runs
-  only while focused. Esc = Stop arm in every phase, even while typing. Keys typed into the task form are not captured.
-  Stop episode opens Save: success / Save: fail / Discard (one `stop_episode`) or Keep recording; keys are off
-  meanwhile. Delete asks `confirm()`.
-- **The hint under Start** (outside an episode): when Start is allowed, `at the start pose ✓ ready to start` once the
+  only while focused. Esc = Stop arm in every phase, even while typing. Keys typed into any field (task form, storage
+  folder, delete-task confirmation; all `<input>`, covered by `isTyping`) are not captured, and the key map shows
+  the keys off while a field has the focus. The open forms close (their field blurred) when recording starts and on
+  Stop arm / Esc. Stop episode opens Save: success / Save: fail / Discard (one `stop_episode`) or Resume recording;
+  keys are off meanwhile.
+- **The page's layout** (2026-11-22, for a new operator; Apple-like, color only for status): a translucent header
+  (a gripper mark and the name, three health dots Arm / Cameras / Link
+  with their details in the tooltip and in visually hidden text, the storage folder (shown as it is, cut in the
+  middle when long) with an inline Change field, Mock PC pill, the theme toggle), the alert banner,
+  then two columns that fit 1440×900 without scrolling (below 1000 px one column: cameras, task + state, Stop arm,
+  the keys, then episodes and the log, so the keys stay on screen while recording):
+  - left: the cameras by role (main IMX519 = "Wrist camera", ultrawide IMX219 = "Wide view"; `img` ids stay
+    `preview-<camera>`), each with a health dot + fps and a "No signal" placeholder; click / Enter enlarges one (the
+    other becomes a thumbnail), again restores; a REC m:ss badge and the "At workspace limit" chip over the video.
+    Below, the **keycap map**: Move (W/A/S/D/R/F laid out as on the keyboard, directions seen from behind the robot),
+    Rotate (U I O over J K L), Gripper (N, M; a dot marks the last command), Shift / Esc; held keys light up in the
+    accent color (from the held set the page sends, Shift when slow). When keys are off the map dims and one line says
+    why (not connected, start an episode, choose save or discard, click the page, typing in a field). Diagnostics are a closed
+    `<details>`.
+  - right: the task (select, New task inline form, Delete task…), the **state card** (the one place saying what to do
+    next, with its button: Not ready + teleop's `start_refusal`, Ready + Start episode, Recording + timer + Stop
+    episode, the save choice; a refused command's reason in orange for 6 s; successes are not echoed, the new state
+    is the feedback; a form's refusal shows in the form), Stop arm (red, always enabled while connected), the episodes
+    (newest first, counts, outcome pills, one line each; unsaved rows offer Save ✓ / Save ✗ = `label_episode`), and the
+    activity log (a closed `<details>`; an orange dot on it when a warning or error arrived since it was last open).
+- **Inline confirmations, no browser dialogs:** deleting an episode turns its row into "Delete episode_NNN from disk?
+  No / Yes, delete"; deleting a task needs its name typed exactly (the red button is enabled only then). Disabled while
+  recording or busy. Discard (in the save choice) asks "Discard episode_NNN? It is deleted from disk." with Yes,
+  discard / Back; the save choice stays open (keys off) meanwhile.
+- **The state card's line** (outside an episode): when Start is allowed, `at the start pose ✓ ready to start` once the
   PC has accepted a start there (`start_pose_confirmed`), else `at the start-up pose ✓ ready to start (the PC checks
-  it at Start)`; when not, teleop's `start_refusal` as it is (e.g. `put the arm at the start pose: h, then p on the
-  PC`). During an episode: `recording: hold keys to move`, or `motion off: save or discard the episode`.
+  it at Start)`; when not, teleop's `start_refusal` (e.g. `put the arm at the start pose: h, then p on the PC`). Only
+  the first letter is capitalized; the text is teleop's. During an episode: `Hold keys to move · wait ~1 s after
+  Start`, or (save choice open) that keys are off until the operator chooses.
+- **Offline:** no `http://`/`https://` text in the three files (inline SVG is written without `xmlns`, which HTML does
+  not need), no `@import`, every `src`/`href`/`url()` under `/static/`. The font is IBM Plex Sans (chosen by the user
+  2026-11-22 over Inter and Barlow; SIL OFL 1.1, license next to it), then the system stack (`-apple-system`,
+  `system-ui`, ...); the system monospace stack (no IBM Plex Mono: there is no variable package of it) only for paths,
+  episode names and diagnostics.
+- **Theme: dark by default**, whatever the OS setting (the user's choice, 2026-11-22). The light tokens stay, behind
+  `<html data-theme="light">`: a quiet sun / moon button in the header ("Light theme" / "Dark theme") switches it and
+  remembers it in `localStorage` (`teleop_collect.theme`; blocked storage = dark, not remembered). `theme.js` in
+  `<head>` applies it before the first paint, so there is no flash; `index.html` starts as `data-theme="dark"`. The
+  toggle is an ordinary button (blurred on mouseup like the others), and no key is bound to it.
 - **Local only:** bound on 127.0.0.1; plus a Host check (DNS rebinding) and an Origin check (browsers let any site
   open a WebSocket to localhost), so only a page opened as `127.0.0.1`/`localhost` on this port can drive the arm.
   An `Origin` header must be exactly `http://127.0.0.1:<port>` or `http://localhost:<port>`; anything else is
@@ -92,15 +134,16 @@ Fake U1 and U2 RpcServers on free ports, the server on HTTP port 0 or a free por
 ready rule, teleop/frames gone, status rate and fields, messages, every command and its ack, refusals, bad commands,
 the stop lane, previews only newer, the deadman on silence / close / blur / bad keys, multi-page focus, gripper,
 shutdown release, contract break = fatal); `test_scripted_page.py` (round trips E7 uses, `wait_start_allowed()`);
-`test_page_static.py` (app.js holds the §4.1 map, the focus rules, offline, every command known, no Home button;
-`node --check` when node exists); `test_settings_and_process.py` (settings; the process: ready, SIGINT/SIGTERM exit 0,
+`test_page_static.py` (app.js holds the §4.1 map, the focus rules, offline, the bundled font, every field covered by
+`isTyping`, every command known, inline confirmations, no Home button; `node --check` when node exists);
+`test_settings_and_process.py` (settings; the process: ready, SIGINT/SIGTERM exit 0,
 FATAL lines).
 
 ## How to extend
 
 - **A new key:** add its name to `MOTION_KEYS` (E1, contracts) and teleop's handling (E4), then one entry in
-  `MOTION_KEY_MAP` and `MOTION_KEY_ORDER` in `app.js`, the legend in `index.html`, and `EXPECTED_MOTION` in
-  `test_page_static.py`.
+  `MOTION_KEY_MAP` and `MOTION_KEY_ORDER` in `app.js`, a keycap (`data-key="<name>"`) in `index.html`, and
+  `EXPECTED_MOTION` in `test_page_static.py`.
 - **A new button:** a U1 request (E1) served by teleop (E3), one `COMMANDS` entry in `server.py` (its argument names
   and builder), a button calling `command("<name>", {args})` in `app.js`. ScriptedPage needs nothing.
 - **A new status field:** it arrives by itself (the status is TeleopStatus as JSON); show it in `render()`.

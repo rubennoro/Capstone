@@ -21,7 +21,7 @@ imports (with `teleop_collect.common`), so it imports no other part of `teleop_c
 | `pi_stream.py` | `PiStreamPacket`, `PiStreamHeader`, `PiFrameStamp`, `jpeg_size`: C0 `pi_stream/v1` as the Pi sends it |
 | `c0_packet.py` | `Packet`, `PacketHeader`, `FrameInfo`, `EncodedFrame`, `NO_PAIR`: the internal packet form |
 | `clock_fit.py` | `ClockMap` (round trips, the PC), `OneWayClockMap` (one-way stamps, the Pi), `ClockFit`, `ClockSample`, `ClockStats`, `NotSynced` |
-| `station.py` | `Station` (`station.yaml`: roots, the Pi, the five ports and their endpoints, one section per process), `StationError` |
+| `station.py` | `Station` (`station.yaml`: roots, the Pi, the five ports and their endpoints, one section per process), `StationError`; `storage_file`, `read_storage`, `remember_data_root` (the remembered storage folder, `storage.local.yaml`) |
 | `config_merge.py` | `load_config(name, station)`, `resolve_path`: `config/<name>.yaml` with the station's section merged over it |
 | `process_args.py` | `ProcessArgs` (`--station --session --ready-file --mock`), `fatal_line`, `print_fatal`, `setup_logging` |
 | `paths.py` | `folder()`, `config_file(name)`, `rigs_dir()`, `default_station()`, `deployment_dir()` |
@@ -29,7 +29,7 @@ imports (with `teleop_collect.common`), so it imports no other part of `teleop_c
 | `keys.py` | `MOTION_KEYS`, `GRIPPER_COMMANDS`, `OUTCOMES`, `SAVED_OUTCOMES`, `TASK_NAME_RE`, `EPISODE_NAME_RE`, `is_task_name`, `is_episode_name` |
 | `r1_recorder.py` | R1 teleop -> frames: `StartRecording`, `StopRecording`, `GetFramesHealth`; replies `RecordingSummary` (with two `CameraSummary`), `FramesHealth` |
 | `u2_preview.py` | U2 ui -> frames: `GetPreview`; reply `Preview`; `NO_FRAME = -1` |
-| `u1_teleop.py` | U1 ui -> teleop: `GetStatus`, `KeysUpdate`, `GripperCommand`, `SelectTask`, `CreateTask`, `StartEpisode`, `StopEpisode`, `DeleteEpisode`, `StopArm`; reply `TeleopStatus` (with `EpisodeInfo`, `UiMessage`); `PHASES` (no `homing`), `MESSAGE_LEVELS`, `STATUS_MAX_MESSAGES` |
+| `u1_teleop.py` | U1 ui -> teleop: `GetStatus`, `KeysUpdate`, `GripperCommand`, `SelectTask`, `CreateTask`, `StartEpisode`, `StopEpisode`, `DeleteEpisode`, `LabelEpisode`, `DeleteTask`, `SetDataRoot`, `StopArm`; reply `TeleopStatus` (with `data_root`) (with `EpisodeInfo`, `UiMessage`); `PHASES` (no `homing`), `MESSAGE_LEVELS`, `STATUS_MAX_MESSAGES` |
 | `examples.py` | `build_examples()`: good and broken R1/U1/U2 examples; `health()`, `recording_summary()`, `teleop_status(**change)` for tests |
 
 Every message is a frozen `deploy_contracts.Message` built from its field helpers, so a message that exists is valid.
@@ -57,6 +57,12 @@ Commands are answered with `ack/v1`; a broken request gets `error/v1` from `RpcS
 - **Two data roots:** `data_root` (real episodes) and `mock_data_root` (`--mock` runs), both required and refused when
   they are the same folder. `Station.data_root` is the one for this run (`mock_data_root` when loaded with
   `mock=True`), so every process that writes episodes follows `--mock` without knowing about it.
+- **The remembered storage folder** (2026-11-22): `storage.local.yaml` next to the station file (gitignored), keys
+  `data_root` / `mock_data_root`, replaces station.yaml's; written by the page's storage folder change (teleop) and by
+  `teleop_collect run --data-root` (atomically, keeping the other key). A malformed file is a `StationError` naming it
+  ("fix it or delete it"). The two roots must still differ after it, and neither may be inside the other;
+  `Station.data_root_source` says where this run's came from (the launcher's and teleop's hints). `tests/conftest.py` keeps the repo's own file out
+  of every test.
 - **The station refuses every contract key** at any depth (PLAN §2 rule 5): addresses, ports and timing of the PC
   come only from `deployment/contracts/link.yaml`. `Station.load` also loads each section through `load_config`, so an
   override key that is not in the config file is refused at load, with every problem in one `StationError`.

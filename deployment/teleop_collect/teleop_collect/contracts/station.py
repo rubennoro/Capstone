@@ -4,7 +4,9 @@
 # PORT_KEYS mock_pi, r1, preview, u1, http (distinct); endpoints r1_endpoint, preview_endpoint, u1_endpoint,
 # http_url and http_port instead of frames_endpoint and policy_endpoint; imports; mock_data_root required (wave-3
 # review): data_root is it when loaded with mock=True, so --mock episodes never mix with the real ones, and the two
-# are refused when equal. The source's own header follows.
+# are refused when equal. + the remembered storage folder (2026-11-22): storage.local.yaml next to the station file
+# overrides data_root / mock_data_root (storage_file, read_storage, remember_data_root), and load(data_root=...) sets
+# this run's. The source's own header follows.
 # adapted from rnoro/deployment:deployment/deploy/deploy/station.py @ 91b178b
 # changes: the laptop station schema of STRUCTURE.md 2.4 (python light/torch, pi, wifi_ssid, ports, one section per
 # laptop process); refuses the contract key names of deployment/contracts/*.yaml by an explicit list; endpoints are
@@ -14,11 +16,17 @@
 
 One file for real and --mock runs. It may not override any key of the three contract yaml files (the PC's address,
 ports and timing come only from deployment/contracts/link.yaml); those names are refused wherever they appear.
+
+The storage folder chosen in the page (or with `teleop_collect run --data-root`) is remembered in storage.local.yaml
+next to the station file (gitignored): its `data_root` / `mock_data_root` replace station.yaml's. Delete the file to go
+back to station.yaml's folders.
 """
 from __future__ import annotations
 
 import ipaddress
 import math
+import os
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -29,11 +37,15 @@ from teleop_collect.contracts import paths
 
 STATION_VERSION = 1
 PROCESS_SECTIONS = ("frames", "teleop", "ui", "fake_pc", "launcher")
-TOP_LEVEL_KEYS = ("station_version", "session_root", "data_root", "mock_data_root", "pi", "wifi_ssid", "ports", *PROCESS_SECTIONS)
+TOP_LEVEL_KEYS = ("station_version", "session_root", "data_root", "mock_data_root", "pi", "wifi_ssid", "ports",
+                  *PROCESS_SECTIONS)
 PI_KEYS = ("address", "port")
 PORT_KEYS = ("mock_pi", "r1", "preview", "u1", "http")
 LOCAL_HOST = "127.0.0.1"
 DEFAULT_PI_PORT = 5555
+#: The remembered storage folders, next to the station file (gitignored); keys STORAGE_KEYS, each optional.
+STORAGE_FILE = "storage.local.yaml"
+STORAGE_KEYS = ("data_root", "mock_data_root")
 
 _LINK = "deployment/contracts/link.yaml"
 _FRAMES = "deployment/contracts/frames.yaml"
@@ -79,15 +91,22 @@ def _is_int(v: Any) -> bool:
 class Station:
     """The checked settings of station.yaml, plus each process's raw section of overrides. Use Station.load."""
 
-    def __init__(self, path: Path, data: Mapping[str, Any], mock: bool) -> None:
+    def __init__(self, path: Path, data: Mapping[str, Any], mock: bool,
+                 storage: Mapping[str, str] | None = None) -> None:
+        """storage: the remembered folders (read_storage); each key present replaces station.yaml's."""
         self.path = path
         self.mock = mock
         self._data = data
+        self.storage = dict(storage or {})
+        roots = {**{k: data[k] for k in STORAGE_KEYS}, **self.storage}
         self.session_root = self.resolve(data["session_root"])
-        self.real_data_root = self.resolve(data["data_root"])
-        self.mock_data_root = self.resolve(data["mock_data_root"])
+        self.real_data_root = self.resolve(roots["data_root"])
+        self.mock_data_root = self.resolve(roots["mock_data_root"])
         # where this run's episodes go: --mock episodes are kept apart from the real ones (PLAN 6.1)
         self.data_root = self.mock_data_root if mock else self.real_data_root
+        key = STORAGE_KEYS[1] if mock else STORAGE_KEYS[0]
+        #: where this run's data_root comes from: "station.yaml", "storage.local.yaml" or "--data-root" (load)
+        self.data_root_source = STORAGE_FILE if key in self.storage else path.name
         pi = data.get("pi") or {}
         self.pi_address: str | None = pi.get("address")
         self.pi_port: int = int(pi.get("port", DEFAULT_PI_PORT))
@@ -95,9 +114,10 @@ class Station:
         self.ports: dict[str, int] = {k: int(v) for k, v in (data.get("ports") or {}).items()}
 
     @classmethod
-    def load(cls, path: Path | str | None = None, mock: bool = False) -> Station:
-        """Read and check the station file (default: deployment/teleop_collect/station.yaml); every problem, with its
-        key path, is collected into one StationError."""
+    def load(cls, path: Path | str | None = None, mock: bool = False, data_root: Path | str | None = None) -> Station:
+        """Read and check the station file (default: deployment/teleop_collect/station.yaml) and the remembered
+        storage folders next to it; every problem, with its key path, is collected into one StationError.
+        data_root: this run's storage folder instead (data_root, or mock_data_root under --mock); not remembered."""
         path = Path(paths.default_station() if path is None else path).expanduser().absolute()
         name = path.name
         try:
@@ -111,10 +131,19 @@ class Station:
         problems = [f"{name}: {p}" for p in _check(data, mock)]
         if problems:
             raise StationError(problems)
-        station = cls(path, data, mock)
-        if _same_folder(station.real_data_root, station.mock_data_root):
+        storage = read_storage(path)
+        if data_root is not None:
+            storage[STORAGE_KEYS[1] if mock else STORAGE_KEYS[0]] = str(data_root)
+        station = cls(path, data, mock, storage)
+        if data_root is not None:
+            station.data_root_source = "--data-root"
+        where = f" (the storage folder: {STORAGE_FILE} or --data-root)" if storage else ""
+        if same_folder(station.real_data_root, station.mock_data_root):
             raise StationError(f"{name}: mock_data_root: must differ from data_root ({station.real_data_root}): "
-                               f"--mock episodes are kept apart from the real ones")
+                               f"--mock episodes are kept apart from the real ones{where}")
+        if roots_overlap(station.real_data_root, station.mock_data_root):
+            raise StationError(f"{name}: mock_data_root: must not be inside data_root or contain it "
+                               f"({station.real_data_root}): --mock episodes are kept apart from the real ones{where}")
         # the process sections against config/*.yaml
         from teleop_collect.contracts.config_merge import load_config
         for section in PROCESS_SECTIONS:
@@ -178,9 +207,75 @@ class Station:
         return f"http://{LOCAL_HOST}:{self.http_port}"
 
 
-def _same_folder(a: Path, b: Path) -> bool:
+def same_folder(a: Path, b: Path) -> bool:
     """The same folder, after resolving symlinks and `..` (neither needs to exist)."""
-    return a.resolve(strict=False) == b.resolve(strict=False)
+    return Path(a).resolve(strict=False) == Path(b).resolve(strict=False)
+
+
+def roots_overlap(a: Path, b: Path) -> bool:
+    """The same folder, or one inside the other (resolved as same_folder)."""
+    ra, rb = Path(a).resolve(strict=False), Path(b).resolve(strict=False)
+    return ra.is_relative_to(rb) or rb.is_relative_to(ra)
+
+
+# ------------------------------------------------------------------------------------- the remembered storage folder
+
+def storage_file(station_path: Path | str) -> Path:
+    """storage.local.yaml, next to the station file."""
+    return Path(station_path).expanduser().absolute().with_name(STORAGE_FILE)
+
+
+def read_storage(station_path: Path | str) -> dict[str, str]:
+    """The remembered folders ({} when there is no file). StationError naming the file when it is malformed."""
+    file = storage_file(station_path)
+    fix = "fix it or delete it (it only remembers the storage folder)"
+    try:
+        data = yaml.safe_load(file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise StationError(f"{file}: cannot read: {exc}: {fix}") from None
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise StationError(f"{file}: expected a map of {' / '.join(STORAGE_KEYS)}, got {data!r}: {fix}")
+    problems = []
+    for key, value in data.items():
+        if key not in STORAGE_KEYS:
+            problems.append(f"{file}: {key}: unknown key (known: {', '.join(STORAGE_KEYS)}): {fix}")
+        elif not isinstance(value, str) or not value:
+            problems.append(f"{file}: {key}: expected a path, got {value!r}: {fix}")
+    if problems:
+        raise StationError(problems)
+    return dict(data)
+
+
+def remember_data_root(station_path: Path | str, mock: bool, root: Path | str) -> Path:
+    """Remember root as the storage folder of real runs (mock False) or --mock runs, keeping the other key; written
+    atomically (a temp file, then renamed). Returns the file. StationError when it is malformed or cannot be written."""
+    file = storage_file(station_path)
+    data = read_storage(station_path)
+    data[STORAGE_KEYS[1] if mock else STORAGE_KEYS[0]] = str(root)
+    text = ("# The storage folder chosen in the page or with --data-root (teleop_collect; not in git).\n"
+            "# Delete this file to go back to station.yaml's data_root / mock_data_root.\n"
+            + yaml.safe_dump({k: data[k] for k in STORAGE_KEYS if k in data}, sort_keys=False))
+    tmp = None
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=f".{file.name}.", suffix=".tmp", dir=file.parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, file)
+    except OSError as exc:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        raise StationError(f"{file}: cannot write: {exc}") from None
+    return file
 
 
 def _check(data: Mapping[str, Any], mock: bool) -> list[str]:

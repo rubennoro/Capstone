@@ -8,6 +8,7 @@ import yaml
 
 from teleop_collect.teleop.episode import (COMPLETE_FILE, META_FILE, TASK_FILE, EpisodeDir, EpisodeInfo, TaskError,
                                            TaskStore, episode_name)
+from teleop_collect.teleop.episode.store import WRITE_PROBE, probe_writable
 
 
 def meta(outcome="success", duration=12.5, frames=300):
@@ -208,3 +209,60 @@ def test_episodes_cache_follows_changes(store, monkeypatch):
     os.remove(e1.path / META_FILE)                                       # a changed meta is re-read
     (e1.path / META_FILE).write_text(yaml.safe_dump(meta("success", 3.0, 30)))
     assert t.episodes() == [EpisodeInfo("episode_001", "success", 3.0, 30)]
+
+
+# ---- whole tasks and the storage folder (2026-11-22) ---------------------------------------------------------------
+
+def test_delete_task_removes_the_folder_and_counts_its_episodes(store):
+    t = store.create("pick_block", "", {})
+    t.new_episode().finish(meta())
+    t.new_episode()                                                      # unsaved
+    store.create("place", "", {})
+    assert store.delete_task("pick_block") == 2
+    assert not (store.root / "pick_block").exists() and store.tasks() == ["place"]
+    assert store.delete_task("place") == 0 and store.tasks() == [] and store.root.is_dir()
+
+
+@pytest.mark.parametrize("name,match", [("missing", "no task missing under"), ("Bad", "not a task name"),
+                                        ("../data", "not a task name"), ("", "not a task name")])
+def test_delete_task_refuses_unknown_and_bad_names(store, name, match):
+    store.create("pick_block", "", {})
+    with pytest.raises(TaskError, match=match):
+        store.delete_task(name)
+    assert store.tasks() == ["pick_block"]
+
+
+def test_delete_task_refuses_a_folder_without_a_valid_task_yaml(store):
+    (store.root / "stray").mkdir(parents=True)
+    (store.root / "stray" / "keep.txt").write_text("x")
+    with pytest.raises(TaskError, match="no task stray"):
+        store.delete_task("stray")
+    assert (store.root / "stray" / "keep.txt").exists()
+
+
+def test_delete_task_refuses_a_symlink(store, tmp_path):
+    outside = TaskStore(tmp_path / "outside")
+    outside.create("pick_block", "", {}).new_episode().finish(meta())
+    store.root.mkdir(parents=True)
+    (store.root / "pick_block").symlink_to(outside.root / "pick_block")
+    with pytest.raises(TaskError, match="a symlink, refused"):
+        store.delete_task("pick_block")
+    assert (outside.root / "pick_block" / "episode_000" / COMPLETE_FILE).exists()
+
+
+def test_a_root_that_is_a_file_lists_nothing(tmp_path):
+    (tmp_path / "data").write_text("x")
+    store = TaskStore(tmp_path / "data")
+    assert store.tasks() == [] and store.unsaved() == []
+    with pytest.raises(NotADirectoryError, match="not a folder"):
+        probe_writable(store.root)
+
+
+def test_probe_writable(tmp_path):
+    root = tmp_path / "a" / "b"
+    probe_writable(root)
+    assert root.is_dir() and not (root / WRITE_PROBE).exists()
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    with pytest.raises(OSError):
+        probe_writable(blocker / "data")

@@ -13,7 +13,8 @@ Files only, no sockets. Used by teleop's episode flow (`episode_flow.py`, E3). A
 
 | File | Class | Job |
 |---|---|---|
-| `store.py` | `TaskStore` | tasks under `data_root`: `tasks`, `create`, `open`, `clean_incomplete` |
+| `store.py` | `TaskStore` | tasks under `data_root`: `tasks`, `create`, `open`, `clean_incomplete`, `delete_task(name)` |
+| | `probe_writable` | `data_root` made if missing and written to (start-up step 9, the page's storage folder change) |
 | | `Task` | `episodes()` (complete ones, read from meta.yaml), `new_episode()`, `delete(name)` |
 | | `EpisodeDir` | `finish(meta)`: meta.yaml then COMPLETE, fsynced; `discard()` |
 | | `EpisodeInfo` | name, outcome, duration_s, frames_main (E3 converts it to the U1 record) |
@@ -45,6 +46,10 @@ booleans 1/0, missing values empty.
   required).
 - **Deletion is narrow (PLAN 13.4):** `_remove_episode_dir` deletes only a real (not symlinked) folder named
   `episode_*` directly inside its own task folder, after resolving symlinks. Anything else is a `TaskError`.
+  `TaskStore.delete_task` (the page's delete task) deletes a whole task the same narrow way: a valid task name, a real
+  (not symlinked) folder with a valid task.yaml directly inside `data_root`; it returns how many episodes it held.
+- **The storage folder can change at runtime:** teleop's `EpisodeFlow.set_root` makes a new `TaskStore` for the new
+  folder; frames records into whatever episode folder teleop passes, so nothing else changes.
 - **The listener never gets an exception:** `StateRecorder.write` is locked (main may close at the same time), ignores
   writes after close and keeps a write error in `EpisodeRecording.error` for the main loop (RECORDING_FAILED).
   The main-thread recorders raise `OSError` as usual.
@@ -65,7 +70,8 @@ booleans 1/0, missing values empty.
 ## Tests
 
 `tests/episode/`: names, task.yaml, numbering with gaps and beyond 999, finish order, delete rules, discard refusing
-symlinks and paths outside its task, clean_incomplete; the episodes() cache (a repeat call for 200 episodes
+symlinks and paths outside its task, clean_incomplete, delete_task (refusing bad names, non-tasks, symlinks),
+probe_writable; the episodes() cache (a repeat call for 200 episodes
 under 20 ms, new / deleted / changed episodes seen); every recorder's header and exact values, padding, replies,
 counts, flushing, close idempotent, files never overwritten, a listener thread writing while closing, a state write
 error kept; build_meta's content, validation and round trip through `finish` / `episodes`.

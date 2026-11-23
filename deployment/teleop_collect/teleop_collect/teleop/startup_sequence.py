@@ -31,12 +31,13 @@ Every cycle checks the signal flags and the state rules (fault, seq going back, 
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from teleop_collect.contracts import CAMERAS
+from teleop_collect.contracts.station import STORAGE_FILE, storage_file
+from teleop_collect.teleop.episode.store import probe_writable
 from teleop_collect.teleop.motion.planner import assumed_margins_text
 from teleop_collect.teleop.problems import Problem, ProblemCode
 
@@ -48,7 +49,6 @@ NS_PER_S = 1_000_000_000
 PC = "PC"
 HOMING_EXTRA_S = 5.0          # step 6: homing_timeout_s + this
 GET_STATE_PERIOD_S = 0.5      # step 6: ask again this often while homing
-WRITE_PROBE = ".teleop_collect_write_test"
 
 
 class StartupSequence:
@@ -239,17 +239,16 @@ class StartupSequence:
     def _check_data_root(self) -> None:
         lp = self.loop
         root = Path(self.s.data_root)
-        probe = root / WRITE_PROBE
         try:
-            root.mkdir(parents=True, exist_ok=True)
-            with open(probe, "w", encoding="utf-8") as f:
-                f.write("ok\n")
-                f.flush()
-                os.fsync(f.fileno())
-            probe.unlink()
+            probe_writable(root)
         except OSError as exc:
+            if self.s.data_root_source == STORAGE_FILE:
+                where = (f"{storage_file(self.s.station_file)} (the folder chosen in the page or with --data-root: "
+                         "run with --data-root PATH, or delete that file)")
+            else:
+                where = "station.yaml data_root (or teleop_collect run --data-root PATH)"
             lp._conclude(Problem(C.STARTUP, "teleop", f"data_root {root} is not writable: {exc}",
-                                 check="check station.yaml data_root and the disk"))
+                                 check=f"check {where} and the disk"))
 
     # ---- step 10
 

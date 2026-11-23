@@ -14,6 +14,7 @@ import pytest
 
 import teleop_collect.launcher.cli as cli
 from teleop_collect.contracts import paths
+from teleop_collect.contracts.station import read_storage
 
 
 @pytest.mark.parametrize("command", ["check", "run"])
@@ -21,7 +22,8 @@ def test_commands_parse(command):
     args = cli.parse_args([command, "--station", "s.yaml", "--mock"])
     assert (args.command, args.station, args.mock) == (command, Path("s.yaml"), True)
     args = cli.parse_args([command])
-    assert (args.station, args.mock) == (None, False)
+    assert (args.station, args.mock, args.data_root) == (None, False, None)
+    assert cli.parse_args([command, "--data-root", "~/x"]).data_root == Path("~/x")
 
 
 def test_run_no_browser():
@@ -95,3 +97,66 @@ def test_console_script(tmp_path):
     done = subprocess.run([str(script), "check", "--station", str(tmp_path / "nope.yaml")], cwd=paths.folder(),
                           capture_output=True, text=True, timeout=60)
     assert done.returncode == 2 and "nope.yaml: not found" in done.stdout
+
+
+class _Seen:
+    """A Launcher stand-in that keeps the station it was given."""
+
+    def __init__(self):
+        self.stations = []
+
+    def __call__(self, station, mock, **kwargs):
+        self.stations.append(station)
+        return self
+
+    def check(self):
+        return 0
+
+    def run(self):
+        return 0
+
+
+def test_run_data_root_is_used_and_remembered(make_station, monkeypatch, tmp_path):
+    seen = _Seen()
+    monkeypatch.setattr(cli, "Launcher", seen)
+    path = make_station()
+    assert cli.main(["run", "--station", str(path), "--mock", "--data-root", str(tmp_path / "eps")]) == 0
+    assert seen.stations[-1].data_root == (tmp_path / "eps").resolve()
+    assert read_storage(path) == {"mock_data_root": str((tmp_path / "eps").resolve())}
+    for command in ("run", "check"):                                               # later runs: remembered
+        assert cli.main([command, "--station", str(path), "--mock"]) == 0
+        assert seen.stations[-1].data_root == (tmp_path / "eps").resolve()
+        assert seen.stations[-1].data_root_source == "storage.local.yaml"
+    assert cli.main(["run", "--station", str(path)]) == 0                           # the real runs keep theirs
+    assert seen.stations[-1].data_root == path.parent / "data"
+
+
+def test_check_data_root_is_used_but_not_remembered(make_station, monkeypatch, tmp_path):
+    seen = _Seen()
+    monkeypatch.setattr(cli, "Launcher", seen)
+    path = make_station()
+    assert cli.main(["check", "--station", str(path), "--data-root", str(tmp_path / "eps")]) == 0
+    assert seen.stations[-1].data_root == (tmp_path / "eps").resolve()
+    assert seen.stations[-1].data_root_source == "--data-root"
+    assert read_storage(path) == {}
+    assert cli.main(["check", "--station", str(path)]) == 0
+    assert seen.stations[-1].data_root == path.parent / "data"
+
+
+def test_data_root_relative_is_from_the_current_folder(make_station, monkeypatch, tmp_path):
+    seen = _Seen()
+    monkeypatch.setattr(cli, "Launcher", seen)
+    monkeypatch.chdir(tmp_path)
+    path = make_station()
+    assert cli.main(["check", "--station", str(path), "--data-root", "rel"]) == 0
+    assert seen.stations[-1].data_root == (tmp_path / "rel").resolve()
+
+
+def test_data_root_equal_to_the_other_mode_is_a_station_row_and_not_remembered(make_station, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "Launcher", _Seen())
+    path = make_station()
+    assert cli.main(["run", "--station", str(path), "--mock", "--data-root", str(path.parent / "data")]) == 2
+    out = capsys.readouterr().out
+    assert "mock_data_root: must differ from data_root" in out and "FAIL" in out
+    assert read_storage(path) == {}
+

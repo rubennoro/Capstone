@@ -9,3 +9,5 @@ data/
 *.ckpt
 .*.ckpt.*
 results/**/checkpoints/
+# teleop_collect: the storage folder remembered on this laptop (page Storage -> Change, or run --data-root)
+deployment/teleop_collect/storage.local.yaml

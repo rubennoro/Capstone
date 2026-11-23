@@ -100,7 +100,7 @@ REQ/REP on `127.0.0.1` with ports from the station:
 | Contract | Between | Requests (detailed in STRUCTURE.md) |
 |---|---|---|
 | R1 | teleop → frames | `start_recording(episode_dir)`, `stop_recording()` → per-camera frame counts, gaps, first/last times; `get_health` |
-| U1 | ui → teleop | `get_status`, `keys(held, slow, focus)` (sent on every change and at least every 50 ms), `gripper(close|open)`, `select_task(name)`, `create_task(name, description)`, `start_episode`, `stop_episode(outcome)`, `delete_episode(id)`, `stop_arm` |
+| U1 | ui → teleop | `get_status`, `keys(held, slow, focus)` (sent on every change and at least every 50 ms), `gripper(close|open)`, `select_task(name)`, `create_task(name, description)`, `start_episode`, `stop_episode(outcome)`, `delete_episode(id)`, `label_episode(id, outcome)` (save an unsaved one), `delete_task(name)` (the folder and its episodes), `set_data_root(path)` (the storage folder, remembered), `stop_arm` |
 | U2 | ui → frames | `get_preview` → the newest JPEG of each camera and its age, plus health |
 
 A C3 request comes only from teleop's main thread: the ui never talks to the PC.

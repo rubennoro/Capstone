@@ -11,6 +11,8 @@
 | u1.stop_episode/v1      | ack/v1                                                  |
 | u1.delete_episode/v1    | ack/v1                                                  |
 | u1.label_episode/v1     | ack/v1 (an unsaved episode -> success or fail, saved)   |
+| u1.delete_task/v1       | ack/v1 (a task folder and every episode in it)          |
+| u1.set_data_root/v1     | ack/v1 (the storage folder; remembered for later runs)  |
 | u1.stop_arm/v1          | ack/v1                                                  |
 
 Refusals are ack(ok=false, reason) in plain words. Task names are checked by teleop (an ack refusal the operator can
@@ -133,6 +135,26 @@ class LabelEpisode(Message):
 
 @register
 @dataclass(frozen=True, eq=False)
+class DeleteTask(Message):
+    """A task folder under the storage folder and every episode in it (never while an episode is recording). The page
+    asks the operator to type the name first."""
+
+    SCHEMA = "u1.delete_task/v1"
+    name: str = scalar("str")
+
+
+@register
+@dataclass(frozen=True, eq=False)
+class SetDataRoot(Message):
+    """The storage folder (an absolute path or one starting with ~): created when missing, must be writable; refused
+    while an episode is recording. teleop remembers it for later runs (station.py storage.local.yaml)."""
+
+    SCHEMA = "u1.set_data_root/v1"
+    path: str = scalar("str")
+
+
+@register
+@dataclass(frozen=True, eq=False)
 class StopArm(Message):
     """Stop arm / Esc: C3 stop; an open episode ends and is kept unsaved (label it or delete it)."""
 
@@ -175,6 +197,7 @@ class TeleopStatus(Message):
     SCHEMA = "u1.status/v1"
     phase: str = scalar("str", choices=PHASES)
     ready: bool = scalar("bool")                               # start-up finished
+    data_root: str = scalar("str")                             # the storage folder: <data_root>/<task>/episode_NNN
     task: str = scalar("str")                                  # "" when none selected
     task_description: str = scalar("str")
     tasks: tuple[str, ...] = str_list()                        # every task under data_root

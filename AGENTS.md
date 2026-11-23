@@ -10,7 +10,7 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-10-17; teleop added 2026-11-18; teleop-train 2026-11-20; first real teleop data and training 2026-11-20)
+## Current state (2026-10-17; teleop added 2026-11-18; teleop-train 2026-11-20; first real teleop data and training 2026-11-20; teleop page redesign 2026-11-22)
 
 - **Teleop data collection** (this branch, `rnoro/teleop-collect-deploy`): `deployment/teleop_collect/` **ran on the
   real arm on 2026-11-20** and works.
@@ -29,7 +29,15 @@ Running status between working sessions. Update it at the end of each conversati
     `warnings`); the page's episode list offers save success / save fail / delete (U1 `label_episode`), also at the
     next run. Recording or disk errors never block Save (they go into `warnings`). Verified end to end in `--mock`
     (5 scenarios); the old pytest suite was **not** updated and has tests that still expect deletion.
-  - The page shows a labeled key legend (W forward, F down toward the table, ...).
+  - **Page redesign (2026-11-22):** dark by default (light toggle), IBM Plex Sans bundled (OFL), keyboard-map
+    keycaps that light up while held, cameras by role (Wrist camera / Wide view, click to enlarge), one state card
+    (Ready / Not ready + reason / Recording / save choice), inline confirms (Discard, delete episode, delete task by
+    typing its name). `app.js` key/deadman/command code is byte-identical to before. Docs: `ui/DESIGN.md`.
+  - **Storage folder (2026-11-22):** default `~/CapstoneTeleop`; changed in the page (Storage → Change) or `run
+    --data-root PATH`; remembered in `deployment/teleop_collect/storage.local.yaml` (gitignored, real and mock keys).
+    New U1 requests `set_data_root`, `delete_task` (whole task). Real/mock folders may not be equal or nested.
+  - Full suite 2026-11-22: 1396 passed, 32 failed; all 32 fail at the previous commit too (keep-unsaved, gripper
+    0.04, settled, Pi .59, fake_pc start pose, `test_run_mock`). Mock demo episodes kept in `~/CapstoneTeleop_mock/ui_demo`.
   - Data: `~/CapstoneTeleop/teleoppick1/` (1 episode, eraser) and **`~/CapstoneTeleop/teleop_marker/`: 24 success
     episodes** (19-45 s, 10.1 min; cameras and arm data clean, all start at the same pose).
   - Docs: `teleop_collect/{PLAN,STRUCTURE,DESIGN,DIRECTIONS}.md` and `deployment/control_deploy/DIRECTIONS.md`.
@@ -109,7 +117,10 @@ Running status between working sessions. Update it at the end of each conversati
      tmux session `marker` on the laptop waits, fetches and evals each (`train/all.sh teleop_marker --run <run>`;
      rerun that if the laptop slept). Then compare the four runs (data-size curve).
   2. Deploy the best policy on the deployment block (PC station.yaml), same `q_start_rad`.
-  3. Update the teleop_collect tests to the keep-unsaved behavior (only when asked).
+  3. Update the teleop_collect tests to the keep-unsaved behavior (only when asked); 32 old tests fail for this and
+     other stale expectations (0.04 width, settled, Pi .59).
+  4. `teleop_collect/DIRECTIONS.md` still uses the old page words (+ new task, `cams`, Keep recording, save success /
+     save fail, the panel's REC line): refresh to the redesigned page.
   - Open: measure `gripper.width_offset_m` on the PC (the closed hand reads ~0 mm around the eraser);
     final-deployment moves → re-sync `contracts/` and the copy pins.
 0. Sensor rig (see ROADMAP.md "Status"; checklist in [TODO.md](TODO.md); parts in [PURCHASING.md](PURCHASING.md)):

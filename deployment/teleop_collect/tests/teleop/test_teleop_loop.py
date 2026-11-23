@@ -15,9 +15,11 @@ import yaml
 from teleop_helpers import FAST, NS_PER_MS, TeleopHarness, merge, rejecting_reply
 from deploy_contracts import SetWaypointsReply
 
-from teleop_collect.contracts import (CreateTask, DeleteEpisode, GripperCommand, SelectTask, StartEpisode, StopArm,
-                                      StopEpisode, TeleopStatus)
-from teleop_collect.teleop.episode_flow import NOT_AT_START_POSE, START_POSE_UNKNOWN, START_REFUSED_HERE
+from teleop_collect.contracts import (CreateTask, DeleteEpisode, DeleteTask, GripperCommand, SelectTask, SetDataRoot,
+                                      StartEpisode, StopArm, StopEpisode, TeleopStatus)
+from teleop_collect.contracts.station import STORAGE_FILE, Station
+from teleop_collect.teleop.episode.store import TaskStore
+from teleop_collect.teleop.episode_flow import (FULL_PATH, NOT_AT_START_POSE, START_POSE_UNKNOWN, START_REFUSED_HERE)
 from teleop_collect.teleop.problems import ProblemCode as C
 from teleop_collect.teleop.teleop_loop import Phase
 
@@ -958,3 +960,244 @@ def test_a_camera_down_for_longer_than_down_s_says_restart(harness):
     h.frames.main = "ok"
     h.tick(10)
     assert h.status().start_allowed
+
+
+# ---- the storage folder and whole tasks (2026-11-22) ---------------------------------------------------------------
+
+def storage(h) -> dict:
+    return yaml.safe_load((h.settings.station_file.parent / STORAGE_FILE).read_text())
+
+
+def test_set_data_root_switches_deselects_and_is_remembered(harness, tmp_path):
+    h = harness()
+    h.ready()
+    old = h.settings.data_root
+    new = tmp_path / "elsewhere" / "teleop"
+    assert h.u1(SetDataRoot(path=str(new))).ok
+    assert new.is_dir() and not any(new.iterdir())                       # made; the write probe is gone
+    s = h.status()
+    assert s.data_root == str(new.resolve()) and s.task == "" and s.tasks == () and s.episodes == ()
+    assert s.start_refusal == "select or create a task first"
+    assert f"storage folder: {new.resolve()}" in h.loop.messages.texts()
+    assert any(e["kind"] == "data_root" for e in h.events())
+    assert storage(h) == {"mock_data_root": str(new.resolve())}          # --mock harness: the mock key
+    assert Station.load(h.settings.station_file, mock=True).data_root == new.resolve()
+    assert Station.load(h.settings.station_file, mock=False).data_root == h.settings.other_data_root
+    assert h.u1(CreateTask(name="place", description="")).ok
+    assert (new / "place" / "task.yaml").exists()
+    assert h.u1(SetDataRoot(path=str(old))).ok                            # back: the old tasks are there again
+    s = h.status()
+    assert s.tasks == ("pick_block",) and s.task == "" and storage(h) == {"mock_data_root": str(old.resolve())}
+
+
+def test_set_data_root_names_the_unsaved_episodes_there_in_one_line(harness, tmp_path):
+    other = TaskStore(tmp_path / "other")
+    pour = other.create("pour", "", {})
+    pour.new_episode()                                                   # no COMPLETE: unsaved
+    pour.new_episode()
+    h = harness()
+    h.ready()
+    n = len(h.loop.messages.texts())
+    assert h.u1(SetDataRoot(path=str(tmp_path / "other"))).ok
+    new = h.loop.messages.texts()[n:]
+    assert new == [f"storage folder: {other.root.resolve()}",
+                   f"2 unsaved episode(s) in {other.root.resolve()}: select their task to save or delete them"]
+    assert h.status().tasks == ("pour",)
+    assert sum(e["kind"] == "unsaved_kept" for e in h.events()) == 2
+
+
+def test_set_data_root_same_folder_changes_nothing_but_is_remembered(harness):
+    h = harness()
+    h.ready()
+    n = len(h.loop.messages.texts())
+    assert h.u1(SetDataRoot(path=str(h.settings.data_root))).ok
+    s = h.status()
+    assert s.task == "pick_block" and len(h.loop.messages.texts()) == n
+    assert storage(h) == {"mock_data_root": str(h.settings.data_root.resolve())}
+
+
+@pytest.mark.parametrize("path", ["", "  ", "data", "./data", "../x", "~nosuchuser_xyz/data"])
+def test_set_data_root_wants_a_full_path(harness, path):
+    h = harness()
+    h.ready()
+    r = h.u1(SetDataRoot(path=path))
+    assert not r.ok and r.reason == FULL_PATH == "give a full path: /... or ~/..."
+    assert h.status().task == "pick_block"
+
+
+def test_set_data_root_tilde_is_the_home_folder(harness, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    h = harness()
+    h.ready()
+    assert h.u1(SetDataRoot(path="~/teleop_data")).ok
+    assert h.status().data_root == str((tmp_path / "home" / "teleop_data").resolve())
+
+
+def test_set_data_root_refuses_the_other_modes_folder(harness):
+    h = harness()
+    h.ready()
+    other = h.settings.other_data_root                                   # --mock harness: the real folder
+    for path in (str(other), str(other / ".." / other.name)):
+        r = h.u1(SetDataRoot(path=path))
+        assert not r.ok and r.reason == (f"{other.resolve()} is the storage folder of real runs: --mock episodes "
+                                          "are kept apart from the real ones")
+    assert h.status().data_root == str(h.settings.data_root)
+    assert not (h.settings.station_file.parent / STORAGE_FILE).exists()
+
+
+def test_set_data_root_refuses_a_folder_inside_or_around_the_other_modes(harness):
+    h = harness()
+    h.ready()
+    other = h.settings.other_data_root.resolve()                         # --mock harness: the real folder
+    for root in (other / "sub", other.parent):
+        r = h.u1(SetDataRoot(path=str(root)))
+        assert not r.ok and r.reason == (f"{root} and the storage folder of real runs ({other}) are inside one "
+                                          "another: --mock episodes are kept apart from the real ones")
+    assert h.status().data_root == str(h.settings.data_root) and not (other / "sub").exists()
+
+
+def test_set_data_root_refuses_a_folder_it_cannot_write(harness, tmp_path):
+    h = harness()
+    h.ready()
+    blocker = tmp_path / "a_file"
+    blocker.write_text("x")
+    r = h.u1(SetDataRoot(path=str(blocker / "data")))
+    assert not r.ok and r.reason.startswith(f"cannot use {blocker / 'data'}: ")
+    assert h.status().task == "pick_block" and not (h.settings.station_file.parent / STORAGE_FILE).exists()
+
+
+def test_set_data_root_not_remembered_still_switches_and_warns(harness, tmp_path):
+    h = harness()
+    h.ready()
+    (h.settings.station_file.parent / STORAGE_FILE).write_text("[not, a, map]\n")
+    new = tmp_path / "new"
+    assert h.u1(SetDataRoot(path=str(new))).ok
+    assert h.status().data_root == str(new.resolve())
+    warn = [m for m in h.status().messages if m.level == "warn"]
+    assert warn and warn[-1].text.startswith(f"storage folder {new.resolve()} is used for this run only: it could "
+                                             "not be remembered (")
+
+
+def test_set_data_root_and_delete_task_are_refused_while_recording(harness, tmp_path):
+    h = harness()
+    h.ready()
+    h.start_episode()
+    for msg in (SetDataRoot(path=str(tmp_path / "x")), DeleteTask(name="pick_block")):
+        r = h.u1(msg)
+        assert not r.ok and r.reason == "an episode is recording: stop it first"
+    assert h.status().data_root == str(h.settings.data_root) and h.task_dir().is_dir()
+    assert not (tmp_path / "x").exists()
+    h.u1(StopEpisode(outcome="discard"))
+
+
+def test_set_data_root_and_delete_task_are_refused_while_starting_or_done(harness, tmp_path):
+    h = harness()
+    assert h.loop.phase is Phase.STARTING
+    assert h.loop.flow.set_root(str(tmp_path / "x")).reason == "starting up: wait until teleop is ready"
+    assert h.loop.flow.delete_task("pick_block").reason == "starting up: wait until teleop is ready"
+    h.loop._phase = Phase.DONE
+    assert h.loop.flow.set_root(str(tmp_path / "x")).reason == "teleop has stopped"
+    assert h.loop.flow.delete_task("pick_block").reason == "teleop has stopped"
+    assert not (tmp_path / "x").exists()
+
+
+def test_delete_task_removes_the_folder_and_deselects_it(harness):
+    h = harness()
+    h.ready()
+    h.start_episode()
+    h.tick(3)
+    assert h.u1(StopEpisode(outcome="success")).ok
+    assert h.u1(CreateTask(name="place", description="")).ok             # selects place
+    assert h.u1(SelectTask(name="pick_block")).ok
+    assert h.u1(DeleteTask(name="pick_block")).ok
+    assert not h.task_dir().exists() and h.task_dir("place").is_dir()
+    s = h.status()
+    assert s.task == "" and s.tasks == ("place",) and s.episodes == ()
+    assert "task pick_block deleted (1 episodes)" in h.loop.messages.texts()
+    assert any(e["kind"] == "task_deleted" and e["detail"] == "pick_block (1 episodes)" for e in h.events())
+
+
+def test_delete_task_of_another_task_keeps_the_selection(harness):
+    h = harness()
+    h.ready()
+    assert h.u1(CreateTask(name="place", description="")).ok
+    assert h.u1(SelectTask(name="pick_block")).ok
+    assert h.u1(DeleteTask(name="place")).ok
+    s = h.status()
+    assert s.task == "pick_block" and s.tasks == ("pick_block",)
+    assert "task place deleted (0 episodes)" in h.loop.messages.texts()
+
+
+def test_delete_task_stopped_halfway_deselects_and_refuses(harness, monkeypatch):
+    import teleop_collect.teleop.episode.store as store_module
+    h = harness()
+    h.ready()
+    assert h.u1(CreateTask(name="place", description="")).ok
+    assert h.u1(SelectTask(name="pick_block")).ok
+
+    def half(path):
+        (path / "task.yaml").unlink()                                    # part of it gone
+        raise PermissionError(13, "Permission denied", str(path / "episode_000"))
+    monkeypatch.setattr(store_module.shutil, "rmtree", half)
+    r = h.u1(DeleteTask(name="pick_block"))
+    assert not r.ok and r.reason.startswith("task pick_block only partly deleted: ") and "Permission denied" in r.reason
+    s = h.status()
+    assert s.task == "" and s.episodes == () and s.tasks == ("place",)
+
+
+@pytest.fixture
+def read_only(tmp_path):
+    """A folder nobody can write in (skipped as root, who can)."""
+    import os
+    if os.geteuid() == 0:
+        pytest.skip("root writes anywhere")
+    folder = tmp_path / "read_only"
+    folder.mkdir()
+    folder.chmod(0o555)
+    yield folder
+    folder.chmod(0o755)
+
+
+def test_startup_step_9_names_the_storage_file_when_the_folder_comes_from_it(harness, tmp_path, read_only):
+    (tmp_path / STORAGE_FILE).write_text(f"mock_data_root: {read_only}\n")
+    h = harness()
+    assert h.settings.data_root == read_only and h.settings.data_root_source == STORAGE_FILE
+    h.start()
+    assert h.code is C.STARTUP and f"data_root {read_only} is not writable" in h.loop.verdict.what_failed
+    assert str(tmp_path / STORAGE_FILE) in h.loop.verdict.what_to_check
+
+
+def test_startup_with_a_file_as_the_storage_folder_fails_cleanly_at_step_9(harness, tmp_path):
+    blocker = tmp_path / "a_file"
+    blocker.write_text("x")
+    (tmp_path / STORAGE_FILE).write_text(f"mock_data_root: {blocker}\n")
+    h = harness()
+    h.start()
+    assert h.code is C.STARTUP
+    assert h.loop.verdict.what_failed == f"startup: data_root {blocker} is not writable: not a folder: {blocker}"
+    assert str(tmp_path / STORAGE_FILE) in h.loop.verdict.what_to_check
+    assert not any(e["kind"] == "unsaved_kept" for e in h.events())
+
+
+def test_startup_step_9_without_the_storage_file_names_station_yaml(harness, read_only):
+    h = harness()
+    h.settings.data_root.mkdir(parents=True, exist_ok=True)
+    h.settings.data_root.chmod(0o555)
+    try:
+        h.start()
+    finally:
+        h.settings.data_root.chmod(0o755)
+    assert h.code is C.STARTUP and "station.yaml data_root (or teleop_collect run --data-root PATH)" in \
+        h.loop.verdict.what_to_check
+
+
+@pytest.mark.parametrize("name,reason", [("missing", "no task missing under {root}"),
+                                         ("Bad Name", "'Bad Name' is not a task name"),
+                                         ("../data", "'../data' is not a task name")])
+def test_delete_task_refuses_unknown_or_bad_names(harness, name, reason):
+    h = harness()
+    h.ready()
+    r = h.u1(DeleteTask(name=name))
+    assert not r.ok and r.reason == reason.format(root=h.settings.data_root)
+    assert h.task_dir().is_dir() and h.status().task == "pick_block"
+

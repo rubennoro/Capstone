@@ -29,7 +29,7 @@ where = ["."]
 include = ["teleop_collect", "teleop_collect.*"]
 
 [tool.setuptools.package-data]
-"teleop_collect.ui" = ["static/*"]
+"teleop_collect.ui" = ["static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

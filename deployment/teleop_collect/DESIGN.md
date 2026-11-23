@@ -29,7 +29,7 @@ PC's 1 kHz loop tracks a Cartesian TCP pose); convert episodes into training dat
 | C2 | PC → teleop | `c2.state/v1` at 100 Hz: mode, TCP and target poses, joints, width, gate counters | `deployment/contracts/` (byte copy of fd's) |
 | C3 | teleop → PC | `hello`, `heartbeat`, `get_state`, `start`, `stop`, `set_waypoints` (never `home`) | `deployment/contracts/` |
 | R1 | teleop → frames | `start_recording(dir)`, `stop_recording` → summary, `get_health` | `teleop_collect/contracts/r1_recorder.py` |
-| U1 | ui → teleop | `get_status`, `keys`, `gripper`, the buttons (task, start, stop, delete, stop arm) | `teleop_collect/contracts/u1_teleop.py` |
+| U1 | ui → teleop | `get_status`, `keys`, `gripper`, the buttons (task, start, stop, label, delete episode, delete task, storage folder, stop arm) | `teleop_collect/contracts/u1_teleop.py` |
 | U2 | ui → frames | `get_preview` → the newest JPEG of each camera, health | `teleop_collect/contracts/u2_preview.py` |
 
 R1, U1 and U2 are local REQ/REP on `127.0.0.1` with the station's ports. **Only teleop's main thread sends C3**, on
@@ -112,7 +112,10 @@ Phases: `starting → idle ⇄ recording`, `recording → stopping → idle`, an
 ## The data on disk
 
 `<data_root>/<task>/task.yaml` and `episode_NNN/` (PLAN §6); `--mock` runs use `mock_data_root` instead, so stand-in
-episodes never mix with the real training data. frames writes `main.mkv` and `ultrawide.mkv` (the JPEG
+episodes never mix with the real training data (the two folders may not be equal or inside one another). The storage
+folder can be changed in the page (or with `teleop_collect run --data-root PATH`); it is remembered in
+`storage.local.yaml` next to `station.yaml` (gitignored), which replaces station.yaml's `data_root` /
+`mock_data_root`. The page can also delete a whole task folder. frames writes `main.mkv` and `ultrawide.mkv` (the JPEG
 bytes as received, muxed into Matroska, never re-encoded; frame `i` of a video is row `i` of its CSV), `*_frames.csv`,
 `packets.csv`, `clock_pi.csv`. teleop writes `robot_states.csv`, `commands.csv`, `keys.csv`, `clock_pc.csv`,
 `events.jsonl`, then `meta.yaml` (with the full `hello`, so `F_T_TCP`) and `COMPLETE` last. Every time is integer ns

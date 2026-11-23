@@ -24,9 +24,9 @@ from teleop_collect.contracts.r1_recorder import (CameraSummary, FramesHealth, G
                                                   StartRecording, StopRecording)
 from teleop_collect.contracts.station import Station, StationError
 from teleop_collect.contracts.u1_teleop import (MESSAGE_LEVELS, PHASES, STATUS_MAX_MESSAGES, CreateTask,
-                                                DeleteEpisode, EpisodeInfo, GetStatus, GripperCommand, KeysUpdate,
-                                                LabelEpisode, SelectTask, StartEpisode, StopArm, StopEpisode,
-                                                TeleopStatus, UiMessage)
+                                                DeleteEpisode, DeleteTask, EpisodeInfo, GetStatus, GripperCommand,
+                                                KeysUpdate, LabelEpisode, SelectTask, SetDataRoot, StartEpisode,
+                                                StopArm, StopEpisode, TeleopStatus, UiMessage)
 from teleop_collect.contracts.u2_preview import NO_FRAME, GetPreview, Preview
 
 __all__ = [
@@ -42,6 +42,7 @@ __all__ = [
     "StartRecording", "StopRecording", "GetFramesHealth", "CameraSummary", "RecordingSummary", "FramesHealth",
     "GetPreview", "Preview", "NO_FRAME",
     "GetStatus", "KeysUpdate", "GripperCommand", "SelectTask", "CreateTask", "StartEpisode",
-    "StopEpisode", "DeleteEpisode", "LabelEpisode", "StopArm", "EpisodeInfo", "UiMessage", "TeleopStatus",
+    "StopEpisode", "DeleteEpisode", "LabelEpisode", "DeleteTask", "SetDataRoot", "StopArm", "EpisodeInfo",
+    "UiMessage", "TeleopStatus",
     "PHASES", "MESSAGE_LEVELS", "STATUS_MAX_MESSAGES",
 ]

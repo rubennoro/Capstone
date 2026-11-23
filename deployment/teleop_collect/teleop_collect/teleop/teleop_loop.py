@@ -24,7 +24,8 @@
 # at_start_pose instead of home_known / at_home. + wave 3 (no software stops, 2026-11-20): a C2 seq gap no longer
 # pauses motion (STATE_GAP counted and logged only); STATE_OLD pauses beyond motion.state_max_age_ms (250 ms);
 # Kind.WARN problems (CAMERA_DOWN, CAMERA_STALE, RECORDING_FAILED) go to EpisodeFlow.warn (the page, meta.yaml
-# warnings), never abort the episode or send a stop. The source's own header follows.
+# warnings), never abort the episode or send a stop. + u1.set_data_root / u1.delete_task (EpisodeFlow.set_root,
+# delete_task) and the status's data_root (2026-11-22). The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/episode_loop.py @ 91b178b
 # changes: start-up moved to StartupSequence; HeartbeatSender (a hello or a heartbeat per cycle) instead of a bare
 # heartbeat; the cycle period is link.yaml heartbeat_period_s; margins in PC time; the CLOCK_MISMATCH counter (skipped
@@ -48,9 +49,9 @@ from pathlib import Path
 import numpy as np
 from deploy_contracts import Ack, ArmState, Message, SetWaypoints, TransportTimeout
 
-from teleop_collect.contracts import (CAMERAS, CreateTask, DeleteEpisode, FramesHealth, GetStatus, GripperCommand,
-                                      KeysUpdate, LabelEpisode, NotSynced, SelectTask, StartEpisode, StopArm,
-                                      StopEpisode, TeleopStatus)
+from teleop_collect.contracts import (CAMERAS, CreateTask, DeleteEpisode, DeleteTask, FramesHealth, GetStatus,
+                                      GripperCommand, KeysUpdate, LabelEpisode, NotSynced, SelectTask, SetDataRoot,
+                                      StartEpisode, StopArm, StopEpisode, TeleopStatus)
 from teleop_collect.contracts import EpisodeInfo as EpisodeInfoRecord
 from teleop_collect.teleop.episode.store import TaskStore
 from teleop_collect.teleop.failure_monitor import FailureMonitor
@@ -537,6 +538,12 @@ class TeleopLoop:
     def _on_label(self, msg: LabelEpisode) -> Message:
         return self.flow.label(msg.episode, msg.outcome)
 
+    def _on_delete_task(self, msg: DeleteTask) -> Message:
+        return self.flow.delete_task(msg.name)
+
+    def _on_set_data_root(self, msg: SetDataRoot) -> Message:
+        return self.flow.set_root(msg.path)
+
     def _on_stop_arm(self, msg: StopArm) -> Message:
         if self._phase is Phase.RECORDING:
             self._problem(Problem(C.OPERATOR_ABORT, "operator", "Stop arm"))
@@ -559,7 +566,7 @@ class TeleopLoop:
         keys = self._keys.current(now)
         task = self.flow.task
         return TeleopStatus(
-            phase=self._phase.value, ready=self._ready,
+            phase=self._phase.value, ready=self._ready, data_root=str(self.flow.store.root),
             task=task.name if task is not None else "",
             task_description=task.description if task is not None else "",
             tasks=tuple(self.flow.tasks()),
@@ -762,5 +769,7 @@ U1_HANDLERS: dict[type[Message], Callable[[TeleopLoop, Message], Message]] = {
     StopEpisode: TeleopLoop._on_stop,
     DeleteEpisode: TeleopLoop._on_delete,
     LabelEpisode: TeleopLoop._on_label,
+    DeleteTask: TeleopLoop._on_delete_task,
+    SetDataRoot: TeleopLoop._on_set_data_root,
     StopArm: TeleopLoop._on_stop_arm,
 }

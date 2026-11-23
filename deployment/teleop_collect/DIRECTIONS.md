@@ -371,7 +371,15 @@ emergency stop: nothing in the page replaces it.
 
 ### 12. Where the episodes are
 
-`~/CapstoneTeleop/<task>/` (`station.yaml data_root`):
+`~/CapstoneTeleop/<task>/` (`station.yaml data_root`). To save somewhere else, in the page header: Storage → Change,
+or start with
+
+```bash
+~/envs/teleop_collect/bin/teleop_collect run --data-root PATH
+```
+
+The folder is remembered for later runs in `storage.local.yaml` (next to `station.yaml`; delete it to go back to
+`~/CapstoneTeleop`). A whole task (its folder and every episode) can be deleted from the page.
 
 | File | What's in it |
 |---|---|
@@ -539,6 +547,7 @@ delete it in the list); the app stays up. A warn line that says `the episode goe
 | File | What's in it |
 |---|---|
 | `station.yaml` | this laptop's settings: the Pi's address, the data and log folders, the ports, overrides of `config/*.yaml` |
+| `storage.local.yaml` | written for you (page Storage → Change, `--data-root`): the storage folder in use, not in git |
 | `../contracts/link.yaml` | the PC's and the laptop's addresses: equal to the PC's copy |
 
 How it is built: `DESIGN.md` (in this folder), `PLAN.md` and `STRUCTURE.md`.

@@ -10,7 +10,8 @@ import yaml
 from station_helpers import station_dict, write_station
 
 from teleop_collect.contracts import Station, StationError, paths
-from teleop_collect.contracts.station import PORT_KEYS, PROCESS_SECTIONS, REFUSED_ANYWHERE, REFUSED_TOP
+from teleop_collect.contracts.station import (PORT_KEYS, PROCESS_SECTIONS, REFUSED_ANYWHERE, REFUSED_TOP, STORAGE_FILE,
+                                              read_storage, remember_data_root, storage_file)
 
 
 def load(tmp_path, mock=False, **kw):
@@ -207,3 +208,106 @@ def test_resolve_and_roots(tmp_path):
     assert s.data_root.is_absolute() and "~" not in str(s.data_root) and s.data_root.name == "teleop_data"
     assert s.resolve("~/x").is_absolute()
     assert s.raw()["data_root"] == "~/teleop_data"
+
+
+# ---- the remembered storage folder: storage.local.yaml (2026-11-22) ------------------------------------------------
+
+def test_no_storage_file_keeps_the_station_folders(tmp_path):
+    path = write_station(tmp_path)
+    assert storage_file(path) == tmp_path / STORAGE_FILE and read_storage(path) == {}
+    s = Station.load(path)
+    assert s.data_root == tmp_path / "data" and s.storage == {}
+
+
+def test_the_storage_file_overrides_each_root(tmp_path):
+    path = write_station(tmp_path)
+    (tmp_path / STORAGE_FILE).write_text(f"data_root: {tmp_path / 'real2'}\n")
+    s = Station.load(path)
+    assert s.data_root == s.real_data_root == tmp_path / "real2" and s.mock_data_root == tmp_path / "data_mock"
+    assert Station.load(path, mock=True).data_root == tmp_path / "data_mock"
+    (tmp_path / STORAGE_FILE).write_text("mock_data_root: ~/m2\ndata_root: rel/r2\n")   # resolved as station.yaml's
+    s = Station.load(path, mock=True)
+    assert s.data_root == s.mock_data_root and s.data_root.name == "m2" and "~" not in str(s.data_root)
+    assert s.real_data_root == tmp_path / "rel" / "r2"
+    (tmp_path / STORAGE_FILE).write_text("")                                           # empty: nothing remembered
+    assert Station.load(path).data_root == tmp_path / "data"
+
+
+@pytest.mark.parametrize("text,problem", [("[a, b]\n", "expected a map"),
+                                          ("data_root: 3\n", "data_root: expected a path"),
+                                          ("data_root: ''\n", "data_root: expected a path"),
+                                          ("session_root: /x\n", "session_root: unknown key"),
+                                          ("data_root: [\n", "cannot read")])
+def test_a_malformed_storage_file_names_the_file(tmp_path, text, problem):
+    path = write_station(tmp_path)
+    (tmp_path / STORAGE_FILE).write_text(text)
+    with pytest.raises(StationError) as e:
+        Station.load(path)
+    assert str(tmp_path / STORAGE_FILE) in str(e.value) and problem in str(e.value)
+    assert "fix it or delete it" in str(e.value)
+
+
+def test_remember_data_root_keeps_the_other_key(tmp_path):
+    path = write_station(tmp_path)
+    assert remember_data_root(path, False, tmp_path / "r") == tmp_path / STORAGE_FILE
+    assert read_storage(path) == {"data_root": str(tmp_path / "r")}
+    remember_data_root(path, True, tmp_path / "m")
+    assert read_storage(path) == {"data_root": str(tmp_path / "r"), "mock_data_root": str(tmp_path / "m")}
+    remember_data_root(path, False, tmp_path / "r2")
+    assert read_storage(path) == {"data_root": str(tmp_path / "r2"), "mock_data_root": str(tmp_path / "m")}
+    assert Station.load(path).data_root == tmp_path / "r2"
+    assert Station.load(path, mock=True).data_root == tmp_path / "m"
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []         # no temp file left
+
+
+def test_remember_data_root_refuses_a_malformed_file_or_a_failed_write(tmp_path):
+    path = write_station(tmp_path)
+    (tmp_path / STORAGE_FILE).write_text("[a]\n")
+    with pytest.raises(StationError, match="fix it or delete it"):
+        remember_data_root(path, False, tmp_path / "r")
+    assert (tmp_path / STORAGE_FILE).read_text() == "[a]\n"
+    with pytest.raises(StationError, match="cannot write"):
+        remember_data_root(tmp_path / "missing_folder" / "station.yaml", False, tmp_path / "r")
+
+
+def test_load_with_data_root_and_the_two_roots_still_differ(tmp_path):
+    path = write_station(tmp_path)
+    assert Station.load(path, data_root=tmp_path / "x").data_root == tmp_path / "x"
+    s = Station.load(path, mock=True, data_root=tmp_path / "y")
+    assert s.data_root == tmp_path / "y" and s.real_data_root == tmp_path / "data"
+    assert read_storage(path) == {}                                                   # load never remembers
+    with pytest.raises(StationError) as e:
+        Station.load(path, mock=True, data_root=tmp_path / "data")
+    assert "mock_data_root: must differ from data_root" in str(e.value) and STORAGE_FILE in str(e.value)
+    (tmp_path / STORAGE_FILE).write_text(f"data_root: {tmp_path / 'data_mock'}\n")
+    with pytest.raises(StationError, match="--mock episodes are kept apart"):
+        Station.load(path)
+
+
+def test_the_two_roots_may_not_be_inside_one_another(tmp_path):
+    for mock_root in (tmp_path / "data" / "mock", tmp_path):
+        with pytest.raises(StationError) as e:
+            load(tmp_path, sections={"mock_data_root": str(mock_root)})
+        assert "mock_data_root: must not be inside data_root or contain it" in str(e.value)
+    path = write_station(tmp_path)
+    (tmp_path / STORAGE_FILE).write_text(f"mock_data_root: {tmp_path / 'data' / 'm'}\n")
+    with pytest.raises(StationError, match=f"kept apart from the real ones \\(the storage folder: {STORAGE_FILE}"):
+        Station.load(path)
+    (tmp_path / STORAGE_FILE).unlink()
+    assert Station.load(path, data_root=tmp_path / "data_x").data_root == tmp_path / "data_x"   # a sibling is fine
+
+
+def test_data_root_source(tmp_path):
+    path = write_station(tmp_path)
+    assert Station.load(path).data_root_source == "station.yaml"
+    assert Station.load(path, data_root=tmp_path / "x").data_root_source == "--data-root"
+    remember_data_root(path, True, tmp_path / "m")
+    assert Station.load(path, mock=True).data_root_source == STORAGE_FILE
+    assert Station.load(path).data_root_source == "station.yaml"                    # the real key is not set
+
+
+def test_tests_never_read_the_repos_storage_file():
+    """tests/conftest.py points the default station's storage.local.yaml into a temporary folder."""
+    import teleop_collect.contracts.station as station
+    assert station.storage_file(paths.default_station()).parent != paths.default_station().parent
+    assert station.read_storage(paths.default_station()) == {}

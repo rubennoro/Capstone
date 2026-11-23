@@ -11,7 +11,8 @@
 # teleop exiting 0 by itself is a stop (as the manager's operator quit), any other exit while running is the FAILED
 # line (PLAN 7). + start pose (final-deployment's start-pose work, 927a5ba, 2026-11-20): the note before
 # teleop says the start pose is the arm's pose at start-up (h, then p on the PC first); no start-up home note. The
-# source's own header follows.
+# source's own header follows. + 2026-11-22: a warn / fail disk or data_root row names storage.local.yaml when the
+# folder comes from it.
 # adapted from rnoro/deployment:deployment/deploy/deploy/launcher.py @ 91b178b
 # changes: ORDER = ("fake_pc", "frames", "policy", "manager"), fake_pc only with --mock and launcher.fake_pc true;
 # processes come from processes.py (no launch.py loader); the station rows of STRUCTURE.md 9.2 (station.yaml,
@@ -26,6 +27,7 @@ speaks only C2/C3.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import os
@@ -44,7 +46,7 @@ from deploy_contracts import paths as contract_paths
 
 from teleop_collect.contracts import paths
 from teleop_collect.contracts.config_merge import load_config
-from teleop_collect.contracts.station import Station, StationError
+from teleop_collect.contracts.station import STORAGE_FILE, Station, StationError, storage_file
 from teleop_collect.launcher import check_helpers
 from teleop_collect.launcher.check_result import CheckResult, exit_code, print_table
 from teleop_collect.launcher.errors import LaunchError
@@ -209,9 +211,17 @@ class Launcher:
             out.append(self._laptop_address(link))
             out.append(self._wifi())
         out.append(self._commit())
-        out.append(self._disk())
-        out.append(check_helpers.writable_folder("station", "data_root", self.station.data_root))
+        out.append(self._from_storage_file(self._disk()))
+        out.append(self._from_storage_file(check_helpers.writable_folder("station", "data_root",
+                                                                         self.station.data_root)))
         return out
+
+    def _from_storage_file(self, row: CheckResult) -> CheckResult:
+        """A warn / fail row about data_root says so when the folder comes from storage.local.yaml."""
+        if row.status not in ("warn", "fail") or self.station.data_root_source != STORAGE_FILE:
+            return row
+        return dataclasses.replace(row, detail=f"{row.detail} (the folder is from {storage_file(self.station.path)}: "
+                                               "run with --data-root PATH, or delete that file)")
 
     @staticmethod
     def _contract_detail(value: object) -> str:

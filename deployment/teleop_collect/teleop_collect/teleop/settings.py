@@ -9,6 +9,8 @@
 # tuples); + camera_down_s (frames' health.down_s); the problems name teleop.*; no "path", "str", "optional",
 # "exec_h" or "pose_source" rules. + start pose (final-deployment's start-pose work, 927a5ba,
 # 2026-11-20): start_pose: (StartPoseSettings) instead of home: (no laptop home); timeouts.home_s only builds PcClient.
+# + other_data_root, data_root_source (2026-11-22): the other mode's storage folder (the page's set_data_root refuses
+# it) and where data_root came from (station.yaml or storage.local.yaml; start-up step 9's hint).
 # The source's own header follows.
 # adapted from rnoro/deployment:deployment/message_comms/message_comms/settings.py @ 91b178b
 # changes: config/manager.yaml + station.yaml manager: (policy_deploy.contracts.load_config) + LinkSettings + TcpFrame;
@@ -96,7 +98,9 @@ class Settings:
     # from the station
     r1_endpoint: str                  # frames' R1
     u1_endpoint: str                  # teleop's U1 (the ui connects)
-    data_root: Path
+    data_root: Path                   # the storage folder at start (station.yaml, or storage.local.yaml)
+    other_data_root: Path             # the other mode's (--mock: the real one; real: the mock one): never used here
+    data_root_source: str             # Station.data_root_source: station.yaml, storage.local.yaml (or --data-root)
     session_root: Path
     station_file: Path
     rig_file: Path                    # config/frames_process.yaml rig_file (recorded in meta.yaml)
@@ -212,6 +216,8 @@ class Settings:
             state_endpoint=state_endpoint or link.state_endpoint(local=mock),
             commands_endpoint=commands_endpoint or link.commands_endpoint(local=mock),
             r1_endpoint=station.r1_endpoint(), u1_endpoint=station.u1_endpoint(), data_root=station.data_root,
+            other_data_root=station.real_data_root if mock else station.mock_data_root,
+            data_root_source=station.data_root_source,
             session_root=station.session_root, station_file=station.path, rig_file=rig_file,
             camera_down_s=camera_down_s, mock=mock, link=link,
             frame=frame)

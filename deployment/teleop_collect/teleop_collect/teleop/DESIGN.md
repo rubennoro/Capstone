@@ -117,6 +117,17 @@ stop.
   abort paths only log such a failure.
 - **Delete is refused while an episode records or stops** ("stop the episode first"), so no rmtree runs on the loop
   while the watchdog is armed.
+- **The storage folder from the page** (`u1.set_data_root`, `EpisodeFlow.set_root`): refused while recording or
+  stopping, starting or done. The path must be absolute or start with `~` ("give a full path: /... or ~/..."), may not
+  be the other mode's folder or inside it or contain it (`Settings.other_data_root`: real vs `--mock`), and is made
+  and written to (`probe_writable`, as start-up step 9). Then a new `TaskStore` there, no task selected, one page line
+  for its unsaved episodes (`<n> unsaved episode(s) in <root>: ...`), a page line `storage folder: <path>`, and `remember_data_root` (contracts/station.py) writes
+  `storage.local.yaml`; a failed write keeps the switch for this run and warns. The status's `data_root` is
+  `flow.store.root`.
+- **Delete task** (`u1.delete_task`, `EpisodeFlow.delete_task` → `TaskStore.delete_task`): the same refusals as the
+  storage folder; only a real folder with a valid task.yaml directly in the storage folder; deselected if selected
+  (also when an OSError stops the rmtree halfway: refused with the error); page line `task <name> deleted (<n>
+  episodes)`. Start-up step 9's hint names `storage.local.yaml` when the folder came from it.
 - **The start width is clipped** into [0, limits.yaml gripper_width_max_m] before `MotionController.begin`. An open
   hand can read 0.081 m, which the PC's gate would refuse (a fault). A clip is shown and logged. Every other width
   comes from the controller (0 or gripper_width_max_m).
@@ -149,6 +160,7 @@ stop.
   - move, release once, stale keys, lost focus, the old-state guard, a C2 seq gap never pauses, the fingers,
     `at_limit`;
   - start, stop, success, discard and delete, and that numbers are never reused;
+  - the storage folder (switch, remembered, refusals) and delete task;
   - every start refusal;
   - the start pose: an ok start confirms it, `refused: not at the start pose` drops it (other refusals keep it),
     the PC's `h`/`p` give the next candidate, its `g` never does, a confirmed pose stays fixed; no home request;

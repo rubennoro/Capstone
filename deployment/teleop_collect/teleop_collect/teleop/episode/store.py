@@ -14,7 +14,10 @@
   Nothing deletes it automatically: `Task.label` saves it (outcome success or fail, then COMPLETE), `Task.delete`
   removes it. Training reads only folders with COMPLETE.
 - Every removal goes through `_remove_episode_dir`: only a real (not symlinked) `episode_*` folder directly inside its
-  own task folder, after resolving symlinks.
+  own task folder, after resolving symlinks. `TaskStore.delete_task` removes a whole task the same way: only a real
+  folder with a valid task.yaml directly inside data_root.
+- `probe_writable`: data_root is made if missing and a file can be written in it (start-up step 9, the page's storage
+  folder change).
 """
 from __future__ import annotations
 
@@ -41,6 +44,7 @@ log = logging.getLogger(__name__)
 _SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 TASK_FILE = "task.yaml"
+WRITE_PROBE = ".teleop_collect_write_test"
 META_FILE = "meta.yaml"
 COMPLETE_FILE = "COMPLETE"
 EPISODE_PREFIX = "episode_"
@@ -109,6 +113,21 @@ def write_yaml_atomic(path: Path, data: Mapping[str, Any]) -> None:
             pass
         raise
     _fsync_dir(path.parent)
+
+
+def probe_writable(root: Path) -> None:
+    """Make root (and its parents) if missing, then write, fsync and remove a small file in it. OSError when not
+    (NotADirectoryError "not a folder" when root is a file)."""
+    root = Path(root)
+    if root.exists() and not root.is_dir():
+        raise NotADirectoryError(f"not a folder: {root}")
+    probe = root / WRITE_PROBE
+    root.mkdir(parents=True, exist_ok=True)
+    with open(probe, "w", encoding="utf-8") as f:
+        f.write("ok\n")
+        f.flush()
+        os.fsync(f.fileno())
+    probe.unlink()
 
 
 def _remove_episode_dir(task_dir: Path, path: Path) -> None:
@@ -322,10 +341,11 @@ class TaskStore:
         self.root = Path(data_root).expanduser()
 
     def tasks(self) -> list[str]:
-        """Sorted names of the folders with a valid task.yaml."""
+        """Sorted names of the folders with a valid task.yaml ([] when root is missing or not a folder: start-up step 9
+        then reports it)."""
         try:
             entries = list(self.root.iterdir())
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             return []
         return sorted(p.name for p in entries
                       if is_task_name(p.name) and p.is_dir() and _read_task_yaml(p) is not None)
@@ -364,6 +384,22 @@ class TaskStore:
         if data is None:
             raise TaskError(f"no task {name} under {self.root}")
         return Task(task_dir, data.get("description", "") or "")
+
+    def delete_task(self, name: str) -> int:
+        """Delete a task folder and every episode in it; returns how many episodes it held. TaskError when the name is
+        bad, there is no valid task of that name, or it is a symlink (only a real folder directly inside root)."""
+        if not is_task_name(name):
+            raise TaskError(f"{name!r} is not a task name")
+        task_dir = self.root / name
+        if task_dir.is_symlink():
+            raise TaskError(f"{task_dir}: a symlink, refused (only real task folders are deleted)")
+        task = self.open(name)
+        real = task_dir.resolve()
+        if real.parent != self.root.resolve() or real.name != name:
+            raise TaskError(f"{task_dir}: not a task folder of {self.root}, refused")
+        count = len(task._episode_dirs())
+        shutil.rmtree(real)
+        return count
 
     def unsaved(self) -> list[Path]:
         """Every episode_* folder without COMPLETE in every task (kept: never deleted automatically)."""

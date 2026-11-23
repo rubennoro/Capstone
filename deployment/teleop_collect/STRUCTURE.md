@@ -377,6 +377,9 @@ The page's keyboard map (the ui's alone; teleop only sees these names):
 | `u1.start_episode/v1` | none | `ack/v1` |
 | `u1.stop_episode/v1` | `outcome: str (OUTCOMES)` | `ack/v1` |
 | `u1.delete_episode/v1` | `episode: str (EPISODE_NAME_RE)` | `ack/v1` |
+| `u1.label_episode/v1` | `episode: str (EPISODE_NAME_RE)`, `outcome: str (success, fail)` | `ack/v1` (an unsaved episode saved) |
+| `u1.delete_task/v1` | `name: str` | `ack/v1` (the task folder and every episode in it) |
+| `u1.set_data_root/v1` | `path: str` (absolute or `~/...`) | `ack/v1` (the storage folder; remembered in `storage.local.yaml`) |
 | `u1.stop_arm/v1` | none | `ack/v1` |
 
 There is no home request: homing (`h`) and the start pose (`p`) are the PC's keyboard keys (PLAN §8).
@@ -394,6 +397,7 @@ Records:
 |---|---|---|
 | `phase` | str: `starting`, `idle`, `recording`, `stopping`, `done` | |
 | `ready` | bool | start-up finished |
+| `data_root` | str | the storage folder in use (absolute) |
 | `task`, `task_description` | str | `""` when none selected |
 | `tasks` | str_list | every task under `data_root` |
 | `episodes` | list of `EpisodeInfo` | the selected task's complete episodes, oldest first |
@@ -903,7 +907,7 @@ keys, else ValueError); `meta_version` stays 1 (an added key; teleop-train reads
 | server → page | `{"type": "preview", "camera": "main"\|"ultrawide", "frame_no": N}` followed by one binary message (the JPEG) |
 | page → server | `{"type": "keys", "held": [...], "slow": b, "focus": b}` on every change and every `keys_resend_ms` |
 | page → server | `{"type": "gripper", "command": "close"\|"open"}` on key down (no repeat) |
-| page → server | `{"type": "command", "name": "start_episode"\|"stop_arm"\|"select_task"\|"create_task"\|"stop_episode"\|"delete_episode", "args": {...}, "id": n}` (the arguments in their own map, so a task `name` cannot clash with the command `name`) |
+| page → server | `{"type": "command", "name": "start_episode"\|"stop_arm"\|"select_task"\|"create_task"\|"stop_episode"\|"delete_episode"\|"label_episode"\|"delete_task"\|"set_data_root", "args": {...}, "id": n}` (the arguments in their own map, so a task `name` cannot clash with the command `name`) |
 | server → page | `{"type": "hello", ...}` on connect (the rates and key names), `{"type": "error", "text": ...}` for a message it cannot use |
 | server → page | `{"type": "ack", "id": n, "ok": b, "reason": str}` |
 

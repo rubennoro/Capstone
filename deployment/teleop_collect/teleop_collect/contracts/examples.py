@@ -2,7 +2,8 @@
 # rnoro/final-deployment:deployment/policy_deploy/policy_deploy/contracts/examples.py @ 2ffe641
 # changes: _in's docstring example names an R1 field (main.frames) instead of a C0 one; the code is unchanged.
 # + start pose (2026-11-20): no u1/home example; the status examples carry start_pose_known / start_pose_confirmed /
-# at_start_pose (an idle one at the start pose, one with the start pose not known yet).
+# at_start_pose (an idle one at the start pose, one with the start pose not known yet). + 2026-11-22: u1/label_episode,
+# u1/delete_task, u1/set_data_root; the status carries data_root.
 """The laptop-only examples of R1, U1 and U2, good and deliberately broken (STRUCTURE.md 4.5).
 
 Good ones are built from the message classes; broken ones take a good message's dict and change one thing, then pack
@@ -21,9 +22,9 @@ from deploy_contracts import Ack, Example, broken_example, drop_key, good_exampl
 from teleop_collect.contracts.health import CameraHealthReport, HealthReport
 from teleop_collect.contracts.r1_recorder import (CameraSummary, FramesHealth, GetFramesHealth, RecordingSummary,
                                                   StartRecording, StopRecording)
-from teleop_collect.contracts.u1_teleop import (CreateTask, DeleteEpisode, EpisodeInfo, GetStatus, GripperCommand,
-                                                KeysUpdate, SelectTask, StartEpisode, StopArm, StopEpisode,
-                                                TeleopStatus, UiMessage)
+from teleop_collect.contracts.u1_teleop import (CreateTask, DeleteEpisode, DeleteTask, EpisodeInfo, GetStatus,
+                                                GripperCommand, KeysUpdate, LabelEpisode, SelectTask, SetDataRoot,
+                                                StartEpisode, StopArm, StopEpisode, TeleopStatus, UiMessage)
 from teleop_collect.contracts.u2_preview import GetPreview, Preview
 
 _T0 = 123_456_789_000_000          # a laptop monotonic time, ns
@@ -161,7 +162,8 @@ def _u2() -> list[Example]:
 def teleop_status(**change: Any) -> TeleopStatus:
     """A status while recording episode_003 of pick_block; keyword arguments replace fields."""
     d: dict[str, Any] = dict(
-        phase="recording", ready=True, task="pick_block", task_description="pick the red block and lift it",
+        phase="recording", ready=True, data_root="/home/operator/CapstoneTeleop", task="pick_block",
+        task_description="pick the red block and lift it",
         tasks=("pick_block", "place_cup"),
         episodes=(EpisodeInfo(name="episode_000", outcome="success", duration_s=24.1, frames_main=723),
                   EpisodeInfo(name="episode_002", outcome="fail", duration_s=31.0, frames_main=930)),
@@ -208,6 +210,10 @@ def _u1() -> list[Example]:
         good_example("u1/stop_episode_success", StopEpisode(outcome="success"), {"outcome": "success"}),
         good_example("u1/stop_episode_discard", StopEpisode(outcome="discard"), {"outcome": "discard"}),
         good_example("u1/delete_episode", delete, {"episode": "episode_002"}),
+        good_example("u1/label_episode", LabelEpisode(episode="episode_002", outcome="fail"),
+                     {"episode": "episode_002", "outcome": "fail"}),
+        good_example("u1/delete_task", DeleteTask(name="place_cup"), {"name": "place_cup"}),
+        good_example("u1/set_data_root", SetDataRoot(path="~/CapstoneTeleop"), {"path": "~/CapstoneTeleop"}),
         good_example("u1/stop_arm", StopArm()),
         good_example("u1/refused", Ack(ok=False, reason="not at the start pose: h, then p on the PC"), {"ok": False}),
         good_example("u1/status_recording", status, {"phase": "recording", "tcp_m[2]": 0.301,

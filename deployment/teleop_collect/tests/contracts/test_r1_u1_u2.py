@@ -44,6 +44,7 @@ def test_episode_names(name, ok):
     c.GetStatus(after_message=0), c.KeysUpdate(held=["z-"], slow=False, focus=True), c.GripperCommand(command="open"),
     c.SelectTask(name="pick_block"), c.CreateTask(name="pick_block", description=""),
     c.StartEpisode(), c.StopEpisode(outcome="fail"), c.DeleteEpisode(episode="episode_012"), c.StopArm(),
+    c.DeleteTask(name="pick_block"), c.SetDataRoot(path="~/CapstoneTeleop"),
     teleop_status(),
 ], ids=lambda m: m.SCHEMA)
 def test_round_trip(msg):

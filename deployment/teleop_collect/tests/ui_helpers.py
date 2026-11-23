@@ -11,15 +11,15 @@ from typing import Callable, Iterator
 from deploy_contracts import Ack, Message, RpcServer
 from station_helpers import free_port
 
-from teleop_collect.contracts import (CreateTask, DeleteEpisode, GetPreview, GetStatus, GripperCommand, KeysUpdate,
-                                      Preview, SelectTask, StartEpisode, StopArm, StopEpisode, TeleopStatus,
-                                      UiMessage)
+from teleop_collect.contracts import (CreateTask, DeleteEpisode, DeleteTask, GetPreview, GetStatus, GripperCommand,
+                                      KeysUpdate, LabelEpisode, Preview, SelectTask, SetDataRoot, StartEpisode,
+                                      StopArm, StopEpisode, TeleopStatus, UiMessage)
 from teleop_collect.contracts.examples import health, teleop_status
 from teleop_collect.ui.server import UiApp
 from teleop_collect.ui.settings import Settings
 
 U1_REQUESTS = (GetStatus, KeysUpdate, GripperCommand, SelectTask, CreateTask, StartEpisode, StopEpisode, DeleteEpisode,
-               StopArm)
+               LabelEpisode, DeleteTask, SetDataRoot, StopArm)
 
 
 def wait_until(pred: Callable[[], bool], timeout_s: float = 3.0, what: str = "the condition") -> None:

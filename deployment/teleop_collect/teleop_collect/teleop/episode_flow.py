@@ -17,6 +17,12 @@ No episode is ever deleted or refused a save automatically: only the operator's 
 Data problems (WARN: a camera down or stale, the recording failed) never stop the arm or end the episode: warn() shows
 each once on the page and lists it in meta.yaml `warnings`.
 
+The storage folder and whole tasks (only while no episode is open, after start-up):
+- set_root (u1.set_data_root): a full path, never the other mode's folder (real vs --mock), made if missing and
+  written to; a new TaskStore there, no task selected, its unsaved episodes named as at start-up; remembered in
+  storage.local.yaml for later runs (contracts/station.py).
+- delete_task (u1.delete_task): the task folder and every episode in it (TaskStore.delete_task).
+
 It uses the loop's clients through TeleopLoop._rpc (so a failure names whom it went to); every request is made on the
 main thread.
 """
@@ -29,10 +35,12 @@ from typing import TYPE_CHECKING, Any
 
 from deploy_contracts import Ack, ContractError, HelloReply, RemoteError, SetWaypoints, TransportTimeout
 
-from teleop_collect.contracts import CAMERAS, UNSAVED, CameraSummary, NotSynced, RecordingSummary
+from teleop_collect.contracts import CAMERAS, UNSAVED, CameraSummary, NotSynced, RecordingSummary, StationError
+from teleop_collect.contracts.station import remember_data_root, roots_overlap, same_folder
 from teleop_collect.teleop.episode.meta import build_meta
 from teleop_collect.teleop.episode.recorders import EpisodeRecording
-from teleop_collect.teleop.episode.store import EpisodeDir, EpisodeInfo, Task, TaskError, TaskStore, episode_number
+from teleop_collect.teleop.episode.store import (EpisodeDir, EpisodeInfo, Task, TaskError, TaskStore, episode_number,
+                                                 probe_writable)
 from teleop_collect.teleop.failure_monitor import COUNTED_CODES
 from teleop_collect.teleop.motion.keys import HeldKeys
 from teleop_collect.teleop.pc_clock import HelloSample
@@ -64,6 +72,12 @@ NO_SUMMARY = RecordingSummary(main=_EMPTY_CAMERA, ultrawide=_EMPTY_CAMERA, packe
                               pair_refused=0, error="no summary from frames", pi_clock_offset_ns=None,
                               pi_clock_drift_ppm=None)
 ENDED_CODE = "episode_ended"     # meta.yaml warnings code: why an unsaved episode ended (quit, conclude)
+FULL_PATH = "give a full path: /... or ~/..."
+OTHER_ROOT = "{root} is the storage folder of {other} runs: --mock episodes are kept apart from the real ones"
+NESTED_ROOT = ("{root} and the storage folder of {other} runs ({other_root}) are inside one another: --mock episodes "
+               "are kept apart from the real ones")
+UNSAVED_THERE = "{n} unsaved episode(s) in {root}: select their task to save or delete them"
+NOT_REMEMBERED = "storage folder {root} is used for this run only: it could not be remembered ({why})"
 
 
 class EpisodeFlow:
@@ -126,6 +140,86 @@ class EpisodeFlow:
         if self.lp._phase in (Phase.RECORDING, Phase.STOPPING):
             return "an episode is recording: stop it first"
         return ""
+
+    def _not_idle(self) -> str:
+        """Why the storage folder or a whole task cannot change now ("" when it can)."""
+        from teleop_collect.teleop.teleop_loop import Phase
+        busy = self._busy()
+        if busy:
+            return busy
+        if self.lp._phase is Phase.STARTING:
+            return "starting up: wait until teleop is ready"
+        if self.lp._phase is Phase.DONE:
+            return "teleop has stopped"
+        return ""
+
+    def set_root(self, path: str) -> Ack:
+        """The storage folder (u1.set_data_root): checked, made, written to, then used and remembered."""
+        refusal = self._not_idle()
+        if refusal:
+            return Ack(ok=False, reason=refusal)
+        text = path.strip()
+        try:
+            root = Path(text).expanduser()               # RuntimeError: ~name of an unknown user
+        except RuntimeError:
+            return Ack(ok=False, reason=FULL_PATH)
+        if not text.startswith(("/", "~")) or not root.is_absolute():
+            return Ack(ok=False, reason=FULL_PATH)
+        s = self.lp._s
+        try:
+            root = root.resolve()
+            other = "real" if s.mock else "--mock"
+            if same_folder(root, s.other_data_root):
+                return Ack(ok=False, reason=OTHER_ROOT.format(root=root, other=other))
+            if roots_overlap(root, s.other_data_root):
+                return Ack(ok=False, reason=NESTED_ROOT.format(root=root, other=other,
+                                                               other_root=s.other_data_root.resolve()))
+            probe_writable(root)
+        except (OSError, RuntimeError, ValueError) as exc:  # not writable, a symlink loop, a NUL in the path
+            return Ack(ok=False, reason=f"cannot use {root}: {exc}")
+        if not same_folder(root, self.store.root):
+            self.store = TaskStore(root)
+            self.task = None
+            self._episodes = []
+            self.lp._safe_event("data_root", f"storage folder: {root}")
+            self.lp._messages.add("info", f"storage folder: {root}")
+            found = self.store.unsaved()                 # one line for all (start-up names each)
+            self._reload_tasks()
+            for p in found:
+                self.lp._safe_event("unsaved_kept", str(p))
+            if found:
+                self.lp._messages.add("warn", UNSAVED_THERE.format(n=len(found), root=root))
+        try:
+            remember_data_root(s.station_file, s.mock, root)
+        except StationError as exc:
+            self.lp._safe_event("data_root", f"not remembered: {exc}")
+            self.lp._messages.add("warn", NOT_REMEMBERED.format(root=root, why=exc))
+        return Ack(ok=True, reason="")
+
+    def delete_task(self, name: str) -> Ack:
+        """A whole task (u1.delete_task): its folder and every episode in it."""
+        refusal = self._not_idle()                       # an rmtree must never run with the watchdog armed
+        if refusal:
+            return Ack(ok=False, reason=refusal)
+        try:
+            count = self.store.delete_task(name)
+        except TaskError as exc:
+            return Ack(ok=False, reason=str(exc))
+        except OSError as exc:                           # part of it may be gone: deselected, the lists re-read
+            self._forget_task(name)
+            self.lp._safe_event("task_delete_failed", f"{name}: {exc}")
+            return Ack(ok=False, reason=f"task {name} only partly deleted: {exc}")
+        self._forget_task(name)
+        self.lp._safe_event("task_deleted", f"{name} ({count} episodes)")
+        self.lp._messages.add("info", f"task {name} deleted ({count} episodes)")
+        return Ack(ok=True, reason="")
+
+    def _forget_task(self, name: str) -> None:
+        """After deleting a task (or part of it): deselected if it was selected; the task list re-read."""
+        if self.task is not None and self.task.name == name:
+            self.task = None
+            self._episodes = []
+        self._reload_tasks()
 
     def select(self, name: str) -> Ack:
         busy = self._busy()

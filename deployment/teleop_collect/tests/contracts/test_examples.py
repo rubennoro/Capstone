@@ -33,7 +33,7 @@ def test_every_new_message_has_a_good_example():
     good = {e.schema for e in ALL if e.valid}
     new = {c.SCHEMA for c in registered()} - set(SHARED_SCHEMAS)
     new = {s for s in new if s.split(".")[0] in NEW}
-    assert len(new) == 17                                               # u1.home/v1 gone (start pose, 2026-11-20)
+    assert len(new) == 20       # u1.home/v1 gone (2026-11-20); + label_episode, delete_task, set_data_root (2026-11-22)
     assert new <= good, new - good
 
 
@@ -43,7 +43,7 @@ def test_every_schema_of_the_structure_is_registered():
             "u2.get_preview/v1", "u2.preview/v1",
             "u1.get_status/v1", "u1.keys/v1", "u1.gripper/v1", "u1.select_task/v1", "u1.create_task/v1",
             "u1.start_episode/v1", "u1.stop_episode/v1", "u1.delete_episode/v1", "u1.stop_arm/v1",
-            "u1.status/v1"} <= names
+            "u1.label_episode/v1", "u1.delete_task/v1", "u1.set_data_root/v1", "u1.status/v1"} <= names
     assert "u1.home/v1" not in names                                    # no laptop home (start pose, 2026-11-20)
 
 

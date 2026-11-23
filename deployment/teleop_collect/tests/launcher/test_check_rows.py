@@ -174,6 +174,22 @@ def test_data_root_not_writable(make_station, tmp_path):
     assert r.status == "fail" and "not a folder" in r.detail
 
 
+def test_data_root_rows_name_the_storage_file_when_the_folder_comes_from_it(make_station, tmp_path, monkeypatch):
+    blocker = tmp_path / "a_file"
+    blocker.write_text("x")
+    path = make_station()
+    (path.parent / "storage.local.yaml").write_text(f"mock_data_root: {blocker}\n")
+    usage = collections.namedtuple("usage", "total used free")
+    monkeypatch.setattr(launcher_module.shutil, "disk_usage", lambda p: usage(10**12, 10**12, 10**9))
+    rows = station_rows(Launcher(Station.load(path, True), True))
+    for name in ("data_root", "disk"):
+        assert rows[name].status in ("fail", "warn")
+        assert f"(the folder is from {path.parent / 'storage.local.yaml'}: run with --data-root PATH, or delete " \
+               "that file)" in rows[name].detail
+    plain = station_rows(make(make_station, True, mock_data_root=str(blocker)))["data_root"]
+    assert plain.status == "fail" and "storage.local.yaml" not in plain.detail
+
+
 def test_commit_unknown_without_git(make_station, monkeypatch):
     def no_git(cmd, *a, **k):
         raise FileNotFoundError("git")

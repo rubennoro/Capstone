@@ -30,8 +30,8 @@ from aiohttp import WSCloseCode, WSMsgType, web
 from deploy_contracts import ContractError, Message, RemoteError, TransportTimeout
 
 from teleop_collect.contracts import (CAMERAS, GRIPPER_COMMANDS, MOTION_KEYS, STATUS_MAX_MESSAGES, CreateTask,
-                                      DeleteEpisode, LabelEpisode, SelectTask, StartEpisode, StopArm, StopEpisode,
-                                      TeleopStatus)
+                                      DeleteEpisode, DeleteTask, LabelEpisode, SelectTask, SetDataRoot, StartEpisode,
+                                      StopArm, StopEpisode, TeleopStatus)
 from teleop_collect.ui import NAME
 from teleop_collect.ui.bridge import Bridge, FatalError
 from teleop_collect.ui.settings import HTTP_HOST, Settings
@@ -70,6 +70,8 @@ COMMANDS: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, Any]], Message
     "delete_episode": (("episode",), lambda a: DeleteEpisode(episode=_arg(a, "episode"))),
     "label_episode": (("episode", "outcome"),
                       lambda a: LabelEpisode(episode=_arg(a, "episode"), outcome=_arg(a, "outcome"))),
+    "delete_task": (("name",), lambda a: DeleteTask(name=_arg(a, "name"))),
+    "set_data_root": (("path",), lambda a: SetDataRoot(path=_arg(a, "path"))),
 }
 
 
