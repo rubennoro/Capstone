@@ -2,6 +2,9 @@
 # changes: the new station schema (Station.load + load_config("policy", station)), so the merge and the relative
 # paths are policy_deploy.contracts' (their own tests are in tests/contracts, tests/launcher); the endpoint is
 # ports.policy; the session folder is ProcessArgs'; + precision and mock_kind; + prompt_dataset and prompt_split.
+# copied from rnoro/final-deployment:deployment/policy_deploy/tests/policy/test_settings.py @ f632576
+# changes: the kind-not-set message lists replay; the unknown kind is 'bogus' (replay is a kind here)
+# (sim_deploy, rnoro/main-sim)
 from __future__ import annotations
 
 import json
@@ -63,7 +66,8 @@ def test_unknown_key_refused_with_its_path(policy_station):
 
 def test_kind_unset_is_an_error_naming_policy_kind_but_fine_with_mock(policy_station):
     problems = _problems(lambda: Settings.load(policy_station({}), mock=False))
-    assert problems == ["policy.kind is not set: choose diffusion or hold_still in station.yaml (policy.kind)"]
+    assert problems == ["policy.kind is not set: choose diffusion or hold_still or replay in station.yaml "
+                        "(policy.kind)"]
     s = Settings.load(policy_station(None), mock=True)
     assert s.kind is None and s.active_kind == "hold_still" and s.mock
 
@@ -86,8 +90,8 @@ def test_mock_kind_diffusion_needs_a_checkpoint(policy_station):
 
 
 def test_unknown_kind_and_mock_kind(policy_station):
-    problems = _problems(lambda: Settings.load(policy_station({"kind": "replay"}), mock=False))
-    assert len(problems) == 1 and "policy.kind: unknown kind 'replay'" in problems[0]
+    problems = _problems(lambda: Settings.load(policy_station({"kind": "bogus"}), mock=False))
+    assert len(problems) == 1 and "policy.kind: unknown kind 'bogus'" in problems[0]
     problems = _problems(lambda: Settings.load(policy_station({"kind": "hold_still", "mock_kind": "x"}), mock=True))
     assert len(problems) == 1 and "policy.mock_kind: unknown kind 'x'" in problems[0]
 

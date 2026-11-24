@@ -1,5 +1,7 @@
 # adapted from rnoro/deployment:deployment/policy/tests/test_policy_factory.py @ 91b178b
 # changes: the new Settings.load(station, mock) and station schema; --mock builds mock_kind; module path
+# copied from rnoro/final-deployment:deployment/policy_deploy/tests/policy/test_policy_factory.py @ f632576
+# changes: KINDS has replay (ReplayPolicy, no torch) (sim_deploy, rnoro/main-sim)
 from __future__ import annotations
 
 import sys
@@ -13,8 +15,9 @@ from policy_deploy.policy.settings import Settings
 
 
 def test_kinds_name_their_classes():
-    assert set(KINDS) == {"hold_still", "diffusion"}
+    assert set(KINDS) == {"hold_still", "diffusion", "replay"}
     assert KINDS["hold_still"].needs_torch is False and KINDS["diffusion"].needs_torch is True
+    assert KINDS["replay"].needs_torch is False
 
 
 def test_hold_still_builds_its_class(policy_station, tmp_path):

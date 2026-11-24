@@ -4,7 +4,8 @@
 # copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/policy/base_policy.py @ f632576
 # changes: make_chunk orthonormalizes eef_rot6d (Gram-Schmidt, the manager's own pose_math.matrix_from_rot6d =
 #          behavior_prompting/UMI rot6d_to_mat) before the C4 check, and logs chunks the old check would have refused
-#          (sim_deploy, 2026-11-22; handoff: sim_deploy/ports/rot6d_gram_schmidt.md)
+#          (sim_deploy, 2026-11-22; handoff: sim_deploy/ports/rot6d_gram_schmidt.md); the Gram-Schmidt is a local
+#          copy of pose_math's (policy may not import manager: tests/test_import_rules.py), 2026-11-23
 """Policy: the interface every policy implements, and the shared chunk builder that clips widths."""
 
 from __future__ import annotations
@@ -16,20 +17,35 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import numpy as np
 
 from policy_deploy.contracts import ACTION_STEPS, IMAGE_SIZE, OBS_STEPS, STEP_MS, ActionChunk, Observation, PolicyConfig
-from policy_deploy.manager.pose_math import matrix_from_rot6d, rot6d_from_matrix
 
 log = logging.getLogger(__name__)
 
 # C4's rot6d_dot_max (contracts/c4_limits.yaml): only used to label the log line of a chunk the raw check would refuse
 _RAW_DOT_MAX = 0.1
+_EPS = 1e-12      # manager/pose_math.py _EPS (the reference normalize()'s eps: only guards a division by zero)
+
+
+def _normalize(v: np.ndarray) -> np.ndarray:
+    return v / np.maximum(np.linalg.norm(v, axis=-1, keepdims=True), _EPS)
+
+
+def _gram_schmidt_rows(d6: np.ndarray) -> np.ndarray:
+    """(..., 6) -> (..., 6): the rows (b1, b2) of manager/pose_math.matrix_from_rot6d, same math (kept in step by
+    hand: the policy process may not import the manager's)."""
+    d6 = np.asarray(d6, dtype=np.float64)
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = _normalize(a1)
+    b2 = _normalize(a2 - np.sum(b1 * a2, axis=-1, keepdims=True) * b1)
+    return np.concatenate((b1, b2), axis=-1)
 
 
 def orthonormalize_rot6d(rot6d: np.ndarray) -> tuple[np.ndarray, float, float]:
     """(N, 6) model rot6d -> (N, 6) float32 rows of an exact rotation, as the manager reads them.
 
-    Gram-Schmidt exactly as behavior_prompting's rot6d_to_mat / UMI (the manager's matrix_from_rot6d): b1 = a1/|a1|,
-    b2 = normalized(a2 - (b1.a2) b1); the rows (b1, b2) are returned. matrix_from_rot6d of the result equals
-    matrix_from_rot6d of the input, so the robot's motion is unchanged for every chunk the raw check accepted.
+    Gram-Schmidt exactly as behavior_prompting's rot6d_to_mat / UMI (the manager's matrix_from_rot6d; here
+    _gram_schmidt_rows): b1 = a1/|a1|, b2 = normalized(a2 - (b1.a2) b1); the rows (b1, b2) are returned.
+    matrix_from_rot6d of the result equals matrix_from_rot6d of the input, so the robot's motion is unchanged for
+    every chunk the raw check accepted.
     Degenerate rows (a zero vector, parallel vectors, NaN/inf) are NOT repaired: they come out with a zero-length or
     non-finite vector, which the C4 validator still refuses (PolicyFatal), as before.
     Also returns the raw rows' worst |cos angle| and worst | |v| - 1 |, for the log."""
@@ -41,7 +57,7 @@ def orthonormalize_rot6d(rot6d: np.ndarray) -> tuple[np.ndarray, float, float]:
     finite = np.isfinite(cos)
     worst_cos = float(cos[finite].max()) if finite.any() else float("nan")
     worst_len = float(np.abs(np.concatenate([n1, n2]) - 1.0).max()) if raw.size else 0.0
-    fixed = rot6d_from_matrix(matrix_from_rot6d(raw))
+    fixed = _gram_schmidt_rows(raw)
     return np.ascontiguousarray(fixed, dtype=np.float32).reshape(np.shape(rot6d)), worst_cos, worst_len
 
 if TYPE_CHECKING:

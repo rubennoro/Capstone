@@ -2,6 +2,8 @@
 # changes: python -m policy_deploy.policy; the new station (endpoint from ports.policy); the FATAL lines of the new
 # settings path; startup.json adds precision, memory and gpu; the config reply carries kind; + PolicyApp in-process
 # with a PromptablePolicy (the warm-up prompt and startup.json warmup_prompt).
+# copied from rnoro/final-deployment:deployment/policy_deploy/tests/policy/test_app.py @ f632576
+# changes: the kind-not-set FATAL line lists replay (sim_deploy, rnoro/main-sim)
 """`python -m policy_deploy.policy --mock` as a subprocess (light environment, hold_still); PolicyApp in-process with
 build_policy patched."""
 
@@ -94,7 +96,8 @@ def test_kind_unset_fatal_line(policy_station, tmp_path):
                           cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 1
     assert proc.stderr.strip().splitlines()[-1] == (
-        "FATAL policy: invalid settings: policy.kind is not set: choose diffusion or hold_still in station.yaml "
+        "FATAL policy: invalid settings: policy.kind is not set: choose diffusion or hold_still or replay in "
+        "station.yaml "
         "(policy.kind): check station.yaml policy: and config/policy.yaml")
 
 

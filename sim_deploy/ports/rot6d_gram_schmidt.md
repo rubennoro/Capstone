@@ -26,9 +26,11 @@ File: `deployment/policy_deploy/policy_deploy/policy/base_policy.py` only. Refer
 `~/Capstone-main-sim/deployment/policy_deploy/policy_deploy/policy/base_policy.py` (diff it against your file;
 the header lines `copied from ... / changes:` are the sim's provenance convention, adapt to yours).
 
-1. `orthonormalize_rot6d(rot6d) -> (fixed, worst_cos, worst_len)`: `fixed = rot6d_from_matrix(matrix_from_rot6d(raw))`
-   in float64, returned as float32 C-contiguous in the input's shape. It reuses the manager's own `pose_math`
-   functions on purpose, so the policy and the manager cannot drift apart.
+1. `orthonormalize_rot6d(rot6d) -> (fixed, worst_cos, worst_len)`: `fixed = _gram_schmidt_rows(raw)` in float64,
+   returned as float32 C-contiguous in the input's shape. `_gram_schmidt_rows` is a local copy of
+   `manager/pose_math.py` `matrix_from_rot6d`'s first two rows (same math, same `_EPS = 1e-12`; max diff 0 on 500 random
+   rows): the policy process may not import `manager` (`tests/test_import_rules.py`), so do not import `pose_math`.
+   Keep the two in step by hand.
 2. `Policy.make_chunk` calls it first and builds the `ActionChunk` from the orthonormalized rows; it logs one INFO
    line for a chunk the raw check would have refused (raw worst \|cos\| and worst length error).
 3. Nothing else changes: C4's `rot6d_problem`, `c4_limits.yaml`, the manager, the PC, contracts, wire format.

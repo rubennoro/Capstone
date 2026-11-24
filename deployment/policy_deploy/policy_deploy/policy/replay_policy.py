@@ -2,6 +2,8 @@
 # E7 (integration): the cursor follows the time since the episode's first infer, not exec_h per infer (the manager
 # asks for a new chunk at every frame, ~33 ms, and replaces the old one, so h steps per infer ran the recording ~12x
 # too fast and the arm moved ~1/12 of the recorded path).
+# 2026-11-23: axis-angle -> matrix in numpy (_matrix_from_rotvec, Rodrigues) instead of scipy's Rotation: the
+# policy process may only import numpy, yaml, zmq and torch (tests/test_import_rules.py).
 # W0 (re-base on f632576): the widths go through policy.gripper_map (to_robot) when it is set, as DiffusionPolicy's do:
 # the recording is in training units (pick1: ~0.051 closed .. 0.090 open), the robot opens 0..0.040 m
 # (limits.yaml gripper_width_max_m), so unmapped every replayed width would clip to 0.04 and never close.
@@ -17,7 +19,7 @@ gripper_width_m -> data/gripper_right_gripper_width), policy.gripper_map (traini
 null: the recorded widths unchanged) and the station's manager.exec_h (h).
 
 The math. The episode is data rows [s, e) (s = episode_ends[index-1] or 0, e = episode_ends[index]). Row j has the
-recorded TCP pose P_j = [R_j p_j; 0 1] (R_j = Rotation.from_rotvec(rot_axis_angle_j), p_j = eef_pos_j, the frame of
+recorded TCP pose P_j = [R_j p_j; 0 1] (R_j = rotation of axis-angle rot_axis_angle_j, p_j = eef_pos_j, the frame of
 the training data) and the width w_j. A cursor c is the data row of "now":
 
 - reset(): c = s (the episode's first step).
@@ -55,7 +57,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from deploy_contracts import ContractLimits
-from scipy.spatial.transform import Rotation
 
 from policy_deploy.contracts import ACTION_STEPS, ActionChunk, Observation
 from policy_deploy.policy.base_policy import Policy
@@ -122,10 +123,26 @@ class _ZarrReader:
             self._zip.close()
 
 
+def _matrix_from_rotvec(rotvec: np.ndarray) -> np.ndarray:
+    """(N, 3) axis-angles -> (N, 3, 3) float64 rotations: Rodrigues, R = I + a K + b K^2 (K = [v]x, a = sin t / t,
+    b = (1 - cos t) / t^2, t = |v|), with the Taylor series below t = 1e-3 as scipy's Rotation.from_rotvec does."""
+    v = np.asarray(rotvec, dtype=np.float64).reshape(-1, 3)
+    t2 = np.sum(v * v, axis=1)
+    t = np.sqrt(t2)
+    small = t < 1e-3
+    ts = np.where(small, 1.0, t)                         # no 0/0 in the unused branch
+    a = np.where(small, 1.0 - t2 / 6.0 + t2 * t2 / 120.0, np.sin(ts) / ts)
+    b = np.where(small, 0.5 - t2 / 24.0 + t2 * t2 / 720.0, (1.0 - np.cos(ts)) / (ts * ts))
+    K = np.zeros((len(v), 3, 3))
+    K[:, 0, 1], K[:, 0, 2], K[:, 1, 2] = -v[:, 2], v[:, 1], -v[:, 0]
+    K[:, 1, 0], K[:, 2, 0], K[:, 2, 1] = v[:, 2], -v[:, 1], v[:, 0]
+    return np.eye(3) + a[:, None, None] * K + b[:, None, None] * (K @ K)
+
+
 def _pose_matrices(pos: np.ndarray, rotvec: np.ndarray) -> np.ndarray:
     """(N, 3) positions + (N, 3) axis-angles -> (N, 4, 4) float64 poses (behavior_prompting pose_to_mat)."""
     T = np.zeros((len(pos), 4, 4))
-    T[:, :3, :3] = Rotation.from_rotvec(np.asarray(rotvec, dtype=np.float64)).as_matrix()
+    T[:, :3, :3] = _matrix_from_rotvec(rotvec)
     T[:, :3, 3] = np.asarray(pos, dtype=np.float64)
     T[:, 3, 3] = 1.0
     return T
