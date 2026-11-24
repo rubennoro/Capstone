@@ -10,7 +10,7 @@ Running status between working sessions. Update it at the end of each conversati
   cancelling, deleting). Read-only checks are fine. Auto mode blocks writing files on the cluster over ssh: commit the
   script and `git pull` on the cluster, or have the user run `scp`.
 
-## Current state (2026-11-24)
+## Current state (2026-11-24, session end)
 
 - **Sim tests = one rollout at a time, visually in the UI, step by step with the user** (2026-11-24). No headless or
   multi-rollout runs from the agent; comprehensive evals go through branch `rnoro/sim-cluster` on the cluster, never
@@ -47,10 +47,9 @@ Running status between working sessions. Update it at the end of each conversati
 1. Teleop: the user judges whether the sim's policy view at the grasp moment looks like the teleop camera (the
    close-decision question); then look fixes vs more varied teleop data (object position in both directions) vs an
    earlier checkpoint (val loss lowest ~epoch 20, saved = 59).
-2. Before merging into `rnoro/sim-cluster`'s batch: teleop checkpoints are not in `eval/start_sets/w3.yaml` (driver
-   refuses `--starts set` for them) and the random range is the handheld one → decide teleop starts; the cluster's
-   data layout must have `data/<folder>/package/<dataset>/package.json` or the gripper fix falls back silently (note
-   only); fix or flag the open-gripper `grasped`. Faster cluster inference changes behaviour: compare same-machine runs.
+2. `rnoro/sim-cluster` (user, 2026-11-24): its code already handles the batch side (teleop starts, the dataset
+   package path for the gripper fix, the open-gripper `grasped`); nothing to do here for the merge. Cluster inference
+   is faster and changes behaviour: compare same-machine runs only.
 3. Hand off to the final-deployment owner (user's call): `sim_deploy/ports/rot6d_gram_schmidt.md` (local copy, no
    pose_math import), the teleop gripper_map gap in `use_policy.py`, the gitignored test data.
 4. Open: W1 timing bench (sim cycle ~200 ms vs real ~130 ms); fewer diffusion steps to cut the shake; image fixes for
