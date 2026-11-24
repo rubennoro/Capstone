@@ -13,6 +13,22 @@ Where each trial run on the arm is, and what happened. Add a row per trial. How 
 - **Logs:** the session folder named in `NOTES.md`, under `~/policy_deploy_sessions/<date>_<time>/`. It holds `episodes.jsonl`, `manager.log` (clamps, faults) and `manager/steps.jsonl`.
 - **Not in git:** `~/Capstone/data/` is local only. `train/fetch.sh` never deletes local files, so the `deploy/` folders survive a re-fetch.
 
+## Videos by policy
+
+One video per recorded trial (`<folder name>.mp4` in each trial folder). Copies, named by policy, are in
+`~/Capstone/presentation-materials/trial-videos/<name>/trialN.mp4` (local only, not in git).
+
+| Policy | Presentation name | What it is | Videos | Trials | Total length |
+|---|---|---|---|---|---|
+| PICK_TEST1 run_022 | `Diff_30ep_pick1` | plain diffusion, 30 eps | 3 | 2, 3, 4 (trial 1 was not recorded) | 70.1 + 35.7 + 15.5 = 121 s |
+| PICK_TEST1 run_006 | `BP_30ep_pick1` | behavior prompting, 30 eps | 1 | 1 | 23.8 s |
+| PICK_DOUBLE run_003 | `Diff_30ep_double` | plain, 15-15 | 2 | 1, 2 | 24.4 + 10.9 = 35 s |
+| PICK_DOUBLE run_002 | `Diff_62ep_double` | plain, double-62 (the candidate) | 3 | 1, 2, 3 | 55.1 + 21.9 + 33.0 = 110 s |
+
+9 videos across 4 of the 18 trained policies, about 4.9 minutes in total. The length is how long the recording ran,
+which is longer than the episode (run_002 trial 2: 21.9 s recorded, 16.1 s episode). No videos yet for the other 10
+PICK runs or the 4 teleop_marker runs.
+
 ## 2026-11-20: first day on the arm
 
 Settings for every trial: bf16, 8 diffusion steps, exec_h 12. The start pose was the sim's `q_start_rad`, not yet checked
