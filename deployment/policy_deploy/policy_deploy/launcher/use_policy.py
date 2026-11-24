@@ -2,6 +2,9 @@
 # copied from rnoro/final-deployment:deployment/policy_deploy/policy_deploy/launcher/use_policy.py @ f632576
 # changes: target `replay:<.zarr.zip|.zarr>#<index>` (kind and mock_kind replay, policy.replay_episode); replay_episode
 # is a policy-choice key (removed by every other target) (sim_deploy, rnoro/main-sim)
+# 2026-11-23: a run whose dataset came from teleop_collect (package.json source.kind) gets policy.gripper_map =
+# TELEOP_GRIPPER_MAP (identity 0-0.040 m: its widths are already the robot's); gripper_map is a policy-choice key, so
+# any other target goes back to config/policy.yaml's handheld map (sim_deploy, rnoro/main-sim)
 """UsePolicy: rewrites the `policy:` and `manager:` sections of station.yaml from a fetched training run.
 
 A run folder is what train/fetch.sh leaves in data/<folder>/policy/<run>/: checkpoints/*.ckpt and
@@ -36,7 +39,12 @@ HOLD_STILL = "hold_still"
 REPLAY_PREFIX = "replay:"                 # replay:<dataset>#<index> (policy kind replay, sim_deploy)
 SECTIONS = ("policy", "manager")
 #: keys that belong to the policy choice: removed or replaced by every `use`
-POLICY_CHOICE_KEYS = ("kind", "mock_kind", "checkpoint", "prompt_dataset", "prompt_split", "replay_episode")
+POLICY_CHOICE_KEYS = ("kind", "mock_kind", "checkpoint", "prompt_dataset", "prompt_split", "replay_episode",
+                      "gripper_map")
+# teleop_collect records the robot's own fingertip opening (0 to contracts/limits.yaml gripper_width_max_m 0.040), so
+# the handheld map of config/policy.yaml must not apply: an identity line (a map, since station.yaml cannot replace
+# config/policy.yaml's map with null)
+TELEOP_GRIPPER_MAP = {"training_closed_m": 0.0, "training_open_m": 0.040, "robot_closed_m": 0.0, "robot_open_m": 0.040}
 MANAGER_CHOICE_KEYS = ("task_name", "prompt_index")
 
 
@@ -118,6 +126,21 @@ def training_dataset(run: Path, cfg: dict[str, Any]) -> Path:
         raise UseError(f"the run trained on {zip_name}, not found at {local}",
                        "pull the package to the laptop, or pass --prompt-dataset PATH")
     return local
+
+
+def dataset_source_kind(run: Path, cfg: dict[str, Any]) -> str | None:
+    """package.json source.kind (e.g. teleop_collect) of the dataset the run trained on, from the laptop copy
+    data/<folder>/package/<dataset>/package.json; None when it is not there or has no source."""
+    trained = (cfg["task"].get("dataset") or {}).get("dataset_path")
+    if not trained:
+        return None
+    name = Path(str(trained)).name.removesuffix(".zarr.zip").removesuffix(".zarr")
+    try:
+        meta = json.loads((run.parent.parent / "package" / name / "package.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    source = meta.get("source") if isinstance(meta, dict) else None
+    return source.get("kind") if isinstance(source, dict) else None
 
 
 def _decode_vlen_utf8(chunk: bytes) -> list[str]:
@@ -205,6 +228,12 @@ def choose(target: str, task: str | None, prompt_index: int | None, prompt_datas
     # mock_kind too, so that `run --mock` runs this model against the fake Pi and fake PC
     policy: dict[str, Any] = {"kind": "diffusion", "mock_kind": "diffusion", "checkpoint": _home_path(ckpt)}
     notes: list[str] = []
+    source_kind = dataset_source_kind(run, cfg)
+    if source_kind == "teleop_collect":
+        policy["gripper_map"] = dict(TELEOP_GRIPPER_MAP)
+        notes.append("teleop_collect dataset: gripper_map identity 0-0.040 m (widths are the robot's)")
+    elif source_kind is None:
+        notes.append("no package.json of the training dataset here: gripper_map = config/policy.yaml's (handheld)")
     if not uses_prompting(cfg):
         if any(v is not None for v in (task, prompt_index, prompt_dataset, prompt_split)):
             raise UseError(f"{run.name} is a plain checkpoint (use_prompting is not true): it takes no prompt options")
