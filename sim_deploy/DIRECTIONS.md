@@ -101,7 +101,8 @@ PY=~/envs/sim_deploy/bin/python
 ```
 
 1. Pick a policy on the left (or a replay, or the hold_still baseline).
-2. **Rollouts**: how many; **Eraser starts**: random from the seed, or the W3 start set (the batch's 18 starts; needs
+2. **Rollouts**: how many; **Eraser starts**: random from the seed (default 523: the eraser near where the teleop
+   demos had the object), or the W3 start set (the batch's 18 starts; needs
    Arm start = start pose).
 3. **Scene**: **Arm start** (start pose, like the real arm; or deploy home only) and **Scene look** (robot cell =
    default, training scene, current). All have the 30 mm eraser.

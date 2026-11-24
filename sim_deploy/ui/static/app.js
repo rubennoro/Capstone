@@ -715,10 +715,15 @@ const SETTINGS = ["set-rollouts", "set-seed", "set-home", "set-look", "set-timeo
 // (no settingsVersion 2) do not restore these, so an old "station default" / empty field does not hide them.
 const SETTINGS_V2_ONLY = ["set-look", "set-precision", "set-steps", "set-exech"];
 const ARM = { precision: "bf16", diffusion_steps: 8, exec_h: 12 };   // the real arm's policy settings
+// 2026-11-24: default placement seed 523: rollout 0 puts the eraser at ~(0.534, -0.068), the in-range spot nearest the
+// teleop_marker demos' objects (x 0.53, y -0.16..-0.03). Settings saved before (settingsVersion < 3) keep their seed
+// out, so an old saved seed does not hide the new default.
+const DEFAULT_SEED = 523;
+const SETTINGS_V3_ONLY = ["set-seed"];
 
 function save() {
   try {
-    const s = { settingsVersion: 2, selected: state.selected, advanced: $("advanced").open,
+    const s = { settingsVersion: 3, selected: state.selected, advanced: $("advanced").open,
                 more: $("more").open, hideHelp: $("hide-help").checked,
                 showAllReplays: state.showAllReplays,
                 openSmoke: [...state.openSmoke],
@@ -742,7 +747,9 @@ function restore() {
     $("results-only-selected").checked = !!s.onlySelected;
     for (const id of SETTINGS) {
       if (!(id in s)) continue;
-      if (s.settingsVersion !== 2 && SETTINGS_V2_ONLY.includes(id)) continue;
+      const ver = Number(s.settingsVersion) || 1;
+      if (ver < 2 && SETTINGS_V2_ONLY.includes(id)) continue;
+      if (ver < 3 && SETTINGS_V3_ONLY.includes(id)) continue;
       const n = $(id);
       if (n.type === "checkbox") n.checked = !!s[id]; else n.value = s[id];
     }
@@ -856,7 +863,7 @@ function readSettings() {
   const request = {
     policy: state.selected,
     rollouts: rollouts.value === null ? 1 : rollouts.value,
-    seed: seed.value === null ? 0 : seed.value,
+    seed: seed.value === null ? DEFAULT_SEED : seed.value,
     home: $("set-home").value,
     look: $("set-look").value,
     timeout_s: timeout,
@@ -968,7 +975,7 @@ function settingsLine(req, type) {
   const set = req.starts === "set" && type !== "replay";
   if (type !== "replay") parts.push(fillText((SHORT.starts && SHORT.starts[set ? "set" : "random"]) || (set ? "start set" : "random"), setVars()));
   parts.push(fillText(SHORT.limit || "{T} s limit", { T: req.timeout_s ?? 60 }));
-  if (type !== "replay" && !set) parts.push(fillText(SHORT.seed || "seed {seed}", { seed: req.seed ?? 0 }));
+  if (type !== "replay" && !set) parts.push(fillText(SHORT.seed || "seed {seed}", { seed: req.seed ?? DEFAULT_SEED }));
   if (req.tap) parts.push(SHORT.tap || "tap");
   if (req.tag && req.tag !== "ui") parts.push(fillText(SHORT.tag || "tag {tag}", { tag: req.tag }));
   if (type === "policy" && (req.precision !== ARM.precision || req.diffusion_steps !== ARM.diffusion_steps
@@ -984,7 +991,7 @@ function planSentence(req, type, index) {
   const n = req.rollouts ?? 1;
   const look = (F.look && F.look.words && F.look.words[req.look]) || req.look;
   const v = setVars({ N: n, rollouts: n === 1 ? (SHORT.rollout || "rollout") : (SHORT.rollouts || "rollouts"), look,
-                      seed: req.seed ?? 0, T: req.timeout_s ?? 60, i: index ?? "?" });
+                      seed: req.seed ?? DEFAULT_SEED, T: req.timeout_s ?? 60, i: index ?? "?" });
   const chain = [P.plan_home || "home"];
   if (req.home !== "deploy") chain.push(P.plan_start || "start pose");
   chain.push(type === "replay" ? P.plan_replay : req.starts === "set" ? P.plan_set : P.plan_random);

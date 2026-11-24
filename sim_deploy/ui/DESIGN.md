@@ -141,7 +141,7 @@ an absolute run folder or `<task>/<run>` under `policy_data_root`; a run folder 
 |---|---|
 | `target` / `policy` | `--policy <run folder \| hold_still \| replay:…>` |
 | `rollouts` (1..100, default 1) | `--rollouts N` (always passed; the driver's default is 10) |
-| `seed` (default 0) | `--seed S` |
+| `seed` (page default 523, 2026-11-24: the in-range spot nearest the teleop demos; the API's default stays 0) | `--seed S` |
 | `tag` (default `ui`; `[A-Za-z0-9._-]{1,40}`) | `--tag T` |
 | `timeout_s` (default 60) | `--timeout` |
 | `tap` | `--tap` |

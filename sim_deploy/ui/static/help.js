@@ -31,7 +31,8 @@ const HELP = {
     seed: {
       label: "Placement seed",
       help: "Chooses where the eraser goes; same seed = same spots for every policy.",
-      tip: "Rollout k of seed S always gets the same eraser spot. The dice picks a random seed.",
+      tip: "Rollout k of seed S always gets the same eraser spot. The dice picks a random seed.\nDefault 523: "
+        + "rollout 1 starts the eraser at about (0.534, -0.068), the spot nearest the teleop demos' objects.",
       off_replay: "not used: a replay puts the eraser where the demo had it",
       off_set: "not used: the start set fixes the spots",
     },
