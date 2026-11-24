@@ -12,7 +12,8 @@
 
 The request may carry "target" (the server's resolved --policy value: run folder | hold_still | replay:<zarr>#<i>);
 without it "policy" is resolved here (hold_still, replay:..., an absolute run folder or <task>/<run> under
-policy_data_root). A run folder must have checkpoints/*.ckpt. Optional "dry_run": true adds --dry-run.
+policy_data_root). A run folder must have checkpoints/*.ckpt. Optional "dry_run": true adds --dry-run. "starts": "set"
+adds --starts set (eval/start_sets/w3.yaml; checked first: home start, no replay, a listed run folder).
 
 Where the progress comes from (files first, stdout only where nothing else exists):
 - the eval folder: the driver's "[eval] eval folder: <path>" line, else a new `sim_evals/**/eval.yaml` after start;
@@ -23,6 +24,8 @@ Where the progress comes from (files first, stdout only where nothing else exist
 - `<eval>/metrics.json` -> Status.metrics and the run_end event;
 - run.sh / driver lines ("[run.sh] starting the sim PC", "[eval] policy_deploy ready (session <path>)", ...) -> phase
   and the session folder.
+- the driver's "[eval] step <n> home|start_pose|place|control|record[: detail]" lines + RUNSH_PHASES' step keys ->
+  Status.step {key, rollout, since_s, detail} and a "step" event per change (ui/DESIGN.md U6 B).
 
 run.sh gets env SIM_DEPLOY_LAUNCHER=ui (the driver records `launcher: ui` in eval.yaml, evaltool/SCHEMA.md). After the
 run ends, `python -m sim_deploy.evaltool score <eval>` runs in a thread (the UI stays usable; a failure is shown, not
@@ -62,17 +65,25 @@ RE_ROLLOUT_LINE = re.compile(r"^\[eval\] rollout (?P<n>\d+): (?P<outcome>\w+)\b"
 RE_RESULTS = re.compile(r"^\[eval\] (?P<k>\d+)/(?P<n>\d+) successes; results in (?P<path>\S.*)$")
 RE_ERROR = re.compile(r"^\[eval\] error: (?P<msg>.*)$")
 RE_PD_FAIL = re.compile(r"^\[eval\] policy_deploy did not reach idle: (?P<msg>.*)$")
-RUNSH_PHASES = [                                  # (line regex, phase)
-    (re.compile(r"^\[run\.sh\] building the model"), "building the model"),
-    (re.compile(r"^\[run\.sh\] starting the sim PC"), "starting the sim PC"),
-    (re.compile(r"^\[run\.sh\] sim PC up"), "sim PC up"),
-    (re.compile(r"^\[run\.sh\] starting the sim Pi"), "starting the sim Pi"),
-    (re.compile(r"^\[run\.sh\] sim Pi streaming"), "starting the eval driver"),
-    (re.compile(r"^\[eval\] eval folder:? "), "preparing (policy_deploy use)"),
-    (re.compile(r"^\[eval\] interrupted"), "stopping policy_deploy"),
-    (re.compile(r"^\[eval\] \d+/\d+ successes"), "results written"),
-    (re.compile(r"^\[run\.sh\] stopped"), "sim stopped"),
+# the driver's progress lines (driver.py _rollout(); n = the 0-based rollout index, never "[eval] rollout ...")
+RE_STEP = re.compile(r"^\[eval\] step (?P<n>\d+) (?P<key>home|start_pose|place|control|record)\b(?::\s*(?P<detail>.*))?")
+RE_RESTART = re.compile(r"^\[run\.sh\] the sim PC latched a fault: restarting the sim \((?P<k>\d+)\)")
+RE_RETRY = re.compile(r"^\[run\.sh\] sim start failed: retrying in (?P<w>\S+) s \((?P<i>\d+)\)")
+RUNSH_PHASES = [                                  # (line regex, phase, Status.step key)
+    (re.compile(r"^\[run\.sh\] building the model"), "building the model", "prepare"),
+    (re.compile(r"^\[run\.sh\] starting the sim PC"), "starting the sim PC", "sim_pc"),
+    (re.compile(r"^\[run\.sh\] sim PC up"), "sim PC up", "sim_pc"),
+    (re.compile(r"^\[run\.sh\] starting the sim Pi"), "starting the sim Pi", "sim_pi"),
+    (re.compile(r"^\[run\.sh\] sim Pi streaming"), "starting the eval driver", "policy"),
+    (RE_RESTART, "restarting the sim (fault)", "sim_pc"),
+    (RE_RETRY, "retrying the sim start", "sim_pc"),
+    (re.compile(r"^\[eval\] eval folder:? "), "preparing (policy_deploy use)", "policy"),
+    (re.compile(r"^\[eval\] interrupted"), "stopping policy_deploy", "wrapup"),
+    (re.compile(r"^\[eval\] \d+/\d+ successes"), "results written", "wrapup"),
+    (re.compile(r"^\[run\.sh\] stopped"), "sim stopped", "sim_stop"),
 ]
+FINISH_PHASES = ("stopping policy_deploy", "results written", "sim stopped")   # also taken while stopping
+BRINGUP_STEPS = ("prepare", "sim_pc", "sim_pi", "policy")
 LOOKS_BAD = re.compile(r"error|Error|ERROR|FAIL|Traceback|in use|no scene hello|no pi_stream|did not|not found|"
                        r"No such|refus", re.I)
 
@@ -94,6 +105,7 @@ HOMES = ("start", "deploy")      # P2: start pose (h + the PC's p, default) | de
 HOME_ALIASES = {"trainstart": "start"}
 TAG_OK = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 REPLAY_OK = re.compile(r"^replay:(?P<path>.+)#(?P<idx>\d+)$")
+STARTS = ("random", "set")       # where the eraser starts: rng([seed, n]) (default) | the driver's --starts set (w3)
 
 
 class RunnerError(RuntimeError):
@@ -165,6 +177,7 @@ class Runner:
             for n in notes:
                 self._log.write(f"# note: {n}\n")
             self._log.flush()
+            self._set_step("prepare")                  # Status.step: bring-up begins with run.sh
             env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
             env["PYTHONUNBUFFERED"] = "1"
             env["SIM_DEPLOY_LAUNCHER"] = "ui"           # eval.yaml launcher (evaltool/SCHEMA.md)
@@ -305,8 +318,15 @@ class Runner:
         if tgt_in is not None and (not isinstance(tgt_in, str) or not tgt_in.strip()):
             raise InvalidRequest(f"target: expected a run folder, hold_still or replay:..., got {tgt_in!r}")
         target = self._target(tgt_in.strip() if tgt_in else pol)
+        starts = r.get("starts") or "random"
+        if starts not in STARTS:
+            raise InvalidRequest(f"starts: expected random or set (the W3 start set), got {starts!r}")
+        if starts == "set":
+            self._check_start_set(target, home, rollouts)
         args = ["--policy", target, "--rollouts", str(rollouts), "--seed", str(seed), "--tag", tag,
                 "--timeout", f"{timeout:g}"]
+        if starts == "set":                            # random = the driver's default: nothing passed
+            args += ["--starts", "set"]
         if tap:
             args.append("--tap")
         if precision is not None:
@@ -321,11 +341,45 @@ class Runner:
         args += ["--look", look]                       # run.sh: the station both sims load (and the driver records)
         norm = {"policy": pol, "rollouts": rollouts, "seed": seed, "home": home, "look": look, "timeout_s": timeout,
                 "tap": tap,
-                "tag": tag, "precision": precision, "diffusion_steps": steps, "exec_h": exec_h}
+                "tag": tag, "precision": precision, "diffusion_steps": steps, "exec_h": exec_h, "starts": starts}
         norm["target"] = target
         if dry:
             norm["dry_run"] = True
         return norm, args, notes
+
+    def _check_start_set(self, target: str, home: str, rollouts: int) -> None:
+        """starts "set" = the driver's `--starts set` (eval/start_sets/w3.yaml): the driver's own refusals
+        (driver.py Eval._start_set), checked before run.sh starts the sim. InvalidRequest when it would refuse."""
+        if target.startswith("replay:"):
+            raise InvalidRequest("starts set: a replay always puts the eraser where its demo had it (use random)")
+        if home != "start":
+            raise InvalidRequest("starts set needs home 'start' (the start set is built at the start pose)")
+        path = self.repo / "sim_deploy" / "eval" / "start_sets" / "w3.yaml"
+        try:
+            try:
+                from sim_deploy.eval import start_set as sst
+                doc = sst.load(path)
+            except ImportError:                          # the same file, read directly
+                import yaml
+                doc = yaml.safe_load(path.read_text())
+        except Exception as e:                           # noqa: BLE001
+            raise InvalidRequest(f"starts set: cannot read {path} ({type(e).__name__}: {e}); build it: "
+                                 f"python -m sim_deploy.eval starts build") from None
+        n_starts = len(doc.get("starts") or [])
+        if rollouts > n_starts:
+            raise InvalidRequest(f"starts set: {path.name} has {n_starts} starts, the request asks {rollouts} rollouts")
+        if target == "hold_still":                       # no training split to hold out: allowed
+            return
+        run = Path(target)
+
+        def same(p) -> bool:
+            try:
+                return Path(p) == run or Path(p).expanduser().resolve() == run.expanduser().resolve()
+            except (OSError, RuntimeError, TypeError):
+                return False
+        if not any(same(c.get("run_folder")) for c in (doc.get("checkpoints") or []) if isinstance(c, dict)):
+            raise InvalidRequest(f"starts set: {path.name} was built without {run.name}'s training split (its "
+                                 f"held-out demo is unknown), so the driver refuses it; use random")
 
     def _target(self, pol: str) -> str:
         """Policy id -> the driver's --policy (run folder | hold_still | replay:<zarr>#<idx>)."""
@@ -364,11 +418,14 @@ class Runner:
                           # extra keys (not in DESIGN §3 but useful to the page / U3)
                           "eval_dir": None, "logs_dir": None, "log_file": None, "session_dir": None,
                           "metrics": None, "exit_code": None, "stopped_by_user": False, "notes": [], "pid": None,
-                          "command": None, "score": None}
+                          "command": None, "score": None, "step": None,
+                          # the last step that was not wrapup / sim_stop (where a failed run failed; U6 visual)
+                          "last_work_step": None}
         self._tail: collections.deque = collections.deque(maxlen=max(200, self.tail_n))
         self._outcomes: dict[int, str] = {}
         self._started: dict[int, dict] = {}            # driver n -> rollout_start event
         self._stdout_eps: dict[int, tuple[float, str]] = {}
+        self._outcome_src: dict[int, str] = {}  # n -> rollouts.jsonl / stdout / runner
         self._jsonl_lines = 0
         self._pd_off = 0
         self._pd_buf = ""
@@ -385,6 +442,20 @@ class Runner:
         ev = {"kind": kind, "run_id": self._st.get("run_id"), "t": time.time(), **fields}
         self._q.put(ev)
         self._log_line(f"# event {json.dumps(ev, default=str)[:2000]}")
+
+    def _set_step(self, key: str, rollout: int | None = None, detail: str | None = None) -> None:
+        """Status.step = {key, rollout (1-based driver rollout or None), since_s (status elapsed at entry), detail}
+        and a "step" event, on every change (the same key + rollout with a new detail is a change too)."""
+        cur = self._st.get("step") or {}
+        if cur.get("key") == key and cur.get("rollout") == rollout and cur.get("detail") == detail:
+            return
+        since = round(time.monotonic() - self._t_start, 1) if self._t_start is not None else 0.0
+        if cur.get("key") == key and cur.get("rollout") == rollout:
+            since = cur.get("since_s", since)            # only the detail changed: the step began earlier
+        self._st["step"] = {"key": key, "rollout": rollout, "since_s": since, "detail": detail}
+        if key not in ("wrapup", "sim_stop"):
+            self._st["last_work_step"] = dict(self._st["step"])
+        self._emit("step", key=key, rollout=rollout, since_s=since, detail=detail)
 
     def _log_line(self, line: str) -> None:
         f = self._log
@@ -410,11 +481,33 @@ class Runner:
 
     def _parse_line(self, line: str) -> None:
         st = self._st
-        for rx, phase in RUNSH_PHASES:
+        for rx, phase, key in RUNSH_PHASES:
             if rx.search(line):
-                if st["state"] != "stopping" or phase in ("stopping policy_deploy", "results written", "sim stopped"):
+                if st["state"] != "stopping" or phase in FINISH_PHASES:
                     st["phase"] = phase
+                    m = RE_RESTART.match(line) or RE_RETRY.match(line)
+                    self._set_step(key, None, None if m is None else
+                                   f"restart after a fault ({m.group('k')})" if rx is RE_RESTART else
+                                   f"retry {m.group('i')} in {m.group('w')} s")
                 break
+        m = RE_RESTART.match(line)
+        if m:                                          # run.sh exit 3 -> sim restart -> the driver's --resume
+            st["notes"] = list(st.get("notes") or []) + [
+                f"the sim PC faulted; restarted the sim and continued ({m.group('k')})"]
+            return
+        m = RE_RETRY.match(line)
+        if m:
+            st["notes"] = list(st.get("notes") or []) + [
+                f"the sim did not start; retrying the start in {m.group('w')} s ({m.group('i')})"]
+            return
+        m = RE_STEP.match(line)
+        if m:
+            n = int(m.group("n"))
+            if m.group("key") == "home":               # this rollout begins (also a rerun after a --resume)
+                st["rollout"] = n + 1
+            if st["state"] != "stopping" or m.group("key") == "record":
+                self._set_step(m.group("key"), n + 1, (m.group("detail") or "").strip() or None)
+            return
         m = RE_LOGS.match(line)
         if m:
             st["logs_dir"] = m.group("path").strip()
@@ -522,18 +615,24 @@ class Runner:
         in_file = {int(r.get("n", i)) for i, r in enumerate(recs)}
         for i, rec in enumerate(recs):
             n = int(rec.get("n", i))
-            if n not in self._outcomes:
-                self._rollout_end(n, rec.get("outcome", "?"), rec, "rollouts.jsonl")
+            outcome = rec.get("outcome", "?")
+            # a not_run (exit 3: the sim PC latched a fault) is replaced when the resumed driver reruns rollout n; a
+            # stdout fallback outcome by the file's (e.g. "rollout n: sim PC in fault mode ..." parses as "sim")
+            if n not in self._outcomes or (self._outcomes[n] == "not_run" and outcome != "not_run") or \
+                    (self._outcome_src.get(n) == "stdout" and outcome != self._outcomes[n]):
+                self._rollout_end(n, outcome, rec, "rollouts.jsonl")
         self._jsonl_lines = max(self._jsonl_lines, len(recs))
         now = time.monotonic()
         for n, (t, outcome) in sorted(self._stdout_eps.items()):
-            if n not in self._outcomes and n not in in_file and (final or now - t > 2.0):
+            if self._outcomes.get(n, "not_run") == "not_run" and n not in in_file and (final or now - t > 2.0):
                 self._rollout_end(n, outcome, None, "stdout")
 
     def _rollout_end(self, n: int, outcome: str, rec: dict | None, source: str, **extra: Any) -> None:
         self._outcomes[n] = outcome
+        self._outcome_src[n] = source
         st = self._st
-        st["rollout"] = max(st["rollout"], n + 1)
+        if outcome != "not_run":                         # not_run (exit 3): rerun after the restart, no progress
+            st["rollout"] = max(st["rollout"], n + 1)
         self._emit("rollout_end", n=n, rollout=n + 1, rollouts=st["rollouts"], outcome=outcome,
                    success=(rec or {}).get("success", outcome == "success"), record=rec, source=source, **extra)
 
@@ -569,6 +668,9 @@ class Runner:
                 self._pd_status = txt
                 if st["state"] != "stopping":
                     st["phase"] = m.group("head").strip()
+                    key = (st.get("step") or {}).get("key")
+                    if key in BRINGUP_STEPS and key != "policy":   # policy_deploy heads before its first rollout
+                        self._set_step("policy")
                 st["pd_status"] = txt
             return
         m = PD_READY.search(txt)
@@ -576,9 +678,14 @@ class Runner:
             st["session_dir"] = m.group("path").strip()
         m = EP_STARTED.search(txt)
         if m:
-            n = len(self._outcomes)                      # rollouts are sequential: the next driver index
-            while n in self._outcomes or n in self._started:
-                n += 1
+            cur = (st.get("step") or {}).get("rollout")  # the driver's "step n control" names it (pd's id does not)
+            if cur is not None and cur - 1 not in self._started and \
+                    self._outcomes.get(cur - 1, "not_run") == "not_run":
+                n = cur - 1
+            else:                                        # rollouts are sequential: the next driver index not done
+                n = 0                                    # (a not_run is rerun after a sim restart)
+                while n in self._started or self._outcomes.get(n, "not_run") != "not_run":
+                    n += 1
             if st["rollouts"] and n >= st["rollouts"]:
                 return
             ev = {"n": n, "rollout": n + 1, "rollouts": st["rollouts"], "pd_rollout_id": int(m.group("id")),
@@ -595,7 +702,7 @@ class Runner:
         user = self._stops > 0
         killed = self._stops > 1 or self._killed
         for n in sorted(self._started):                  # started but never finished: the stop ended it
-            if n not in self._outcomes:
+            if self._outcomes.get(n, "not_run") == "not_run":
                 self._rollout_end(n, "interrupted", None, "runner", synthetic=True,
                                   note="stopped from the ui before the driver recorded it" if user else
                                   "run.sh ended before the driver recorded it")

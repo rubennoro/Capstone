@@ -100,17 +100,22 @@ PY=~/envs/sim_deploy/bin/python
 ~/envs/sim_deploy/bin/python -m sim_deploy.ui          # then open http://127.0.0.1:8770
 ```
 
-1. Pick a policy on the left.
-2. Pick the **look** under "home": robot cell (default), training scene, or current. All have the 30 mm eraser.
-3. Advanced shows the policy settings (bf16, 8 steps, exec_h 12: the arm's); leave them.
-4. Play. The page runs `run.sh` (section 4) and shows the external camera, the two Pi cameras and the policy's view
-   live, then the results.
-5. Stop: the Stop button (twice: force). Ctrl-C in the UI terminal stops a running eval first.
+1. Pick a policy on the left (or a replay, or the hold_still baseline).
+2. **Rollouts**: how many; **Eraser starts**: random from the seed, or the W3 start set (the batch's 18 starts; needs
+   Arm start = start pose).
+3. **Scene**: **Arm start** (start pose, like the real arm; or deploy home only) and **Scene look** (robot cell =
+   default, training scene, current). All have the 30 mm eraser.
+4. **Policy settings** (folded): bf16, 8 steps, exec_h 12 = the arm's; leave them ("Reset to the arm's").
+5. Play (top left, next to the cameras; or Space). The page runs `run.sh` (section 4); top right shows the external
+   camera, the two Pi cameras and the policy's view, the Progress panel under them shows where the run is, and the
+   results table at the bottom gets the new row.
+6. Stop: the Stop button (twice: force). Ctrl-C in the UI terminal stops a running eval first.
 
 The same without the page:
 
 ```bash
 sim_deploy/run.sh --policy <RUN_FOLDER> --rollouts 1 --seed 0 --tag <TAG> --look <robot|train|current>
+sim_deploy/run.sh --policy <RUN_FOLDER> --rollouts 18 --starts set --home start --tag <TAG>   # the W3 start set
 ```
 
 The video is `<EVAL>/rollouts/000/external.mp4` (section 5).

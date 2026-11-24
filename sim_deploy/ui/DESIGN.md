@@ -112,8 +112,10 @@ Every source reconnects by itself and shows "no data" when the sim isn't running
 - `label`: from `<task>/RUNS.md` (tables: run names in columns headed run/folder, including `run_A to run_B`
   ranges; prose: the paragraph's lead-in and the parenthesis after the name), e.g. "Behavior prompting · pick1-v1 ·
   30 eps", "Plain diffusion · pick1-ep15-v1 · 15 eps · smoke", "Ignore these folders · ..."; else
-  "<dataset> · <job.json note>"; else the dataset. `episodes` = the dataset package's episode count (else "N eps" in
-  the note). `last_eval` = the newest `index.csv` row with `task/run_folder` = the id.
+  "<dataset> · <job.json note>"; else the dataset. Since 2026-11-22 there is no per-task RUNS.md: the notes moved to
+  one `~/Capstone/data/RUNS.md` for all tasks, which the catalog does not read, so every label is the
+  "<dataset> · <note>" fallback today (kept as is, user decision 2026-11-23). `episodes` = the dataset package's
+  episode count (else "N eps" in the note). `last_eval` = the newest `index.csv` row with `task/run_folder` = the id.
 - `Replay`: the §2 fields, plus `group` (the zarr's grandparent folder: PICK_TEST1, multi), `dataset_path`, `name`,
   `height_error_m`, `error` (e.g. no grasp found), `last_eval` (row `_replay/<group>/<dataset>_epNNN`). The id uses
   the zarr's absolute path. `/api/policies` also has `builtin_last_eval: {"hold_still": row|null}`.
@@ -266,7 +268,7 @@ writer at 2.5 Hz. Through U1's `Settings.from_mapping`:
   (`asyncio.to_thread`), `async def` / awaitables are awaited. `runner.events()` is called once and may be a
   `queue.Queue` (used: U2), an `asyncio.Queue`, an (async) iterator, or a list (then polled with the status).
   `live.latest_frames()` → `{1..4 or name: jpeg | (seq, jpeg)}` polled at `frame_fps` (a frame is sent once: same
-  bytes object/bytes or same seq is skipped), or `live.subscribe(callback)`. Catalog functions get the settings only
+  bytes object or same seq is skipped; equal bytes in a new object are sent since U6, see "External view (X)"), or `live.subscribe(callback)`. Catalog functions get the settings only
   if they have a required parameter (`policies(replays=True)` is called bare). `runner.session_dir()` →
   `live.set_session_dir()` on every change (checked at status_hz). `runner.close()` (or `shutdown()`) last on exit.
 - **REST:** as §2. `POST /api/run`: the body is validated in full (all problems in one `error`, joined by `; `, and as
@@ -394,3 +396,184 @@ Supersedes the `precision` / `diffusion_steps` / `exec_h` "null = station" rows 
   eval_rel, success [k, n], grasp [k, n], max_lift_m (max), min_z_m (min, fingers/rig else TCP), min_z_of, invalid,
   error}` (+ a `score` event). The run result line shows it, a score.json link and a "frames" button
   (`POST /api/frames` → `evaltool frames`, then one link per rollout's frames.jpg). Scoring stays the separate tool.
+
+## U6: redesign (2026-11-23)
+
+### External view (X)
+
+- Cause of "no data": with the robot / training looks the scene has a visual-only backdrop geom `background`
+  (contype = conaffinity = 0) around the rig camera's view; `cam_external` sits outside it, so every render was the
+  same flat grey frame, and the server's content dedupe sent it once, then the page marked it stale after 3 s.
+- `live.py` `_run_external` hides it right after loading the model with `eval/sim_link.hide_backdrop(m)` (alpha 0,
+  material -1, only when the geom exists and is visual-only), the same helper the driver's video now uses (behaviour
+  unchanged there). While the model compiles, the external source's error reads
+  `loading <look folder> (MuJoCo compile, ~5-10 s)`; it is cleared on success as before.
+- `server.py` `_offer_frame` (no-seq frames): skips a frame only when it is the same bytes object as the last one
+  sent (Live hands back the same object until a new frame replaces it, on all four channels); equal bytes in a new
+  object are sent, so a static scene keeps updating. Content is still compared for bytearray / memoryview values
+  (copied to bytes there, so identity cannot hold).
+
+### Catalog fields (C)
+
+`ui/catalog.py` (+ `StubCatalog` in `_stubs.py` with the same fields). Existing fields and values are unchanged except
+`kind` for a non-empty unrecognised train_config (now `other`, was `unknown`).
+
+- `kind_of`: `umi_policy_dunetp` → prompting, `umi_policy_dunet` → plain, any other non-empty config → `other`, none →
+  `unknown`. Precedence of the config unchanged (job_info.json > submit_config.env > README > job.json/train_meta);
+  new last fallback when none is found: `run_config/config.yaml` `use_prompting: true|false` (an indented key; one
+  value only, else ignored) gives the kind alone (`train_config` stays null, `train_config_source` and `kind_source`
+  = "run_config/config.yaml use_prompting"). Today it never fires: every run with a config.yaml also has job_info.json.
+  Names are never parsed for meaning.
+- package.json: `<data_root>/<task>/package/<dataset>/package.json` (a symlinked folder for the umi packages, a real
+  folder for teleop), else the zarr's folder; a replay reads its zarr's folder. `_package_info` (type-checked, never
+  raises, any failure → null): `recordings` [{label, episodes}] from `totals.per_label`, else counted from
+  `episodes[].label`, else `labels` with null counts; `data_source` = `source.kind` verbatim (teleop:
+  "teleop_collect"), else "dataproc" when `dataproc_version` is present, else null; `rig`; `label_dir`; `episodes`
+  (`totals.episodes`); `names` {pi_name: label}.
+- Policy adds: `type: "policy"`, `kind_source`, `recordings`, `data_source`, `rig`, `cluster_label` (job.json `label`,
+  else summary.json `task`: "multi" for PICK_DOUBLE), `package_json`, `starts_set` (the resolved run folder is in
+  `eval/start_sets/w3.yaml` `checkpoints[].run_folder`, read with `eval/start_set.load`; missing file → false: 14 runs
+  today). `episodes` falls back to the package's `totals.episodes` before the note, so the teleop runs now show 8 / 16
+  / 20 / 24 (their packages are outside `datasets_root`).
+- Replay adds: `type: "replay"`, `kind: "replay"`, `recording` (its `name` → package `episodes[].pi_name` → label, null
+  if not found; all 282 found today), `dataset_recordings`, `data_source`. Not stored in `.cache/replays.json` (read
+  per rebuild).
+- Top level adds `builtin_items: [{"id": "hold_still", "type": "builtin", "kind": "hold_still"}]` (`builtins` kept) and
+  `start_set: {"name": "w3", "file": "sim_deploy/eval/start_sets/w3.yaml", "n_starts": 18, "needs_home": "start"}`
+  (null when the file is missing or unreadable).
+- Caching: the policy signature adds each task's `package/` mtime, every `package/<dataset>/package.json` mtime and the
+  start-set file's mtime; the replay signature adds each zarr's `package.json` mtime.
+- CLI table: a `data` column (the data source when not dataproc, e.g. `teleop_collect`, else `PICK_TEST1 30+PICK_TEST2
+  32`), the same on each replay dataset line, and a `start set:` line.
+
+### Step signals + starts (B)
+
+- Driver (`eval/driver.py` `_rollout()`, `log()`; no behaviour change): `[eval] step n home` (before h),
+  `step n start_pose` (home start, before p), `step n place: x X y Y (replay|set|random)` (before set_object),
+  `step n control` (before c), `step n record: <outcome>` (watch loop ended, before y/n; `ended_by_policy_deploy`
+  already mapped to stopped / fail). n = the 0-based index. None start `[eval] rollout` (batch.py, start_sweep.py).
+- `Status.step` = `{"key", "rollout" (1-based or null), "since_s" (status elapsed at entry, kept when only the detail
+  changes), "detail"}` or null; event `{"kind": "step", "run_id", "t", "key", "rollout", "since_s", "detail"}` on
+  every change (the server sends it as `{"type": "event", "kind": "step", ...}`, like every runner event). Keys:
+  `prepare` (Play), `sim_pc` / `sim_pi` / `policy` (RUNSH_PHASES, now `(regex, phase, step key)`; policy_deploy heads
+  while still in bring-up also give `policy`), `home` .. `record` (RE_STEP), `wrapup` (`[eval] interrupted`,
+  `k/n successes`), `sim_stop` (`[run.sh] stopped`). While stopping only record / wrapup / sim_stop move it.
+- `status.rollout` = n+1 at `step n home` (set, so a rerun after a restart moves it back); a `not_run` outcome no
+  longer advances it. New phases `restarting the sim (fault)` / `retrying the sim start` (run.sh's
+  `the sim PC latched a fault: restarting the sim (k) ...` / `sim start failed: retrying in W s (i)`), step `sim_pc`
+  with detail `restart after a fault (k)` / `retry i in W s`, and a `notes` line each ("the sim PC faulted; restarted
+  the sim and continued (k)", "the sim did not start; retrying the start in W s (i)"). Old phase strings unchanged.
+- Restart (exit 3 → `--resume`): the first driver call writes `not_run` for the rest; the runner now replaces a
+  `not_run` outcome when the resumed driver's line for that n arrives (it used to keep `not_run` forever), the
+  `rollout_start` index is the current step's rollout (fallback: the first n neither started nor done, `not_run`
+  counting as not done), and `_finish` marks started rollouts still `not_run` as `interrupted`.
+- `RunRequest.starts`: `random` (default, nothing passed) | `set` (`--starts set`). server.py `validate_request`
+  takes the key (choice); the runner's `_check_start_set` refuses (InvalidRequest → 400) a replay, home ≠ start,
+  rollouts > the file's starts (18), or a run folder not in `eval/start_sets/w3.yaml` `checkpoints[].run_folder`
+  (path or resolved path equal; `eval/start_set.load`); hold_still is allowed. Normalized request carries `starts`.
+- `StubRunner`: the real phase strings (`starting run.sh` .. `ep N running X s` .. `sim stopped`), the same step
+  keys / events (deduplicated), outcomes success / timeout / fail / fault (no `dropped`), rollout_start /
+  rollout_end with 0-based `n` and the real shape (`outcome` str + `record` dict), `starts` checked (no file read).
+
+### Page (A, D–F)
+
+`ui/static/`: `help.js` (one global `HELP`: FIELDS, STEPS, OUTCOMES, KINDS, TYPES, PAGE, GLOSSARY; every word the
+page shows, `{name}` placeholders; it wins over the fallback text in index.html), `steps.js` (pure
+`computeSteps(status, telemetry, request, entry, memo)`, `stepPosition(status)`, `fill()`), `app.js`, `style.css`,
+`index.html` (plain `<script>` tags: help.js, steps.js, app.js), `fonts/` (IBM Plex Sans + LICENSE.txt, copied from
+teleop_collect/ui). Unchanged: the WebSocket protocol, Play/Stop + Space, `#chips`/`renderChips`, the results table,
+`localStorage` key `sim_deploy_ui.v1` (new fields `more`, `hideHelp`, `set-starts` in the same object), the
+RunRequest ids/values.
+
+- **Settings**: sections Rollouts (Rollouts, Eraser starts `#set-starts` random|set, Placement seed + dice, Time
+  limit), Scene (Arm start, the start-pose line on one line with the rest in the tooltip, Scene look), folded More
+  options (`#more`: Run name (tag), tap) and Policy settings (`#advanced`: precision / steps / exec_h, "Reset to the
+  arm's", a warn-tint "not the arm's settings" chip on the summary, "no network runs; not used" for replay /
+  hold_still). Help lines under each field (hidden by "hide explanations"), longer text in tooltips.
+- **starts** is sent only when `/api/policies` has a `start_set` key (an older server refuses unknown keys). `start_set`
+  null hides the option. Not allowed (select disabled, shown as random, reason as its help line + tooltip): a
+  replay, Arm start ≠ `start_set.needs_home`, a policy with `starts_set: false`, rollouts > `n_starts`. The viewer's
+  choice is kept and comes back when allowed. Seed greyed for a replay or starts=set (with the reason).
+- **Run header**: "Ready to run" ("Next run" while busy) in the play block from the page's settings, and a banner
+  above the external view during/after a run from `status.request` (replaces `#running-what`; since the visual
+  restyle always shown: an idle sentence with no run, a state chip Running / Stopping / Last run · finished|failed
+  at the right of line 1): type badge
+  (POLICY accent / REPLAY · open loop amber / BASELINE · hold still grey) + title; task · kind words + raw kind ·
+  dataset + demos (recording breakdown when > 1) · chips (`data_source` ≠ dataproc, smoke); the settings line.
+  Under Play: the plan sentence. Picker rows: kind badge in the type colour + separate state badge (not fetched /
+  not runnable) + data chip; replays grouped per `group/dataset`, `recording` in the row when the dataset has > 1;
+  section subtitles for policies / baseline / replays; results-table kind cells in the same colours (`diffusion` →
+  plain) and header tooltips.
+- **Step panel** ("Progress", under the cameras on the right since the visual restyle; `#chips` and the run result
+  in its side column with "Live numbers"; log in a closed `<details>` "Raw log", opened once when a run fails).
+  Modes (chip next to the title): plan (idle: the steps of the current settings, greyed, with help), live (current
+  step = accent ring node, pulsing unless prefers-reduced-motion; done = filled check; skipped = dashed; the
+  stopping line), finished (cross node on the failing step + `last_error`). Bring-up folds to "Sim and policy
+  ready" + its time once a rollout step is reached (a fold button opens it again; it unfolds by itself when a sim
+  restart brings `sim_pc` back). Where a failed run failed: the memo's last step before the finish, else (a page
+  opened after the run) `status.last_work_step` (runner.py / StubRunner: the last `status.step` that was not
+  `wrapup` / `sim_stop`, null per run), so run.sh's trap (`sim_stop`) no longer takes the cross; `sim_stop` counts
+  as done when `status.step` is `sim_stop`. Place help with starts=set: "W3 start #n" with n = the driver's 0-based
+  start index (rollout 1 = #0; also the field tooltip, plan sentence and glossary). The list is rebuilt only when a step's state/title/help changes; live details (place
+  x/y, "12.3 s of 60 s" from the phase `ep N running X s`, "≈ eraser up 3.1 cm" = telemetry height minus its first
+  value in the control step, "gripping" = `contacts.both_fingers`, the record outcome) are updated in place.
+- **Position**: `status.step` and `step` events (`ev.kind === "step"`); without `status.step` in the status
+  (an older server) the phase is mapped by `PHASE_STEPS` in steps.js (mirrors `RUNSH_PHASES` + policy_deploy heads),
+  a rollout shows one "Reset (home, start pose, place the eraser)" step, and the rollout = outcomes (not `not_run`)
+  + 1. The page keeps a per-run memo (last step, last step before the finish = where a failed run failed, keys
+  seen, bring-up time, eraser baseline, place detail).
+- **Play** stays disabled until `/api/policies` has loaded (else the request would miss `starts` and drop a saved
+  "set"); the reason is the tooltip and the line under the buttons. Space on a fold button (`aria-expanded`)
+  toggles the fold instead of Play/Stop. The play block's header key includes a catalog version (+1 per load).
+- Checked: `node --check` on the three scripts only (no browser, no server).
+
+### Visual restyle (2026-11-23)
+
+The page looked prototyped; restyled with the user's layout "cameras top-right". Supersedes the layouts in section 4
+and U4 (three columns, cameras in the centre). Element ids, `data-*` hooks, the RunRequest, the socket, Play/Stop +
+Space, `localStorage` key and every word in help.js kept; new words are in help.js (`PAGE`: panel titles, `cams`,
+`cam_*`, `banner_*`, `buttons`, `step_states`, `rollout_line`, `rollouts_earlier`).
+
+- **Grid** (`main.layout`, one CSS grid, gap 16, `max-width` 2200): columns `minmax(340px, 400px) | 1fr` (380–440 from
+  1600 px), areas `run views` / `picker views` / `settings progress` / `results results`, rows `auto minmax(0, 1fr)
+  auto auto`. The run panel (`section.area-run`, user 2026-11-23: Play matters most, so top left beside the cameras)
+  holds the play block: "Ready to run" summary, Play / Stop, the reason line `#play-why`, plan sentence, messages.
+  The cameras span the run and picker rows; the picker list has `height: 0; flex: 1` so it takes the rest of that
+  height and scrolls in it (min 300 px). Run settings are their own panel under the picker.
+  Progress: steps left, a side column (Rollouts chips, run result, Live numbers, notes, `last_error`) right of one
+  rule; Raw log folded under both. Below 1100 px one column: run, picker, settings, cameras, progress, results.
+- **Tokens** (`style.css :root`, light; dark under `prefers-color-scheme: dark` only, no toggle): spacing 4–48,
+  radii 3/6/8/12, `--bg --surface --sunken --text --text-2 --muted --line --line-strong --accent --ok --warn --fail
+  --frame`, `--accent-on` (white on #3b4fd0, #0e1012 on #8f9cff), status tints `color-mix(<status> 12%,
+  transparent)`. Type: IBM Plex Sans; title 20/28 600, panel titles 15/22 600, body 13.5/20, captions 12/16,
+  overlines 11/16 600 caps +0.06em, hero number (run result) 22/28 500; tabular + lining figures everywhere; mono only
+  for ids (policy column), the log and error text. Panels: surface, 1 px `--line`, radius 12, padding 16, no
+  shadow (only the glossary menu has one); no boxes inside panels.
+- **Chips** (badges, state, entry types, outcomes, kind/data/grasp, "not the arm's settings"): 20 px, radius 3,
+  tint + full-strength text (no white on a saturated fill; AA in both themes), a leading dot on status chips,
+  outcome chips carry a text glyph (✓ ✕ ◷ ■ ! –) besides the colour. Play = the accent button; Stop = a neutral
+  button with fail text, fail tint when it has become "Force stop". Icons are inline SVG (reload, dice, play,
+  stop) or CSS (fold chevrons, step nodes); no emoji.
+- **Video tiles**: `--frame` background, radius 8, no border; sizes reserved before any frame: external
+  `width 100%; height min(75cqi, 50vh)` (4:3 = 640×480 when it fits, letterboxed when capped), the small row
+  `4fr 4fr 3fr` with one height `min((100cqi − 24px)·3/11, 24vh)` = equal heights for 4:3, 4:3, 1:1. Caption
+  under the tile: overline name left (`PAGE.cams`), muted "640×480 · 10.0 fps" right (`#fps-N`, the size of the
+  last frame). States from the existing 3 s stale logic (`.frame.live|stale|never`): LIVE chip top-left inside
+  (dark glass, pulsing dot); stale = "Stalled 4.5 s" in warn, last frame dimmed, tooltip with the source's
+  reason; never = centred "Waiting for camera" + the source's reason. The policy mosaic's quadrant names sit inside
+  the image (bottom-left of each quadrant).
+- **Run banner** (`#run-header`, top of the cameras panel): fixed min-height 72 px, idle sentence when no run, else
+  the header lines + state chip; the video under it never moves.
+- **Step timeline**: 10 px nodes on a 1 px `--line-strong` connector (cut at each group's first/last row), 24 px
+  pitch; todo hollow muted, now accent ring (pulse), done filled ok + check, fail filled fail + cross, skip dashed;
+  a visually hidden state word per row (`PAGE.step_states`). Elapsed column right: the running step = status
+  elapsed − its `since_s`; a done step = until the next step began (per-run memo `times` / `order` from `since_s`;
+  empty when unknown, e.g. a page opened mid-run or an older server). Group headers are overlines. Recorded rollouts
+  that are not shown in detail fold to one line each ("Rollout 2" + outcome chip + its time; node coloured by
+  outcome), the last 3; earlier ones are one line "Rollouts 1 to k" with counts.
+- **Results table**: 32 px rows, no vertical lines, `--line` separators, sticky overline header, numbers right
+  (units in the header, e.g. "success (k/N)"), hover `--sunken`, the selected policy's rows with a 2 px accent bar
+  left, no zebra; the table area reserves 228 px (max 420, scrolls).
+- **Motion**: 150 ms `cubic-bezier(.16,1,.3,1)` on state changes (colours, opacity, chevrons) only; pulses 2 s
+  (LIVE dot, running step, running state chip, current rollout chip); everything off under
+  `prefers-reduced-motion`. Focus ring 2 px accent, 2 px offset.

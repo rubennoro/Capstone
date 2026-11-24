@@ -2,7 +2,8 @@
 
     from sim_deploy.ui.catalog import Catalog
     cat = Catalog(settings)          # settings: U1's object (attributes below) or None for the defaults
-    cat.policies()                   # {"policies": [Policy], "replays": [Replay], "builtins": ["hold_still"]}
+    cat.policies()                   # {"policies": [Policy], "replays": [Replay], "builtins": ["hold_still"],
+                                     #  "builtin_items": [...], "builtin_last_eval": {...}, "start_set": {...}|None}
     cat.evals()                      # {"evals": [EvalRow]}
 
     python -m sim_deploy.ui.catalog [--json] [--no-replays]
@@ -15,10 +16,15 @@ Sources:
   fails), so a row with a checkpoint is one the driver accepts. ``train_config`` from, in order:
   ``run_config/job_info.json`` ``config_name``, the last ``TRAIN_CONFIG=`` line of ``run_config/submit_config.env``
   (file present, no line = behavior prompting, as RUNS.md says), the "Policy config" row of the run's README.md, a
-  ``config_name``/``train_config`` key in job.json / train_meta.json. Not fetched runs hold only job.json, so their
-  kind is "unknown" (their RUNS.md label still says which type they are).
+  ``config_name``/``train_config`` key in job.json / train_meta.json; with none of these, the kind alone from
+  ``run_config/config.yaml`` ``use_prompting``. kind: prompting | plain | other (unrecognised config) | unknown (none
+  found; e.g. not fetched runs hold only job.json without a train_config).
+- package fields (recordings, data_source, rig): ``<data_root>/<TASK>/package/<dataset>/package.json``, else the
+  zarr's folder's package.json; starts_set: the run folder is listed in ``eval/start_sets/w3.yaml`` checkpoints.
 - labels: ``<data_root>/<TASK>/RUNS.md`` (tables: run names in columns whose header says run/folder; prose: run
-  names with the parenthesis after them), else "<dataset> · <job.json note>", else the dataset name.
+  names with the parenthesis after them), else "<dataset> · <job.json note>", else the dataset name. (Since
+  2026-11-22 the notes live in ``<data_root>/RUNS.md``, one file for all tasks, which this does not read; so the
+  labels are the fallback today.)
 - replays: every ``*.zarr.zip`` under ``<datasets_root>`` (default ``~/data/umi/datasets``), one row per episode,
   ``grasp_ok`` = ``|height_error_m| < 0.02`` from ``sim_deploy.scene.placement.Scene.replay_placement``, carried
   from the start pose (stations/start_pose.yaml, P2) when one is set, else from the deploy home.
@@ -100,7 +106,11 @@ def _clean(s: str) -> str:
 
 
 def kind_of(train_config: str | None) -> str:
-    return {"umi_policy_dunetp": "prompting", "umi_policy_dunet": "plain"}.get(train_config or "", "unknown")
+    """prompting | plain; a non-empty unrecognised config -> "other" (the page shows train_config verbatim); no
+    config -> "unknown". Never guessed from names."""
+    if not train_config:
+        return "unknown"
+    return {"umi_policy_dunetp": "prompting", "umi_policy_dunet": "plain"}.get(train_config, "other")
 
 
 # ----------------------------------------------------------------------------------------- run folder -> checkpoint
@@ -153,6 +163,80 @@ def _train_config(run: Path, job: dict, meta: dict) -> tuple[str | None, str | N
             if d.get(k):
                 return str(d[k]), name
     return None, None
+
+
+_USE_PROMPTING = re.compile(r"^\s+use_prompting:\s*(true|false)", re.M)
+KIND_FROM_CONFIG_YAML = "run_config/config.yaml use_prompting"
+
+
+def _kind_from_config_yaml(run: Path) -> str | None:
+    """Last fallback for the kind (only when no train_config was found): run_config/config.yaml
+    ``task.dataset.use_prompting`` true -> prompting, false -> plain; missing or ambiguous -> None."""
+    try:
+        found = set(_USE_PROMPTING.findall((run / "run_config" / "config.yaml").read_text()))
+    except (OSError, UnicodeDecodeError):
+        return None
+    if len(found) != 1:
+        return None
+    return "prompting" if found.pop() == "true" else "plain"
+
+
+def _package_info(pkg_json: Path | None) -> dict:
+    """What the page shows about a dataset package (dataproc / teleop-train package.json). Every field is
+    type-checked; anything missing or malformed is None (never raises).
+
+    recordings: [{"label", "episodes"}] from totals.per_label, else counted from episodes[].label, else the labels
+    list with null counts; data_source: source.kind verbatim (e.g. "teleop_collect"), else "dataproc" when
+    dataproc_version is present; rig; label_dir; episodes: totals.episodes; names: {episodes[].pi_name: label}."""
+    out = {"recordings": None, "data_source": None, "rig": None, "label_dir": None, "episodes": None, "names": {}}
+    d = _read_json(pkg_json) if pkg_json is not None else {}
+    if not d:
+        return out
+    try:
+        def _str(v):
+            return v if isinstance(v, str) and v else None
+
+        def _int(v):
+            return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+        totals = d.get("totals") if isinstance(d.get("totals"), dict) else {}
+        eps = d.get("episodes") if isinstance(d.get("episodes"), list) else []
+        per = totals.get("per_label")
+        if isinstance(per, dict) and per and all(isinstance(k, str) for k in per):
+            out["recordings"] = [{"label": k, "episodes": _int(v)} for k, v in per.items()]
+        else:
+            counts: dict = {}
+            for e in eps:
+                if isinstance(e, dict) and _str(e.get("label")):
+                    counts[e["label"]] = counts.get(e["label"], 0) + 1
+            if counts:
+                out["recordings"] = [{"label": k, "episodes": v} for k, v in counts.items()]
+            elif isinstance(d.get("labels"), list) and d["labels"] and all(_str(x) for x in d["labels"]):
+                out["recordings"] = [{"label": x, "episodes": None} for x in d["labels"]]
+        src = d.get("source")
+        if isinstance(src, dict) and _str(src.get("kind")):
+            out["data_source"] = src["kind"]
+        elif d.get("dataproc_version") is not None:
+            out["data_source"] = "dataproc"
+        out["rig"], out["label_dir"] = _str(d.get("rig")), _str(d.get("label_dir"))
+        out["episodes"] = _int(totals.get("episodes"))
+        out["names"] = {e["pi_name"]: e["label"] for e in eps
+                        if isinstance(e, dict) and _str(e.get("pi_name")) and _str(e.get("label"))}
+    except Exception:                                    # noqa: BLE001 - a malformed package never breaks the list
+        return {"recordings": None, "data_source": None, "rig": None, "label_dir": None, "episodes": None,
+                "names": {}}
+    return out
+
+
+def _data_chip(p: dict) -> str:
+    """CLI `data` column: the data source verbatim when it is not dataproc (e.g. "teleop_collect"), else the
+    recordings ("PICK_TEST1 30+PICK_TEST2 32")."""
+    src = p.get("data_source")
+    if src and src != "dataproc":
+        return src
+    recs = p.get("recordings") or p.get("dataset_recordings") or []
+    s = "+".join(f"{r['label']} {r['episodes']}" if r.get("episodes") is not None else r["label"] for r in recs)
+    return s or "-"
 
 
 def _val_mse(ckpt: str | None, run: Path) -> float | None:
@@ -288,6 +372,8 @@ class Catalog:
         self._ds_sig = None
         self._ds = {}
         self._disk = None                                 # .cache/replays.json
+        self._ss_sig = None                               # the W3 start set (eval/start_sets/w3.yaml)
+        self._ss = (None, frozenset())
 
     # ---- public
 
@@ -306,7 +392,9 @@ class Catalog:
             reps = [dict(r, last_eval=latest.get(f"_replay/{r['group']}/{r['dataset']}_ep{r['index']:03d}"))
                     for r in (self.replays() if replays else [])]
             return {"policies": self._pol, "replays": reps, "builtins": ["hold_still"],
-                    "builtin_last_eval": {"hold_still": latest.get("_baseline/hold_still")}}
+                    "builtin_items": [{"id": "hold_still", "type": "builtin", "kind": "hold_still"}],
+                    "builtin_last_eval": {"hold_still": latest.get("_baseline/hold_still")},
+                    "start_set": self._start_set()[0]}
 
     def evals(self) -> dict:
         with self._lock:
@@ -320,7 +408,7 @@ class Catalog:
     def replays(self) -> list:
         with self._lock:
             zarrs = self._zarrs()
-            sig = tuple((str(p), st) for p, st in zarrs) + (self._scene_key(),)
+            sig = tuple((str(p), st, _mtime(p.parent / "package.json")) for p, st in zarrs) + (self._scene_key(),)
             if sig != self._rep_sig:
                 self._rep = self._build_replays(zarrs)
                 self._rep_sig = sig
@@ -347,11 +435,57 @@ class Catalog:
         parts = [str(self.data_root), _mtime(self.data_root)]
         if self.data_root.is_dir():
             for task in sorted(self.data_root.iterdir()):
-                parts += [task.name, _mtime(task / "policy"), _mtime(task / "RUNS.md")]
+                parts += [task.name, _mtime(task / "policy"), _mtime(task / "RUNS.md"), _mtime(task / "package")]
+                if (task / "package").is_dir():               # package/<dataset>/package.json (often a symlink)
+                    parts += [_mtime(d / "package.json") for d in sorted((task / "package").iterdir())]
         for r in self._run_dirs():
             parts += [r.name, _mtime(r), _mtime(r / "checkpoints"), _mtime(r / "job.json")]
         parts.append(self._datasets_signature())
+        parts.append(self._start_set_signature())
         return tuple(parts)
+
+    # ---- the W3 start set (eval/start_sets/w3.yaml): which run folders `--starts set` accepts
+
+    def _start_set_file(self) -> Path:
+        try:
+            from sim_deploy.eval.start_set import DEFAULT_FILE
+            return Path(DEFAULT_FILE)
+        except Exception:                                # noqa: BLE001 - another agent may be editing eval/
+            return ROOT / "eval" / "start_sets" / "w3.yaml"
+
+    def _start_set_signature(self) -> tuple:
+        f = self._start_set_file()
+        return (str(f), _mtime(f))
+
+    def _start_set(self) -> tuple:
+        """(top-level start_set dict or None, frozenset of resolved checkpoint run folders). Missing / unreadable
+        file -> (None, empty): no policy gets starts_set."""
+        sig = self._start_set_signature()
+        if sig == self._ss_sig:
+            return self._ss
+        f = Path(sig[0])
+        out = (None, frozenset())
+        if f.is_file():
+            try:
+                try:
+                    from sim_deploy.eval.start_set import load
+                    doc = load(f)
+                except ImportError:
+                    import yaml
+                    doc = yaml.safe_load(f.read_text())
+                starts, ckpts = doc.get("starts"), doc.get("checkpoints")
+                folders = frozenset(str(Path(c["run_folder"]).expanduser().resolve()) for c in ckpts or []
+                                    if isinstance(c, dict) and c.get("run_folder"))
+                try:
+                    rel = str(f.resolve().relative_to(REPO))
+                except ValueError:
+                    rel = str(f)
+                out = ({"name": doc.get("name") or f.stem, "file": rel,
+                        "n_starts": len(starts) if isinstance(starts, list) else None, "needs_home": "start"}, folders)
+            except Exception as e:                       # noqa: BLE001 - a bad file means no start set, not an error
+                print(f"catalog: could not read the start set {f}: {type(e).__name__}: {e}", file=sys.stderr)
+        self._ss, self._ss_sig = out, sig
+        return out
 
     def _datasets_signature(self) -> tuple:
         return tuple((str(p), st) for p, st in self._zarrs())
@@ -369,6 +503,8 @@ class Catalog:
     def _build_policies(self, evals: list) -> list:
         resolve = _driver_resolve()
         ds_index = self._dataset_index()
+        ss_folders = self._start_set()[1]
+        packages: dict = {}                               # package.json path -> _package_info
         labels_by_task: dict = {}
         latest: dict = {}
         for row in evals:                                 # newest first
@@ -384,10 +520,23 @@ class Catalog:
             job, meta = _read_json(run / "job.json"), _read_json(run / "train_meta.json")
             ckpt, err = _resolve_checkpoint(run, resolve)
             cfg, cfg_src = _train_config(run, job, meta)
+            summ = _read_json(run / "summary.json")
             dataset = meta.get("dataset") or job.get("dataset") \
                 or _read_json(run / "run_config" / "job_info.json").get("dataset") \
-                or _read_json(run / "summary.json").get("dataset")
+                or summ.get("dataset")
             zarr, n_eps = ds_index.get(dataset, (None, None)) if dataset else (None, None)
+            pkg_json = self._package_json(run.parent.parent, dataset, zarr)
+            if pkg_json is not None and str(pkg_json) not in packages:
+                packages[str(pkg_json)] = _package_info(pkg_json)
+            pkg = packages[str(pkg_json)] if pkg_json is not None else _package_info(None)
+            if n_eps is None:                             # e.g. teleop packages, outside datasets_root
+                n_eps = pkg["episodes"]
+            kind, kind_src = kind_of(cfg), cfg_src
+            if cfg is None:
+                k = _kind_from_config_yaml(run)
+                if k is not None:
+                    kind, kind_src = k, KIND_FROM_CONFIG_YAML
+                    cfg_src = KIND_FROM_CONFIG_YAML
             note = meta.get("note") or job.get("note")
             if n_eps is None and note and _EPS.search(note):
                 n_eps = int(_EPS.search(note).group(1))
@@ -395,7 +544,7 @@ class Catalog:
                 or (f"{dataset} · {note}" if dataset and note else dataset or note or run.name)
             pid = f"{task}/{run.name}"
             rows.append({
-                "id": pid, "task": task, "run_folder": str(run), "kind": kind_of(cfg), "train_config": cfg,
+                "id": pid, "task": task, "run_folder": str(run), "kind": kind, "train_config": cfg,
                 "dataset": dataset, "episodes": n_eps, "checkpoint": ckpt, "val_mse": _val_mse(ckpt, run),
                 "label": label, "last_eval": latest.get(pid),
                 # additions to the section 2 shape (the page may ignore them):
@@ -403,8 +552,24 @@ class Catalog:
                 "smoke": run.name.endswith("_smoke") or meta.get("mode") == "smoke" or job.get("mode") == "smoke",
                 "note": note, "train_config_source": cfg_src, "dataset_path": zarr,
                 "status": (run / "STATUS").read_text().strip() if (run / "STATUS").is_file() else None,
+                # U6 (redesign 2026-11-23):
+                "type": "policy", "kind_source": kind_src,
+                "recordings": pkg["recordings"], "data_source": pkg["data_source"], "rig": pkg["rig"],
+                "cluster_label": (job.get("label") if isinstance(job.get("label"), str) else None)
+                or (summ.get("task") if isinstance(summ.get("task"), str) else None),
+                "package_json": str(pkg_json) if pkg_json is not None else None,
+                "starts_set": str(run.resolve()) in ss_folders,
             })
         return rows
+
+    def _package_json(self, task_dir: Path, dataset: str | None, zarr: str | None) -> Path | None:
+        """<task>/package/<dataset>/package.json (often a symlinked folder), else the zarr's folder's package.json."""
+        cands = []
+        if dataset:
+            cands.append(task_dir / "package" / dataset / "package.json")
+        if zarr:
+            cands.append(Path(zarr).parent / "package.json")
+        return next((c for c in cands if c.is_file()), None)
 
     # ---- replays
 
@@ -447,12 +612,17 @@ class Catalog:
     def _build_replays(self, zarrs: list) -> list:
         rows = []
         for p, ent in self._dataset_entries(zarrs):
+            pkg = _package_info(p.parent / "package.json")      # the zarr's own folder (not cached on disk)
             for ep in ent.get("episodes") or []:
                 rows.append({"id": f"replay:{p}#{ep['index']}", "dataset": ent["dataset"], "index": ep["index"],
                              "grasp_ok": ep["grasp_ok"],
                              # additions to the section 2 shape:
                              "group": ent["group"], "dataset_path": str(p), "name": ep.get("name"),
-                             "height_error_m": ep.get("height_error_m"), "error": ep.get("error")})
+                             "height_error_m": ep.get("height_error_m"), "error": ep.get("error"),
+                             # U6 (redesign 2026-11-23):
+                             "type": "replay", "kind": "replay",
+                             "recording": pkg["names"].get(ep.get("name")) if ep.get("name") else None,
+                             "dataset_recordings": pkg["recordings"], "data_source": pkg["data_source"]})
         return rows
 
     # ---- the dataset cache (.cache/replays.json): per zarr its episode count and every episode's replay placement
@@ -586,15 +756,20 @@ def _table(cat: Catalog, with_replays: bool) -> str:
         by_task.setdefault(p["task"], []).append(p)
     for task, rows in by_task.items():
         out.append(f"\n{task}  ({sum(r['runnable'] for r in rows)} runnable of {len(rows)})")
-        out.append(f"  {'run':<26} {'state':<11} {'kind':<9} {'dataset':<22} {'eps':>4} {'val_mse':>9}  last sim  label")
+        out.append(f"  {'run':<26} {'state':<11} {'kind':<9} {'dataset':<22} {'eps':>4} {'data':<26} {'val_mse':>9}  "
+                   f"last sim  label")
         for r in rows:
             le = r["last_eval"]
             last = f"{le['successes']}/{le['rollouts']}" if le else "-"
             mse = f"{r['val_mse']:.7f}" if r["val_mse"] is not None else "-"
             out.append(f"  {Path(r['run_folder']).name:<26} {'runnable' if r['runnable'] else 'not fetched':<11} "
-                       f"{r['kind']:<9} {str(r['dataset'] or '-'):<22} {str(r['episodes'] or '-'):>4} {mse:>9}  "
-                       f"{last:<8}  {r['label']}")
+                       f"{r['kind']:<9} {str(r['dataset'] or '-'):<22} {str(r['episodes'] or '-'):>4} "
+                       f"{_data_chip(r):<26} {mse:>9}  {last:<8}  {r['label']}")
     out.append(f"\nbuiltins: {', '.join(pol['builtins'])}")
+    ss = pol.get("start_set")
+    out.append(f"start set: {ss['name']} ({ss['n_starts']} starts, {ss['file']}, needs home {ss['needs_home']}); "
+               f"{sum(bool(p.get('starts_set')) for p in pol['policies'])} policies listed in it"
+               if ss else "start set: none (file missing)")
     if with_replays:
         by_ds: dict = {}
         for r in pol["replays"]:
@@ -604,7 +779,7 @@ def _table(cat: Catalog, with_replays: bool) -> str:
         for (g, d), rows in by_ds.items():
             ok = [r["index"] for r in rows if r["grasp_ok"]]
             errs = sum(1 for r in rows if r.get("error"))
-            out.append(f"  {g}/{d:<22} {len(rows):3d} eps  grasp_ok {len(ok):2d}: {ok}"
+            out.append(f"  {g}/{d:<22} {len(rows):3d} eps  {_data_chip(rows[0]):<26} grasp_ok {len(ok):2d}: {ok}"
                        + (f"  ({errs} errors, e.g. {next(r['error'] for r in rows if r.get('error'))})" if errs else ""))
     ev = cat.evals()["evals"]
     out.append(f"\nevals: {len(ev)} rows in {cat.sim_evals / 'index.csv'}")

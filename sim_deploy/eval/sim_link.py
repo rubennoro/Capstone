@@ -194,6 +194,22 @@ class StateMirror(threading.Thread):
         self._sock.close(linger=0)
 
 
+def hide_backdrop(m) -> bool:
+    """Hide the robot look's photo backdrop in this model copy (rendering only; True if there was one).
+
+    The backdrop (visual-only mesh geom "background", contype = conaffinity = 0) is a shell around the rig camera's
+    view; ``cam_external`` sits outside it and would film only its back. Used by the driver's video and the UI's
+    external view (ui/live.py). Imports mujoco lazily: call it after the caller set up GL."""
+    import mujoco
+
+    bg = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "background")
+    if bg >= 0 and not (m.geom_contype[bg] or m.geom_conaffinity[bg]):
+        m.geom_rgba[bg, 3] = 0.0
+        m.geom_matid[bg] = -1
+        return True
+    return False
+
+
 class VideoRecorder(threading.Thread):
     """Renders ``cam_external`` from the mirrored qpos at ``fps`` while recording; writes an mp4 per rollout.
     The MuJoCo model and its GL context live in this thread only."""
@@ -215,12 +231,7 @@ class VideoRecorder(threading.Thread):
 
             m = mujoco.MjModel.from_xml_path(str(self.scene_xml))
             d = mujoco.MjData(m)
-            # the robot look's photo backdrop (visual-only mesh "background") is a shell around the rig camera's
-            # view; cam_external sits outside it and would film only its back: hide it in this copy only
-            bg = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "background")
-            if bg >= 0 and not (m.geom_contype[bg] or m.geom_conaffinity[bg]):
-                m.geom_rgba[bg, 3] = 0.0
-                m.geom_matid[bg] = -1
+            hide_backdrop(m)
             w, h = self.size
             r = mujoco.Renderer(m, h, w)
             opt = mujoco.MjvOption()

@@ -26,12 +26,17 @@ CHANNELS = {1: ("external", 640, 480), 2: ("main", 640, 480), 3: ("ultrawide", 6
 # ---------------------------------------------------------------------------------------------------------- runner
 
 class StubRunner:
-    """A fake eval run: `starting` 1.5 s, then per rollout ~4 s of phases, a random outcome, then `done`.
+    """A fake eval run with the real runner's phase strings, Status.step keys / "step" events and outcome codes
+    (ui/runner.py): bring-up ~3 s (prepare, sim_pc, sim_pi, policy), then per rollout home / start_pose (home start)
+    / place / control (~2.5 s of "ep N running X s") / record with a random outcome, then wrapup, sim_stop, `done`.
 
-    stop(): the first one ends after the current rollout's phase (`stopping` 1 s, then `done`); a second kills
+    stop(): the first one ends after the current rollout (`stopping`, wrapup + sim_stop, then `done`); a second kills
     (`failed`, last_error "killed")."""
 
-    ROLLOUT_PHASES = (("home", 0.8), ("place eraser", 0.5), ("settle", 0.4), ("rollout", 2.0), ("judge", 0.3))
+    BRINGUP = (("starting run.sh", "prepare", 0.3), ("starting the sim PC", "sim_pc", 0.6), ("sim PC up", "sim_pc", 0.2),
+               ("starting the sim Pi", "sim_pi", 0.5), ("starting the eval driver", "policy", 0.2),
+               ("preparing (policy_deploy use)", "policy", 0.5), ("starting", "policy", 0.4))
+    OUTCOMES = ("success", "success", "timeout", "fail", "fault")
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._tail = settings.log_tail if settings is not None else 30
@@ -44,20 +49,29 @@ class StubRunner:
 
     def _idle(self) -> dict[str, Any]:
         return {"state": "idle", "run_id": None, "request": None, "rollout": 0, "rollouts": 0, "phase": "",
-                "elapsed_s": 0.0, "outcomes": [], "last_error": None, "log_tail": []}
+                "elapsed_s": 0.0, "outcomes": [], "last_error": None, "log_tail": [], "notes": [], "step": None,
+                "last_work_step": None}
 
     # API
     def start(self, req: dict) -> str:
+        starts = req.get("starts") or "random"          # the runner's rules (runner._check_start_set, w3 not read)
+        if starts not in ("random", "set"):
+            raise ValueError(f"starts: expected random or set (the W3 start set), got {starts!r}")
+        if starts == "set" and str(req.get("target") or req.get("policy") or "").startswith("replay:"):
+            raise ValueError("starts set: a replay always puts the eraser where its demo had it (use random)")
+        if starts == "set" and (req.get("home") or "start") != "start":
+            raise ValueError("starts set needs home 'start' (the start set is built at the start pose)")
         with self._lock:
             if self._st["state"] in BUSY:
                 raise RuntimeError(f"a run is already {self._st['state']}")
             self._n_runs += 1
             run_id = time.strftime("%Y-%m-%d_%H%M%S") + f"_stub{self._n_runs}"
             self._stops = 0
-            self._st = self._idle() | {"state": "starting", "run_id": run_id, "request": dict(req),
-                                       "rollouts": int(req.get("rollouts", 1)), "phase": "run.sh"}
+            self._st = self._idle() | {"state": "starting", "run_id": run_id, "request": dict(req) | {"starts": starts},
+                                       "rollouts": int(req.get("rollouts", 1)), "phase": "starting run.sh"}
             self._t0 = time.monotonic()
-        self._log(f"[stub] run.sh --policy {req.get('target', req.get('policy'))} --rollouts {req.get('rollouts')}")
+        self._log(f"[stub] run.sh --policy {req.get('target', req.get('policy'))} --rollouts {req.get('rollouts')}"
+                  + (" --starts set" if starts == "set" else ""))
         self._thread = threading.Thread(target=self._run, name="stub-runner", daemon=True)
         self._thread.start()
         return run_id
@@ -78,6 +92,7 @@ class StubRunner:
                 st["elapsed_s"] = round(time.monotonic() - self._t0, 2)
             st["outcomes"] = list(st["outcomes"])
             st["log_tail"] = list(st["log_tail"])
+            st["notes"] = list(st.get("notes") or [])
             return st
 
     def events(self) -> queue.Queue:
@@ -110,47 +125,96 @@ class StubRunner:
             time.sleep(0.05)
         return True
 
+    def _step(self, key: str, rollout: int | None = None, detail: str | None = None) -> None:
+        """Status.step + a "step" event, as runner._set_step (only on a change)."""
+        since = round(time.monotonic() - self._t0, 1)
+        cur = self._st.get("step") or {}
+        if (cur.get("key"), cur.get("rollout"), cur.get("detail")) == (key, rollout, detail):
+            return
+        with self._lock:
+            self._st["step"] = {"key": key, "rollout": rollout, "since_s": since, "detail": detail}
+            if key not in ("wrapup", "sim_stop"):                # as runner._set_step
+                self._st["last_work_step"] = dict(self._st["step"])
+        self._event("step", key=key, rollout=rollout, since_s=since, detail=detail)
+
+    def _phase(self, phase: str, key: str | None = None, rollout: int | None = None, detail: str | None = None,
+               dur: float = 0.0) -> bool:
+        """Set the phase (and the step when key is given), then wait dur. False when killed."""
+        if self._stops and self._st["state"] == "stopping" and key not in (None, "record", "wrapup", "sim_stop"):
+            key = None                                   # the real runner keeps the step while stopping
+        self._set(phase=phase)
+        if key is not None:
+            self._step(key, rollout, detail)
+        return self._sleep(dur)
+
     def _run(self) -> None:
-        rng = random.Random(int(self._st["request"].get("seed", 0)))
+        req = self._st["request"]
+        rng = random.Random(int(req.get("seed", 0)))
         n_rollouts = self._st["rollouts"]
-        if not self._sleep(1.5):
-            return self._killed()
-        if self._stops:
-            return self._finish()
+        home, starts = req.get("home") or "start", req.get("starts") or "random"
+        target = str(req.get("target") or req.get("policy") or "")
+        place = "replay" if target.startswith("replay:") else starts
+        for phase, key, dur in self.BRINGUP:
+            if not self._phase(phase, key, dur=dur):
+                return self._killed()
+            if self._stops:
+                return self._finish()
         self._set(state="running")
         self._log("[stub] sim PC up, sim Pi streaming, policy_deploy [idle]")
-        for n in range(1, n_rollouts + 1):
-            self._set(rollout=n)
-            self._event("rollout_start", rollout=n, rollouts=n_rollouts)
-            self._log(f"[stub] rollout {n}/{n_rollouts} started")
-            for phase, dur in self.ROLLOUT_PHASES:
-                self._set(phase=phase)
-                if not self._sleep(dur):
+        self._phase("idle")
+        for n in range(n_rollouts):                      # n = the driver's 0-based index, rollout = n + 1
+            k = n + 1
+            self._set(rollout=k)
+            if not self._phase("idle", "home", k, dur=0.8):
+                return self._killed()
+            if home == "start" and not self._phase("idle", "start_pose", k, dur=0.8):
+                return self._killed()
+            x, y = 0.45 + 0.1 * rng.random(), -0.08 + 0.16 * rng.random()
+            if not self._phase("idle", "place", k, f"x {x:.3f} y {y:.3f} ({place})", dur=0.4):
+                return self._killed()
+            pd_id = n + 1                                # policy_deploy's own id (not the driver's index)
+            if not self._phase(f"ep {pd_id} starting", "control", k, dur=0.3):
+                return self._killed()
+            self._event("rollout_start", n=n, rollout=k, rollouts=n_rollouts, pd_rollout_id=pd_id,
+                        session_dir=None, seed_key=[req.get("seed"), n])
+            self._log(f"[stub] episode {pd_id} started (rollout {n})")
+            t = 0.0
+            while t < 2.5:
+                self._set(phase=f"ep {pd_id} running {t:.1f} s")
+                if not self._sleep(0.2):
                     return self._killed()
-            outcome = rng.choice(["success", "success", "timeout", "dropped"])
+                t += 0.2
+            outcome = rng.choice(self.OUTCOMES)
+            if not self._phase(f"ep {pd_id} running {t:.1f} s", "record", k, outcome, dur=0.3):
+                return self._killed()
+            rec = {"n": n, "outcome": outcome, "success": outcome == "success",
+                   "grasped": outcome in ("success", "fail"), "lifted": outcome == "success",
+                   "max_lift_m": 0.07 if outcome == "success" else 0.004}
             with self._lock:
                 self._st["outcomes"] = self._st["outcomes"] + [outcome]
-            self._event("rollout_end", rollout=n, outcome={"n": n, "outcome": outcome, "success": outcome == "success",
-                                                            "grasped": outcome != "timeout", "max_lift_m": 0.07})
-            self._log(f"[stub] rollout {n}: {outcome}")
+            self._event("rollout_end", n=n, rollout=k, rollouts=n_rollouts, outcome=outcome,
+                        success=outcome == "success", record=rec, source="rollouts.jsonl")
+            self._log(f"[eval] rollout {n}: {outcome}")
+            self._phase("idle")
             if self._stops:
                 break
         self._finish()
 
     def _finish(self) -> None:
         if self._stops:
-            self._set(state="stopping", phase="s, q")
-            self._sleep(1.0)
-            if self._stops >= 2:
+            self._set(state="stopping")
+            if not self._phase("stopping policy_deploy", "wrapup", dur=0.5):
                 return self._killed()
         outs = self._st["outcomes"]
-        self._set(state="done", phase="")
+        if not self._phase("results written", "wrapup", dur=0.3) or not self._phase("sim stopped", "sim_stop", dur=0.3):
+            return self._killed()
+        self._set(state="done", phase="stopped" if self._stops else "finished")
         self._log(f"[stub] {outs.count('success')}/{len(outs)} successes")
         self._event("run_end", state="done", successes=outs.count("success"), rollouts=len(outs),
-                    eval_dir=None)
+                    eval_dir=None, outcomes=list(outs))
 
     def _killed(self) -> None:
-        self._set(state="failed", phase="", last_error="killed")
+        self._set(state="failed", phase="killing", last_error="killed")
         self._log("[stub] killed")
         self._event("run_end", state="failed", error="killed")
 
@@ -242,29 +306,63 @@ class StubCatalog:
         self._root = (settings.policy_data_root if settings is not None else Path.home() / "Capstone" / "data")
 
     def policies(self) -> dict:
+        one = [{"label": "PICK_TEST1", "episodes": 30}]
+        two = [{"label": "PICK_TEST1", "episodes": 30}, {"label": "PICK_TEST2", "episodes": 32}]
+
         def pol(task: str, run: str, kind: str, eps: int | None, mse: float | None, ckpt: bool, label: str,
-                last: dict | None = None) -> dict:
+                last: dict | None = None, recs: list | None = None, source: str | None = "dataproc",
+                dataset: str | None = None, cfg: str | None = None, starts_set: bool = False,
+                cluster_label: str | None = None) -> dict:
             folder = self._root / task / "policy" / run
+            ds = dataset or (f"pick1-v1-ep{eps}" if eps else None)
+            cfg = cfg or {"prompting": "umi_policy_dunetp", "plain": "umi_policy_dunet"}.get(kind)
             return {"id": f"{task}/{run}", "task": task, "run_folder": str(folder), "kind": kind,
-                    "train_config": {"prompting": "umi_policy_dunetp", "plain": "umi_policy_dunet"}.get(kind),
-                    "dataset": f"pick1-v1-ep{eps}" if eps else None, "episodes": eps,
+                    "train_config": cfg, "dataset": ds, "episodes": eps,
                     "checkpoint": str(folder / "checkpoints" / "latest.ckpt") if ckpt else None,
-                    "val_mse": mse, "label": label, "last_eval": last}
+                    "val_mse": mse, "label": label, "last_eval": last,
+                    "runnable": ckpt, "not_runnable_reason": None if ckpt else f"{folder}: no checkpoints/*.ckpt",
+                    "smoke": run.endswith("_smoke"), "train_config_source": "run_config/job_info.json" if cfg else None,
+                    # U6 catalog fields (catalog.py)
+                    "type": "policy", "kind_source": "run_config/job_info.json" if cfg else None,
+                    "recordings": recs, "data_source": source, "rig": "rig_pi_v3",
+                    "cluster_label": cluster_label or task,
+                    "package_json": str(self._root / task / "package" / ds / "package.json") if ds else None,
+                    "starts_set": starts_set}
+
+        def rep(group: str, dataset: str, i: int, recording: str | None, recs: list) -> dict:
+            p = f"{Path.home()}/data/umi/datasets/{group}/{dataset}/{dataset}.zarr.zip"
+            return {"id": f"replay:{p}#{i}", "dataset": dataset, "index": i, "grasp_ok": i != 1,
+                    "group": group, "dataset_path": p, "name": f"pi-stub_episode_{i:06d}", "height_error_m": 0.004,
+                    "error": None, "last_eval": None,
+                    "type": "replay", "kind": "replay", "recording": recording, "dataset_recordings": recs,
+                    "data_source": "dataproc"}
 
         last = self.evals()["evals"][0]
         return {
             "policies": [
-                pol("PICK_TEST1", "run_006_2026-11-18", "prompting", 30, 0.00020, True, "prompting, 30 eps", last),
-                pol("PICK_TEST1", "run_002_2026-11-17", "prompting", 10, 0.00084, True, "prompting, 10 eps"),
-                pol("PICK_TEST1", "run_022_2026-11-19", "plain", 10, None, False, "plain, 10 eps (not fetched)"),
-                pol("PICK_DOUBLE", "run_001_2026-11-19", "plain", 62, None, False, "plain, 62 eps (not fetched)"),
-                pol("PICK_DOUBLE", "run_999_stub", "unknown", None, None, True, "stub: unknown kind"),
+                pol("PICK_TEST1", "run_006_2026-11-18", "prompting", 30, 0.00020, True, "prompting, 30 eps", last,
+                    recs=one, dataset="pick1-v1", starts_set=True),
+                pol("PICK_TEST1", "run_002_2026-11-17", "prompting", 10, 0.00084, True, "prompting, 10 eps",
+                    recs=[{"label": "PICK_TEST1", "episodes": 10}]),
+                pol("PICK_TEST1", "run_022_2026-11-19", "plain", 10, None, False, "plain, 10 eps (not fetched)",
+                    recs=[{"label": "PICK_TEST1", "episodes": 10}]),
+                pol("PICK_DOUBLE", "run_002_2026-11-19", "plain", 62, 0.00050, True, "plain, 62 eps",
+                    recs=two, dataset="pick1-double-v2", starts_set=True, cluster_label="multi"),
+                pol("teleop_marker", "run_002_2026-11-20", "plain", 8, 0.0000147, True, "teleop, 8 eps",
+                    recs=[{"label": "teleop_marker", "episodes": 8}], source="teleop_collect",
+                    dataset="teleop_marker-n8"),
+                pol("PICK_DOUBLE", "run_998_stub", "other", 62, None, True, "stub: other kind", recs=two,
+                    dataset="pick1-double-v2", cfg="umi_policy_stub_config", cluster_label="multi"),
+                pol("PICK_DOUBLE", "run_999_stub", "unknown", None, None, True, "stub: unknown kind", recs=None,
+                    source=None),
             ],
-            "replays": [
-                {"id": f"replay:{Path.home()}/data/umi/datasets/PICK_TEST1/pick1-v1/pick1-v1.zarr.zip#{i}",
-                 "dataset": "pick1-v1", "index": i, "grasp_ok": i != 1} for i in range(3)
-            ],
+            "replays": [rep("PICK_TEST1", "pick1-v1", i, "PICK_TEST1", one) for i in range(3)]
+            + [rep("multi", "pick1-double-v2", i, "PICK_TEST1" if i < 30 else "PICK_TEST2", two) for i in (0, 40)],
             "builtins": ["hold_still"],
+            "builtin_items": [{"id": "hold_still", "type": "builtin", "kind": "hold_still"}],
+            "builtin_last_eval": {"hold_still": None},
+            "start_set": {"name": "w3", "file": "sim_deploy/eval/start_sets/w3.yaml", "n_starts": 18,
+                          "needs_home": "start"},
         }
 
     def evals(self) -> dict:

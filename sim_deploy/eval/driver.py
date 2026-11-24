@@ -14,6 +14,11 @@ the replay placement, or with `--starts set` start n of the start set eval/start
 `--home deploy`: h only, the eraser in scene/randomization.yaml (the sim PC then runs with q_start_rad null: run.sh). Then watch ground truth (scene) + C2 until success / timeout / fault / stop, then
 y or n. After the last one q, and the results under sim_evals/<task>/<run_folder>/<YYYY-MM-DD_HHMM>_<tag>/ + a row in
 sim_evals/index.csv.
+
+Progress lines for the UI (sim_deploy/ui/runner.py RE_STEP; n = the 0-based rollout index, as in "rollout n: ..."):
+"[eval] step n home", "step n start_pose" (--home start), "step n place: x X y Y (replay|set|random)", "step n control"
+(before c) and "step n record: <outcome>" (the watch loop ended, before y/n). They never start "[eval] rollout", the
+prefix batch.py and scene/start_sweep.py collect.
 """
 
 from __future__ import annotations
@@ -594,12 +599,14 @@ class Eval:
         self._cur = rec
         rec["home"] = a.home
         t_h = time.monotonic()
+        log(f"step {n} home")
         if not self._home():
             rec.update(outcome="home_failed", note=rec["note"] or "no 'home pose reached'")
             return rec
         rec["t_home_s"] = round(time.monotonic() - t_h, 2)
         if a.home == "start":
             t_p = time.monotonic()
+            log(f"step {n} start_pose")
             ok, why = self._start_pose()
             if not ok:
                 if "another start pose" in why:
@@ -630,6 +637,7 @@ class Eval:
             pose = pl["pose"]
             rec["placement"] = {k: v for k, v in pl.items() if k != "pose"}
         rec["eraser_start_pose"] = pose
+        log(f"step {n} place: x {float(pose[0]):.3f} y {float(pose[1]):.3f} ({self._placements_kind()})")
         self.sc.set_object(pose)
         time.sleep(float(self.scene.random.get("settle_s", 0.3)))
         gt0 = self.sc.ground_truth()
@@ -637,6 +645,7 @@ class Eval:
         rec["eraser_settled_pose"] = gt0["objects"]["eraser"]["pose"]
         rec["tcp_start"] = gt0.get("tcp")
         t_c = time.monotonic()
+        log(f"step {n} control")
         started = self._press_until("c", lambda t: self.pd.find_since(t, self._EP_STARTED) is not None,
                                     a.start_rollout_timeout, abort=NOT_AT_START)
         if not started:
@@ -735,6 +744,8 @@ class Eval:
                 time.sleep(max(0.0, period - (time.monotonic() - now)))
         finally:
             gt_f.close()
+        log(f"step {n} record: " + (("stopped" if rec.get("pd_outcome") in ("stopped", "aborted") else "fail")
+                                    if outcome == "ended_by_policy_deploy" else str(outcome)))
         rec["duration_s"] = time.monotonic() - t0
         rec["gt_rows"] = n_gt
         if outcome != "ended_by_policy_deploy" and self.pd.alive() and self.pd.phase == "running":

@@ -6,7 +6,8 @@ One thread per source; each reconnects by itself (ZeroMQ reconnects SUB sockets;
 the model and its GL context are reloaded on a model change) and never blocks the caller: ``latest_frames()``,
 ``frame_seq()`` and ``telemetry()`` only copy what the threads stored, under a lock.
 
-Channels (binary frames, DESIGN section 3): 1 external (``cam_external``, 640x480 render of the mirrored state),
+Channels (binary frames, DESIGN section 3): 1 external (``cam_external``, 640x480 render of the mirrored state, the
+robot look's backdrop hidden as in the driver's video: ``eval/sim_link.hide_backdrop``),
 2 main (IMX519 JPEG as streamed), 3 ultrawide (IMX219 JPEG as streamed), 4 policy (448x448 mosaic of the four 224x224
 images the policy gets: top main T-50 ms / T, bottom ultrawide T-100 ms / T, oldest left).
 
@@ -341,6 +342,8 @@ class Live:
     def _run_external(self) -> None:
         import mujoco
 
+        from sim_deploy.eval.sim_link import hide_backdrop
+
         sock = self._sub(self.s["state_endpoint"], conflate=True)
         src_state, src_ext = self._src["state"], self._src["external"]
         period = 1.0 / max(0.1, float(self.s["external_fps"]))
@@ -381,7 +384,9 @@ class Live:
                             src_ext.error = (f"state model {sha[:12]}... != {scene_xml.parent.name}/model.json "
                                              f"{model_sha[:12]}... (rebuild in progress?)")
                             continue
+                        src_ext.error = f"loading {scene_xml.parent.name} (MuJoCo compile, ~5-10 s)"
                         m = mujoco.MjModel.from_xml_path(str(scene_xml))
+                        hide_backdrop(m)                  # the robot look's backdrop, as the driver's video does
                         m.vis.global_.offwidth, m.vis.global_.offheight = w, h       # small VRAM
                         m.vis.quality.shadowsize = int(self.s["external_shadow_size"])
                         d = mujoco.MjData(m)

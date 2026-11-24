@@ -26,7 +26,8 @@ accept both. A constructor that takes a parameter gets the Settings (ui/settings
     latest_frames() -> {channel: jpeg | (seq, jpeg)}
                                       channel = 1..4 or "external" / "main" / "ultrawide" / "policy". Polled at
                                       frame_fps while a page is connected; a frame is sent once (same seq, or the same
-                                      bytes object / bytes when no seq, is not sent again).
+                                      bytes object when no seq, is not sent again; equal bytes in a new object are
+                                      sent, so a static scene keeps updating).
       or subscribe(callback)          callback(channel, jpeg) from any thread; the newest per channel is kept and
                                       sent at frame_fps (used only when Live has no latest_frames).
     telemetry() -> dict | None        §3 telemetry without "type"; polled at telemetry_hz, sent when not empty.
@@ -239,7 +240,8 @@ HOMES = ("start", "deploy")          # P2: start pose (PC key p, default) | depl
 HOME_ALIASES = {"trainstart": "start"}
 LOOKS = ("robot", "train", "current")   # run.sh --look (sim_deploy/looks.py), robot the default
 REQUEST_KEYS = ("policy", "rollouts", "seed", "home", "look", "timeout_s", "tap", "tag", "precision", "diffusion_steps",
-                "exec_h")
+                "exec_h", "starts")
+STARTS = ("random", "set")           # random = rng([seed, n]) (default) | set = the driver's --starts set (w3.yaml)
 
 
 def validate_request(body: Any) -> tuple[dict, list[str]]:
@@ -316,6 +318,8 @@ def validate_request(body: Any) -> tuple[dict, list[str]]:
         "precision": choice("precision", "bf16", ("fp32", "bf16")) if body.get("precision") is not None else "bf16",
         "diffusion_steps": integer("diffusion_steps", 8, 1, 1000) if body.get("diffusion_steps") is not None else 8,
         "exec_h": integer("exec_h", 12, 1, 16) if body.get("exec_h") is not None else 12,
+        # the rules for "set" (home start, no replay, a checkpoint listed in w3.yaml) are the runner's pre-check
+        "starts": choice("starts", "random", STARTS) if body.get("starts") not in (None, "") else "random",
     }
     return req, problems
 
@@ -946,13 +950,17 @@ class UiServer:
             mark: Any = ("seq", seq)
         else:
             data, mark = value, None
-        if isinstance(data, (bytearray, memoryview)):
+        copied = isinstance(data, (bytearray, memoryview))
+        if copied:
             data = bytes(data)
         if not isinstance(data, bytes) or not data:
             return
         prev = self._frame_seen.get(ch)
         if mark is None:
-            if prev is not None and prev[0] == "bytes" and (prev[1] is data or prev[1] == data):
+            # same object = the same frame. Equal bytes are NOT skipped: a static scene renders byte-identical JPEGs
+            # and must keep arriving (else the page marks it stale). A bytearray / memoryview is copied here, so
+            # only for those the content is compared.
+            if prev is not None and prev[0] == "bytes" and (prev[1] is data or (copied and prev[1] == data)):
                 return
             mark = ("bytes", data)
         elif prev == mark:

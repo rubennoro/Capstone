@@ -5,202 +5,283 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>sim_deploy</title>
+  <link rel="preload" href="/static/fonts/ibm-plex-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/style.css">
 </head>
+<!-- The words on this page live in /static/help.js (HELP); the text below is only the fallback.
+     Layout (ui/DESIGN.md U6 "Visual restyle"): one grid; picker | cameras, settings + Play | progress, results. -->
 <body>
   <div id="banner" class="banner hidden" role="alert"></div>
 
   <header class="bar">
-    <h1>sim_deploy</h1>
+    <div class="brand">
+      <h1>sim_deploy</h1>
+      <span class="brand-sub" data-label="subtitle">sim eval</span>
+    </div>
     <span id="state-badge" class="state state-idle" aria-live="polite">idle</span>
-    <span id="running-what" class="muted"></span>
     <span class="spacer"></span>
+    <label class="hide-help-toggle" data-tip="hide_help">
+      <input id="hide-help" type="checkbox"> <span data-label="hide_help">hide explanations</span></label>
     <span id="sim-badge" class="badge" title="telemetry from the running sim">sim: no data</span>
     <span id="link" class="badge">connecting</span>
+    <details id="glossary" class="glossary">
+      <summary title="what the words on this page mean" aria-label="glossary">?</summary>
+      <div class="glossary-panel"><h2>Glossary</h2><dl id="glossary-list"></dl></div>
+    </details>
   </header>
 
-  <div class="layout">
-    <!-- ------------------------------------------------------------------------------ left: pick and play -->
-    <aside class="left" aria-label="policy and settings">
-      <section class="card picker-card">
-        <div class="card-head">
-          <h2 id="picker-title">policy</h2>
-          <input id="picker-filter" type="search" placeholder="filter" aria-label="filter policies">
-          <button id="btn-reload-policies" type="button" class="quiet small" title="reload the list"
-                  aria-label="reload policies">&#x21bb;</button>
-        </div>
-        <div id="picker" class="picker" role="radiogroup" aria-labelledby="picker-title">
-          <p class="muted pad">loading…</p>
-        </div>
-        <div id="picker-error" class="inline-error hidden" role="alert"></div>
-      </section>
-
-      <section class="card settings" aria-label="run settings">
-        <div class="fields">
-          <div class="field">
-            <label for="set-rollouts">rollouts</label>
-            <input id="set-rollouts" type="number" min="1" max="100" step="1" value="1">
-          </div>
-          <div class="field">
-            <label for="set-seed">seed</label>
-            <span class="with-btn">
-              <input id="set-seed" type="number" min="0" step="1" value="0">
-              <button id="btn-dice" type="button" class="quiet small" title="random seed"
-                      aria-label="random seed">&#x2684;</button>
-            </span>
-          </div>
-          <div class="field">
-            <label for="set-home">home</label>
-            <select id="set-home" title="where each rollout starts: the start pose (PC keys h then p) or the deploy home (h only)">
-              <option value="start" selected>start pose (p)</option>
-              <option value="deploy">deploy home (h only)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="set-look">look</label>
-            <select id="set-look" title="the scene both sims load (run.sh --look); every look has the 30 mm eraser">
-              <option value="robot" selected>robot cell (real arm)</option>
-              <option value="train">training scene</option>
-              <option value="current">current (E7 sim look)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="set-timeout" title="seconds per rollout before it counts as a timeout">timeout (s)</label>
-            <input id="set-timeout" type="number" min="1" step="1" value="60">
-          </div>
-          <label class="check" title="manager.save_tap: observation, chunk and waypoints per step">
-            <input id="set-tap" type="checkbox"> tap <span class="muted small-text">(save per-step data)</span></label>
-        </div>
-        <div id="start-pose" class="muted small-text start-pose" aria-live="polite">start pose: loading…</div>
-        <details id="advanced">
-          <summary>advanced</summary>
-          <div class="grid2">
-            <label for="set-precision">precision</label>
-            <select id="set-precision">
-              <option value="fp32">fp32</option>
-              <option value="bf16" selected>bf16</option>
-            </select>
-
-            <label for="set-steps">diffusion steps</label>
-            <input id="set-steps" type="number" min="1" step="1" value="8" placeholder="8">
-
-            <label for="set-exech">exec_h</label>
-            <input id="set-exech" type="number" min="1" max="16" step="1" value="12" placeholder="12">
-
-            <label for="set-tag">tag</label>
-            <input id="set-tag" type="text" maxlength="40" placeholder="ui" pattern="[A-Za-z0-9_.\-]*">
-          </div>
-        </details>
-      </section>
-
-      <section class="card play-card">
-        <div id="selected" class="selected-box muted">nothing selected</div>
+  <main class="layout">
+    <!-- ------------------------------------------------------------------- left, top: Play / Stop (the run) -->
+    <section class="panel area-run run-card" aria-label="run">
+      <div class="play-block">
+        <div id="selected" class="selected-box">nothing selected</div>
         <div class="play-buttons">
-          <button id="btn-play" type="button" class="play" aria-keyshortcuts="Space">&#x25B6; Play</button>
-          <button id="btn-stop" type="button" class="stop" aria-keyshortcuts="Space" disabled>&#x25A0; Stop</button>
+          <button id="btn-play" type="button" class="btn btn-primary play" aria-keyshortcuts="Space">
+            <svg class="ico" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 1.6v8.8L10.4 6z"
+              fill="currentColor"/></svg><span class="btn-label">Play</span>
+          </button>
+          <button id="btn-stop" type="button" class="btn stop" aria-keyshortcuts="Space" disabled>
+            <svg class="ico" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><rect x="2" y="2" width="8"
+              height="8" rx="1.2" fill="currentColor"/></svg><span class="btn-label">Stop</span>
+          </button>
         </div>
+        <p id="play-why" class="play-why" aria-live="polite"></p>
+        <p id="plan" class="plan"></p>
         <div id="run-msg" class="run-msg" role="status" aria-live="polite"></div>
-        <p class="keys muted"><kbd>Space</kbd> Play / Stop (twice: force) when not typing</p>
-      </section>
-    </aside>
+        <p class="keys"><kbd>Space</kbd> Play / Stop (twice: force) when not typing</p>
+      </div>
+    </section>
 
-    <!-- ------------------------------------------------------------------------------ centre: live views -->
-    <main class="views" aria-label="live views">
+    <!-- --------------------------------------------------------------------------------- left: the picker -->
+    <section class="panel area-picker picker-card" aria-labelledby="picker-title">
+      <div class="panel-head">
+        <h2 id="picker-title" data-label="panel_policy">Policy</h2>
+        <span class="spacer"></span>
+        <input id="picker-filter" type="search" placeholder="filter" aria-label="filter policies">
+        <button id="btn-reload-policies" type="button" class="icon-btn" title="reload the list"
+                aria-label="reload policies">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.2 8.2a5.2 5.2 0 1 1-1.6-3.9"
+            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12.4 1.9v2.8H9.6"
+            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div id="picker" class="picker" role="radiogroup" aria-labelledby="picker-title">
+        <p class="muted pad">loading…</p>
+      </div>
+      <div id="picker-error" class="inline-error hidden" role="alert"></div>
+    </section>
+
+    <!-- ----------------------------------------------------------------------------- left, below: settings -->
+    <section class="panel area-settings settings" aria-labelledby="settings-title">
+      <div class="panel-head"><h2 id="settings-title" data-label="panel_settings">Run settings</h2></div>
+      <h3 class="sec" data-label="sec_rollouts">Rollouts</h3>
+      <div class="frow" data-tip="rollouts">
+        <label for="set-rollouts" data-label="rollouts">Rollouts</label>
+        <input id="set-rollouts" type="number" min="1" max="100" step="1" value="1">
+        <p class="help" data-help="rollouts"></p>
+      </div>
+      <div class="frow wide" data-tip="starts">
+        <label for="set-starts" data-label="starts">Eraser starts</label>
+        <select id="set-starts">
+          <option value="random" data-opt="starts.random" selected>Random from the seed</option>
+          <option value="set" data-opt="starts.set">start set</option>
+        </select>
+        <p id="help-starts" class="help" data-help="starts"></p>
+      </div>
+      <div class="frow" data-tip="seed">
+        <label for="set-seed" data-label="seed">Placement seed</label>
+        <span class="with-btn">
+          <input id="set-seed" type="number" min="0" step="1" value="0">
+          <button id="btn-dice" type="button" class="icon-btn" title="random seed" aria-label="random seed">
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="2.25" y="2.25" width="11.5"
+              height="11.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5.6" cy="5.6"
+              r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/><circle cx="10.4"
+              cy="10.4" r="1.1" fill="currentColor"/></svg>
+          </button>
+        </span>
+        <p id="help-seed" class="help" data-help="seed"></p>
+      </div>
+      <div class="frow" data-tip="timeout">
+        <label for="set-timeout" data-label="timeout">Time limit per rollout (s)</label>
+        <input id="set-timeout" type="number" min="1" step="1" value="60">
+        <p class="help" data-help="timeout"></p>
+      </div>
+
+      <h3 class="sec" data-label="sec_scene">Scene</h3>
+      <div class="frow wide" data-tip="home">
+        <label for="set-home" data-label="home">Arm start</label>
+        <select id="set-home">
+          <option value="start" data-opt="home.start" selected>start pose (h, then p)</option>
+          <option value="deploy" data-opt="home.deploy">deploy home only (h)</option>
+        </select>
+      </div>
+      <div id="start-pose" class="start-pose" aria-live="polite">start pose: loading…</div>
+      <div class="frow wide" data-tip="look">
+        <label for="set-look" data-label="look">Scene look</label>
+        <select id="set-look">
+          <option value="robot" data-opt="look.robot" selected>robot cell</option>
+          <option value="train" data-opt="look.train">training scene</option>
+          <option value="current" data-opt="look.current">current</option>
+        </select>
+        <p class="help" data-help="look"></p>
+      </div>
+
+      <details id="more" class="fold-sec">
+        <summary data-label="more">More options</summary>
+        <div class="frow" data-tip="tag">
+          <label for="set-tag" data-label="tag">Run name (tag)</label>
+          <input id="set-tag" type="text" maxlength="40" placeholder="ui" pattern="[A-Za-z0-9_.\-]*">
+          <p class="help" data-help="tag"></p>
+        </div>
+        <div class="frow check" data-tip="tap">
+          <label class="check"><input id="set-tap" type="checkbox">
+            <span data-label="tap">Save per-step policy data (tap)</span></label>
+          <p class="help" data-help="tap"></p>
+        </div>
+      </details>
+
+      <details id="advanced" class="fold-sec">
+        <summary><span data-label="policy_settings">Policy settings: leave as the arm's</span>
+          <span id="not-arm" class="not-arm hidden">not the arm's settings</span></summary>
+        <p id="policy-note" class="help note hidden"></p>
+        <div class="frow" data-tip="precision">
+          <label for="set-precision" data-label="precision">Precision</label>
+          <select id="set-precision">
+            <option value="fp32">fp32</option>
+            <option value="bf16" selected>bf16</option>
+          </select>
+          <p class="help" data-help="precision"></p>
+        </div>
+        <div class="frow" data-tip="steps">
+          <label for="set-steps" data-label="steps">Denoising steps</label>
+          <input id="set-steps" type="number" min="1" step="1" value="8" placeholder="8">
+          <p class="help" data-help="steps"></p>
+        </div>
+        <div class="frow" data-tip="exech">
+          <label for="set-exech" data-label="exech">Actions used per chunk (exec_h)</label>
+          <input id="set-exech" type="number" min="1" max="16" step="1" value="12" placeholder="12">
+          <p class="help" data-help="exech"></p>
+        </div>
+        <button id="btn-arm-reset" type="button" class="btn btn-small">Reset to the arm's</button>
+      </details>
+
+    </section>
+
+    <!-- ------------------------------------------------------------------------------ right, top: cameras -->
+    <section class="panel area-views views" aria-label="live views">
+      <div id="run-header" class="run-header idle" aria-live="polite"></div>
       <figure class="view big">
-        <figcaption><span>external camera</span><span id="fps-1" class="muted">-</span></figcaption>
         <div class="frame" data-channel="1">
           <canvas id="canvas-1" role="img" aria-label="external camera view"></canvas>
-          <span class="nodata">no data</span>
+          <span class="tile-state" aria-hidden="true"><span class="dot"></span><span class="ts-text"></span></span>
+          <span class="nodata">Waiting for camera</span>
         </div>
+        <figcaption><span class="cam-name" data-cam="1">external camera</span><span id="fps-1" class="cam-meta">-</span></figcaption>
       </figure>
       <div class="small-views">
         <figure class="view">
-          <figcaption><span>main (IMX519)</span><span id="fps-2" class="muted">-</span></figcaption>
           <div class="frame" data-channel="2">
             <canvas id="canvas-2" role="img" aria-label="main camera, as streamed"></canvas>
-            <span class="nodata">no data</span>
+            <span class="tile-state" aria-hidden="true"><span class="dot"></span><span class="ts-text"></span></span>
+            <span class="nodata">Waiting for camera</span>
           </div>
+          <figcaption><span class="cam-name" data-cam="2">main (IMX519)</span><span id="fps-2" class="cam-meta">-</span></figcaption>
         </figure>
         <figure class="view">
-          <figcaption><span>ultrawide (IMX219)</span><span id="fps-3" class="muted">-</span></figcaption>
           <div class="frame" data-channel="3">
             <canvas id="canvas-3" role="img" aria-label="ultrawide camera, as streamed"></canvas>
-            <span class="nodata">no data</span>
+            <span class="tile-state" aria-hidden="true"><span class="dot"></span><span class="ts-text"></span></span>
+            <span class="nodata">Waiting for camera</span>
           </div>
+          <figcaption><span class="cam-name" data-cam="3">ultrawide (IMX219)</span><span id="fps-3" class="cam-meta">-</span></figcaption>
         </figure>
-        <figure class="view">
-          <figcaption><span title="the four 224 x 224 images the policy gets">policy input</span>
-            <span id="fps-4" class="muted">-</span></figcaption>
-          <div class="frame square" data-channel="4">
+        <figure class="view square">
+          <div class="frame" data-channel="4">
             <canvas id="canvas-4" role="img"
                     aria-label="policy input: main T-50 ms and T on top, ultrawide T-100 ms and T below"></canvas>
-            <span class="nodata">no data</span>
+            <span class="quad-legend" aria-hidden="true"><span>main T&minus;50</span><span>main T</span>
+              <span>UW T&minus;100</span><span>UW T</span></span>
+            <span class="tile-state" aria-hidden="true"><span class="dot"></span><span class="ts-text"></span></span>
+            <span class="nodata">Waiting for camera</span>
           </div>
-          <div class="quad-legend muted"><span>main T&minus;50</span><span>main T</span>
-            <span>UW T&minus;100</span><span>UW T</span></div>
+          <figcaption><span class="cam-name" data-cam="4" title="the four 224 x 224 images the policy gets">policy input</span>
+            <span id="fps-4" class="cam-meta">-</span></figcaption>
         </figure>
       </div>
-    </main>
+    </section>
 
-    <!-- ------------------------------------------------------------------------------ right: status -->
-    <aside class="right" aria-label="status">
-      <section class="card">
-        <dl class="strip">
-          <dt>state</dt><dd id="st-state">-</dd>
-          <dt>rollout</dt><dd id="st-rollout">-</dd>
-          <dt>phase</dt><dd id="st-phase">-</dd>
-          <dt>elapsed</dt><dd id="st-elapsed">-</dd>
-          <dt>C2 mode</dt><dd id="st-mode">-</dd>
-          <dt>gripper</dt><dd id="st-width">-</dd>
-          <dt>eraser</dt><dd id="st-eraser">-</dd>
-          <dt>contacts</dt><dd id="st-contacts">-</dd>
-          <dt>inference</dt><dd id="st-infer">-</dd>
-          <dt>margin</dt><dd id="st-margin">-</dd>
-          <dt>steps</dt><dd id="st-steps">-</dd>
-          <dt>image age</dt><dd id="st-imgage">-</dd>
-        </dl>
-        <ul id="notes" class="notes hidden" aria-label="notes on this run"></ul>
-        <div id="last-error" class="last-error hidden" role="alert"></div>
-      </section>
-
-      <section class="card">
-        <h2>rollouts</h2>
-        <ul id="chips" class="chips" aria-label="rollout outcomes"><li class="muted">no run yet</li></ul>
-        <div id="run-result" class="run-result hidden"></div>
-      </section>
-
-      <section class="card log-card">
-        <h2>log</h2>
+    <!-- ------------------------------------------------------------------------- right, below: progress -->
+    <section class="panel area-progress steps-card" aria-labelledby="steps-title">
+      <div class="panel-head">
+        <h2 id="steps-title" data-label="panel_progress">Progress</h2>
+        <span id="steps-mode" class="mode-chip"></span>
+      </div>
+      <div class="progress-body">
+        <div class="progress-steps">
+          <p id="stopping-line" class="stopping-line hidden" role="status"></p>
+          <ol id="steps" class="steps" aria-label="what the run does, step by step"></ol>
+        </div>
+        <div class="progress-side">
+          <h3 class="sec" data-label="chips_title">Rollouts</h3>
+          <ul id="chips" class="chips" aria-label="rollout outcomes"><li class="muted">no run yet</li></ul>
+          <div id="run-result" class="run-result hidden"></div>
+          <h3 class="sec" data-label="live_numbers">Live numbers</h3>
+          <dl class="strip">
+            <div><dt>state</dt><dd id="st-state">-</dd></div>
+            <div><dt>rollout</dt><dd id="st-rollout">-</dd></div>
+            <div><dt>elapsed</dt><dd id="st-elapsed">-</dd></div>
+            <div><dt>phase</dt><dd id="st-phase">-</dd></div>
+            <div><dt>C2 mode</dt><dd id="st-mode">-</dd></div>
+            <div><dt>gripper</dt><dd id="st-width">-</dd></div>
+            <div><dt>eraser</dt><dd id="st-eraser">-</dd></div>
+            <div><dt>contacts</dt><dd id="st-contacts">-</dd></div>
+            <div><dt>inference</dt><dd id="st-infer">-</dd></div>
+            <div><dt>margin</dt><dd id="st-margin">-</dd></div>
+            <div><dt>steps</dt><dd id="st-steps">-</dd></div>
+            <div><dt>image age</dt><dd id="st-imgage">-</dd></div>
+          </dl>
+          <ul id="notes" class="notes hidden" aria-label="notes on this run"></ul>
+          <div id="last-error" class="last-error hidden" role="alert"></div>
+        </div>
+      </div>
+      <details id="log-details" class="log-fold">
+        <summary data-label="raw_log">Raw log</summary>
         <pre id="log" class="log" tabindex="0" aria-label="run log, last lines"></pre>
-      </section>
-    </aside>
-  </div>
+      </details>
+    </section>
 
-  <!-- -------------------------------------------------------------------------------- bottom: results -->
-  <section class="card results" aria-labelledby="results-title">
-    <div class="card-head">
-      <h2 id="results-title">sim results</h2>
-      <label class="small-text"><input id="results-only-selected" type="checkbox"> only the selected policy</label>
-      <span class="spacer"></span>
-      <button id="btn-reload-evals" type="button" class="quiet small">reload</button>
-    </div>
-    <div id="results-error" class="inline-error hidden" role="alert"></div>
-    <div class="table-wrap">
-      <table id="results">
-        <thead>
-          <tr>
-            <th scope="col">date</th><th scope="col">policy</th><th scope="col">kind</th><th scope="col">dataset</th>
-            <th scope="col">tag</th><th scope="col">look</th><th scope="col">seed</th><th scope="col" class="num">success</th>
-            <th scope="col" class="num">rate (95% CI)</th><th scope="col" class="num">grasp</th>
-            <th scope="col" class="num">lift</th><th scope="col" class="num" title="faults / stops / timeouts">f / s / t</th>
-            <th scope="col">report</th>
-          </tr>
-        </thead>
-        <tbody id="results-body"><tr><td colspan="13" class="muted">loading…</td></tr></tbody>
-      </table>
-    </div>
-  </section>
+    <!-- ------------------------------------------------------------------------------ bottom: results -->
+    <section class="panel area-results results" aria-labelledby="results-title">
+      <div class="panel-head">
+        <h2 id="results-title" data-label="panel_results">Sim results</h2>
+        <label class="check-inline"><input id="results-only-selected" type="checkbox">
+          <span data-label="only_selected">only the selected policy</span></label>
+        <span class="spacer"></span>
+        <button id="btn-reload-evals" type="button" class="btn btn-small" data-label="reload">Reload</button>
+      </div>
+      <div id="results-error" class="inline-error hidden" role="alert"></div>
+      <div class="table-wrap">
+        <table id="results">
+          <thead>
+            <tr>
+              <th scope="col">date</th><th scope="col">policy</th><th scope="col">kind</th><th scope="col">dataset</th>
+              <th scope="col">tag</th><th scope="col">look</th><th scope="col" class="num">seed</th>
+              <th scope="col" class="num" data-th="success">success (k/N)</th>
+              <th scope="col" class="num" data-th="rate">rate (95% CI)</th>
+              <th scope="col" class="num" data-th="grasp">grasp</th>
+              <th scope="col" class="num" data-th="lift">lift</th>
+              <th scope="col" class="num" data-th="fst">f / s / t</th>
+              <th scope="col">report</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"><tr><td colspan="13" class="muted">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
+  <script src="/static/help.js"></script>
+  <script src="/static/steps.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
