@@ -1,0 +1,68 @@
+# copied from rnoro/final-deployment:deployment/control_deploy/station.yaml @ f632576
+# changes: session_root ~/sim_deploy_sessions/control; homing.q_start_rad removed (the sim's start pose is
+# stations/start_pose.yaml, merged in by run.sh with sim_pc/merge_station.py; today the same 7 values); load = the
+# real PC's (mass 0, below); + the sim: block read by
+# `franka_control --sim` (sim_deploy/sim_pc, DESIGN.md section 8 and "E4: as built"). Box and gripper.width_offset_m
+# are config.yaml's, as on the real PC (the manager's workspace_clamp_m box is read from the same config.yaml).
+# Run: sim_deploy/run.sh (sim_deploy/sim_pc/README.md). Not for `control_deploy run|console`: their strict station
+# loader refuses the sim: key.
+# This PC's settings (PLAN rule 1). Ports and addresses are in deployment/contracts/link.yaml, never here.
+station_version: 1
+session_root: ~/sim_deploy_sessions/control   # one folder per franka_control --sim run
+franka_control:                             # overrides of franka_control/config.yaml keys (not libfranka_version)
+  realtime: ignore                          # TODO: enforce once the PC runs a PREEMPT_RT kernel (PLAN §13)
+  # load = the real PC's (user decision 2026-11-22: mirror the real arm). The real station leaves config.yaml's
+  # load at mass 0 (the rig was never weighed): franka_control makes no setLoad call, so the gravity model holds only
+  # Desk's Franka Hand and the rig + finger kits the arm really carries are uncompensated (the sim model carries
+  # them too: the sim then sags as the real arm does, ~8 mm in E4, and the reflex sees the same model error).
+  # When the rig is weighed and its load set on the real PC, set the same values here. The model's own estimate
+  # (sim_deploy/sim_pc/payload.py, rig + 2 finger kits - 2 stock fingers, flange frame, gap 0.04; used until
+  # 2026-11-22): mass 0.6362 kg, com [0.0347, -0.0310, 0.0631] m, inertia about the com
+  # [[3.380637e-03, 2.382799e-04, 9.312673e-04], [2.382799e-04, 3.406508e-03, -8.691258e-04],
+  #  [9.312673e-04, -8.691258e-04, 2.454376e-03]] kg m^2.
+  load:
+    mass_kg: 0.0                            # = config.yaml / the real station: no setLoad
+    com_m: [0.0, 0.0, 0.0]
+    inertia_kg_m2:
+      - [0.0, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+console:                                    # the bring-up console's step sizes (6.5)
+  hold_s: 3.0
+  move_m: 0.015
+  rotate_deg: 2.0
+  gripper_delta_m: 0.02
+  segment_s: 2.0
+  out_of_box_m: 0.03
+sim:
+  model: ../build/sim_rig/scene.xml         # E6's builder output (python -m sim_deploy.model build)
+  model_json: ../build/sim_rig/model.json   # model_sha256 checked against the files at start
+  check_sha256: true
+  wait_for_model_s: 0                       # > 0: wait for model.json (the builder writes it last)
+  bind_address: 127.0.0.1
+  ports: {state: 5650, scene: 5651}         # DESIGN 1; C2/C3 stay on link.yaml's 5620/5630 (--local)
+  state_period_steps: 5                     # sim.state/v1 every 5 ms of physics time (DESIGN 4)
+  realtime:
+    slow_lag_ms: 5.0                        # > 5 ms behind wall time: counted as slow
+    realtime_error_lag_ms: 50.0             # > 50 ms behind in a control call: ArmError kRealtime (fault)
+    stats_period_s: 10.0                    # the log's sim stats line
+  desk_end_effector:                        # what libfranka's gravity model already holds (Desk: Franka Hand)
+    mass_kg: 0.73
+    com_m: [-0.01, 0.0, 0.03]               # flange frame (Desk / franka_ros F_x_Cee)
+  joint_damping_ratio: 1.0                  # joint hold and homing PD: K = control.joint_impedance
+  gripper:
+    max_gap_m: 0.04                         # the printed fingers' stroke (= sim_rig.yaml finger_max_gap_m, limits.yaml 0.04; W0)
+    move_force_n: 40.0                      # per finger for a move; a grasp uses gripper.grasp_force_n (20 N)
+    homing_speed_m_per_s: 0.1
+    kp_n_per_m: 20000.0                     # E7: stiff like the hand's geared fingers (was 2000: the soft grip
+                                            # pushed the fingers 3-4 mm wider than commanded)
+    stall_window_s: 0.1
+    stall_motion_m: 0.0002
+    reached_tol_m: 0.0005
+    grasp_closes_fully: true                # W0: the Franka Hand's force-controlled grasp closes until it stalls (to 0
+                                            # with nothing held); real arm 2026-11-20
+    start: home_key                         # the model's key "home" (hand fully open); then homing_on_start
+  reflex:
+    include_finger_contacts: false          # DESIGN 8: contacts on the arm, not the fingers
+    include_model_error: true               # a wrong load shows as external torque, as on the robot
+    filter_hz: 20.0

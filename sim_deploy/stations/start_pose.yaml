@@ -1,0 +1,9 @@
+# sim_deploy: the sim's start pose (PLAN.md section 9, key p): franka_control.homing.q_start_rad, merged by
+# run.sh into the sim PC's station (sim_pc/merge_station.py; --home deploy uses null instead). Written by
+# `python -m sim_deploy.scene start-pose`; edit through it (it checks the pose in the sim).
+# source: git show f632576:deployment/control_deploy/station.yaml (franka_control.homing.q_start_rad)
+# date: 2026-11-20T20:33:26
+# in the sim: TCP O (0.531, -0.159, 0.160), 16.0 cm above the table, tilted 48.0 deg from straight down, pointing to the robot's left
+franka_control:
+  homing:
+    q_start_rad: [-0.5928536, 0.5219462, -0.0897168, -1.5930073, 0.6595725, 1.5068439, -1.5301472]

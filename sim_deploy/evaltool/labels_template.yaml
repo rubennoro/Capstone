@@ -1,0 +1,17 @@
+# labels.yaml: the operator's verdict on one real-arm trial (SCHEMA.md "real arm"). Copy it into the trial folder
+# (<run>/deploy/<date>_<HH-MM>_trialN_probe_live/labels.yaml) right after the trial, or collect several trials in one
+# file passed with --labels:
+#   trials:
+#     <task>/<run>/<trial folder name>: {outcome: fail, stop_reason: user, ...}
+# python -m sim_deploy.evaltool import-real <trial folder> [--labels FILE] reads it; a trials: entry in --labels wins
+# over the folder's own file. A file like this one (no trials:) labels one trial folder per call.
+draft: false            # true = not yet confirmed: outcome / stop_reason stay null in rollout.json
+outcome: fail           # success / fail (success = the eraser lifted clear of the table; grasp not required,
+                        # as the sim rule since 2026-11-22: >= 5 cm held >= 1 s)
+stop_reason: user       # success / timeout / fault / user / error (user = the arm's user stop or the n key)
+grasped: false          # both fingers on the eraser at some point (true / false / null = not seen)
+lifted: false           # the eraser left the table in the grasp (true / false / null)
+note: ""                # what the arm did, in a sentence
+# Only when the importer cannot find them itself:
+# session: 2026-11-20_17-41-18   # folder under ~/policy_deploy_sessions (default: the one NOTES.md names)
+# episode_id: 1                  # policy_deploy's id of the trial's rollout in the session (default: the one overlapping the probe sets most)

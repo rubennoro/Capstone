@@ -1,0 +1,12 @@
+# Smoke test of the batch runner: 2 checkpoints (one prompting, one plain) x both looks x 2 rollouts.
+#   ~/envs/sim_deploy/bin/python -m sim_deploy.eval batch --plan sim_deploy/eval/batches/smoke.yaml [--dry-run]
+name: smoke
+checkpoints:
+  - PICK_TEST1/run_006
+  - PICK_DOUBLE/run_002
+looks: [robot, train]
+rollouts: 2
+seed: 0
+timeout: 60
+settings: {precision: bf16, diffusion_steps: 8, exec_h: 12}
+invalid_retries: 1

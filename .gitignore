@@ -9,3 +9,10 @@ data/
 *.ckpt
 .*.ckpt.*
 results/**/checkpoints/
+
+# sim_deploy: eval results and generated models (sim_deploy/PLAN.md)
+sim_evals/
+sim_deploy/build/
+
+# sim_deploy/ui: catalog cache (replay placements, episode counts)
+sim_deploy/ui/.cache/

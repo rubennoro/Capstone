@@ -1,0 +1,8 @@
+# sim_deploy (2026-11-22): SIM-ONLY overlay for the tilt-cone experiment, merged last into the sim PC's station by
+# run.sh when SIM_DEPLOY_SIM_PC_OVERLAY points here (sim_pc/merge_station.py OVERLAY). Widens the PC gate's tilt cone
+# from config.yaml's 60 deg (+2 deg margin; "TODO: check around the table") to 75 deg, which covers the training
+# demos' tilts (38-73 deg), to see whether the cone is what stops the policies and whether the rig / hand touches the
+# table at those tilts. Experiment only: W3 and the REAL PC keep config.yaml's 60 deg until the user decides.
+franka_control:
+  safety:
+    cone_max_deg: 75.0

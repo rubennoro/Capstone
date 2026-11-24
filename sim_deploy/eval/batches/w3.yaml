@@ -1,0 +1,41 @@
+# PLAN §11 W3: closed-loop sim evals of every runnable checkpoint (14: 5 prompting, 9 plain), robot cell look only,
+# arm at stations/start_pose.yaml's q_start_rad, the same 18 eraser starts for every checkpoint (user decisions
+# 2026-11-22): sim_deploy/eval/start_sets/w3.yaml (python -m sim_deploy.eval starts show)
+#   rollouts 0-9   the shared training demos 0-9 (the first 10 demos of all 9 datasets), the eraser where each demo
+#                  grasped, carried to the start pose; each checkpoint held exactly one of them out for validation
+#                  (recorded held_out per rollout, reported as 9 trained + 1 held-out demo)
+#   rollouts 10-17 the eraser poses fitted to the 8 real-arm trials of 2026-11-20 (the sim's 30 mm eraser, flat)
+#   ~/envs/sim_deploy/bin/python -m sim_deploy.eval batch --plan sim_deploy/eval/batches/w3.yaml [--dry-run]
+name: w3
+# The 14 eraser checkpoints (teleop_marker/* is another task and is left out).
+checkpoints:
+  - PICK_TEST1/run_006
+  - PICK_TEST1/run_012
+  - PICK_TEST1/run_014
+  - PICK_TEST1/run_016
+  - PICK_TEST1/run_020
+  - PICK_TEST1/run_022
+  - PICK_TEST1/run_024
+  - PICK_TEST1/run_028
+  - PICK_TEST1/run_030
+  - PICK_TEST1/run_031
+  - PICK_DOUBLE/run_002
+  - PICK_DOUBLE/run_003
+  - PICK_DOUBLE/run_004
+  - PICK_DOUBLE/run_005
+looks: [robot]
+starts: set
+rollouts: 18
+seed: 0
+timeout: 60
+settings: {precision: bf16, diffusion_steps: 8, exec_h: 12}
+invalid_retries: 1
+# GPU care (2026-11-22: the laptop GPU crashed twice, kernel Xid 62, under ~20+ min of uninterrupted load): each
+# checkpoint's 18 rollouts run in run.sh calls of at most 6 (the same eval folder, continued with --resume), and before
+# every call the batch waits until the GPU is < 65 C (at most 15 min, then goes ahead with a WARN) and >= 60 s since the
+# previous call. Only the time between calls changes: every rollout runs in real time, results and protocol_sha are
+# the same as in one call. These are also the code defaults (a batch frozen without them resumes with them).
+piece_rollouts: 6          # new rollouts per run.sh call (0 = the whole run in one call)
+gpu_cool_c: 65             # wait before each call until nvidia-smi temperature.gpu < this, C
+gpu_cool_max_s: 900        # ... at most this long, then go ahead (WARN)
+gpu_pause_s: 60            # ... and at least this long after the previous call, even if cool

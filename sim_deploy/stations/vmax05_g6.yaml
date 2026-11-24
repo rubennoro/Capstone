@@ -1,0 +1,7 @@
+# sim_deploy P3 (2026-11-20): SIM-ONLY overlay for check G6 (replay of human-speed demos), merged last into the sim
+# PC's station by run.sh when SIM_DEPLOY_SIM_PC_OVERLAY points here. The copied config.yaml's v_max 0.25 m/s
+# ("raise to 0.5 only after tuning on the arm") shortens the recorded motions, and a shortened distance is never made
+# up (each chunk is relative to the manager's anchor). Never used for policy evals; the REAL PC keeps 0.25.
+franka_control:
+  safety:
+    v_max_m_per_s: 0.5

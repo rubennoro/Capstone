@@ -1,0 +1,153 @@
+{
+ "source": "/home/ruben/data/umi/tasks/PICK_TEST1/analysis/mesh_3d.glb",
+ "source_sha256": "f64f8e2a8e7295b283c2ea98f46819af8f6fbc27507dc1d14e11fef11113850e",
+ "faces_in": 268994,
+ "faces_table_dropped": 94412,
+ "faces_below_dropped": 14246,
+ "faces_near_base_dropped": 38805,
+ "faces_near_arm_dropped": 102,
+ "faces_work_area_dropped": 3130,
+ "faces_kept": 118299,
+ "vertices": 66964,
+ "table_plane_O_z_axb_c": [
+  -0.019552,
+  0.011323,
+  0.012134
+ ],
+ "table_plane_tilt_deg": 1.294,
+ "table_plane_offset_at_O_055_0_mm": 1.38,
+ "table_plane_resid_mad_mm": 5.36,
+ "T_tag_scene": [
+  [
+   0.133281,
+   -0.990523,
+   -0.03319,
+   1e-06
+  ],
+  [
+   0.990021,
+   0.131518,
+   0.050605,
+   0.0
+  ],
+  [
+   -0.045761,
+   -0.039604,
+   0.998167,
+   -0.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "T_O_tag": [
+  [
+   -0.038493288,
+   0.999258859,
+   0.0,
+   0.433706919
+  ],
+  [
+   -0.999258859,
+   -0.038493288,
+   0.0,
+   0.016636585
+  ],
+  [
+   0.0,
+   0.0,
+   1.0,
+   0.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "T_O_mesh_applied_to_vertices": [
+  [
+   0.984157,
+   0.169549,
+   0.051845,
+   0.433707
+  ],
+  [
+   -0.171291,
+   0.984726,
+   0.031217,
+   0.016636
+  ],
+  [
+   -0.045761,
+   -0.039604,
+   0.998167,
+   -0.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "obj_frame": "O (the station's background_mesh pose is the identity)",
+ "kept_bbox_O_m": [
+  [
+   -0.607,
+   -0.299,
+   -0.031
+  ],
+  [
+   1.42,
+   0.67,
+   0.38
+  ]
+ ],
+ "texture_px": [
+  2076,
+  2076
+ ],
+ "colour_gain_rgb": [
+  0.7677000164985657,
+  0.9674999713897705,
+  1.3387000560760498
+ ],
+ "colour_match": {
+  "mesh_table_median_rgb": [
+   201.0,
+   160.0,
+   112.0
+  ],
+  "table_real_mean_rgb": [
+   154.3000030517578,
+   154.8000030517578,
+   149.89999389648438
+  ],
+  "n_faces": 9320
+ },
+ "params": {
+  "TABLE_BAND_M": 0.012,
+  "ROBOT_CLEAR_M": 0.3,
+  "ARM_PAD_M": 0.08,
+  "arm_boxes": 142,
+  "WORK_CLEAR_BOX_O": [
+   [
+    0.2,
+    -0.28
+   ],
+   [
+    0.9,
+    0.25
+   ]
+  ],
+  "WORK_CLEAR_H_M": 0.06
+ },
+ "obj_mb": 13.9,
+ "obj_sha256": "0e2db372c7a8125329a3029234a933d646b75cdc8d616a0ac90e69c43e68b5a7",
+ "png_sha256": "f5cf183b63a9cd2c536150168266775f5b254b9f257004f25b000f342dbb1e92"
+}

@@ -1,0 +1,26 @@
+# sim_deploy/ui settings (ui/settings.py has every key, its default and its meaning). Flat keys; paths may use ~.
+# Another file: python -m sim_deploy.ui --config FILE. Keys that are not ui settings go to settings.extra.
+
+# the server
+http_port: 8770            # the page: http://127.0.0.1:8770 (127.0.0.1 only)
+status_hz: 5.0
+telemetry_hz: 10.0
+frame_fps: 10.0            # binary frames, per channel, at most
+log_tail: 30
+shutdown_clean_s: 180.0    # Ctrl-C: wait for the run's clean stop this long (results take ~30 s; the runner
+                           # kills by itself 150 s after a first stop), then kill it
+shutdown_kill_s: 5.0
+
+# paths
+run_sh: ~/Capstone-main-sim/sim_deploy/run.sh
+python: ~/envs/sim_deploy/bin/python
+sim_evals: ~/Capstone-main-sim/sim_evals          # served under /evals/
+policy_data_root: ~/Capstone/data                 # <task>/policy/<run>/ (read only)
+datasets_root: ~/data/umi/datasets                # replay zarrs (read only)
+
+# live data (read only; the sim chain binds these, the ui only connects)
+c0_endpoint: tcp://127.0.0.1:5555
+c2_endpoint: tcp://127.0.0.1:5620
+state_endpoint: tcp://127.0.0.1:5650
+scene_endpoint: tcp://127.0.0.1:5651
+ground_truth_hz: 5.0

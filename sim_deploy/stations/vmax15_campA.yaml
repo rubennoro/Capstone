@@ -1,0 +1,10 @@
+# sim_deploy camera study A1 (PLAN.md section 10, 2026-11-20): SIM-ONLY overlay, merged last into the sim PC's
+# station by run.sh when SIM_DEPLOY_SIM_PC_OVERLAY points here (sim_pc/merge_station.py OVERLAY), like
+# stations/vmax05_g6.yaml. The demos have 50 ms segments up to ~1.27 m/s before the grasp (DESIGN.md P3/P4, gate
+# table: 1.21 m/s for 28/30 with no shortening); at the real 0.25 the gate shortens them and an open-loop replay never
+# makes the distance up. 1.5 m/s lets the replays (tag campA1_v15) run their recorded path, so pose / geometry /
+# grasp physics are seen apart from the speed limit. Replays only; never used for policy evals; the REAL PC keeps
+# 0.25. Everything else (w_max 1.0, box, cone, homing) stays as in control_sim.yaml + config.yaml.
+franka_control:
+  safety:
+    v_max_m_per_s: 1.5

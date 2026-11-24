@@ -1,0 +1,7 @@
+# sim_deploy P4 (2026-11-20): SIM-ONLY overlay for the start-pose sweep, merged last into the sim PC's station by
+# run.sh when SIM_DEPLOY_SIM_PC_OVERLAY points here (sim_pc/merge_station.py OVERLAY). Halves the h and p joint moves
+# (~15 s -> ~8 s at the stand-in): the policy never sees homing, and every rollout still starts at the same pose.
+# The REAL PC keeps config.yaml's 0.3 rad/s (and its 30 s homing timeout is checked at 0.3).
+franka_control:
+  homing:
+    max_joint_speed_rad_per_s: 0.6

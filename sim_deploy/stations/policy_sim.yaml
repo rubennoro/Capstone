@@ -1,0 +1,41 @@
+# copied from rnoro/final-deployment:deployment/policy_deploy/station.yaml @ f632576
+# changes: the sim station (sim_deploy/DESIGN.md §7): python paths to ~/envs/sim_policy_deploy{,_torch}, pi.address
+# 127.0.0.1 (the sim Pi), session_root ~/sim_deploy_sessions, launcher fake_pc false (the sim PC) and fake_pi false
+# (the sim Pi); policy kind and mock_kind hold_still (no checkpoint: each eval picks the policy), the real station's
+# precision bf16 / diffusion_steps 8 / manager.exec_h 12 kept. Run it with --mock (the PC and the Pi are on 127.0.0.1):
+#   cd ~/Capstone-main-sim/deployment/policy_deploy && unset PYTHONPATH
+#   ~/envs/sim_policy_deploy/bin/policy_deploy check --mock --station ../../sim_deploy/stations/policy_sim.yaml
+# The eval driver (E6) sets the policy per eval in a frozen copy of this file: policy.mock_kind (the kind that runs
+# under --mock), for a checkpoint `policy_deploy use RUN_FOLDER --station <copy>` (sets kind and mock_kind diffusion,
+# checkpoint, and for a prompting run prompt_dataset + manager task_name/prompt_index; keeps precision,
+# diffusion_steps and exec_h unless the driver's --precision / --diffusion-steps / --exec-h set them), for the replay
+# `policy_deploy use replay:<dataset>#<index> --station <copy>` (kind/mock_kind replay + policy.replay_episode),
+# for hold_still `policy_deploy use hold_still --station <copy>`. Paths here are absolute or ~ (relative ones would
+# be taken from the copy's folder).
+# The laptop station file (policy_deploy/STRUCTURE.md 2.4). One file for real and --mock runs. It may not override
+# any key of deployment/contracts/*.yaml: the PC's address, ports and timing come only from link.yaml.
+station_version: 1
+session_root: ~/sim_deploy_sessions
+python:
+  light: ~/envs/sim_policy_deploy/bin/python
+  torch: ~/envs/sim_policy_deploy_torch/bin/python  # used only for policy.kind diffusion (and bench)
+pi:
+  address: 127.0.0.1              # the sim Pi (sim_deploy/sim_pi, C0 PUB :5555)
+  port: 5555                      # fixed by the Pi (PI_PAYLOAD.md 0.1)
+wifi_ssid: ASUS_5g                # check: the laptop's Wi-Fi network (not checked under --mock)
+ports:                            # all on 127.0.0.1 (TOP 2.2)
+  frames: 5610                    # C1
+  policy: 5640                    # C4
+  mock_pi: 5600                   # --mock with launcher.fake_pi true only: the fake Pi inside frames
+frames: {}                        # overrides of config/frames_process.yaml
+policy:
+  kind: hold_still
+  mock_kind: hold_still           # the kind that runs under --mock: set per eval (hold_still | replay | diffusion)
+  precision: bf16                 # as the real station (kept by `policy_deploy use`)
+  diffusion_steps: 8
+manager:
+  exec_h: 12                      # as the real station (kept by `policy_deploy use`; --exec-h overrides)
+fake_pc: {}
+launcher:
+  fake_pc: false                  # the sim PC (franka_control --sim) binds C2/C3 on 127.0.0.1
+  fake_pi: false                  # frames connects to pi.address:pi.port (the sim Pi)

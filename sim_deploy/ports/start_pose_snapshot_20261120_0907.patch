@@ -1,0 +1,2487 @@
+diff --git a/deployment/DIRECTIONS.md b/deployment/DIRECTIONS.md
+index 15c2850..bd5995a 100644
+--- a/deployment/DIRECTIONS.md
++++ b/deployment/DIRECTIONS.md
+@@ -50,7 +50,7 @@ Each line is a step in that machine's directions. Each step has its own **Good**
+ | 4 | PC | 7 (optional) | firewall: only the laptop can command the arm |
+ | 5 | PC | 8 | the workspace box and the rig's weight |
+ | 6 | PC | 9 | a run with a fake arm (checks the install) |
+-| 7 | PC | 10 | **the arm alone:** first real run, homing, the console tests. Keep a hand on the user stop |
++| 7 | PC | 10 | **the arm alone:** first real run, homing, the console tests, measuring the start pose. Keep a hand on the user stop |
+ | 8 | Laptop | 5 | the Pi's stream arrives (press the C button first) |
+ | 9 | Laptop | 6 | the link to the PC (with `control_deploy run` running on the PC) |
+ | 10 | Laptop | 7 | **the first trial run** (below) |
+@@ -78,8 +78,10 @@ laptop: `policy_deploy use <run folder>` (laptop directions, "A trained policy")
+    ~/envs/policy_deploy/bin/policy_deploy run
+    ```
+ 
+-6. **Laptop keys:** `h` (home the arm), `c` (start an episode), `y` / `n` (end it as success / failure). Repeat `h`,
+-   `c`, ... as often as you like.
++6. **Each episode:** on the **PC**, `h` (home), then `p` (start pose: the arm goes to where the training demos
++   started and the hand opens); then on the **laptop**, `c` (start), and `y` / `n` (end it as success / failure).
++   Repeat from the PC's `h`. No laptop key moves the arm to a pose. The start pose is measured once (PC directions,
++   step 10, "The start pose"); until then `p` is refused and `c` starts wherever the arm is.
+ 
+ **Always the PC first, then the laptop.** Stop the arm at any time with `s` on either machine, or the user stop.
+ 
+diff --git a/deployment/PLAN.md b/deployment/PLAN.md
+index 42789c6..f0dc767 100644
+--- a/deployment/PLAN.md
++++ b/deployment/PLAN.md
+@@ -203,7 +203,7 @@ inside franka_control, not as a client).
+ | `hello` (new) | none | `t_pc_ns` (PC clock, read while answering), the PC's commit, `mock`, `F_T_TCP`, `gripper_width_max_m`, `max_waypoints`, `watchdog_limit_s`, `homing_timeout_s`, `max_lead_s`. Read-only. |
+ | `get_state` | none | one C2 message |
+ | `heartbeat` | none | ok. Every manager loop cycle (20 ms), with or without new waypoints. |
+-| `start` | none | ok (`idle`/`stopped` → `holding` at the current target), or refused with the reason |
++| `start` | none | ok (`idle`/`stopped` → `holding` at the current target), or refused with the reason. **2026-11-20:** once `homing.q_start_rad` is set, also refused unless every joint is within `homing.at_pose_tol_rad` of it (`not at the start pose: press h, then p on the PC`) |
+ | `stop` | none | ok: stop following, hold. Never refused. |
+ | `home` | none | ok when the home pose is reached (blocking joint move of all 7 joints); refused unless `idle`/`stopped`; `ok: false` with a reason starting `stopped:` when the PC's `s` stopped the move (the PC is then `stopped`) |
+ | `set_waypoints` | `chunk_id`; `t_ns` int64 (N,) increasing, **PC clock**; `O_T_TCP` float64 (N, 4, 4); `gripper_width_m` float64 (N,) | `accepted` (shortened ones included), `shortened`, `skipped` (time already passed), `rejected` with reasons. Replaces every waypoint not yet reached. |
+@@ -377,12 +377,13 @@ and whether the hand's homing can be interrupted, is checked at bring-up; either
+ homes its fingers once, and the arm holds where it is. It stays up across laptop runs and is restarted only after a
+ fault or at the end of the day.
+ 
+-**PC keyboard** (inside franka_control, not a C3 client; `h` and `g` are refused while `running`/`holding`, i.e. while
++**PC keyboard** (inside franka_control, not a C3 client; `h`, `p` and `g` are refused while `running`/`holding`, i.e. while
+ the laptop is driving an episode; `s` and `q` are never refused):
+ 
+ | Key | Does |
+ |---|---|
+ | `h` | home the arm: all 7 joints to `homing.q_home_rad`, slow joint move (as verified) |
++| `p` | **2026-11-20.** start pose: only from home (joints within `homing.at_pose_tol_rad`), the same joint move to `homing.q_start_rad` (measured on the arm: the training demos' start, fingertips ~48° from straight down, ~16 cm above the table), the hand opened fully; at the end the TCP must be inside the box and the cone, else `fault`. Refused while `q_start_rad` is unset |
+ | `g` | home the hand: the Franka Hand's own homing (fingers close and reopen to calibrate) |
+ | `s` | stop: hold where it is |
+ | `q` / Ctrl-C | stop the arm and exit |
+@@ -415,8 +416,9 @@ exchanges start and give 2 s of clock samples → `hello` checked (section 5.4)
+ A commit different from the PC's is a warning, not a refusal; every difference that matters is caught by the `hello`
+ checks. A trained policy is refused on the real arm while `frames.yaml` says `settled: false` (section 9).
+ 
+-**Laptop keyboard:** `c` start an episode, `y` / `n` end it as success / failure, `s` stop, `h` home (C3 `home`),
+-`q` quit. Same meaning as in `rnoro/deployment`; `c` and `h` are refused locally while C2 shows `homing` (section 7).
++**Laptop keyboard:** `c` start an episode, `y` / `n` end it as success / failure, `s` stop, `q` quit. (**2026-11-20:**
++the laptop's `h` is removed: no laptop key moves the arm to a pose; homing and the start pose are the PC's `h` and `p`.
++C3 `home` stays in the contract.) Same meaning as in `rnoro/deployment`; `c` is refused locally while C2 shows `homing` (section 7).
+ 
+ **From `rnoro/deployment`:**
+ - frames: the pi_v1 path (`pi_stream_source`, `receiver`, buffer, selector, image prep copied from dataproc unchanged,
+diff --git a/deployment/control_deploy/DIRECTIONS.md b/deployment/control_deploy/DIRECTIONS.md
+index 6dc1c10..c7aef2c 100644
+--- a/deployment/control_deploy/DIRECTIONS.md
++++ b/deployment/control_deploy/DIRECTIONS.md
+@@ -18,12 +18,15 @@ Every command below runs from `~/Capstone/deployment` (step 2), in a terminal wh
+ >
+ > | Key on the PC | What it does |
+ > |---|---|
+-> | `h` | home the arm: all 7 joints to the home pose, slow joint move |
++> | `h` | home the arm: all 7 joints to the home pose (fingertips straight down), slow joint move |
++> | `p` | start pose: from home only, a slow joint move to `homing.q_start_rad` (the pose the training demos started from: fingertips tilted ~48°), and the hand opens fully |
+ > | `g` | home the hand: the fingers close and reopen to calibrate, then go back to their width |
+ > | `s` | stop: the arm holds where it is |
+ > | `q` or Ctrl-C | stop the arm and quit |
+ >
+-> `h` and `g` are refused while the laptop is running an episode. `s` and `q` always work.
++> `h`, `p` and `g` are refused while the laptop is running an episode. `s` and `q` always work.
++> Before every episode: `h`, then `p`, then `c` on the laptop. Once `homing.q_start_rad` is set (step 8), the PC refuses
++> the laptop's start (`c`) unless the arm is at the start pose.
+ 
+ ---
+ 
+@@ -174,6 +177,8 @@ franka_control:
+     com_m: [0.0, 0.0, 0.05]        # its centre of mass from the flange (m, from CAD)
+   gripper:
+     width_offset_m: 0.0            # real fingertip opening minus the width the hand reports
++  # homing:                       # the start pose, once measured (step 10, "The start pose"): uncomment and paste
++  #   q_start_rad: [...]           # the line pc_probe --start-pose prints (7 joint angles, rad)
+ ```
+ 
+ | Value | How to get it |
+@@ -182,6 +187,7 @@ franka_control:
+ | the home pose (`homing.q_home_rad`) | Keep the default. In step 10, after `h`, the `tcp x y z` on the status line must be inside the box. |
+ | `load.mass_kg`, `load.com_m` | Weigh the rig without the Franka Hand. While it is 0, `check` warns and the arm sags a few mm. |
+ | `gripper.width_offset_m` | In step 10: measure the fingertip gap with calipers and compare it with `grip` on the status line. |
++| the start pose (`homing.q_start_rad`) | In step 10, below "The start pose". Until it is set, `p` is refused (`homing.q_start_rad is not set`) and episodes start wherever the arm is. |
+ 
+ - **Good:** `~/envs/control_deploy/bin/control_deploy check` shows `config  PASS`, `payload  PASS`, and the `todo`
+   row no longer lists these keys (it may still list the gains, collision thresholds and cone: those are fine).
+@@ -196,7 +202,8 @@ Runs everything with a fake arm on this PC only, to check the install. `--local`
+ ~/envs/control_deploy/bin/control_deploy run --mock --local
+ ```
+ 
+-Press `h`, wait for `homing finished`, then `g`, wait for `hand homing finished`, then `s`, then `q`.
++Press `h`, wait for `homing finished`, then `g`, wait for `hand homing finished`, then `s`, then `q`. (`p` answers
++`refused: homing.q_start_rad is not set` until step 8 sets it.)
+ 
+ - **Good:** see the `run --mock` section below. It ends with `control_deploy: franka_control stopped cleanly`.
+ - **If not:** "When something fails".
+@@ -214,7 +221,28 @@ The first time on the real arm, test it alone with the console before any laptop
+    down the text, Ctrl-C and start `run` again. Then `h` once more: it must home normally.
+ 6. In a second terminal, `console` (section below), one step at a time. Its last step ends in `fault` on purpose:
+    Ctrl-C `run` and start it again.
+-7. Only then the laptop.
++7. **The start pose** (once; again if the table or the object's place changes). The policy starts each episode from
++   here, so its first camera view looks like the training demos'. Target, from the 30 PICK_TEST1 demos (measured
++   straight up from the table):
++
++   | | Aim for | The demos' range |
++   |---|---|---|
++   | Fingertips tilted from straight down, pointing away from the robot, camera on top | about 48° | 38–64° |
++   | Fingertips above the table | about 16 cm | 6–27 cm |
++   | The object | about 16 cm ahead of the fingertips (horizontally), centred left–right, on the table | 8–23 cm |
++
++   Within about ±10° and ±5 cm is fine.
++   1. Ctrl-C `run`. In Desk, put the arm in guiding mode (FCI off) and move it by hand to the pose above, with the
++      object in its place. Use a ruler for the height.
++   2. Back in Desk: activate FCI. Start `run` again: the arm holds where you left it.
++   3. On the laptop: `~/envs/policy_deploy/bin/python -m policy_deploy.manager.pc_probe --seconds 3 --start-pose`.
++      It prints the tilt, the height and the hand opening (compare them with the table), and a `q_start_rad: [...]`
++      line. Paste that line into `control_deploy/station.yaml` (step 8). Ctrl-C `run` and start it again.
++   4. Press `h`, then `p` (hand on the user stop): the arm goes to that pose and the hand opens. `p` again: refused
++      (`not at home`).
++   5. Compare the camera view with a training frame (laptop directions, "The frames probe"): the object should be in
++      about the same place and size.
++8. Only then the laptop.
+ 
+ - **Good:** every item behaves as described, and the console ends with `all steps done`. Keep its `results.yaml`.
+ - **If not:** "When something fails"; a `WARN` in the console is not a stop (tune the values later).
+@@ -254,13 +282,13 @@ skips the arm rows; with `--local` it skips the address and firewall rows. `run`
+ ~/envs/control_deploy/bin/control_deploy run
+ ```
+ 
+-**Keys:** `h` home arm, `g` home hand, `s` stop, `q` quit (table at the top).
++**Keys:** `h` home arm, `p` start pose, `g` home hand, `s` stop, `q` quit (table at the top).
+ 
+ **Good:** the check table, then `control_deploy: ready: C2 tcp://<PC>:5620, C3 tcp://<PC>:5630; start policy_deploy
+-on the laptop. Keys: h home arm, g home hand, s stop, q quit`. Then a status line at the bottom:
++on the laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit`. Then a status line at the bottom:
+ 
+ ```
+-idle | tcp 0.450 0.000 0.450 m | grip 0.080 m | gate a0 s0 p0 r0 | late 0 (+0/10s) | C2 100 Hz | C3 peer 192.168.50.20 | h g s q
++idle | tcp 0.450 0.000 0.450 m | grip 0.080 m | gate a0 s0 p0 r0 | late 0 (+0/10s) | C2 100 Hz | C3 peer 192.168.50.20 | h p g s q
+ ```
+ 
+ Mode (`idle`, `holding`, `running`, `stopped`, `homing`, `fault: <reason>`), the fingertip point (x y z, m), the
+@@ -289,7 +317,8 @@ starting `idle | tcp 0.450 0.000 0.450 m | grip 0.080 m`. `h` prints `key h: hom
+ ### `control_deploy console`
+ 
+ **When:** at bring-up (step 10), to test moves on the real arm without the laptop. Run it in a **second terminal**
+-while `run` shows `idle` or `stopped`. **Never** while the laptop is running.
++while `run` shows `idle` or `stopped`. **Never** while the laptop is running. Once `homing.q_start_rad` is set, press
++`h` then `p` in `run` first: the console starts like the laptop does, so it is refused away from the start pose.
+ 
+ ```bash
+ ~/envs/control_deploy/bin/control_deploy console
+@@ -329,8 +358,8 @@ prints; step 7 installs it.
+ control_deploy/franka_control/build/franka_control --station control_deploy/station.yaml --keyboard
+ ```
+ 
+-**Keys:** the same as `run`. **Good:** `ready: C2 on tcp://<PC>:5620, C3 on tcp://<PC>:5630; keys: h home arm, g home
+-hand, s stop, q quit`. Add `--mock --local` for the fake arm.
++**Keys:** the same as `run`. **Good:** `ready: C2 on tcp://<PC>:5620, C3 on tcp://<PC>:5630; keys: h home arm, p start
++pose, g home hand, s stop, q quit`. Add `--mock --local` for the fake arm.
+ 
+ ---
+ 
+@@ -355,6 +384,10 @@ hand, s stop, q quit`. Add `--mock --local` for the fake arm.
+ | `FATAL franka_control: cannot bind the C2 endpoint ...` | the PC's Wi-Fi address is not `link.yaml pc.address` (step 6), or another `franka_control` is running |
+ | `libfranka 0.9.2 does not match the robot's system version` | Desk → Settings → System must be 4.x for libfranka 0.9.2; ask the maintainer before changing `libfranka_version` |
+ | `fault: safety gate rejected waypoint ...` | a move outside the box (expected after the console's `out_of_box`); Ctrl-C, `run` again; if it happens with the laptop, check the box |
++| `key p refused: ... homing.q_start_rad is not set` | the start pose is not measured yet: step 10, "The start pose" |
++| `key p refused: not at home: press h first` | press `h`, wait for `homing finished`, then `p` |
++| `fault: ... homing.q_start_rad ...` (outside the box or the cone) | the start pose is outside the safety box or tilt cone: measure it again (step 10), or widen the box (step 8) if it is really safe |
++| the laptop: `c: the PC refused start: refused: not at the start pose: press h, then p on the PC` | exactly that: `h`, then `p` here, then `c` on the laptop |
+ | `stopped` during a laptop episode, `stopped: watchdog` in the log | the laptop went quiet for 1 s (Wi-Fi stall, laptop closed): the arm holds; the laptop just reruns |
+ | `realtime WARN` and late cycles or reflexes while holding | expected without a real-time (PREEMPT_RT) kernel; install one when possible, then set `realtime: enforce` in `station.yaml` |
+ | build: `Could not find a configuration file for package "Eigen3" ... version "3.4"` | Ubuntu 20.04's Eigen is 3.3. Install 3.4 into `~/franka` without `sudo`, then build again with it (below) |
+diff --git a/deployment/control_deploy/STRUCTURE.md b/deployment/control_deploy/STRUCTURE.md
+index fa22482..52adebc 100644
+--- a/deployment/control_deploy/STRUCTURE.md
++++ b/deployment/control_deploy/STRUCTURE.md
+@@ -152,7 +152,7 @@ section 3.2), `WaypointTrajectory`,
+ | same | SIGHUP joins SIGINT and SIGTERM in the blocked set and the `sigtimedwait` set (old lines 86-91, 317-327): closing the terminal shuts down cleanly. | The process now lives in a terminal for hours; the default SIGHUP action would kill it without settling. |
+ | same | Builds the `HelloReply` template (section 5.5) and passes it to `CommandServer`; passes the gripper to `Supervisor`. | |
+ | same | The shutdown stop of a homing move goes through `SharedState::stopHomingMove` and is re-sent every 100 ms while the move runs (old: once). | A stop sent just before the move's libfranka call records its epoch is lost; the move would run to its end. |
+-| same | With `--keyboard`: after the sockets are bound, starts the keyboard thread (section 4.3); the messaging loop drains `KeyQueue` each iteration (section 4.1); `q` calls `App::requestStop()`. The ready log line adds `keys: h home arm, g home hand, s stop, q quit`. | PLAN §8.1. |
++| same | With `--keyboard`: after the sockets are bound, starts the keyboard thread (section 4.3); the messaging loop drains `KeyQueue` each iteration (section 4.1); `q` calls `App::requestStop()`. The ready log line adds `keys: h home arm, p start pose, g home hand, s stop, q quit`. | PLAN §8.1. |
+ | same | `App(CommandLine, AppOverrides = {})`. `AppOverrides` is for tests only and never reachable from the command line: endpoints (e.g. `tcp://127.0.0.1:*`), `link_file`, `frames_file`, `keyboard_fd`. | Unit tests bind free ports (top §2.3) and feed keys through a pipe; old tests set endpoints through the station, which is no longer allowed. |
+ | `include/contract_limits.h`, `src/codec.cpp`, `include/command_server.h`, `include/config_loader.h`, `include/config.h` | Header comments that name `contracts/contracts/...`, `message_comms`, `deploy` STRUCTURE sections. | |
+ 
+@@ -227,7 +227,7 @@ Each failing step ends the process with one `FATAL franka_control: <what failed>
+    messaging, gripper and gripper-reader threads, and with `--keyboard` the keyboard thread (it first discards keys
+    typed before this point: `tcflush(TCIFLUSH)` on a TTY).
+ 8. **Ready**: the first C2 is published, the ready file is created (`--ready-file`), and the log says
+-   `ready: C2 on tcp://192.168.50.10:5620, C3 on tcp://192.168.50.10:5630; keys: h home arm, g home hand, s stop, q quit`.
++   `ready: C2 on tcp://192.168.50.10:5620, C3 on tcp://192.168.50.10:5630; keys: h home arm, p start pose, g home hand, s stop, q quit`.
+    From here C3 is answered and keys are acted on. The mode is `idle`; the arm holds where it was.
+ 
+ The laptop never sees the ready file; it decides readiness from C2 and `hello` (PLAN §8.2, top §8.2).
+@@ -258,10 +258,17 @@ class KeyQueue {                             // keyboard -> messaging; mutex (ne
+ ```
+ 
+ - `run()` polls the fd every 50 ms (so it sees `shutdown` quickly), reads bytes, maps each one. Unknown bytes log
+-  `keys: h home arm, g home hand, s stop, q quit` (at most once a second). Upper case acts like lower case, so with
++  `keys: h home arm, p start pose, g home hand, s stop, q quit` (at most once a second). Upper case acts like lower case, so with
+   caps lock on `S` still stops (it would otherwise print the help line).
+ - `q`: calls `on_quit` (= `App::requestStop()`, the same path as SIGTERM). It is not queued.
+-- `h`, `g`, `s`: pushed to `KeyQueue` (`s` always gets in, even when 16 keys wait); the messaging thread calls
++- `p` (2026-11-20, start pose): from home only (every joint within `homing.at_pose_tol_rad` of `q_home_rad`), the
++  same arm-homing path as `h` (`Supervisor::startArmMove`: one shared helper for bookkeeping, stop/abort, timeout,
++  logging) to `homing.q_start_rad`; the kHome `LoopCommand` carries the joint target and an open width, and
++  `ControlLoop::run()` sets the finger target to `gripper_width_max_m` just before the move (outside the 1 kHz path).
++  At the end: TCP inside the box **and** tilt <= `safety.cone_max_deg` (no margin, like the box), else `fault` naming
++  `homing.q_start_rad`. Refused while `q_start_rad` is unset. Once it is set, C3 `start` is refused unless every joint
++  is within the tolerance of it (`not at the start pose: press h, then p on the PC`); unset, `start` is unchanged.
++- `h`, `g`, `p`, `s`: pushed to `KeyQueue` (`s` always gets in, even when 16 keys wait); the messaging thread calls
+   `Supervisor::onKey`, which logs one line with the
+   result, e.g. `key h: homing the arm: 4.2 s joint move to homing.q_home_rad` or
+   `key h refused: mode is running: the laptop is driving an episode: press s or stop it on the laptop first`.
+@@ -578,7 +585,7 @@ ported from old:franka_control/launch.py:42-118 (tests from old:franka_control/t
+    at the bottom: before printing a log line it clears the status line (`\r\033[K`), prints the line, redraws.
+ 5. Waits for the ready file, at most 90 s (FCI connect + finger homing + the hold). Then prints
+    `control_deploy: ready: C2 tcp://192.168.50.10:5620, C3 tcp://192.168.50.10:5630; start policy_deploy on the
+-   laptop. Keys: h home arm, g home hand, s stop, q quit`. Not ready after 90 s: SIGTERM, and the old READY_HINT
++   laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit`. Not ready after 90 s: SIGTERM, and the old READY_HINT
+    ("check robot_ip, FCI enabled in Desk, brakes unlocked, user stop released, and the log").
+ 6. **Status line**, redrawn 4 times a second from a C2 `Subscriber` (deploy_contracts) on the bound C2 endpoint, plus
+    the C3 peers from `ss -Htn state established '( sport = :5630 )'`:
+@@ -721,6 +728,8 @@ homing:
+   max_joint_speed_rad_per_s: 0.3
+   min_duration_s: 2.0
+   timeout_s: 30.0                     # arm and hand homing; reported in hello (the laptop's home timeout must exceed it)
++  q_start_rad: null                   # 2026-11-20: the start pose (key p); measured on the arm, set in station.yaml
++  at_pose_tol_rad: 0.05               # per joint: "at home" for p, "at the start pose" for C3 start
+ 
+ gripper:                              # max opening: gripper_width_max_m in contracts/limits.yaml
+   speed_m_per_s: 0.05
+diff --git a/deployment/control_deploy/control_deploy/cli.py b/deployment/control_deploy/control_deploy/cli.py
+index a6a4846..4fd8027 100644
+--- a/deployment/control_deploy/control_deploy/cli.py
++++ b/deployment/control_deploy/control_deploy/cli.py
+@@ -1,7 +1,7 @@
+ """control_deploy check | run | console | firewall [--mock] [--local] [--station FILE] (control_deploy/STRUCTURE.md 6.1).
+ 
+   check     the PC's checks (a table; exit 2 on any fail). Never moves the arm, never connects to FCI.
+-  run       check, then franka_control on this terminal (keys h home arm, g home hand, s stop, q quit).
++  run       check, then franka_control on this terminal (keys h home arm, p start pose, g home hand, s stop, q quit).
+   console   the bring-up C3 client (a second terminal, while run shows idle or stopped; never with the laptop).
+   firewall  prints the nftables table for contracts/link.yaml (install it once with sudo).
+ """
+diff --git a/deployment/control_deploy/control_deploy/runner.py b/deployment/control_deploy/control_deploy/runner.py
+index 3cf424b..6ec46bf 100644
+--- a/deployment/control_deploy/control_deploy/runner.py
++++ b/deployment/control_deploy/control_deploy/runner.py
+@@ -29,7 +29,7 @@ STOP_TIMEOUT_S = 5.0          # SIGTERM -> SIGKILL; the binary's own budget is 3
+ STATUS_PERIOD_S = 0.25
+ PEERS_PERIOD_S = 1.0
+ READY_HINT = "check robot_ip, FCI enabled in Desk, brakes unlocked, user stop released, and the log"
+-KEYS = "Keys: h home arm, g home hand, s stop, q quit"
++KEYS = "Keys: h home arm, p start pose, g home hand, s stop, q quit"
+ 
+ 
+ class Runner:
+diff --git a/deployment/control_deploy/control_deploy/status_line.py b/deployment/control_deploy/control_deploy/status_line.py
+index 6acff96..a8fa684 100644
+--- a/deployment/control_deploy/control_deploy/status_line.py
++++ b/deployment/control_deploy/control_deploy/status_line.py
+@@ -51,7 +51,7 @@ class StatusLine:
+             f"late {late_now} (+{late_recent} in {LATE_WINDOW_S:g} s)",
+             f"C2 {rate:.0f} Hz",
+             "C3 peer " + (", ".join(peers) if peers else "none"),
+-            "h g s q",
++            "h p g s q",
+         ]
+         # The layout of STRUCTURE.md 6.4 is 134 columns for a typical state: compact it only as far as needed.
+         sep = " | "
+@@ -62,6 +62,10 @@ class StatusLine:
+         if len(line) > self.width:
+             sep = "|"
+             line = sep.join(parts)
++        if len(line) > self.width:   # the key hint grew with p: drop the tcp unit and the C2 rate's space
++            parts[1] = f"tcp {p[0]:.3f} {p[1]:.3f} {p[2]:.3f}"
++            parts[5] = f"C2 {rate:.0f}Hz"
++            line = sep.join(parts)
+         if len(line) > self.width and s.mode == "fault":   # the error text matters most: keep it, the peers, the keys
+             tail = " | " + " | ".join(parts[-2:])
+             room = max(10, self.width - len(tail))
+diff --git a/deployment/control_deploy/franka_control/config.yaml b/deployment/control_deploy/franka_control/config.yaml
+index ee81c39..e3102cd 100644
+--- a/deployment/control_deploy/franka_control/config.yaml
++++ b/deployment/control_deploy/franka_control/config.yaml
+@@ -1,6 +1,7 @@
+ # from rnoro/deployment:deployment/franka_control/config.yaml @ 91b178b
+ # changes: tcp: removed (F_T_TCP is contracts/frames.yaml); watchdog.limit_s removed (contracts/link.yaml
+ # timing.watchdog_limit_s); safety.max_lead_s 5.0 -> 1.5; comments name control_deploy (control_deploy/STRUCTURE.md 7).
++# + homing.q_start_rad and homing.at_pose_tol_rad (key p, the start pose).
+ # franka_control: every setting, with its default (control_deploy/STRUCTURE.md section 7).
+ # control_deploy/station.yaml's `franka_control:` section may override any key except libfranka_version: maps merge
+ # key by key, other values are replaced, an unknown key is an error. F_T_TCP is in contracts/frames.yaml, the
+@@ -58,6 +59,8 @@ homing:
+   max_joint_speed_rad_per_s: 0.3
+   min_duration_s: 2.0
+   timeout_s: 30.0                     # arm and hand homing; reported in hello (the laptop's home timeout must exceed it)
++  q_start_rad: null   # TODO: measure on the arm (hand-guide to the demos' start, read with pc_probe --start-pose); null: p refused
++  at_pose_tol_rad: 0.05               # every joint: "at home" for p, "at the start pose" for C3 start (once q_start_rad is set)
+ 
+ gripper:                              # max opening: gripper_width_max_m in contracts/limits.yaml
+   speed_m_per_s: 0.05
+diff --git a/deployment/control_deploy/franka_control/include/franka_control/config.h b/deployment/control_deploy/franka_control/include/franka_control/config.h
+index 9ee3eaa..07a5205 100644
+--- a/deployment/control_deploy/franka_control/include/franka_control/config.h
++++ b/deployment/control_deploy/franka_control/include/franka_control/config.h
+@@ -1,6 +1,7 @@
+ // from rnoro/deployment:deployment/franka_control/include/franka_control/config.h @ 91b178b
+ // changes: F_T_TCP and watchdog.limit_s are now filled from contracts/frames.yaml and contracts/link.yaml; new fields
+ // pc_address, local and the contract file paths; GateConfig::max_lead_s default 1.5 (control_deploy/STRUCTURE.md 3.1).
++// + HomingConfig::q_start_rad and at_pose_tol_rad (key p, the start pose).
+ // Every setting of config.yaml (merged with the station's franka_control section), plus the contract files'
+ // values, as plain data (control_deploy/STRUCTURE.md section 7).
+ #pragma once
+@@ -72,6 +73,8 @@ struct WatchdogConfig {
+ 
+ struct HomingConfig {
+   Vec7 q_home_rad = Vec7::Zero();
++  std::optional<Vec7> q_start_rad;        // the episode start pose (key p); nullopt (config null): p refused
++  double at_pose_tol_rad = 0.05;          // "at home" (for p) and "at the start pose" (for C3 start), every joint
+   double max_joint_speed_rad_per_s = 0.3;
+   double min_duration_s = 2.0;
+   double timeout_s = 30.0;
+diff --git a/deployment/control_deploy/franka_control/include/franka_control/control_loop.h b/deployment/control_deploy/franka_control/include/franka_control/control_loop.h
+index 65729cb..8a68d6c 100644
+--- a/deployment/control_deploy/franka_control/include/franka_control/control_loop.h
++++ b/deployment/control_deploy/franka_control/include/franka_control/control_loop.h
+@@ -2,7 +2,8 @@
+ // changes: run() only: a homing abort before the move skips it; a stop-requested end of the move with the abort flag
+ // set waits for the robot to leave its move mode and starts a new torque session instead of ending the thread
+ // (control_deploy/STRUCTURE.md 3.3, 4.4); the homing move is marked in SharedState (begin/endHomingMove) instead of
+-// in_homing_ (fix wave). step() and observeHoming() are unchanged.
++// in_homing_ (fix wave). step() and observeHoming() are unchanged. + the kHome goal (homing.q_home_rad or the start
++// pose of key p) and its finger target: stored by step() when it accepts the kHome, used by run().
+ // The control thread: torque sessions, the 1 kHz step, homing moves between sessions.
+ // step() never blocks, allocates, locks, logs or throws on purpose; it talks to the other threads only through the
+ // wait-free parts of SharedState.
+@@ -67,6 +68,9 @@ class ControlLoop {
+   uint64_t applied_generation_ = 0;
+   uint64_t watchdog_trip_generation_ = 0;
+   uint64_t home_generation_ = 0;
++  Vec7 home_target_ = Vec7::Zero();            // the accepted kHome's joint goal
++  std::optional<double> home_open_width_m_;    // the accepted kHome's finger target during the move
++  bool hold_open_width_next_session_ = false;  // a move with an open width finished: the next session keeps that target
+   uint64_t homed_generation_ = 0;
+   uint64_t homing_aborted_generation_ = 0;
+   Ending ending_ = Ending::kNone;
+diff --git a/deployment/control_deploy/franka_control/include/franka_control/key_queue.h b/deployment/control_deploy/franka_control/include/franka_control/key_queue.h
+index 07d1ee6..a23bc90 100644
+--- a/deployment/control_deploy/franka_control/include/franka_control/key_queue.h
++++ b/deployment/control_deploy/franka_control/include/franka_control/key_queue.h
+@@ -1,6 +1,6 @@
+ // New (control_deploy/STRUCTURE.md 3.3, 4.3): the PC keys, and the queue that carries h, g, s from the
+ // keyboard thread to the messaging thread (the Supervisor belongs to the messaging thread). A mutex is fine: neither
+-// thread is the 1 kHz loop. Bounded for h and g; a stop is never dropped.
++// thread is the 1 kHz loop. Bounded for h, p and g; a stop is never dropped.
+ #pragma once
+ 
+ #include <cstddef>
+@@ -10,14 +10,14 @@
+ 
+ namespace franka_control {
+ 
+-enum class Key { kHomeArm, kHomeHand, kStop, kQuit };
++enum class Key { kHomeArm, kStartPose, kHomeHand, kStop, kQuit };
+ 
+-const char* keyChar(Key k);                         // "h", "g", "s", "q"
++const char* keyChar(Key k);                         // "h", "p", "g", "s", "q"
+ 
+ class KeyQueue {
+  public:
+   static constexpr size_t kCapacity = 16;
+-  void push(Key k);                                 // h, g: dropped with a warning when kCapacity are waiting;
++  void push(Key k);                                 // h, p, g: dropped with a warning when kCapacity are waiting;
+                                                     // s: never dropped (q is never queued)
+   std::optional<Key> pop();                         // nullopt when empty
+ 
+diff --git a/deployment/control_deploy/franka_control/include/franka_control/keyboard_reader.h b/deployment/control_deploy/franka_control/include/franka_control/keyboard_reader.h
+index 56351e5..7d5c831 100644
+--- a/deployment/control_deploy/franka_control/include/franka_control/keyboard_reader.h
++++ b/deployment/control_deploy/franka_control/include/franka_control/keyboard_reader.h
+@@ -1,9 +1,10 @@
+ // New (control_deploy/STRUCTURE.md 3.3, 4.3): the keyboard thread (only with --keyboard) and the terminal's cbreak
+-// mode.
+-// Keys: h home the arm, g home the hand, s stop and hold, q quit; upper case acts like lower case (caps lock). Keys
+-// never feed the watchdog. Ctrl-C stays SIGINT (handled by the main thread); Ctrl-Z and Ctrl-\ are disabled (a stopped
+-// process would miss FCI packets and trip a reflex); Ctrl-S/Ctrl-Q flow control is off (a paused terminal would block
+-// every log line). EOF or a read error ends the thread ("keys disabled"); it is never `q`.
++// mode. + p, the start pose.
++// Keys: h home the arm, p the start pose (from home only; opens the hand), g home the hand, s stop and hold, q quit;
++// upper case acts like lower case (caps lock). Keys never feed the watchdog. Ctrl-C stays SIGINT (handled by the main
++// thread); Ctrl-Z and Ctrl-\ are disabled (a stopped process would miss FCI packets and trip a reflex); Ctrl-S/Ctrl-Q
++// flow control is off (a paused terminal would block every log line). EOF or a read error ends the thread ("keys
++// disabled"); it is never `q`.
+ #pragma once
+ 
+ #include <termios.h>
+@@ -37,8 +38,8 @@ class KeyboardReader {                              // keyboard thread
+   static constexpr int kPollMs = 50;                // sees shutdown within this
+   KeyboardReader(int fd, KeyQueue& keys, std::function<void()> on_quit, const SharedState& shared);
+   void run();                                       // until shutdown, EOF or a read error
+-  static std::optional<Key> map(char c);            // the one key table: 'h', 'g', 's', 'q' and their upper case
+-  static const char* help();                        // "keys: h home arm, g home hand, s stop, q quit"
++  static std::optional<Key> map(char c);            // the one key table: 'h', 'p', 'g', 's', 'q' and upper case
++  static const char* help();                        // "keys: h home arm, p start pose, g home hand, s stop, q quit"
+ 
+  private:
+   void handle(char c);
+diff --git a/deployment/control_deploy/franka_control/include/franka_control/shared_state.h b/deployment/control_deploy/franka_control/include/franka_control/shared_state.h
+index 2297c10..b56c338 100644
+--- a/deployment/control_deploy/franka_control/include/franka_control/shared_state.h
++++ b/deployment/control_deploy/franka_control/include/franka_control/shared_state.h
+@@ -2,7 +2,8 @@
+ // changes: + LoopSnapshot::homing_aborted_generation; + the homing-abort flag (messaging -> control), the hand-homing
+ // request (messaging -> gripper) and its report (gripper -> messaging); none is touched by ControlLoop::step
+ // (control_deploy/STRUCTURE.md 4.1). Fix wave: the arm's homing move and the hand's homing each have a small lock, so
+-// a stop reaches only the move it is meant for (STRUCTURE.md 4.4).
++// a stop reaches only the move it is meant for (STRUCTURE.md 4.4). + LoopCommand::q_target and open_width_m (kHome:
++// the start pose of key p, and the hand opening during that move).
+ // Where the threads meet. The 1 kHz loop uses only the wait-free parts.
+ #pragma once
+ 
+@@ -25,6 +26,8 @@ struct LoopCommand {                      // messaging -> control
+   uint64_t generation = 0;                // +1 per posted command; the loop acts on each generation once
+   Kind kind = Kind::kHold;
+   WaypointTrajectory plan;                // used with kFollow
++  std::optional<Vec7> q_target;           // kHome: the joint move's goal (nullopt: homing.q_home_rad)
++  std::optional<double> open_width_m;     // kHome: the fingers' target during the move (nullopt: unchanged)
+ };
+ 
+ struct LoopStats {                        // the last completed window, computed by the loop itself
+diff --git a/deployment/control_deploy/franka_control/include/franka_control/supervisor.h b/deployment/control_deploy/franka_control/include/franka_control/supervisor.h
+index a338a28..addc793 100644
+--- a/deployment/control_deploy/franka_control/include/franka_control/supervisor.h
++++ b/deployment/control_deploy/franka_control/include/franka_control/supervisor.h
+@@ -5,6 +5,9 @@
+ // (control_deploy/STRUCTURE.md 3.3, 4.4). Fix wave: the arm stop (abort or homing timeout) goes through
+ // SharedState::stopHomingMove and is re-sent every 100 ms while that move runs and its outcome is unresolved; the
+ // hand's stop goes through SharedState::stopHandHoming (never a finger move).
++// + key p, the start pose (onStartPose): the arm's homing path to homing.q_start_rad from home, the hand opened to
++// gripper_width_max_m meanwhile, completion checked against the box and the cone; C3 start refused away from the start
++// pose once homing.q_start_rad is set.
+ // The messaging thread's decisions: owns the StateMachine, the SafetyGate, the watchdog and the current plan; turns
+ // the loop's, the gripper's and the keyboard's events into state changes; builds every C3 reply and C2 message.
+ #pragma once
+@@ -46,7 +49,10 @@ class Supervisor {                                 // messaging thread
+   // nullopt: homing started; a C3 home gets its reply later through pollHome(), a key homing only a log line.
+   std::optional<msg::Ack> onHome(Source source = Source::kC3);
+   std::optional<msg::Ack> onHandHome();            // the hand's own homing (key g only); nullopt: started
+-  void onKey(Key key);                             // h, g, s from the PC keyboard: acts and logs one line
++  // Key p only: from home, the arm's homing move to homing.q_start_rad (mode homing) and the hand opened; nullopt:
++  // started. Refused while q_start_rad is unset, away from home (homing.at_pose_tol_rad) or outside idle/stopped.
++  std::optional<msg::Ack> onStartPose(Source source = Source::kKeyboard);
++  void onKey(Key key);                             // h, p, g, s from the PC keyboard: acts and logs one line
+   std::optional<msg::Ack> pollHome();              // the deferred reply, once homing ended (ok, failed, timeout)
+   msg::ArmState stateMessage(uint64_t seq) const;  // C2 content (also the get_state reply)
+   Mode mode() const { return sm_.mode(); }
+@@ -54,7 +60,9 @@ class Supervisor {                                 // messaging thread
+   const msg::GateCounters& gateCounters() const { return gate_counts_; }
+ 
+  private:
+-  uint64_t post(LoopCommand::Kind kind, const WaypointTrajectory* plan = nullptr);
++  uint64_t post(LoopCommand::Kind kind, const WaypointTrajectory* plan = nullptr,
++                const std::optional<Vec7>& q_target = std::nullopt,
++                std::optional<double> open_width_m = std::nullopt);
+   void toFault(Event e, const std::string& text);
+   bool started() const { return sm_.mode() == Mode::kHolding || sm_.mode() == Mode::kRunning; }
+   TrajectoryPoint snapshotTarget(int64_t now_ns) const;
+@@ -66,6 +74,12 @@ class Supervisor {                                 // messaging thread
+   std::string keyRefusal(const std::string& reason) const;
+ 
+   enum class HomingKind { kArm, kHand };
++  enum class ArmGoal { kHome, kStartPose };          // h (and C3 home), or p
++
++  // The arm's homing path shared by h and p: the timeout check, the bookkeeping, the kHome command, the log line.
++  std::optional<msg::Ack> startArmMove(Source source, ArmGoal goal, const Vec7& target,
++                                       std::optional<double> open_width_m);
++  static double maxJointError(const Vec7& a, const Vec7& b) { return (a - b).cwiseAbs().maxCoeff(); }
+ 
+   SharedState& shared_;
+   Arm& arm_;
+@@ -87,6 +101,8 @@ class Supervisor {                                 // messaging thread
+   int64_t next_stats_ns_ = 0;
+   Gripper* gripper_ = nullptr;
+   HomingKind homing_kind_ = HomingKind::kArm;
++  ArmGoal arm_goal_ = ArmGoal::kHome;
++  double gripper_open_m_ = 0.0;                    // contracts/limits.yaml gripper_width_max_m (p opens to it)
+   Source homing_source_ = Source::kC3;
+   bool abort_pending_ = false;                     // a stop arrived during this homing
+   Source abort_source_ = Source::kC3;
+diff --git a/deployment/control_deploy/franka_control/src/config_loader.cpp b/deployment/control_deploy/franka_control/src/config_loader.cpp
+index b0ffb43..70bd138 100644
+--- a/deployment/control_deploy/franka_control/src/config_loader.cpp
++++ b/deployment/control_deploy/franka_control/src/config_loader.cpp
+@@ -4,9 +4,12 @@
+ // tcp://127.0.0.1:<port> with --local; a station `endpoints:` section is refused; a station override of tcp.* or
+ // watchdog.limit_s gets a "moved to" hint; the 0.5 s floor checks the link.yaml value; toYaml adds a contracts: block
+ // (control_deploy/STRUCTURE.md 3.1). The merge of the station's franka_control section is unchanged.
++// + homing.q_start_rad (null or absent: unset; else 7 numbers inside the Panda's joint limits) and
++// homing.at_pose_tol_rad (key p, the start pose).
+ #include "franka_control/config_loader.h"
+ 
+ #include <cmath>
++#include <cstdio>
+ #include <cstdlib>
+ #include <functional>
+ #include <set>
+@@ -25,6 +28,9 @@ namespace {
+ constexpr double kWatchdogLimitMinS = 0.5;   // franka_control's own floor for link.yaml timing.watchdog_limit_s
+ constexpr double kJointImpedanceMax = 14250.0;   // libfranka setJointImpedance range
+ constexpr double kCutoffMaxHz = 1000.0;          // libfranka kMaxCutoffFrequency
++// The Panda's joint position limits (Franka's datasheet, "Robot and interface specifications"), rad.
++constexpr double kPandaQMin[7] = {-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973};
++constexpr double kPandaQMax[7] = {2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973};
+ 
+ std::vector<std::string> splitPath(const std::string& path) {
+   std::vector<std::string> parts;
+@@ -196,6 +202,11 @@ class Reader {
+     }
+     return true;
+   }
++  // Whether the key exists (null counts), without a "missing" problem when it does not.
++  bool present(const std::string& path) {
++    used_.insert(path);
++    return static_cast<bool>(descend(root_, splitPath(path), 0));
++  }
+   bool isNull(const std::string& path) {
+     const YAML::Node n = node(path);
+     return n && n.IsNull();
+@@ -480,6 +491,22 @@ Config ConfigLoader::load(const std::filesystem::path& station_file, bool mock,
+   rd.positive("homing.max_joint_speed_rad_per_s", c.homing.max_joint_speed_rad_per_s);
+   rd.positive("homing.min_duration_s", c.homing.min_duration_s);
+   rd.positive("homing.timeout_s", c.homing.timeout_s);
++  if (rd.present("homing.q_start_rad") && !rd.isNull("homing.q_start_rad") && rd.numbers("homing.q_start_rad", 7, v)) {
++    Vec7 q;
++    bool inside = true;
++    for (int i = 0; i < 7; ++i) {
++      q(i) = v[static_cast<size_t>(i)];
++      if (inside && !(q(i) >= kPandaQMin[i] && q(i) <= kPandaQMax[i])) {
++        inside = false;
++        char buf[160];
++        std::snprintf(buf, sizeof(buf), "joint %d (%.4f rad) is outside the Panda's limits [%.4f, %.4f] rad", i + 1,
++                      q(i), kPandaQMin[i], kPandaQMax[i]);
++        rd.problem("homing.q_start_rad", buf);
++      }
++    }
++    if (inside) c.homing.q_start_rad = q;
++  }
++  rd.positive("homing.at_pose_tol_rad", c.homing.at_pose_tol_rad);
+ 
+   // gripper
+   rd.positive("gripper.speed_m_per_s", c.gripper.speed_m_per_s);
+diff --git a/deployment/control_deploy/franka_control/src/control_loop.cpp b/deployment/control_deploy/franka_control/src/control_loop.cpp
+index d378432..801298c 100644
+--- a/deployment/control_deploy/franka_control/src/control_loop.cpp
++++ b/deployment/control_deploy/franka_control/src/control_loop.cpp
+@@ -4,6 +4,8 @@
+ // control.settle_timeout_s) and starts a new torque session holding the measured pose, or faults if the arm then
+ // reports a problem; a normal finish clears the flag; the move is bracketed with SharedState::begin/endHomingMove, so a
+ // homing stop cannot land in the next torque session (fix wave). step() and observeHoming() are unchanged.
++// + the move's goal is the accepted kHome's q_target (h: homing.q_home_rad, p: homing.q_start_rad), and its
++// open_width_m becomes the finger target just before the move (p opens the hand); step() only stores them.
+ #include "franka_control/control_loop.h"
+ 
+ #include <algorithm>
+@@ -88,7 +90,11 @@ TorqueCommand ControlLoop::step(const ArmReading& r) {
+   if (first_cycle_) {
+     first_cycle_ = false;
+     last_target_.O_T_TCP = tcpFromFlange(r.O_T_F, F_T_TCP_);
+-    last_target_.width_m = shared_.gripperWidth();
++    // after a finished move with an open width (key p), keep that finger target: the hand may still be opening, and
++    // holding the width measured now would close it again (review 2026-11-20)
++    last_target_.width_m = (hold_open_width_next_session_ && home_open_width_m_) ? *home_open_width_m_
++                                                                                 : shared_.gripperWidth();
++    hold_open_width_next_session_ = false;
+     holdCurrent();
+     controller_.setNullspaceTarget(r.q);
+   }
+@@ -115,6 +121,8 @@ TorqueCommand ControlLoop::step(const ArmReading& r) {
+             ending_ = Ending::kHome;
+             ending_start_ns_ = t;
+             home_generation_ = c->generation;
++            home_target_ = c->q_target ? *c->q_target : homing_.q_home_rad;   // copies: no allocation
++            home_open_width_m_ = c->open_width_m;
+           }
+           break;
+       }
+@@ -277,9 +285,11 @@ void ControlLoop::run() {
+       continue;
+     }
+ 
+-    // the joint move, then a new session holding the home pose
+-    const HomingMotion motion(last_q_, homing_.q_home_rad, homing_.max_joint_speed_rad_per_s,
+-                              homing_.min_duration_s);
++    // the joint move, then a new session holding the reached pose. The fingers (key p: open) move meanwhile: the
++    // gripper thread follows this target, and after a normal finish the new session keeps it (an aborted move
++    // holds the measured width).
++    const HomingMotion motion(last_q_, home_target_, homing_.max_joint_speed_rad_per_s, homing_.min_duration_s);
++    if (home_open_width_m_) shared_.setGripperTarget(*home_open_width_m_);
+     shared_.beginHomingMove(session_);
+     try {
+       arm_.moveToJoints(motion, observe_fn);
+@@ -309,6 +319,7 @@ void ControlLoop::run() {
+     shared_.endHomingMove();   // waits for a stop being sent under its lock: it cannot reach the next session
+     shared_.clearHomingAbort();   // a stop that arrived as the move finished: the normal completion wins
+     homed_generation_ = home_generation_;
++    hold_open_width_next_session_ = home_open_width_m_.has_value();
+     ++session_;
+   }
+   cur_.phase = LoopSnapshot::Phase::kEnded;
+diff --git a/deployment/control_deploy/franka_control/src/key_queue.cpp b/deployment/control_deploy/franka_control/src/key_queue.cpp
+index 63fe7cc..c84a46c 100644
+--- a/deployment/control_deploy/franka_control/src/key_queue.cpp
++++ b/deployment/control_deploy/franka_control/src/key_queue.cpp
+@@ -10,6 +10,7 @@ namespace franka_control {
+ const char* keyChar(Key k) {
+   switch (k) {
+     case Key::kHomeArm: return "h";
++    case Key::kStartPose: return "p";
+     case Key::kHomeHand: return "g";
+     case Key::kStop: return "s";
+     case Key::kQuit: return "q";
+diff --git a/deployment/control_deploy/franka_control/src/keyboard_reader.cpp b/deployment/control_deploy/franka_control/src/keyboard_reader.cpp
+index 44c3584..dafaeed 100644
+--- a/deployment/control_deploy/franka_control/src/keyboard_reader.cpp
++++ b/deployment/control_deploy/franka_control/src/keyboard_reader.cpp
+@@ -1,4 +1,4 @@
+-// New (control_deploy/STRUCTURE.md 3.3, 4.3). Fix wave: upper case maps like lower case; IXON off.
++// New (control_deploy/STRUCTURE.md 3.3, 4.3). Fix wave: upper case maps like lower case; IXON off. + p (start pose).
+ #include "franka_control/keyboard_reader.h"
+ 
+ #include <poll.h>
+@@ -37,6 +37,8 @@ std::optional<Key> KeyboardReader::map(char c) {
+   switch (c) {
+     case 'h':
+     case 'H': return Key::kHomeArm;                 // upper case: caps lock must not turn s into a help line
++    case 'p':
++    case 'P': return Key::kStartPose;
+     case 'g':
+     case 'G': return Key::kHomeHand;
+     case 's':
+@@ -47,7 +49,7 @@ std::optional<Key> KeyboardReader::map(char c) {
+   }
+ }
+ 
+-const char* KeyboardReader::help() { return "keys: h home arm, g home hand, s stop, q quit"; }
++const char* KeyboardReader::help() { return "keys: h home arm, p start pose, g home hand, s stop, q quit"; }
+ 
+ void KeyboardReader::handle(char c) {
+   const std::optional<Key> k = map(c);
+diff --git a/deployment/control_deploy/franka_control/src/supervisor.cpp b/deployment/control_deploy/franka_control/src/supervisor.cpp
+index 71ac01f..4736a57 100644
+--- a/deployment/control_deploy/franka_control/src/supervisor.cpp
++++ b/deployment/control_deploy/franka_control/src/supervisor.cpp
+@@ -5,6 +5,9 @@
+ // (control_deploy/STRUCTURE.md 3.3, 4.4, 5.2). Fix wave: the arm stop (abort, homing timeout) is sent under
+ // SharedState::stopHomingMove, re-sent every 100 ms while that move runs and the outcome is unresolved (also after a
+ // timeout fault); the hand's stop under SharedState::stopHandHoming, so it never aborts a finger move.
++// + key p (onStartPose): from home, onHome's arm path (startArmMove, shared with h) to homing.q_start_rad with the
++// hand opened to gripper_width_max_m; its completion checks the box and the cone (cone_max_deg, no margin); onStart
++// is refused away from the start pose once homing.q_start_rad is set.
+ #include "franka_control/supervisor.h"
+ 
+ #include <cmath>
+@@ -40,15 +43,19 @@ Supervisor::Supervisor(SharedState& shared, Arm& arm, const Config& cfg, const C
+       gate_(cfg.safety, cfg.F_T_TCP, limits.gripper_width_max_m),
+       watchdog_(secondsToNs(cfg.watchdog.limit_s)),
+       scratch_(std::make_unique<LoopCommand>()),
+-      gripper_(gripper) {
++      gripper_(gripper),
++      gripper_open_m_(limits.gripper_width_max_m) {
+   snap_ = shared_.latestSnapshot();
+   next_stats_ns_ = clock_() + secondsToNs(cfg_.messaging.stats_period_s);
+   post(LoopCommand::Kind::kHold);
+ }
+ 
+-uint64_t Supervisor::post(LoopCommand::Kind kind, const WaypointTrajectory* plan) {
++uint64_t Supervisor::post(LoopCommand::Kind kind, const WaypointTrajectory* plan, const std::optional<Vec7>& q_target,
++                          std::optional<double> open_width_m) {
+   scratch_->generation = next_generation_++;
+   scratch_->kind = kind;
++  scratch_->q_target = q_target;
++  scratch_->open_width_m = open_width_m;
+   if (plan) {
+     scratch_->plan = *plan;
+   } else {
+@@ -166,15 +173,31 @@ void Supervisor::tickHoming(const LoopSnapshot& s, int64_t now) {
+     shared_.clearHomingAbort();
+     if (abort_pending_) Log::info("stop arrived after the home pose was reached");
+     const Eigen::Vector3d p = snap_.O_T_TCP.translation();
+-    if (gate_.insideBox(p)) {
++    const bool start_pose = arm_goal_ == ArmGoal::kStartPose;
++    std::string text;   // empty: the reached pose is fine
++    if (!gate_.insideBox(p)) {
++      text = std::string(start_pose ? "start" : "home") + " pose TCP (" + fmt(p.x(), 2) + ", " + fmt(p.y(), 2) +
++             ", " + fmt(p.z(), 2) + ") m is outside the workspace box: check " +
++             (start_pose ? "homing.q_start_rad" : "homing.q_home_rad") + " and the box";
++    } else if (start_pose) {
++      // the cone without its margin: a start inside the margin band would have every waypoint near it pulled back
++      const double tilt = gate_.tiltDeg(Eigen::Quaterniond(snap_.O_T_TCP.linear()));
++      if (!(tilt <= cfg_.safety.cone_max_deg)) {
++        text = "start pose tilt " + fmt(tilt, 1) + " deg from the approach axis > safety.cone_max_deg " +
++               fmt(cfg_.safety.cone_max_deg, 1) + ": check homing.q_start_rad and the cone";
++      }
++    }
++    if (text.empty()) {
+       sm_.apply(Event::kHomingDone);
+       post(LoopCommand::Kind::kHold);
+       shared_.markAlive(now);   // the watchdog resumes as soon as homing ends
+       setHomeReply(true, "");
+-      Log::info("homing finished");
++      if (start_pose) {
++        Log::info("start pose reached (fingers at " + fmt(shared_.gripperWidth(), 3) + " m): start the episode");
++      } else {
++        Log::info("homing finished");
++      }
+     } else {
+-      const std::string text = "home pose TCP (" + fmt(p.x(), 2) + ", " + fmt(p.y(), 2) + ", " + fmt(p.z(), 2) +
+-                               ") m is outside the workspace box: check homing.q_home_rad and the box";
+       toFault(Event::kHomingFailed, text);
+       post(LoopCommand::Kind::kHold);
+       shared_.markAlive(now);
+@@ -240,6 +263,9 @@ void Supervisor::onKey(Key key) {
+     case Key::kHomeArm:
+       if (auto r = onHome(Source::kKeyboard)) Log::warning("key h refused: " + keyRefusal(r->reason));
+       break;
++    case Key::kStartPose:
++      if (auto r = onStartPose(Source::kKeyboard)) Log::warning("key p refused: " + keyRefusal(r->reason));
++      break;
+     case Key::kHomeHand:
+       if (auto r = onHandHome()) {
+         Log::warning("key g refused: " + keyRefusal(r->reason));
+@@ -294,6 +320,10 @@ msg::Ack Supervisor::onHeartbeat() { return msg::Ack{true, ""}; }
+ msg::Ack Supervisor::onStart() {
+   const Transition t = sm_.check(Event::kStart);
+   if (!t.allowed) return msg::Ack{false, t.reason};
++  if (cfg_.homing.q_start_rad &&   // unset: as before (hold_still tests, the bring-up console)
++      !(maxJointError(snap_.q, *cfg_.homing.q_start_rad) <= cfg_.homing.at_pose_tol_rad)) {
++    return msg::Ack{false, "refused: not at the start pose: press h, then p on the PC"};
++  }
+   plan_.clear();
+   plan_.append(snapshotTarget(clock_()));
+   follow_generation_ = post(LoopCommand::Kind::kFollow, &plan_);
+@@ -334,27 +364,57 @@ std::optional<msg::Ack> Supervisor::onHandHome() {
+ }
+ 
+ std::optional<msg::Ack> Supervisor::onHome(Source source) {
++  return startArmMove(source, ArmGoal::kHome, cfg_.homing.q_home_rad, std::nullopt);
++}
++
++std::optional<msg::Ack> Supervisor::onStartPose(Source source) {
++  if (!cfg_.homing.q_start_rad) {
++    return msg::Ack{false, "refused: homing.q_start_rad is not set: measure it and set it in "
++                           "control_deploy/station.yaml (franka_control: homing:)"};
++  }
+   const Transition t = sm_.check(Event::kHome);
+   if (!t.allowed) return msg::Ack{false, t.reason};
+-  const HomingMotion motion(snap_.q, cfg_.homing.q_home_rad, cfg_.homing.max_joint_speed_rad_per_s,
+-                            cfg_.homing.min_duration_s);
++  if (!(maxJointError(snap_.q, cfg_.homing.q_home_rad) <= cfg_.homing.at_pose_tol_rad)) {
++    return msg::Ack{false, "refused: not at home: press h first"};
++  }
++  return startArmMove(source, ArmGoal::kStartPose, *cfg_.homing.q_start_rad, gripper_open_m_);
++}
++
++std::optional<msg::Ack> Supervisor::startArmMove(Source source, ArmGoal goal, const Vec7& target,
++                                                 std::optional<double> open_width_m) {
++  const Transition t = sm_.check(Event::kHome);
++  if (!t.allowed) return msg::Ack{false, t.reason};
++  const bool start_pose = goal == ArmGoal::kStartPose;
++  const HomingMotion motion(snap_.q, target, cfg_.homing.max_joint_speed_rad_per_s, cfg_.homing.min_duration_s);
+   if (motion.durationS() >= cfg_.homing.timeout_s) {
+-    return msg::Ack{false, "refused: home move would take " + fmt(motion.durationS(), 1) + " s > homing.timeout_s " +
+-                               fmt(cfg_.homing.timeout_s, 1) + " s: move the arm closer by hand"};
++    return msg::Ack{false, std::string("refused: ") + (start_pose ? "start pose" : "home") + " move would take " +
++                               fmt(motion.durationS(), 1) + " s > homing.timeout_s " + fmt(cfg_.homing.timeout_s, 1) +
++                               " s: move the arm closer by hand"};
+   }
+   homing_kind_ = HomingKind::kArm;
++  arm_goal_ = goal;
+   homing_source_ = source;
+   abort_pending_ = false;
+   arm_stop_sent_ns_.reset();
+   timeout_stop_pending_ = false;
+   shared_.clearHomingAbort();   // no homing runs now: nothing stale may skip this one
+-  home_generation_ = post(LoopCommand::Kind::kHome);
++  home_generation_ = post(LoopCommand::Kind::kHome, nullptr, target, open_width_m);
+   home_session_ = snap_.session;
+   home_start_ns_ = clock_();
+   home_reply_.reset();
+   sm_.apply(Event::kHome);
+-  Log::info(std::string(source == Source::kKeyboard ? "key h: homing the arm: " : "homing: ") +
+-            fmt(motion.durationS(), 1) + " s joint move to homing.q_home_rad");
++  const bool by_key = source == Source::kKeyboard;
++  if (start_pose) {
++    Log::info(std::string(by_key ? "key p: " : "") + "start pose: " + fmt(motion.durationS(), 1) +
++              " s joint move to homing.q_start_rad");
++  } else {
++    Log::info(std::string(by_key ? "key h: homing the arm: " : "homing: ") + fmt(motion.durationS(), 1) +
++              " s joint move to homing.q_home_rad");
++  }
++  if (open_width_m) {
++    Log::info(std::string(by_key ? "key p: " : "") + "the hand opens to " + fmt(*open_width_m, 3) +
++              " m (gripper_width_max_m) during the move");
++  }
+   return std::nullopt;
+ }
+ 
+diff --git a/deployment/control_deploy/franka_control/tests/test_config_loader.cpp b/deployment/control_deploy/franka_control/tests/test_config_loader.cpp
+index b2becdd..be5606f 100644
+--- a/deployment/control_deploy/franka_control/tests/test_config_loader.cpp
++++ b/deployment/control_deploy/franka_control/tests/test_config_loader.cpp
+@@ -2,6 +2,7 @@
+ // changes: EndpointsAndSessionRootComeFromTheStation -> EndpointsComeFromLinkYaml; a station endpoints: section and
+ // overrides of tcp.F_T_TCP / watchdog.limit_s refused with their hints; max_lead_s 1.5; F_T_TCP from frames.yaml;
+ // watchdog.limit_s from link.yaml and its floor; contract file problems (control_deploy/STRUCTURE.md 9.1).
++// + homing.q_start_rad and homing.at_pose_tol_rad (key p, the start pose).
+ #include <gtest/gtest.h>
+ 
+ #include <cmath>
+@@ -116,6 +117,56 @@ TEST(ConfigLoader, EachBadValueIsRefusedAndAllAreListedAtOnce) {
+   }
+ }
+ 
++TEST(ConfigLoader, TheStartPoseIsUnsetUntilTheStationSetsIt) {
++  const Config c = test::testConfig();
++  EXPECT_FALSE(c.homing.q_start_rad);   // config.yaml ships null: key p refused
++  EXPECT_DOUBLE_EQ(c.homing.at_pose_tol_rad, 0.05);
++  const Config s = test::testConfig(
++      "  homing:\n"
++      "    q_start_rad: [0.1, -0.3, 0.0, -2.2, 0.0, 2.0, 0.785]\n"
++      "    at_pose_tol_rad: 0.02\n");
++  ASSERT_TRUE(s.homing.q_start_rad);
++  Vec7 want;
++  want << 0.1, -0.3, 0.0, -2.2, 0.0, 2.0, 0.785;
++  EXPECT_TRUE(s.homing.q_start_rad->isApprox(want));
++  EXPECT_DOUBLE_EQ(s.homing.at_pose_tol_rad, 0.02);
++  EXPECT_TRUE(s.homing.q_home_rad.isApprox(c.homing.q_home_rad));   // the rest of homing stays
++  EXPECT_NE(ConfigLoader::toYaml(s).find("q_start_rad"), std::string::npos);   // --check-config shows it
++  EXPECT_FALSE(test::testConfig("  homing:\n    q_start_rad: null\n").homing.q_start_rad);
++}
++
++TEST(ConfigLoader, AnAbsentStartPoseIsUnset) {
++  const auto dir = test::tmpDir("cfgnostart");
++  std::string text = test::readFile(configFile());
++  const size_t at = text.find("  q_start_rad:");
++  ASSERT_NE(at, std::string::npos);
++  text.erase(at, text.find('\n', at) + 1 - at);
++  test::writeFile(dir / "config.yaml", text);
++  const Config c = ConfigLoader::load(test::writeStation(dir), true, false, dir / "config.yaml",
++                                      test::contractFiles());
++  EXPECT_FALSE(c.homing.q_start_rad);
++}
++
++TEST(ConfigLoader, BadStartPoseValuesAreRefused) {
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [0, 0, 0]\n"),
++                         "station.yaml: franka_control.homing.q_start_rad: expected a list of 7 numbers"));
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [0, 0, 0, -2, 0, 2, x]\n"),
++                         "homing.q_start_rad: expected a list of 7 numbers"));
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [0, 0, 0, -2, 0, 2, .nan]\n"),
++                         "homing.q_start_rad: expected a list of 7 numbers"));
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: 0.5\n"),
++                         "homing.q_start_rad: expected a list of 7 numbers"));
++  const auto p = problemsFor("  homing:\n    q_start_rad: [0, 0, 0, 0.0, 0, 2, 0]\n");
++  ASSERT_EQ(p.size(), 1u);
++  EXPECT_EQ(p[0], "station.yaml: franka_control.homing.q_start_rad: joint 4 (0.0000 rad) is outside the Panda's "
++                  "limits [-3.0718, -0.0698] rad");
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    q_start_rad: [3.0, 0, 0, -2, 0, 2, 0]\n"),
++                         "joint 1 (3.0000 rad) is outside the Panda's limits [-2.8973, 2.8973] rad"));
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    at_pose_tol_rad: 0\n"),
++                         "station.yaml: franka_control.homing.at_pose_tol_rad: must be > 0"));
++  EXPECT_TRUE(hasProblem(problemsFor("  homing:\n    at_pose_tol_rad: -0.1\n"), "homing.at_pose_tol_rad: must be > 0"));
++}
++
+ TEST(ConfigLoader, EndpointsComeFromLinkYaml) {
+   const Config c = test::testConfig();
+   EXPECT_EQ(c.pc_address, "192.168.50.10");
+diff --git a/deployment/control_deploy/franka_control/tests/test_control_loop.cpp b/deployment/control_deploy/franka_control/tests/test_control_loop.cpp
+index 3489b35..7dd429d 100644
+--- a/deployment/control_deploy/franka_control/tests/test_control_loop.cpp
++++ b/deployment/control_deploy/franka_control/tests/test_control_loop.cpp
+@@ -1,6 +1,7 @@
+ // from rnoro/deployment:deployment/franka_control/tests/test_control_loop.cpp @ 91b178b
+ // changes: the backstop case uses link.yaml's 1.0 s; + run() with a scripted Arm (stop during homing) and the stop
+-// epoch with FakeArm (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged.
++// epoch with FakeArm (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged. + the kHome goal and finger
++// target (key p, the start pose); ScriptArm records each move's goal and the finger target at the move.
+ // ControlLoop::step() with hand-made readings and a FakeClock; the test plays the messaging thread.
+ #include <gtest/gtest.h>
+ 
+@@ -293,8 +294,10 @@ class ScriptArm : public Arm {
+     }
+     ADD_FAILURE() << "a torque session did not finish";
+   }
+-  void moveToJoints(const HomingMotion&, const Observer& observe) override {
++  void moveToJoints(const HomingMotion& m, const Observer& observe) override {
+     ++moves;
++    goals.push_back(m.goal());
++    finger_targets.push_back(shared_.gripperTarget());
+     if (on_move) on_move(observe);
+   }
+   void requestStop() override {}
+@@ -314,6 +317,8 @@ class ScriptArm : public Arm {
+   ArmStatusFlags after_stop{RobotMode::kIdle, "[]"};
+   std::function<void(const Observer&)> on_move;
+   std::vector<TorqueCommand> first_command;   // the first command of each session
++  std::vector<Vec7> goals;                     // each move's goal
++  std::vector<double> finger_targets;          // SharedState::gripperTarget() as each move began
+   int sessions = 0, moves = 0, status_calls = 0;
+ 
+  private:
+@@ -452,6 +457,64 @@ TEST(ControlLoopRun, ANormalFinishWithTheFlagSetIsHomedAndClearsIt) {
+   EXPECT_EQ(r.shared->latestSnapshot().homing_aborted_generation, 0u);
+ }
+ 
++TEST(ControlLoopRun, AKHomeWithoutATargetGoesToQHomeAndLeavesTheFingers) {   // h, as before
++  RunRig r;
++  r.loop->run();
++  ASSERT_EQ(r.arm.goals.size(), 1u);
++  EXPECT_TRUE(r.arm.goals[0].isApprox(r.cfg.homing.q_home_rad));
++  EXPECT_DOUBLE_EQ(r.arm.finger_targets[0], 0.05);   // the held width
++}
++
++TEST(ControlLoopRun, TheKHomeTargetIsTheMovesGoalAndItsOpenWidthTheFingerTarget) {   // key p
++  RunRig r;
++  Vec7 q_start = r.cfg.homing.q_home_rad;
++  q_start(5) += 0.5;
++  LoopCommand c;
++  c.generation = r.home_gen;   // replaces the constructor's command before the loop saw it
++  c.kind = LoopCommand::Kind::kHome;
++  c.q_target = q_start;
++  c.open_width_m = 0.08;
++  r.shared->postCommand(c);
++  r.loop->run();
++  ASSERT_EQ(r.arm.goals.size(), 1u);
++  EXPECT_TRUE(r.arm.goals[0].isApprox(q_start));
++  EXPECT_DOUBLE_EQ(r.arm.finger_targets[0], 0.08);   // the hand opens during the move
++  EXPECT_EQ(r.shared->latestSnapshot().homed_generation, r.home_gen);
++  // the new session keeps the open target, not the measured width (0.05 here: the test's gripper does not move), so a
++  // hand still opening when the arm arrives finishes opening instead of closing again
++  EXPECT_DOUBLE_EQ(r.shared->gripperTarget(), 0.08);
++}
++
++TEST(ControlLoopRun, AStoppedPMoveHoldsTheMeasuredWidth) {   // key p, then s mid-move: hold what the hand is at
++  RunRig r;
++  Vec7 q_start = r.cfg.homing.q_home_rad;
++  q_start(5) += 0.5;
++  LoopCommand c;
++  c.generation = r.home_gen;
++  c.kind = LoopCommand::Kind::kHome;
++  c.q_target = q_start;
++  c.open_width_m = 0.08;
++  r.shared->postCommand(c);
++  r.stopTheMove(true);
++  r.loop->run();
++  ASSERT_EQ(r.arm.moves, 1);
++  EXPECT_DOUBLE_EQ(r.shared->gripperTarget(), 0.05);
++}
++
++TEST(ControlLoopRun, AnAbortBeforeTheMoveLeavesTheFingers) {
++  RunRig r;
++  LoopCommand c;
++  c.generation = r.home_gen;
++  c.kind = LoopCommand::Kind::kHome;
++  c.q_target = r.cfg.homing.q_home_rad;
++  c.open_width_m = 0.08;
++  r.shared->postCommand(c);
++  r.shared->requestHomingAbort();
++  r.loop->run();
++  EXPECT_EQ(r.arm.moves, 0);
++  EXPECT_DOUBLE_EQ(r.shared->gripperTarget(), 0.05);
++}
++
+ // ---- the stop epoch (control_deploy/STRUCTURE.md 3.3), with FakeArm in real time ----
+ 
+ struct EpochRig {
+diff --git a/deployment/control_deploy/franka_control/tests/test_fake_arm_run.cpp b/deployment/control_deploy/franka_control/tests/test_fake_arm_run.cpp
+index 3c3d9a8..a5fde81 100644
+--- a/deployment/control_deploy/franka_control/tests/test_fake_arm_run.cpp
++++ b/deployment/control_deploy/franka_control/tests/test_fake_arm_run.cpp
+@@ -2,6 +2,7 @@
+ // changes: AppOverrides (free ports, a key pipe) instead of station endpoints; the watchdog numbers from link.yaml
+ // (1.0 s); + hello, the keys h g s q through a pipe, stop during homing, the bind address; ShutdownStaysWithinThe-
+ // LaunchersStopBudget -> ...WithinTheWrappersStopBudget (same numbers) (control_deploy/STRUCTURE.md 9.1).
++// + key p (the start pose) end to end; MockApp takes station overrides.
+ // Label `threads`: short real-time runs of the whole App with --mock (FakeArm + FakeGripper) on free local ports,
+ // driven by a test REQ client and a key pipe, watched through a C2 subscriber.
+ #include <gtest/gtest.h>
+@@ -59,8 +60,9 @@ class Watcher {   // the newest C2 message, read from a SUB socket
+ 
+ // The whole App with --mock on free local ports, a key pipe as its keyboard, a REQ client and a C2 watcher.
+ struct MockApp {
+-  explicit MockApp(AppOverrides extra = {}, bool with_keys = true) : dir(test::tmpDir("run")) {
+-    cl.station = test::writeStation(dir);
++  explicit MockApp(AppOverrides extra = {}, bool with_keys = true, const std::string& station_fc = "")
++      : dir(test::tmpDir("run")) {
++    cl.station = test::writeStation(dir, station_fc);
+     cl.session = dir / "session";
+     cl.ready_file = dir / "ready";
+     cl.mock = true;
+@@ -331,6 +333,48 @@ TEST(FakeArmRunThreads, KeyGHomesTheHandAndTheWidthComesBack) {
+   EXPECT_TRUE(m.c2->waitFor([&](const msg::ArmState& s) { return std::abs(s.gripper_width_m - w0) < 0.002; }, 2.0));
+ }
+ 
++TEST(FakeArmRunThreads, KeyPGoesFromHomeToTheStartPoseOpensTheHandAndC3StartNeedsIt) {
++  // q_home_rad with joint 6 + 0.45 rad (a 2.8 s move)
++  MockApp m(AppOverrides{}, true,
++            "  homing:\n    q_start_rad: [0.0, -0.7853982, 0.0, -2.3561945, 0.0, 2.0207963, 0.7853982]\n");
++  ASSERT_TRUE(m.ready()) << m.fatal;
++  const auto refused = std::get<msg::Ack>(m.call(msg::Start{}));   // at home, not at the start pose
++  EXPECT_FALSE(refused.ok);
++  EXPECT_EQ(refused.reason, "refused: not at the start pose: press h, then p on the PC");
++  m.key('p');
++  ASSERT_TRUE(m.waitMode("homing", 2.0));
++  ASSERT_TRUE(m.waitMode("idle", 10.0));
++  EXPECT_NEAR(std::get<msg::ArmState>(m.call(msg::GetState{})).q[5], 2.0207963, 0.01);
++  // an episode closes the fingers; then h, and p opens them again
++  ASSERT_TRUE(std::get<msg::Ack>(m.call(msg::Start{})).ok);
++  const auto s0 = std::get<msg::ArmState>(m.call(msg::GetState{}));
++  const Pose here = poseFromRowMajor(s0.O_T_TCP_target);
++  const int64_t t0 = monotonicNowNs();
++  std::vector<TrajectoryPoint> pts;
++  for (int k = 1; k <= 5; ++k) {
++    pts.push_back(test::point(t0 + secondsToNs(0.1 * k), here.translation(), Eigen::Quaterniond(here.linear()),
++                              0.08 - 0.012 * k));
++  }
++  EXPECT_EQ(std::get<msg::SetWaypointsReply>(m.call(test::makeSetWaypoints(1, pts))).accepted, 5u);
++  EXPECT_TRUE(m.c2->waitFor([](const msg::ArmState& s) { return s.gripper_width_m < 0.025; }, 3.0));
++  EXPECT_TRUE(std::get<msg::Ack>(m.call(msg::Stop{})).ok);
++  m.key('p');   // not at home
++  std::this_thread::sleep_for(std::chrono::milliseconds(100));
++  EXPECT_EQ(m.mode(), "stopped");
++  m.key('h');
++  ASSERT_TRUE(m.waitMode("homing", 2.0));
++  ASSERT_TRUE(m.waitMode("idle", 10.0));
++  EXPECT_LT(std::get<msg::ArmState>(m.call(msg::GetState{})).gripper_width_m, 0.025);   // h leaves the fingers
++  m.key('p');
++  ASSERT_TRUE(m.waitMode("homing", 2.0));
++  const auto idle = m.waitMode("idle", 10.0);
++  ASSERT_TRUE(idle);
++  EXPECT_TRUE(m.c2->waitFor([](const msg::ArmState& s) { return s.gripper_width_m > 0.075; }, 1.0));
++  EXPECT_TRUE(std::get<msg::Ack>(m.call(msg::Start{})).ok);
++  EXPECT_EQ(m.mode(), "holding");
++  EXPECT_TRUE(std::get<msg::Ack>(m.call(msg::Stop{})).ok);
++}
++
+ TEST(FakeArmRunThreads, KeyHIsRefusedWhileHoldingAndQQuits) {
+   MockApp m;
+   ASSERT_TRUE(m.ready()) << m.fatal;
+diff --git a/deployment/control_deploy/franka_control/tests/test_keyboard_reader.cpp b/deployment/control_deploy/franka_control/tests/test_keyboard_reader.cpp
+index 806481a..694ba5e 100644
+--- a/deployment/control_deploy/franka_control/tests/test_keyboard_reader.cpp
++++ b/deployment/control_deploy/franka_control/tests/test_keyboard_reader.cpp
+@@ -1,5 +1,5 @@
+ // New (control_deploy/STRUCTURE.md 9.1): KeyboardReader over a pipe, TerminalMode on a pty, KeyQueue. Fix wave: upper
+-// case keys, IXON off, s never dropped.
++// case keys, IXON off, s never dropped. + p (the start pose).
+ #include <gtest/gtest.h>
+ 
+ #include <pty.h>
+@@ -39,6 +39,8 @@ std::vector<Key> drain(KeyQueue& q) {
+ 
+ TEST(KeyboardReader, TheKeyTable) {
+   EXPECT_EQ(KeyboardReader::map('h'), Key::kHomeArm);
++  EXPECT_EQ(KeyboardReader::map('p'), Key::kStartPose);
++  EXPECT_EQ(KeyboardReader::map('P'), Key::kStartPose);
+   EXPECT_EQ(KeyboardReader::map('g'), Key::kHomeHand);
+   EXPECT_EQ(KeyboardReader::map('s'), Key::kStop);
+   EXPECT_EQ(KeyboardReader::map('q'), Key::kQuit);
+@@ -49,6 +51,20 @@ TEST(KeyboardReader, TheKeyTable) {
+   for (char c : {'x', 'X', ' ', '\x1b', '\n'}) EXPECT_FALSE(KeyboardReader::map(c)) << c;
+ }
+ 
++TEST(KeyboardReader, PIsQueuedAndNamed) {
++  Pipe p;
++  KeyQueue q;
++  SharedState shared;
++  KeyboardReader reader(p.fds[0], q, [] {}, shared);
++  p.write("pPh");
++  p.closeWrite();
++  testing::internal::CaptureStderr();
++  reader.run();
++  testing::internal::GetCapturedStderr();
++  EXPECT_EQ(drain(q), (std::vector<Key>{Key::kStartPose, Key::kStartPose, Key::kHomeArm}));
++  EXPECT_STREQ(keyChar(Key::kStartPose), "p");
++}
++
+ TEST(KeyboardReader, KeysAreQueuedInOrderQuitCallsBackEofEnds) {
+   Pipe p;
+   KeyQueue q;
+@@ -65,7 +81,7 @@ TEST(KeyboardReader, KeysAreQueuedInOrderQuitCallsBackEofEnds) {
+   EXPECT_EQ(drain(q), (std::vector<Key>{Key::kHomeArm, Key::kHomeHand, Key::kStop, Key::kHomeArm, Key::kHomeHand,
+                                        Key::kStop}));   // q and Q are never queued
+   EXPECT_EQ(quits, 2);                                  // Q and q; EOF is not q
+-  EXPECT_NE(log.find("keys: h home arm, g home hand, s stop, q quit"), std::string::npos) << log;
++  EXPECT_NE(log.find("keys: h home arm, p start pose, g home hand, s stop, q quit"), std::string::npos) << log;
+   EXPECT_NE(log.find("keyboard: stdin closed: keys disabled"), std::string::npos) << log;
+ }
+ 
+diff --git a/deployment/control_deploy/franka_control/tests/test_supervisor.cpp b/deployment/control_deploy/franka_control/tests/test_supervisor.cpp
+index ccbd660..791b915 100644
+--- a/deployment/control_deploy/franka_control/tests/test_supervisor.cpp
++++ b/deployment/control_deploy/franka_control/tests/test_supervisor.cpp
+@@ -3,10 +3,13 @@
+ // and stop during homing (control_deploy/STRUCTURE.md 9.1). Old cases otherwise unchanged. Fix wave: the test also
+ // plays the control thread's begin/endHomingMove and the gripper thread's begin/endHandHoming; stops re-sent every
+ // 100 ms while the move runs; no stop once a move or a hand homing has ended, none before a hand homing began.
++// + key p (the start pose) and C3 start's start-pose check; Rig takes an optional config tweak.
+ // Supervisor with a FakeClock, a SharedState and a test Arm; no threads. The test plays the control thread: it
+ // publishes snapshots and takes the posted commands.
+ #include <gtest/gtest.h>
+ 
++#include <cstdio>
++
+ #include "franka_control/pose_math.h"
+ #include "franka_control/supervisor.h"
+ #include "support/test_support.h"
+@@ -41,8 +44,10 @@ class CountingGripper : public Gripper {
+ constexpr int64_t kMs = 1000000;
+ 
+ struct Rig {
+-  explicit Rig(const Eigen::Vector3d& target = {0.45, 0.0, 0.45}, Gripper* gripper = nullptr)
++  explicit Rig(const Eigen::Vector3d& target = {0.45, 0.0, 0.45}, Gripper* gripper = nullptr,
++               const std::function<void(Config&)>& tweak = {})
+       : cfg(test::testConfig()) {
++    if (tweak) tweak(cfg);
+     shared = std::make_unique<SharedState>();
+     shared->setGripperWidth(0.04);
+     publish([&](LoopSnapshot& s) { setPose(s, target); });
+@@ -739,6 +744,229 @@ TEST(Supervisor, AStopAfterTheHandsHomingEndedStopsNothing) {
+   EXPECT_NE(log.find("stop arrived after the hand's homing had finished"), std::string::npos) << log;
+ }
+ 
++// ---- key p, the start pose, and C3 start's start-pose check ----
++
++Vec7 startPose() {   // a start pose near the test config's home: 0.48 rad on joint 6 (a 3.0 s move)
++  Vec7 q = test::testConfig().homing.q_home_rad;
++  q(5) += 0.48;
++  return q;
++}
++
++void withStart(Config& c) { c.homing.q_start_rad = startPose(); }
++
++// A tilt of `deg` from the cone axis (straight down), measured on the flange's approach axis.
++void setTilted(LoopSnapshot& s, const Config& cfg, const Eigen::Vector3d& p, double deg) {
++  const Eigen::Matrix3d R_F =
++      Eigen::AngleAxisd(deg * M_PI / 180.0, Eigen::Vector3d::UnitY()).toRotationMatrix() *
++      Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()).toRotationMatrix();
++  s.O_T_TCP = Pose::Identity();
++  s.O_T_TCP.linear() = R_F * cfg.F_T_TCP.linear();
++  s.O_T_TCP.translation() = p;
++  s.O_T_TCP_target = s.O_T_TCP;
++}
++
++TEST(Supervisor, KeyPIsRefusedWhileQStartIsUnset) {
++  Rig r;
++  ASSERT_FALSE(r.cfg.homing.q_start_rad);   // config.yaml ships null
++  const auto reply = r.sup->onStartPose();
++  ASSERT_TRUE(reply);
++  EXPECT_FALSE(reply->ok);
++  EXPECT_EQ(reply->reason, "refused: homing.q_start_rad is not set: measure it and set it in control_deploy/station.yaml (franka_control: homing:)");
++  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
++  EXPECT_NE(log.find("key p refused: homing.q_start_rad is not set: measure it and set it in control_deploy/station.yaml (franka_control: homing:)"),
++            std::string::npos)
++      << log;
++  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
++  EXPECT_EQ(r.take(), nullptr);
++}
++
++TEST(Supervisor, KeyPIsRefusedAwayFromHome) {
++  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
++  r.publish([&](LoopSnapshot& s) { s.q(3) = r.cfg.homing.q_home_rad(3) + 0.06; });   // > at_pose_tol_rad 0.05
++  r.sup->tick();
++  const auto reply = r.sup->onStartPose();
++  ASSERT_TRUE(reply);
++  EXPECT_FALSE(reply->ok);
++  EXPECT_EQ(reply->reason, "refused: not at home: press h first");
++  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
++  EXPECT_NE(log.find("key p refused: not at home: press h first"), std::string::npos) << log;
++  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
++  EXPECT_EQ(r.take(), nullptr);
++  r.publish([&](LoopSnapshot& s) { s.q(3) = r.cfg.homing.q_home_rad(3) + 0.04; });   // within the tolerance
++  r.sup->tick();
++  EXPECT_FALSE(r.sup->onStartPose());
++  EXPECT_EQ(r.sup->mode(), Mode::kHoming);
++}
++
++TEST(Supervisor, KeyPIsRefusedOutsideIdleAndStopped) {
++  CountingGripper g;
++  for (Mode m : {Mode::kHolding, Mode::kRunning, Mode::kHoming, Mode::kFault}) {
++    SCOPED_TRACE(modeName(m));
++    Rig r({0.45, 0.0, 0.45}, &g, withStart);
++    if (m == Mode::kHolding || m == Mode::kRunning) {
++      r.publish([](LoopSnapshot& s) { s.q = startPose(); });   // C3 start needs the start pose
++      r.sup->tick();
++      r.start();
++    }
++    if (m == Mode::kRunning) r.send({r.wp(0.5, {0.46, 0, 0.45})});
++    if (m == Mode::kHoming) r.sup->onHome();
++    if (m == Mode::kFault) toFault(r);
++    r.take();
++    ASSERT_EQ(r.sup->mode(), m);
++    const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
++    EXPECT_EQ(r.sup->mode(), m);
++    EXPECT_EQ(r.take(), nullptr);
++    EXPECT_NE(log.find("key p refused: mode is " + modeName(m)), std::string::npos) << log;
++  }
++}
++
++TEST(Supervisor, KeyPMovesFromHomeToTheStartPoseAndOpensTheHand) {
++  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
++  const std::string log = stderrOf([&] { r.sup->onKey(Key::kStartPose); });
++  EXPECT_NE(log.find("key p: start pose: 3.0 s joint move to homing.q_start_rad"), std::string::npos) << log;
++  EXPECT_NE(log.find("key p: the hand opens to 0.080 m (gripper_width_max_m) during the move"), std::string::npos)
++      << log;
++  EXPECT_EQ(r.sup->mode(), Mode::kHoming);
++  EXPECT_EQ(r.sup->stateMessage(1).mode, "homing");
++  const LoopCommand* c = r.take();
++  ASSERT_NE(c, nullptr);
++  ASSERT_EQ(c->kind, LoopCommand::Kind::kHome);
++  ASSERT_TRUE(c->q_target);
++  EXPECT_TRUE(c->q_target->isApprox(startPose()));
++  ASSERT_TRUE(c->open_width_m);
++  EXPECT_DOUBLE_EQ(*c->open_width_m, r.cfg.limits.gripper_width_max_m);
++  EXPECT_FALSE(r.sup->onStart().ok);   // refused while homing
++  const uint64_t gen = c->generation;
++  r.publish([&](LoopSnapshot& s) {
++    s.homed_generation = gen;
++    s.session = 1;
++    s.q = startPose();
++  });
++  const std::string done = stderrOf([&] { r.sup->tick(); });
++  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
++  EXPECT_NE(done.find("start pose reached"), std::string::npos) << done;
++  EXPECT_EQ(r.shared->lastAliveNs(), r.clock.now());
++  EXPECT_EQ(r.take()->kind, LoopCommand::Kind::kHold);
++  EXPECT_FALSE(r.sup->pollHome());     // a key: no C3 reply
++  EXPECT_TRUE(r.sup->onStart().ok);    // the laptop starts from the start pose
++}
++
++TEST(Supervisor, KeyHStillGoesToQHomeAndLeavesTheFingers) {
++  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
++  r.sup->onKey(Key::kHomeArm);
++  const LoopCommand* c = r.take();
++  ASSERT_NE(c, nullptr);
++  ASSERT_EQ(c->kind, LoopCommand::Kind::kHome);
++  ASSERT_TRUE(c->q_target);
++  EXPECT_TRUE(c->q_target->isApprox(r.cfg.homing.q_home_rad));
++  EXPECT_FALSE(c->open_width_m);
++}
++
++TEST(Supervisor, StopDuringKeyPAbortsItLikeAHoming) {
++  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
++  r.sup->onKey(Key::kStartPose);
++  const uint64_t gen = r.take()->generation;
++  r.sup->onKey(Key::kStop);
++  EXPECT_EQ(r.sup->mode(), Mode::kHoming);
++  EXPECT_TRUE(r.shared->homingAbortRequested());
++  r.shared->beginHomingMove(0);
++  r.publish([](LoopSnapshot& s) { s.phase = LoopSnapshot::Phase::kHoming; });
++  r.sup->tick();
++  EXPECT_EQ(r.arm.stops, 1);
++  r.shared->endHomingMove();
++  r.shared->clearHomingAbort();
++  r.publish([&](LoopSnapshot& s) {
++    s.phase = LoopSnapshot::Phase::kTorque;
++    s.session = 1;
++    s.homing_aborted_generation = gen;
++  });
++  r.sup->tick();
++  EXPECT_EQ(r.sup->mode(), Mode::kStopped);
++  EXPECT_EQ(r.sup->modeDetail(), "stop during homing (PC keyboard)");
++  EXPECT_EQ(r.take()->kind, LoopCommand::Kind::kHold);
++  EXPECT_FALSE(r.sup->onStart().ok);   // stopped on the way: not at the start pose
++}
++
++TEST(Supervisor, AStartPoseOutsideTheBoxFaults) {
++  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
++  r.sup->onStartPose();
++  const uint64_t gen = r.take()->generation;
++  r.publish([&](LoopSnapshot& s) {
++    s.homed_generation = gen;
++    s.session = 1;
++    Rig::setPose(s, {0.31, 0.0, 0.03});
++  });
++  r.sup->tick();
++  EXPECT_EQ(r.sup->mode(), Mode::kFault);
++  EXPECT_EQ(r.sup->stateMessage(1).error,
++            "start pose TCP (0.31, 0.00, 0.03) m is outside the workspace box: check homing.q_start_rad and the box");
++  EXPECT_EQ(r.take()->kind, LoopCommand::Kind::kHold);
++}
++
++TEST(Supervisor, AStartPoseOutsideTheConeFaultsWithoutTheMargin) {
++  for (double deg : {59.0, 61.0, 70.0}) {   // cone_max_deg 60, cone_margin_deg 2: no margin for the start pose
++    SCOPED_TRACE(deg);
++    Rig r({0.45, 0.0, 0.45}, nullptr, withStart);
++    r.sup->onStartPose();
++    const uint64_t gen = r.take()->generation;
++    r.publish([&](LoopSnapshot& s) {
++      s.homed_generation = gen;
++      s.session = 1;
++      setTilted(s, r.cfg, {0.45, 0.0, 0.30}, deg);
++    });
++    r.sup->tick();
++    if (deg < 60.0) {
++      EXPECT_EQ(r.sup->mode(), Mode::kIdle);
++    } else {
++      EXPECT_EQ(r.sup->mode(), Mode::kFault);
++      char want[160];
++      std::snprintf(want, sizeof(want),
++                    "start pose tilt %.1f deg from the approach axis > safety.cone_max_deg 60.0: check "
++                    "homing.q_start_rad and the cone",
++                    deg);
++      EXPECT_EQ(r.sup->stateMessage(1).error, want);
++    }
++  }
++}
++
++TEST(Supervisor, AHomeIsNotCheckedAgainstTheCone) {   // h unchanged: only the box
++  Rig r;
++  r.sup->onHome();
++  const uint64_t gen = r.take()->generation;
++  r.publish([&](LoopSnapshot& s) {
++    s.homed_generation = gen;
++    s.session = 1;
++    setTilted(s, r.cfg, {0.45, 0.0, 0.30}, 70.0);
++  });
++  r.sup->tick();
++  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
++}
++
++TEST(Supervisor, C3StartNeedsTheStartPoseOnceItIsSet) {
++  Rig r({0.45, 0.0, 0.45}, nullptr, withStart);   // at home
++  r.alive();
++  msg::Ack a = r.sup->onStart();
++  EXPECT_FALSE(a.ok);
++  EXPECT_EQ(a.reason, "refused: not at the start pose: press h, then p on the PC");
++  EXPECT_EQ(r.sup->mode(), Mode::kIdle);
++  EXPECT_EQ(r.take(), nullptr);
++  r.publish([](LoopSnapshot& s) {
++    s.q = startPose();
++    s.q(0) += 0.049;   // within at_pose_tol_rad
++  });
++  r.sup->tick();
++  EXPECT_TRUE(r.sup->onStart().ok);
++  EXPECT_EQ(r.sup->mode(), Mode::kHolding);
++}
++
++TEST(Supervisor, C3StartIsUnchangedWhileQStartIsUnset) {
++  Rig r;
++  r.publish([](LoopSnapshot& s) { s.q(0) += 1.0; });   // anywhere
++  r.sup->tick();
++  EXPECT_TRUE(r.sup->onStart().ok);
++  EXPECT_EQ(r.sup->mode(), Mode::kHolding);
++}
++
+ TEST(Supervisor, KeySStopsInIdleAndChangesNothingInFault) {
+   Rig r;
+   r.sup->onKey(Key::kStop);
+diff --git a/deployment/control_deploy/tests/test_runner.py b/deployment/control_deploy/tests/test_runner.py
+index d9abfc1..c10ed0b 100644
+--- a/deployment/control_deploy/tests/test_runner.py
++++ b/deployment/control_deploy/tests/test_runner.py
+@@ -76,7 +76,7 @@ def test_log_lines_reach_the_log_file_and_the_terminal_and_the_ready_banner(setu
+     text = out.getvalue()
+     assert "fake: starting" in text
+     assert ("control_deploy: ready: C2 tcp://127.0.0.1:5620, C3 tcp://127.0.0.1:5630; start policy_deploy on the "
+-            "laptop. Keys: h home arm, g home hand, s stop, q quit") in text
++            "laptop. Keys: h home arm, p start pose, g home hand, s stop, q quit") in text
+     assert "ready:" in (folder / "logs" / "control_deploy.log").read_text()
+     for name in ("run.yaml", "station.yaml", "contracts/limits.yaml", "contracts/frames.yaml", "contracts/link.yaml"):
+         assert (folder / name).is_file(), name
+diff --git a/deployment/control_deploy/tests/test_status_line.py b/deployment/control_deploy/tests/test_status_line.py
+index e2dec4b..d254d87 100644
+--- a/deployment/control_deploy/tests/test_status_line.py
++++ b/deployment/control_deploy/tests/test_status_line.py
+@@ -29,7 +29,7 @@ def test_each_example_state(s):
+     else:
+         g = s.gate
+         assert f"gate a{g.accepted} s{g.shortened} p{g.pulled_back} r{g.rejected}" in line
+-        assert "C3 peer 192.168.50.20" in line and line.endswith("h g s q")
++        assert "C3 peer 192.168.50.20" in line and line.endswith("h p g s q")
+         assert f"grip {s.gripper_width_m:.3f} m" in line
+ 
+ 
+diff --git a/deployment/policy_deploy/DIRECTIONS.md b/deployment/policy_deploy/DIRECTIONS.md
+index 8dd497b..e462b6e 100644
+--- a/deployment/policy_deploy/DIRECTIONS.md
++++ b/deployment/policy_deploy/DIRECTIONS.md
+@@ -23,13 +23,14 @@ prints nothing (if it shows `/opt/ros/...`, run `unset PYTHONPATH` first).
+ >
+ > | Key | What it does |
+ > |---|---|
+-> | `h` | home the arm (all 7 joints to the home pose). Refused during an episode or while the PC is homing. |
+ > | `c` | start an episode from where the arm is |
+ > | `y` / `n` | end the episode as a success / failure; the arm holds |
+ > | `s` | stop: the arm holds, the episode is recorded as stopped |
+ > | `q` or Ctrl-C | quit the laptop. The PC keeps running and holding the arm. |
+ >
+-> Usual cycle: `h`, `c`, ..., `y` or `n`, then `h`, `c` again. `q` when done.
++> No laptop key moves the arm to a pose: homing and the start pose are the PC's keys.
++> Usual cycle: **PC `h`** (home), **PC `p`** (start pose, hand open), then here `c`, ..., `y` or `n`; again from the PC's
++> `h`. `q` when done. Once the start pose is set, `c` before `p` gets `c: the PC refused start: refused: not at the start pose: ...`.
+ 
+ The policy that runs is the one `policy_deploy use` last chose. **`hold_still`** (the start) keeps the arm at the pose
+ where the episode started: it tests the cameras, the link and the timing without moving anything.
+@@ -156,12 +157,13 @@ The first run with the real arm. The PC must already have done its bring-up (the
+ ~/envs/policy_deploy/bin/policy_deploy run
+ ```
+ 
+-- **Good:** see the `run` section. `h`, `c`: the arm stays still (hold still), the status line counts steps; `y`.
++- **Good:** see the `run` section. PC `h` (and `p` once the start pose is set), then `c` here: the arm stays still
++  (hold still), the status line counts steps; `y`.
+ - **If not:** "When something fails".
+ 
+ ### 8. Stopping, restarting, and after a fault
+ 
+-- **End an episode:** `y`, `n` or `s`. The arm holds; `h` then `c` for the next one.
++- **End an episode:** `y`, `n` or `s`. The arm holds; for the next one: PC `h`, PC `p`, then `c` here.
+ - **Quit:** `q` or Ctrl-C. The PC keeps holding the arm; `policy_deploy run` again whenever you want.
+ - **When the run stops by itself**, it prints one line: `policy_deploy: FAILED <process> ...: <what failed>: <what
+   to check>`. Fix that (table at the end) and run again.
+@@ -199,7 +201,7 @@ on both (and rebuild on the PC).
+ **Good:** the check table, then `policy_deploy: all 3 processes ready (session: ...)` and a status line, for example:
+ 
+ ```
+-[idle] arm idle | cams ok 30/ok 30 fps | late loops 0 | rtt 3 ms c2 100 Hz clock ok | keys: c start  h home  q quit
++[idle] arm idle | cams ok 30/ok 30 fps | late loops 0 | rtt 3 ms c2 100 Hz clock ok | keys: c start  q quit
+ [ep 1 running 2.0 s] step 59 | rtt 3 ms c2 100 Hz clock ok | cycle 41 ms (policy 3) | img 74 ms | margin +239 ms | keys: y n s q
+ ```
+ 
+@@ -247,7 +249,9 @@ PASS  compare_hello: all equal
+ ```
+ 
+ `--axes` adds three lines saying where the TCP's axes point (the check before `settled: true`, "A trained
+-policy" step 4). `C2` about 100 Hz with few gaps; `rtt p95` a few ms on Wi-Fi (under 1 ms wired); `diff` (the two clock estimates)
++policy" step 4). `--start-pose` adds the arm's joints as a ready-to-paste `q_start_rad: [...]` line, the fingertip
++height, tilt and direction, the hand opening, and the training demos' start to compare with (measuring the start pose:
++the PC's directions, step 10). `C2` about 100 Hz with few gaps; `rtt p95` a few ms on Wi-Fi (under 1 ms wired); `diff` (the two clock estimates)
+ within a few ms. Any `FAIL` names what differs. Without the PC: `--mock` against the fake PC
+ (`python -m policy_deploy.fake_pc --mock` in another terminal).
+ 
+@@ -397,10 +401,12 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
+ 
+ 4. **On the real arm, once: settle the gripper axes.** `check` refuses a trained policy
+    (`settled FAIL trained policy refused on the real arm`) until `../contracts/frames.yaml` says `settled: true`.
+-   Set it only after both checks below pass. Only `h` moves the arm. "Right" means standing behind the robot,
++   Set it only after both checks below pass. Only the PC's `h` moves the arm. "Right" means standing behind the robot,
+    facing the way it faces.
+ 
+-   1. PC: `git pull`, `control_deploy run`, press `h` (home). Laptop, with `policy_deploy run` not running:
++   1. PC: `git pull`, `control_deploy/franka_control/build.sh` (needed after any pull with C++ changes, e.g. the `p`
++      key), `control_deploy run`, press `h` (home; these checks are at home, before any `p`). Laptop, with
++      `policy_deploy run` not running:
+ 
+       ```bash
+       ~/envs/policy_deploy/bin/python -m policy_deploy.manager.pc_probe --seconds 3 --axes
+@@ -413,7 +419,10 @@ Once a policy has been trained on data from this rig and fetched to the laptop (
+    3. Both good: set `settled: true` in `../contracts/frames.yaml`, commit, push, `git pull` on the PC and restart
+       `control_deploy run` there. Either one wrong (x "to the robot's left", or your hand on the left): **don't**
+       settle; the camera is on the other face and `F_T_TCP` needs the other rotation (PLAN §9).
+-   4. First trained episode: hand on the user stop. If the first move does not head for the object, press `s`.
++   4. The start pose, once: the PC's directions, step 10 "The start pose" (hand-guide, `pc_probe --start-pose`,
++      paste `q_start_rad`).
++   5. First trained episode: PC `h`, PC `p`, then `c` here, hand on the user stop. If the first move does not head for
++      the object, press `s`.
+ 
+ 5. **Every run after that:** the daily routine at the top (`check`, then `run`). The chosen policy stays chosen.
+ 
+@@ -466,6 +475,7 @@ Plugged in, on AC power: on battery or power-saver the start-up limits are misse
+ | `the PC reports fault: ...` | on the PC: Ctrl-C, release the user stop if it was a reflex, `control_deploy run`; then run again |
+ | `franka_control restarted on the PC` | the PC was restarted during the run: run again |
+ | `the PC is driving an episode for another C3 client` | stop the other laptop run, `pc_probe` or the PC's `console` |
++| `c: the PC refused start: refused: not at the start pose: press h, then p on the PC` | on the PC: `h`, wait, `p`; then `c` here |
+ | `FAILED frames during start-up: not ready after 30 s` | the Pi stream isn't arriving: `pi_collect` |
+ | `main camera down` / `ultrawide camera down` | the Pi or its Wi-Fi: check the Pi, then run again |
+ | `frame size ..., rig file says ...` | the Pi now streams another size: regenerate the rig file for it ("Camera constants", `--size W H`) |
+diff --git a/deployment/policy_deploy/STRUCTURE.md b/deployment/policy_deploy/STRUCTURE.md
+index 967b817..c88a5a8 100644
+--- a/deployment/policy_deploy/STRUCTURE.md
++++ b/deployment/policy_deploy/STRUCTURE.md
+@@ -569,7 +569,7 @@ watchdog, so the worst gap of §8.4 still holds.
+ 
+ Episode start (`c`, old §5.3): accepted in `IDLE` with the worker idle, **the clock map ready** (after a long `home`
+ the `round_trip` map has had no samples; hint `c: waiting for the PC clock map`) and **the newest C2 mode not
+-`homing`** (the PC's own `h`/`g`; hint `c: the PC is homing (its h or g key): wait for idle` through the old
++`homing`** (the PC's own `h`/`g`/`p`; hint `c: the PC is homing (its h, g or p key): wait for idle` through the old
+ `_refuse` path; the laptop stays `IDLE` and sends nothing). Then `reset` (+ `prompt`), `start`, start pose =
+ `history.latest()` in `pose_source`, phase `RUNNING`. A `start` the PC refuses (`Ack ok: false`, e.g. it began homing
+ in between) → back to `IDLE` with the hint `c: the PC refused start: <reason>`, as old
+@@ -577,7 +577,14 @@ in between) → back to `IDLE` with the hint `c: the PC refused start: <reason>`
+ at once, `start_ack_pc_ns = pc_clock.snapshot().to_pc_ns(start_ack_ns)`: that is the time compared with C2 `t_ns` by
+ the `PC_STOPPED` rule (§8.5; old code compared a laptop time with C2 `t_ns`).
+ 
+-Home (`h`, old §5.7): refused locally while the newest C2 mode is `homing` (hint `h: the PC is already homing (its h
++**2026-11-20: the laptop's `h` is removed** (no laptop key moves the arm to a pose; homing and the start pose are the
++PC's `h` and `p`, control_deploy/STRUCTURE.md). `EpisodeLoop._home()`, `Phase.HOMING` and the re-warm after a home are
++gone with it; C3 `home`, `PcClient.home()`, `HOME_STOPPED`/`HOMING_FAILED` stay (the contract). The PC refuses
++`start` unless the arm is at the start pose once `homing.q_start_rad` is set; the laptop shows that as
++`c: the PC refused start: refused: not at the start pose: press h, then p on the PC`. The rest of this paragraph and the table
++describe the removed laptop home, kept for the record.
++
++Home (`h`, old §5.7, removed 2026-11-20): refused locally while the newest C2 mode is `homing` (hint `h: the PC is already homing (its h
+ or g key)`; stays `IDLE`, nothing sent, never a conclude). Otherwise heartbeats and hellos pause; `pc.home(interrupted)`
+ waits up to `timeouts.home_s` in heartbeat-period slices. The outcome:
+ 
+@@ -605,9 +612,9 @@ episode `aborted` with the reason, stop the threads, FATAL line, exit 1. **The P
+ 
+ ### 6.5 Keyboard
+ 
+-`c` start, `y` success, `n` failure, `s` stop, `h` home (C3 `home`), `q` quit; same meanings and phase rules as
+-old:message_comms/STRUCTURE.md §4.9. A key that doesn't fit the phase gets a one-line hint. New (PLAN §7): while the
+-newest C2 mode is `homing` (the PC's `h` or `g`), `c` and `h` are refused locally with a hint on the status line; the
++`c` start, `y` success, `n` failure, `s` stop, `q` quit (2026-11-20: `h` removed, §6.4); same meanings and phase rules
++as old:message_comms/STRUCTURE.md §4.9. A key that doesn't fit the phase gets a one-line hint. New (PLAN §7): while the
++newest C2 mode is `homing` (the PC's `h`, `g` or `p`), `c` is refused locally with a hint on the status line; the
+ manager stays `IDLE` and never concludes for it (§6.4).
+ 
+ **Extension point for jog keys (PLAN §14, later):** `EpisodeLoop` dispatches through one table
+@@ -899,7 +906,9 @@ so never alongside a manager (TOP §2.4). It follows rule H2 first (waits while
+ refuses after the limit). Then for `--seconds`: C2 rate, `seq` gaps, `t_ns` repeats, newest-state age; a hello every
+ 0.5 s (a burst of 2 s first) and heartbeats in between, with RTT p50/p95/max; **both** PC estimators fed side by side
+ (a `RoundTripPcClock` and an `OneWayPcClock`) and their offsets, drifts and difference printed every second; the hello
+-reply and `compare_hello`. It never sends `start`, `stop`, `home` or `set_waypoints`. `--check` runs 2 s and prints
++reply and `compare_hello`. `--axes` (2026-11-19): the TCP axes in words; `--start-pose` (2026-11-20): the C2 joints as
++a `q_start_rad:` line, the TCP height, its tilt from straight down and horizontal direction, the gripper width, and
++the demos' start for comparison. It never sends `start`, `stop`, `home` or `set_waypoints`. `--check` runs 2 s and prints
+ one JSON check line per §8.4 row and per link fact (C2 rate, RTT, clock agreement), for the launcher (§9.2). Its
+ clock agreement is judged with the map of `link.yaml clock.estimator` (the one_way map when so configured), as `run`
+ judges it at start-up step 5; with round_trip the row would pass by construction, since that map is fitted from the
+diff --git a/deployment/policy_deploy/policy_deploy/manager/episode_loop.py b/deployment/policy_deploy/policy_deploy/manager/episode_loop.py
+index 3fb7e8c..f2a9542 100644
+--- a/deployment/policy_deploy/policy_deploy/manager/episode_loop.py
++++ b/deployment/policy_deploy/policy_deploy/manager/episode_loop.py
+@@ -7,7 +7,8 @@
+ # cycle); the start ack time kept as start_ack_pc_ns (mapped); last_anchor_t_ns stays laptop time; STATE_LOST by the
+ # listener's arrival time; clock.jsonl / link.jsonl; conclude sends nothing on C3 before hellos started. Fix wave: the
+ # GATE_REJECTED text from gate_rejection_detail(); an entirely skipped set counts toward CLOCK_MISMATCH or POLICY_LATE,
+-# never both.
++# never both. Later: no h key and no C3 home from the loop (phase HOMING, the re-warm after a home and interrupt_set
++# went with it): no laptop key moves the arm to a pose; homing (h) and the start pose (p) are PC keyboard keys only.
+ """EpisodeLoop: the main thread. Rhythm, keys, every C3 request (rule H1), health polls, failure decisions, logging,
+ status line (STRUCTURE.md 6.1, 6.4, 6.5, 7.4, 7.5)."""
+ from __future__ import annotations
+@@ -22,7 +23,6 @@ from pathlib import Path
+ import numpy as np
+ 
+ from policy_deploy.contracts import NotSynced, PolicyConfig
+-from policy_deploy.manager.errors import RequestCancelled
+ from policy_deploy.manager.failure_monitor import SKIP_CODES, FailureMonitor
+ from policy_deploy.manager.frames_client import FramesClient
+ from policy_deploy.manager.heartbeat_sender import HeartbeatSender
+@@ -61,7 +61,6 @@ class Phase(Enum):
+     IDLE = "idle"                 # no episode; waiting for a key
+     RESETTING = "resetting"       # start key pressed: policy reset (+ prompt), then the PC's start
+     RUNNING = "running"           # an episode: policy steps
+-    HOMING = "homing"             # blocking home request
+     DONE = "done"                 # finished; run() returns
+ 
+ 
+@@ -71,8 +70,8 @@ class LoopProgress:               # what ScriptedOperator may wait on
+     episode_id: int               # 0 before the first episode
+     steps_sent: int               # waypoint sets sent in this episode
+     now_ns: int
+-    worker_busy: bool = False     # a policy step (or reset) still on the worker: c and h are refused meanwhile
+-    pc_mode: str = ""             # the newest C2 mode (a refused c/h is retried when it changes)
++    worker_busy: bool = False     # a policy step (or reset) still on the worker: c is refused meanwhile
++    pc_mode: str = ""             # the newest C2 mode (a refused c is retried when it changes)
+     clock_ready: bool = True
+ 
+ 
+@@ -111,7 +110,6 @@ class EpisodeLoop:
+         self._shut = False
+         self._call: tuple[str, str] = ("manager", "")
+         self._beating = False             # hellos/heartbeats started (start-up step 4); nothing on C3 before
+-        self._rewarm = False              # after a home: a hello every cycle until the map is ready
+         self._policy_config: PolicyConfig | None = None
+         self._uses_prompt = False
+         self._hello = None                # the newest hello reply at start-up (session.yaml, status line)
+@@ -167,10 +165,6 @@ class EpisodeLoop:
+         """SIGTERM handler: sets the terminate flag, nothing else."""
+         self._terminate.set()
+ 
+-    def interrupt_set(self) -> bool:
+-        """Read by PcClient.home between slices: Ctrl-C or SIGTERM."""
+-        return self._interrupt.is_set() or self._terminate.is_set()
+-
+     def progress(self) -> LoopProgress:
+         latest = self._history.latest()
+         now = self._clock()
+@@ -204,7 +198,7 @@ class EpisodeLoop:
+         now = self._clock()
+         self._check_flags()                                                         # 1
+         self._check_state(now)                                                      # 2
+-        if self._beating and self._phase is not Phase.HOMING:                       # 3
++        if self._beating:                                                           # 3
+             self._beat(now)
+         if self._worker.busy():                     # a result that is already there (run() handles most of them)
+             result = self._worker.wait(0.0)
+@@ -245,10 +239,6 @@ class EpisodeLoop:
+             for jump in self._pc_clock.take_jumps():
+                 self._safe_event("clock_jump", f"refit moved the PC time by {jump.jump_ms:+.2f} ms")
+                 self._log.log_clock({"kind": "jump", "estimator": self._pc_clock.NAME, "jump_ms": jump.jump_ms})
+-        if self._rewarm and self._pc_clock.ready(self._clock()):
+-            self._rewarm = False
+-            self._heartbeats.startup_mode(False)
+-            self._safe_event("clock", "PC clock map ready again")
+ 
+     def _check_flags(self) -> None:
+         if self._interrupt.is_set():
+@@ -294,7 +284,7 @@ class EpisodeLoop:
+                 self._refuse(key, "c: waiting for the last policy step to finish")
+                 return
+             if self._pc_mode() == "homing":
+-                self._refuse(key, "c: the PC is homing (its h or g key): wait for idle")
++                self._refuse(key, "c: the PC is homing (its h, g or p key): wait for idle")
+                 return
+             if not self._pc_clock.ready(self._clock()):
+                 self._refuse(key, "c: waiting for the PC clock map")
+@@ -316,17 +306,7 @@ class EpisodeLoop:
+         elif phase is Phase.RESETTING:
+             self._refuse(key, f"{key.value}: the episode is still starting (s cancels)")
+         else:
+-            self._refuse(key, f"{key.value}: no episode running (c start, h home, q quit)")
+-
+-    def _key_home(self, key: Key) -> None:
+-        if self._phase is not Phase.IDLE:
+-            self._refuse(key, "h: end the episode first (y / n / s)")
+-        elif self._worker.busy():
+-            self._refuse(key, "h: waiting for the last policy step to finish")
+-        elif self._pc_mode() == "homing":
+-            self._refuse(key, "h: the PC is already homing (its h or g key)")
+-        else:
+-            self._home()
++            self._refuse(key, f"{key.value}: no episode running (c start, q quit)")
+ 
+     def _key_stop(self, key: Key) -> None:
+         """Everything s does: stop (the arm holds), end the episode if any as stopped, back to IDLE."""
+@@ -340,7 +320,7 @@ class EpisodeLoop:
+             self._operator.show_message("start cancelled")
+         else:
+             self._send_stop()
+-            self._hint("s: no episode running (c start, h home, q quit)")
++            self._hint("s: no episode running (c start, q quit)")
+ 
+     def _hint(self, text: str) -> None:
+         self._hint_text = text
+@@ -529,39 +509,7 @@ class EpisodeLoop:
+         if s.save_tap:
+             self._log.save_tap(done, reply)
+ 
+-    # ---- home, quit, launcher stop, conclude ---------------------------------------------------------------------
+-
+-    def _home(self) -> None:
+-        """STRUCTURE.md 6.4: heartbeats and hellos pause; Ctrl-C / SIGTERM cancel the wait (no stop is sent)."""
+-        self._phase = Phase.HOMING
+-        self._show_status(self._clock())
+-        self._log.log_event("home", "homing started")
+-        try:
+-            ack = self._rpc(PC, "c3.home/v1", self._pc.home, self.interrupt_set)
+-        except RequestCancelled:
+-            self._log.log_event("home", "cancelled")
+-            if self._terminate.is_set():
+-                self._launcher_stop(send_stop=False)
+-            self._quit("Ctrl-C", send_stop=False)
+-        if ack.ok:
+-            self._phase = Phase.IDLE
+-            self._log.log_event("home", "home pose reached")
+-            self._operator.show_message("home pose reached")
+-        elif self._pc.home_stopped(ack):
+-            self._phase = Phase.IDLE
+-            verdict = self._monitor.classify(Problem(C.HOME_STOPPED, PC, ack.reason))
+-            self._log.log_event("home_stopped", f"{verdict.what_failed}: {verdict.what_to_check}")
+-            self._hint(f"{verdict.what_failed}: {verdict.what_to_check}")
+-        elif self._pc.home_refused_homing(ack):
+-            self._phase = Phase.IDLE
+-            self._log.log_event("home_refused", ack.reason)
+-            self._hint(f"h: the PC is already homing (its h or g key): {ack.reason}")
+-        else:
+-            self._conclude(Problem(C.HOMING_FAILED, PC, ack.reason or "refused"))
+-        self._rewarm = True                                  # the map had no samples during the home
+-        self._heartbeats.startup_mode(True)
+-        self._beat(self._clock())                            # heartbeats resume at once
+-        self._show_status(self._clock())
++    # ---- stop, quit, launcher stop, conclude ---------------------------------------------------------------------
+ 
+     def _send_stop(self) -> None:
+         self._rpc(PC, "c3.stop/v1", self._pc.stop)
+@@ -741,6 +689,5 @@ KEY_HANDLERS: dict[str, Callable[[EpisodeLoop, Key], None]] = {
+     Key.SUCCESS.value: EpisodeLoop._key_end,
+     Key.FAIL.value: EpisodeLoop._key_end,
+     Key.STOP.value: EpisodeLoop._key_stop,
+-    Key.HOME.value: EpisodeLoop._key_home,
+     Key.QUIT.value: EpisodeLoop._key_quit,
+ }
+diff --git a/deployment/policy_deploy/policy_deploy/manager/failure_monitor.py b/deployment/policy_deploy/policy_deploy/manager/failure_monitor.py
+index f2dcaf0..49805cf 100644
+--- a/deployment/policy_deploy/policy_deploy/manager/failure_monitor.py
++++ b/deployment/policy_deploy/policy_deploy/manager/failure_monitor.py
+@@ -71,7 +71,7 @@ RULES: dict[ProblemCode, tuple[Kind, str, str]] = {
+     C.OPERATOR_SCRIPT: (Kind.CONCLUDE, "operator script: {detail}",
+                         "check the script (manager.operator_script) or raise operator_script_wait_s"),
+     C.INTERNAL_ERROR: (Kind.CONCLUDE, "{origin}internal error: {detail}", "see the manager log"),
+-    C.EPISODE_STOP: (Kind.NORMAL, "{detail}", "nothing to do: h homes the arm, c starts the next episode"),
++    C.EPISODE_STOP: (Kind.NORMAL, "{detail}", "nothing to do: c starts the next episode (the PC's h homes the arm)"),
+     C.OPERATOR_STOP: (Kind.STOP, "{detail}", "nothing to check"),
+     C.LAUNCHER_STOP: (Kind.STOP, "stopped by the launcher: another process exited", "see the launcher message"),
+ }
+diff --git a/deployment/policy_deploy/policy_deploy/manager/operator.py b/deployment/policy_deploy/policy_deploy/manager/operator.py
+index 745c8e3..b975957 100644
+--- a/deployment/policy_deploy/policy_deploy/manager/operator.py
++++ b/deployment/policy_deploy/policy_deploy/manager/operator.py
+@@ -1,5 +1,6 @@
+ # adapted from rnoro/deployment:deployment/message_comms/message_comms/operator.py @ 91b178b
+-# changes: Key lookup through a table (KEYS_BY_CHAR, key_for); imports, logger name
++# changes: Key lookup through a table (KEYS_BY_CHAR, key_for); imports, logger name; no h key (homing and the start
++# pose are PC keyboard keys only: no laptop key moves the arm to a pose)
+ """Operator: where keys come from and where the status line goes (STRUCTURE.md 4.9)."""
+ from __future__ import annotations
+ 
+@@ -13,16 +14,16 @@ if TYPE_CHECKING:
+ 
+ log = logging.getLogger("manager.operator")
+ CLEAR_LINE = "\x1b[K"
+-KEY_LIST = "keys: c start  y success  n fail  s stop  h home  q quit"
++KEY_LIST = "keys: c start  y success  n fail  s stop  q quit"
+ 
+ 
+ class Key(Enum):
+-    """The keys; EpisodeLoop dispatches them through its KEY_HANDLERS table (a later jog key: one member + one entry)."""
++    """The keys; EpisodeLoop dispatches them through its KEY_HANDLERS table (a later jog key: one member + one entry).
++    No key moves the arm to a pose: homing (h) and the start pose (p) are the PC's keyboard keys."""
+     START = "c"
+     SUCCESS = "y"
+     FAIL = "n"
+     STOP = "s"
+-    HOME = "h"
+     QUIT = "q"
+ 
+ 
+diff --git a/deployment/policy_deploy/policy_deploy/manager/pc_probe.py b/deployment/policy_deploy/policy_deploy/manager/pc_probe.py
+index b1aba5c..bb79235 100644
+--- a/deployment/policy_deploy/policy_deploy/manager/pc_probe.py
++++ b/deployment/policy_deploy/policy_deploy/manager/pc_probe.py
+@@ -1,5 +1,5 @@
+-"""python -m policy_deploy.manager.pc_probe [--station FILE] [--seconds 30] [--local] [--check] [--json]
+-(STRUCTURE.md 8.6). The read-only link probe.
++"""python -m policy_deploy.manager.pc_probe [--station FILE] [--seconds 30] [--local] [--check] [--json] [--axes]
++[--start-pose] (STRUCTURE.md 8.6). The read-only link probe.
+ 
+ A C3 client, so never alongside a manager (TOP 2.4). It follows rule H2 first: it reads C2 and sends nothing on C3
+ while C2 shows running/holding (up to 2 x watchdog_limit_s, then it refuses: another client is driving) or homing (up
+@@ -14,11 +14,18 @@ link.yaml clock.estimator, as `run` judges it at start-up. It exits 0 unless it
+ 
+ --axes (new) also prints, at the end, where the measured TCP's x, y, z axes point in the robot's base frame, in words:
+ the read-only check of contracts/frames.yaml F_T_TCP before settled: true (policy_deploy/DIRECTIONS.md).
++
++--start-pose (new) also prints, at the end, the arm's pose from the newest C2 state, for measuring the start pose by
++hand-guiding: q_start_rad (C2 q, rad, ready to paste into the PC's control_deploy/station.yaml under
++`franka_control: homing:`), the fingertip (TCP) height z in the base frame, the tilt of the fingertip direction
++(TCP z axis) from straight down and which way it points horizontally in words, the gripper width, and the training
++demos' start for comparison.
+ """
+ from __future__ import annotations
+ 
+ import argparse
+ import json
++import math
+ import sys
+ import time
+ from dataclasses import dataclass
+@@ -215,6 +222,41 @@ def axes_lines(O_T_TCP) -> list[str]:
+     return out
+ 
+ 
++_DEMOS_START = ("demos start: fingertips tilted ~48 deg from straight down (38-64), ~16 cm above the table (6-27), "
++                "hand open; object ~16 cm ahead horizontally and ~17 cm below the fingertips")
++
++
++def _horizontal_words(x: float, y: float) -> str:
++    """Which way a horizontal direction (base x, y) points, in words: one base axis when within 25 deg of it, else the
++    two it is between."""
++    norm = math.hypot(x, y)
++    v = (x / norm, y / norm)
++    big = 0 if abs(v[0]) >= abs(v[1]) else 1
++    first = _BASE_WORDS[(big, 1 if v[big] > 0 else -1)]
++    if abs(v[big]) > 0.906:
++        return first
++    return f"between {first} and {_BASE_WORDS[(1 - big, 1 if v[1 - big] > 0 else -1)]}"
++
++
++def start_pose_lines(state) -> list[str]:
++    """--start-pose, from one C2 state: q_start_rad to paste, the fingertip height, the fingertip direction (tilt from
++    straight down, and which way it points horizontally in words), the gripper width, and the demos' start."""
++    q = ", ".join(f"{float(v):.4f}" for v in state.q)
++    T = state.O_T_TCP
++    v = [float(T[row][2]) for row in range(3)]                          # the TCP z axis: where the fingertips point
++    tilt = math.degrees(math.acos(max(-1.0, min(1.0, -v[2]))))
++    if math.hypot(v[0], v[1]) < 0.035:                                  # within 2 deg of vertical
++        words = "no horizontal direction"
++    else:
++        words = f"pointing {_horizontal_words(v[0], v[1])}"
++    return [f"q_start_rad: [{q}]   # paste under franka_control: homing: in the PC's control_deploy/station.yaml",
++            f"fingertip (TCP) height: z {float(T[2][3]):.3f} m in the robot base frame",
++            f"fingertip direction (TCP z axis) -> base ({v[0]:+.2f}, {v[1]:+.2f}, {v[2]:+.2f}): tilted {tilt:.1f} deg "
++            f"from straight down, {words}",
++            f"gripper width: {float(state.gripper_width_m) * 1000:.1f} mm",
++            _DEMOS_START]
++
++
+ def emit(rows: list[PcCheck], as_json: bool, out: TextIO) -> None:
+     for r in rows:
+         if as_json:
+@@ -233,6 +275,8 @@ def main(argv: Sequence[str] | None = None) -> int:
+     ap.add_argument("--check", action="store_true", help="2 s, then check lines for policy_deploy check")
+     ap.add_argument("--json", action="store_true")
+     ap.add_argument("--axes", action="store_true", help="also print where the TCP axes point (frames.yaml check)")
++    ap.add_argument("--start-pose", action="store_true",
++                    help="also print the arm's pose as the PC's start pose (q_start_rad) and the demos' start")
+     a = ap.parse_args(argv)
+     local = a.local or a.mock
+     try:
+@@ -261,6 +305,10 @@ def main(argv: Sequence[str] | None = None) -> int:
+             latest = probe.history.latest()
+             for line in (axes_lines(latest.O_T_TCP) if latest is not None else ["TCP axes: no C2 state received"]):
+                 print(line)
++        if a.start_pose:
++            latest = probe.history.latest()
++            for line in (start_pose_lines(latest) if latest is not None else ["start pose: no C2 state received"]):
++                print(line)
+         return 1 if any(r.status == "fail" for r in rows) else 0
+     finally:
+         probe.close()
+diff --git a/deployment/policy_deploy/policy_deploy/manager/status_line.py b/deployment/policy_deploy/policy_deploy/manager/status_line.py
+index 660d866..9da95a1 100644
+--- a/deployment/policy_deploy/policy_deploy/manager/status_line.py
++++ b/deployment/policy_deploy/policy_deploy/manager/status_line.py
+@@ -1,5 +1,6 @@
+ # adapted from rnoro/deployment:deployment/message_comms/message_comms/status_line.py @ 91b178b
+-# changes: adds the link RTT, the C2 rate, the clock state and `PC mock` (and the last hint in IDLE); imports.
++# changes: adds the link RTT, the C2 rate, the clock state and `PC mock` (and the last hint in IDLE); imports. Later: no
++# homing line and no h in the keys (homing is a PC keyboard key only; the PC's mode shows as `arm homing`).
+ """StatusLine: one line, at most 120 characters, rewritten in place (STRUCTURE.md 6.2): adds the link round trip,
+ the C2 rate, the clock state and `PC mock`."""
+ from __future__ import annotations
+@@ -14,10 +15,9 @@ if TYPE_CHECKING:
+     from policy_deploy.manager.episode_loop import Phase
+ 
+ MAX_LEN = 120
+-HOMING_LINE = "[homing] keys inactive; Ctrl-C quits; immediate stop: the robot's external stop button"
+ KEYS = {                              # by Phase value (Phase lives in episode_loop.py, which imports this file)
+     "starting": "keys: q quit",
+-    "idle": "keys: c start  h home  q quit",
++    "idle": "keys: c start  q quit",
+     "resetting": "keys: s cancel  q quit",
+     "running": "keys: y n s q",
+     "done": "",
+@@ -57,8 +57,6 @@ class StatusSnapshot:
+ 
+ class StatusLine:
+     def format(self, snap: StatusSnapshot) -> str:
+-        if snap.phase.value == "homing":
+-            return HOMING_LINE[:MAX_LEN]
+         keys = KEYS[snap.phase.value]
+         arm = f"arm {snap.arm_mode or '?'}" + (" (PC mock)" if snap.pc_mock else "")
+         link = _link(snap)
+diff --git a/deployment/policy_deploy/tests/integration/test_cross_franka_control.py b/deployment/policy_deploy/tests/integration/test_cross_franka_control.py
+index b886fd0..446b5d0 100644
+--- a/deployment/policy_deploy/tests/integration/test_cross_franka_control.py
++++ b/deployment/policy_deploy/tests/integration/test_cross_franka_control.py
+@@ -8,7 +8,7 @@ the recorded episode (station_helpers.RECORDED_EPISODE).
+ 2. `$FRANKA_CONTROL_BIN --station <tmp>/fc_station.yaml --mock --local --ready-file <tmp>/fc.ready`, wait for the ready
+    file (30 s); skipped if 127.0.0.1:5620/5630 are busy;
+ 3. `python -m policy_deploy run --mock` with launcher.fake_pc: false (frames with the fake Pi, policy hold_still, the
+-   manager on 127.0.0.1 with the link.yaml ports) and the script c, wait_steps 20, y, h, q;
++   manager on 127.0.0.1 with the link.yaml ports) and the script c, wait_steps 20, y, q;
+ 4. SIGTERM the binary, expect exit 0.
+ 
+ Also (fix wave, S2): a set_waypoints whose failing waypoint is not the first, sent with the laptop's PcClient to the
+@@ -33,7 +33,7 @@ from policy_deploy.fake_pc.fake_gate import NOT_CHECKED
+ from policy_deploy.manager.episode_loop import gate_rejection_detail
+ from policy_deploy.manager.pc_client import PcClient
+ 
+-SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "h"}, {"key": "q"}]
++SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "q"}]
+ 
+ 
+ def _franka_control(tmp_path, with_episode: bool):
+@@ -112,9 +112,9 @@ def test_laptop_against_the_real_franka_control(tmp_path, franka_control):
+     ids = [s["chunk_id"] for s in steps]
+     assert ids == sorted(ids)
+ 
+-    # home answered ok, then the stop of q
++    # no home from the laptop (homing is a PC keyboard key only), then the stop of q
+     kinds = [(e["kind"], e["detail"]) for e in events]
+-    assert ("home", "home pose reached") in kinds
++    assert not any(kind == "home" for kind, _ in kinds)
+     assert ("exit", "operator quit key") in kinds
+ 
+     # the binary stops cleanly on SIGTERM
+diff --git a/deployment/policy_deploy/tests/integration/test_run_mock.py b/deployment/policy_deploy/tests/integration/test_run_mock.py
+index 92f16d1..b92e9b1 100644
+--- a/deployment/policy_deploy/tests/integration/test_run_mock.py
++++ b/deployment/policy_deploy/tests/integration/test_run_mock.py
+@@ -6,7 +6,7 @@ from integration_helpers import (jsonl, need_episode, need_pc_ports_free, run_po
+                                  write_run_station)
+ 
+ SCRIPT = [{"key": "c"}, {"wait_steps": 20}, {"key": "y"}, {"key": "c"}, {"wait_steps": 5}, {"key": "s"},
+-          {"key": "h"}, {"key": "q"}]
++          {"key": "q"}]
+ MAX_LEAD_NS = 1_500_000_000          # config/fake_pc.yaml max_lead_s
+ 
+ 
+@@ -40,7 +40,7 @@ def test_run_mock_two_episodes(tmp_path):
+     assert sum(c["accepted"] for c in sets) > 0
+     assert all(c["t_last_pc_ns"] - c["t_pc_ns"] <= MAX_LEAD_NS for c in sets)      # on the fake PC's own clock
+     assert commands[-1]["request"] == "c3.stop/v1"
+-    assert any(c["request"] == "c3.home/v1" and c["ok"] for c in commands)
++    assert not any(c["request"] == "c3.home/v1" for c in commands)                   # no laptop key homes the arm
+ 
+     # the clock map: offset (PC - laptop) as the fake PC's drifting clock says, about +1000 s
+     fits = [r for r in jsonl(session / "manager/clock.jsonl") if r.get("kind") == "fit" and r["offset_ns"]]
+diff --git a/deployment/policy_deploy/tests/manager/test_episode_loop.py b/deployment/policy_deploy/tests/manager/test_episode_loop.py
+index 2decac7..de531d4 100644
+--- a/deployment/policy_deploy/tests/manager/test_episode_loop.py
++++ b/deployment/policy_deploy/tests/manager/test_episode_loop.py
+@@ -1,8 +1,8 @@
+ # adapted from rnoro/deployment:deployment/message_comms/tests/test_episode_loop.py @ 91b178b
+ # changes: the new LoopHarness (FakePcClient on a PC clock 1000 s ahead, a real PC clock map and HeartbeatSender);
+ # keep-alives are hellos or heartbeats; the new codes and texts; start-up order (hellos before get_state);
+-# + local refusal of c/h while the PC homes, c until the map is ready, home stopped/refused/failed, re-warm, margins
+-# in PC time, the clock-mismatch guard, KEY_HANDLERS.
++# + local refusal of c while the PC homes, c until the map is ready, margins in PC time, the clock-mismatch guard,
++# KEY_HANDLERS; h is not a laptop key (homing and the start pose are PC keyboard keys only).
+ """EpisodeLoop with fakes, FakeClock, ManualWorker and scripted keys, driving cycle() (STRUCTURE.md section 11)."""
+ import io
+ import json
+@@ -108,9 +108,7 @@ def test_s_ends_the_episode_and_the_run_goes_on(h, settings):
+     assert [e["outcome"] for e in episodes(settings)] == ["stopped"]
+     assert episodes(settings)[0]["reason"] == "operator stop key"
+     h.run_until(lambda: not h.worker.busy())
+-    h.operator.press("h")
+-    h.tick()
+-    assert "home" in h.calls and h.loop.phase is Phase.IDLE
++    assert h.loop.phase is Phase.IDLE
+     resets = h.policy.calls.count("reset")
+     h.start_episode()
+     assert h.loop.progress().episode_id == 2 and h.policy.calls.count("reset") == resets + 1
+@@ -181,12 +179,12 @@ def test_sigterm_stops_records_aborted_exits_0(h, settings):
+ 
+ 
+ def test_wrong_phase_keys_give_hints(h):
+-    h.operator.press("h")
+-    h.run_until(lambda: h.loop.phase is Phase.IDLE)
++    h.operator.press("y")
++    h.tick()
++    assert "y: no episode running (c start, q quit)" in h.operator.messages
+     h.start_episode()
+-    h.operator.press("h", "c")
++    h.operator.press("c")
+     h.tick(2)
+-    assert "h: end the episode first (y / n / s)" in h.operator.messages
+     assert any(m.startswith("c: an episode is running") for m in h.operator.messages)
+     assert h.loop.phase is Phase.RUNNING
+ 
+@@ -236,51 +234,6 @@ def test_refused_start_returns_to_idle_without_an_episode(h, settings):
+     assert "c: the PC refused start: refused: mode is homing" in h.operator.messages
+ 
+ 
+-# ---- homing -------------------------------------------------------------------------------------------------------
+-
+-def test_home_pauses_heartbeats_and_they_resume(h):
+-    h.franka.home_s = 1.0
+-    h.operator.press("h")
+-    h.tick()
+-    homes = [t for name, t in h.franka.timed if name == "home"]
+-    beats = [t for name, t in h.franka.timed if name in ("heartbeat", "hello")]
+-    assert len(homes) == 1
+-    during = [t for t in beats if homes[0] < t < homes[0] + 900 * MS]
+-    assert during == []
+-    after = [t for t in beats if t > homes[0]]
+-    assert after and after[0] - homes[0] <= 1_000 * MS + 1          # the one right after home returns
+-    assert h.loop.phase is Phase.IDLE
+-    assert any(line.startswith("[homing] keys inactive; Ctrl-C quits") for line in h.operator.statuses)
+-
+-
+-@pytest.mark.parametrize("signal_name", ["interrupt", "terminate"])
+-def test_ctrl_c_or_sigterm_during_homing_exits_within_one_slice(h, signal_name):
+-    h.franka.home_behaviour = "hang"
+-    slices = {"n": 0}
+-
+-    def during():
+-        slices["n"] += 1
+-        if slices["n"] == 10:
+-            getattr(h.loop, signal_name)()
+-    h.franka.during_home = during
+-    stops = h.calls.count("stop")
+-    h.operator.press("h")
+-    h.tick()
+-    assert h.loop.phase is Phase.DONE and h.loop.run() == 0
+-    assert slices["n"] == 10 and h.franka.home_closed
+-    assert h.calls.count("stop") == stops                         # no stop: the PC is busy homing
+-    assert h.loop.verdict.kind is Kind.STOP
+-
+-
+-def test_homing_refused_concludes(h):
+-    h.franka.home_behaviour = "refuse"
+-    h.operator.press("h")
+-    h.tick()
+-    assert h.loop.phase is Phase.DONE and h.loop.run() == 1
+-    assert h.loop.verdict.problem.code is C.HOMING_FAILED and "stop" in h.calls
+-    assert h.loop.verdict.what_failed == "the PC's homing failed: homing failed: home move would take 34 s"
+-
+-
+ # ---- state checks -------------------------------------------------------------------------------------------------
+ 
+ def test_stopped_before_the_start_ack_does_not_conclude_after_it_does(h):
+@@ -533,7 +486,7 @@ def test_startup_camera_down_concludes(settings):
+ def test_run_with_a_script_two_episodes(settings):
+     harness = LoopHarness(settings)
+     text = ("- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {wait_phase: idle}\n"
+-            "- {wait_s: 0.2}\n- {key: h}\n- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: n}\n"
++            "- {wait_s: 0.2}\n- {key: c}\n- {wait_steps: 5}\n- {key: n}\n"
+             "- {wait_s: 0.2}\n- {key: q}\n")
+     harness.operator = ScriptedOperator(parse_script(text, "t"), io.StringIO(), harness.clock,
+                                         settings.operator_script_wait_s)
+@@ -541,7 +494,7 @@ def test_run_with_a_script_two_episodes(settings):
+     harness.start()
+     assert harness.loop.run() == 0
+     assert [e["outcome"] for e in episodes(settings)] == ["stopped", "fail"]
+-    assert harness.calls.count("home") == 1 and harness.calls[-1] in ("stop", "heartbeat", "hello")
++    assert "home" not in harness.calls and harness.calls[-1] in ("stop", "heartbeat", "hello")
+     assert np.all(np.diff([msg.chunk_id for _, msg in harness.franka.sent]) > 0)
+ 
+ 
+@@ -552,16 +505,22 @@ def scripted(harness, text, out=None):
+ 
+ 
+ def test_run_with_a_script_retries_a_refused_key(settings):
+-    """s while a step is in flight, then h at once: h is refused (the last step is still running) and retried."""
++    """s while a step is in flight, then c at once: c is refused (the last step is still running) and retried."""
+     harness = LoopHarness(settings)
+     harness.worker.delay_s = 0.2                         # a step is in flight when s is pressed
++    stop = harness.franka.stop
++
++    def stop_then_idle():                                # the PC idle before the retried c's start: with zero latency
++        stop()                                           # a `stopped` C2 stamped at the start ack would read as
++        harness.franka.mode = "idle"                     # PC_STOPPED (not this test's subject)
++    harness.franka.stop = stop_then_idle
+     out = io.StringIO()
+-    scripted(harness, "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {key: h}\n"
+-                      "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 2}\n- {key: y}\n- {key: q}\n", out)
++    scripted(harness, "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 5}\n- {key: s}\n- {key: c}\n"
++                      "- {wait_steps: 2}\n- {key: y}\n- {key: q}\n", out)
+     harness.start()
+     assert harness.loop.run() == 0, harness.loop.verdict
+-    assert "h: waiting for the last policy step to finish" in out.getvalue()
+-    assert harness.calls.count("home") == 1
++    assert "c: waiting for the last policy step to finish" in out.getvalue()
++    assert "home" not in harness.calls
+     assert [e["outcome"] for e in episodes(settings)] == ["stopped", "success"]
+ 
+ 
+@@ -584,17 +543,21 @@ def test_key_handlers_cover_every_key():
+     assert set(KEY_HANDLERS) == {k.value for k in Key}
+ 
+ 
+-def test_c_and_h_refused_locally_while_the_pc_is_homing(h, settings):
+-    h.mode_override = "homing"                           # the PC's own h or g
++def test_h_is_not_a_laptop_key():
++    """No laptop key moves the arm to a pose: homing (h) and the start pose (p) are PC keyboard keys only."""
++    assert {k.value for k in Key} == {"c", "y", "n", "s", "q"}
++    assert "h" not in KEY_HANDLERS and "p" not in KEY_HANDLERS
++    assert "homing" not in [phase.value for phase in Phase]
++
++
++def test_c_refused_locally_while_the_pc_is_homing(h, settings):
++    h.mode_override = "homing"                           # the PC's own h, g or p
+     h.tick(2)
+     h.operator.press("c")
+     h.tick()
+-    h.operator.press("h")
+-    h.tick()
+     assert h.loop.phase is Phase.IDLE and "reset" not in h.calls and "home" not in h.calls
+-    assert "c: the PC is homing (its h or g key): wait for idle" in h.operator.messages
+-    assert "h: the PC is already homing (its h or g key)" in h.operator.messages
+-    assert [k for k, _ in h.operator.refused] == [Key.START, Key.HOME]
++    assert "c: the PC is homing (its h, g or p key): wait for idle" in h.operator.messages
++    assert [k for k, _ in h.operator.refused] == [Key.START]
+     assert h.loop.verdict is None
+     h.mode_override = None                               # idle again: accepted
+     h.start_episode()
+@@ -610,38 +573,6 @@ def test_c_refused_until_the_clock_map_is_ready(h, monkeypatch):
+     h.start_episode()
+ 
+ 
+-def test_home_stopped_by_the_pc_is_shown_and_the_map_rewarms(h, settings):
+-    h.franka.home_behaviour = "stopped"
+-    h.franka.home_s = 24.0                               # stopped after 12 s: longer than the 10 s window
+-    h.operator.press("h")
+-    h.tick()
+-    assert h.loop.phase is Phase.IDLE and h.loop.verdict is None
+-    assert "home_stopped" in events(settings)
+-    assert any(m.startswith("home stopped on the PC: stopped: homing stopped by the PC keyboard: the arm holds")
+-               for m in h.operator.messages)
+-    assert h.heartbeats.in_startup_mode() and not h.pc_clock.ready(h.clock())
+-    hellos = h.count("hello")
+-    h.tick(20)
+-    assert h.count("hello") - hellos == 20               # a hello every cycle while re-warming
+-    h.run_until(lambda: not h.heartbeats.in_startup_mode(), max_cycles=200)
+-    assert h.pc_clock.ready(h.clock())
+-    h.start_episode()                                    # c accepted afterwards
+-
+-
+-def test_home_refused_because_the_pc_is_homing_is_a_hint(h, settings):
+-    h.franka.home_behaviour = "refused_homing"
+-    h.operator.press("h")
+-    h.tick()
+-    assert h.loop.phase is Phase.IDLE and h.loop.verdict is None and "home_refused" in events(settings)
+-    assert any("h: the PC is already homing" in m for m in h.operator.messages)
+-
+-
+-def test_home_ok_rewarms_only_when_needed(h):
+-    h.operator.press("h")
+-    h.tick()
+-    assert h.loop.phase is Phase.IDLE and not h.heartbeats.in_startup_mode()   # 1 s home: the map stayed ready
+-
+-
+ def test_margin_and_waypoints_on_the_pc_clock(h, settings):
+     h.start_episode()
+     h.tick(10)
+diff --git a/deployment/policy_deploy/tests/manager/test_failure_rows_pc.py b/deployment/policy_deploy/tests/manager/test_failure_rows_pc.py
+index cb46f9a..78d2a77 100644
+--- a/deployment/policy_deploy/tests/manager/test_failure_rows_pc.py
++++ b/deployment/policy_deploy/tests/manager/test_failure_rows_pc.py
+@@ -163,52 +163,16 @@ def test_one_skipped_set_is_only_policy_late(tmp_path, rigs):
+ 
+ # ---------------------------------------------------------------------------------------------- home
+ 
+-def test_home_stopped_on_the_pc_is_normal_and_the_map_rewarms(tmp_path, rigs):
+-    rig = rigs(tmp_path, fake={"home_duration_s": 2.0})
+-    rig.start()
+-    rig.operator.press("h")
+-    assert rig.wait(lambda: rig.fake.mode == "homing", 3.0)
+-    rig.fake.keyboard_stop()
+-    assert rig.wait(lambda: rig.loop.phase is Phase.IDLE and "home_stopped" in [e["kind"] for e in rig.events()], 3.0)
+-    assert rig.code is None
+-    assert any(m.startswith("home stopped on the PC: stopped: ") for m in rig.operator.messages)
+-    assert rig.wait(lambda: "PC clock map ready again" in [e["detail"] for e in rig.events()], 3.0)
+-    assert not rig.heartbeats.in_startup_mode()
+-    rig.start_episode(3)                                                # c accepted afterwards
+-    assert rig.fake.mode in ("holding", "running")
+-
+-
+-def test_home_refused_is_homing_failed(tmp_path, rigs):
+-    rig = rigs(tmp_path)
+-    rig.start()
+-    rig.fake.set_mode("holding")                                       # e.g. another client started an episode
+-    assert rig.wait(lambda: rig.history.latest().mode == "holding", 2.0)
+-    rig.operator.press("h")
+-    v = concluded(rig, C.HOMING_FAILED)
+-    assert v.what_failed == "the PC's homing failed: refused: mode is holding: send stop first"
+-
+-
+-def test_home_timed_out_is_homing_failed(tmp_path, rigs):
+-    rig = rigs(tmp_path, manager={"timeouts": {"home_s": 0.4}},
+-               fake={"homing_timeout_s": 0.2, "home_duration_s": 3.0})
+-    rig.start()
+-    rig.operator.press("h")
+-    v = concluded(rig, C.HOMING_FAILED)
+-    assert v.what_failed == "the PC's homing failed: no reply within 0.4 s"
+-
+-
+ @pytest.mark.parametrize("hook", ["keyboard_home", "keyboard_hand_home"])
+-def test_c_and_h_refused_locally_while_the_pc_homes(tmp_path, rigs, hook):
++def test_c_refused_locally_while_the_pc_homes(tmp_path, rigs, hook):
+     rig = rigs(tmp_path, fake={"home_duration_s": 1.0})
+     rig.start()
+     assert getattr(rig.fake, hook)().ok
+     assert rig.wait(lambda: rig.history.latest().mode == "homing", 2.0)
+     rig.operator.press("c")
+-    rig.operator.press("h")
+-    assert rig.wait(lambda: len(rig.operator.refused) >= 2, 2.0)
++    assert rig.wait(lambda: len(rig.operator.refused) >= 1, 2.0)
+     hints = [h for _, h in rig.operator.refused]
+-    assert "c: the PC is homing (its h or g key): wait for idle" in hints
+-    assert "h: the PC is already homing (its h or g key)" in hints
++    assert "c: the PC is homing (its h, g or p key): wait for idle" in hints
+     names = rig.requests()
+     assert "c3.start/v1" not in names and "c3.home/v1" not in names
+     assert rig.loop.phase is Phase.IDLE and rig.code is None
+diff --git a/deployment/policy_deploy/tests/manager/test_flow.py b/deployment/policy_deploy/tests/manager/test_flow.py
+index 27e69d4..cfcfdf1 100644
+--- a/deployment/policy_deploy/tests/manager/test_flow.py
++++ b/deployment/policy_deploy/tests/manager/test_flow.py
+@@ -135,13 +135,13 @@ def test_odd_chunk_skipped_counted_next_sent(stack, capsys):
+ 
+ # ---- operator keys ------------------------------------------------------------------------------------------------
+ 
+-def test_s_then_h_then_c(stack, capsys):
+-    script = (EPISODE % (3, "s") + "- {wait_phase: idle}\n- {key: h}\n- {wait_s: 0.1}\n" + EPISODE % (3, "y") + QUIT)
++def test_s_then_c(stack, capsys):
++    script = (EPISODE % (3, "s") + "- {wait_phase: idle}\n- {wait_s: 0.1}\n" + EPISODE % (3, "y") + QUIT)
+     code, err = stack.run(script, capsys)
+     assert code == 0, err[-3:]
+     assert [e["outcome"] for e in stack.jsonl("episodes.jsonl")] == ["stopped", "success"]
+     names = stack.names()
+-    assert names.count("home") == 1 and names.count("start") == 2
++    assert names.count("home") == 0 and names.count("start") == 2
+     assert stack.policy.calls.count("c4.reset/v1") == 2
+ 
+ 
+diff --git a/deployment/policy_deploy/tests/manager/test_main.py b/deployment/policy_deploy/tests/manager/test_main.py
+index eb9f4e7..5126897 100644
+--- a/deployment/policy_deploy/tests/manager/test_main.py
++++ b/deployment/policy_deploy/tests/manager/test_main.py
+@@ -122,7 +122,7 @@ def test_a_script_that_waits_forever_gives_the_fatal_line(tmp_path, capsys, monk
+         assert main(["--station", str(station), "--session", str(tmp_path / "s"), "--mock"]) == 1
+         err = capsys.readouterr().err.splitlines()
+         assert err[-1] == (f"FATAL manager: operator script: {script}:2: key y: still refused "
+-                           "(y: no episode running (c start, h home, q quit)) after 0.5 s "
++                           "(y: no episode running (c start, q quit)) after 0.5 s "
+                            "(manager.operator_script_wait_s): check the script (manager.operator_script) "
+                            "or raise operator_script_wait_s")
+         assert pc.request_names()[-1] == "c3.stop/v1"
+diff --git a/deployment/policy_deploy/tests/manager/test_operator.py b/deployment/policy_deploy/tests/manager/test_operator.py
+index aad823a..05273d5 100644
+--- a/deployment/policy_deploy/tests/manager/test_operator.py
++++ b/deployment/policy_deploy/tests/manager/test_operator.py
+@@ -8,7 +8,7 @@ from manager_fakes import FakeClock
+ from policy_deploy.manager.episode_loop import LoopProgress, Phase
+ from policy_deploy.manager.errors import ScriptError, ScriptTimeout
+ from policy_deploy.manager.keyboard_operator import KeyboardOperator
+-from policy_deploy.manager.operator import Key
++from policy_deploy.manager.operator import Key, key_for
+ from policy_deploy.manager.scripted_operator import ScriptedOperator, parse_script
+ 
+ 
+@@ -56,14 +56,14 @@ def test_wait_s_by_the_clock():
+     assert op.poll_key(progress(Phase.IDLE)) is Key.QUIT
+ 
+ 
+-def test_two_episodes_with_stop_home_and_fail():
++def test_three_episodes_with_stop_and_fail():
+     text = ("- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 1}\n- {key: y}\n"
+             "- {wait_phase: idle}\n- {key: c}\n- {wait_steps: 1}\n- {key: s}\n"
+-            "- {wait_phase: idle}\n- {key: h}\n- {wait_phase: idle}\n"
++            "- {wait_phase: idle}\n"
+             "- {key: c}\n- {wait_steps: 1}\n- {key: n}\n- {wait_phase: idle}\n- {key: q}\n")
+     op = load(text)
+     seq = [progress(Phase.IDLE), progress(Phase.RUNNING, 1), progress(Phase.IDLE), progress(Phase.RESETTING),
+-           progress(Phase.RUNNING, 1), progress(Phase.IDLE), progress(Phase.HOMING), progress(Phase.IDLE),
++           progress(Phase.RUNNING, 1), progress(Phase.IDLE), progress(Phase.RESETTING),
+            progress(Phase.RUNNING, 1), progress(Phase.IDLE)]
+     keys = []
+     for p in seq:
+@@ -71,12 +71,13 @@ def test_two_episodes_with_stop_home_and_fail():
+             k = op.poll_key(p)
+             if k is not None:
+                 keys.append(k.value)
+-    assert keys == ["c", "y", "c", "s", "h", "c", "n", "q"] and op.done()
++    assert keys == ["c", "y", "c", "s", "c", "n", "q"] and op.done()
+ 
+ 
+ @pytest.mark.parametrize("text, words", [
+     ("- {key: c}\n- {press: y}\n- {key: q}\n", "script.yaml:2: unknown entry 'press'"),
+     ("- {key: c}\n- {key: x}\n- {key: q}\n", "script.yaml:2: unknown key 'x'"),
++    ("- {key: c}\n- {key: h}\n- {key: q}\n", "script.yaml:2: unknown key 'h'"),   # homing: a PC key only
+     ("- {key: c}\n- {key: s}\n", "script.yaml:2: the last entry must be {key: q}"),
+     ("- {wait_phase: flying}\n- {key: q}\n", "script.yaml:1: unknown phase 'flying'"),
+     ("- {wait_steps: -1}\n- {key: q}\n", "script.yaml:1: wait_steps needs"),
+@@ -128,13 +129,13 @@ def test_wait_s_has_no_time_limit():
+ 
+ 
+ def test_a_refused_key_is_retried_once_something_changes():
+-    op = load("- {key: h}\n- {key: q}\n")
++    op = load("- {key: c}\n- {key: q}\n")
+     busy = progress(Phase.IDLE, 5, 1, busy=True)
+-    assert op.poll_key(busy) is Key.HOME
+-    op.key_refused(Key.HOME, "h: waiting for the last policy step to finish")
++    assert op.poll_key(busy) is Key.START
++    op.key_refused(Key.START, "c: waiting for the last policy step to finish")
+     assert not op.done()
+     assert op.poll_key(busy) is None                     # nothing changed: no retry (no hint every cycle)
+-    assert op.poll_key(progress(Phase.IDLE, 5, 1)) is Key.HOME     # the step finished: retried
++    assert op.poll_key(progress(Phase.IDLE, 5, 1)) is Key.START    # the step finished: retried
+     assert op.poll_key(progress(Phase.IDLE, 5, 1)) is Key.QUIT and op.done()
+ 
+ 
+@@ -143,13 +144,13 @@ def test_a_key_refused_for_too_long_times_out():
+     op = load("- {wait_phase: idle}\n- {key: y}\n- {key: q}\n", clock, limit_s=1.0)
+     idle = progress(Phase.IDLE)
+     assert op.poll_key(idle) is Key.SUCCESS
+-    op.key_refused(Key.SUCCESS, "y: no episode running (c start, h home, q quit)")
++    op.key_refused(Key.SUCCESS, "y: no episode running (c start, q quit)")
+     clock.advance(0.5)
+     assert op.poll_key(idle) is None
+     clock.advance(0.5)
+     with pytest.raises(ScriptTimeout) as e:
+         op.poll_key(idle)
+-    assert "script.yaml:2: key y: still refused (y: no episode running (c start, h home, q quit)) after 1.0 s" \
++    assert "script.yaml:2: key y: still refused (y: no episode running (c start, q quit)) after 1.0 s" \
+         in str(e.value)
+ 
+ 
+@@ -172,7 +173,7 @@ def test_the_time_limit_of_a_retried_key_counts_from_its_first_try():
+ def test_key_refused_for_another_key_is_ignored():
+     op = load("- {key: c}\n- {key: q}\n")
+     assert op.poll_key(progress(Phase.IDLE)) is Key.START
+-    op.key_refused(Key.HOME, "h: x")
++    op.key_refused(Key.STOP, "s: x")
+     assert op.poll_key(progress(Phase.IDLE)) is Key.QUIT
+ 
+ 
+@@ -189,9 +190,9 @@ def wait_keys(op, n):
+ 
+ def test_keyboard_from_a_pipe():
+     out = io.StringIO()
+-    op = KeyboardOperator(io.StringIO("c\nyes\n\n  n\nS\nhome\nq\n"), out)
++    op = KeyboardOperator(io.StringIO("c\nyes\n\n  n\nS\nq\n"), out)
+     op.start()
+-    assert wait_keys(op, 6) == [Key.START, Key.SUCCESS, Key.FAIL, Key.STOP, Key.HOME, Key.QUIT]
++    assert wait_keys(op, 5) == [Key.START, Key.SUCCESS, Key.FAIL, Key.STOP, Key.QUIT]
+     op.close()
+ 
+ 
+@@ -203,6 +204,17 @@ def test_keyboard_unknown_key_shows_the_key_list():
+     assert "not a key" in out.getvalue() and "c start" in out.getvalue()
+ 
+ 
++@pytest.mark.parametrize("char", ["h", "p"])
++def test_h_and_p_are_not_laptop_keys(char):
++    """No laptop key moves the arm to a pose: homing (h) and the start pose (p) are PC keyboard keys only."""
++    out = io.StringIO()
++    op = KeyboardOperator(io.StringIO(f"{char}\nq\n"), out)
++    op.start()
++    assert wait_keys(op, 1) == [Key.QUIT]
++    assert f"{char!r}: not a key. keys: c start  y success  n fail  s stop  q quit" in out.getvalue()
++    assert key_for(char) is None
++
++
+ def test_status_rewritten_in_place_and_messages_above():
+     out = io.StringIO()
+     op = KeyboardOperator(io.StringIO(""), out)
+diff --git a/deployment/policy_deploy/tests/manager/test_pc_probe.py b/deployment/policy_deploy/tests/manager/test_pc_probe.py
+index ed27b96..b73aa62 100644
+--- a/deployment/policy_deploy/tests/manager/test_pc_probe.py
++++ b/deployment/policy_deploy/tests/manager/test_pc_probe.py
+@@ -1,9 +1,10 @@
+ """pc_probe against an in-process FakePc (STRUCTURE.md 8.6, 12.2): reads C2, sends only hello/heartbeat, prints both
+-estimators, refuses while holding past the H2 limit; --check --json lines."""
++estimators, refuses while holding past the H2 limit; --check --json lines; --start-pose lines."""
+ from __future__ import annotations
+ 
+ import io
+ import json
++import math
+ 
+ import pytest
+ from manager_pc_fakepc import make_fake_pc
+@@ -11,7 +12,7 @@ from manager_pc_harness import FAST, merge, small_link
+ from station_helpers import write_station
+ 
+ from policy_deploy.contracts import Station
+-from policy_deploy.manager.pc_probe import PcCheck, PcProbe, emit
++from policy_deploy.manager.pc_probe import PcCheck, PcProbe, emit, start_pose_lines
+ from policy_deploy.manager.settings import Settings
+ 
+ FAST_LINK = small_link(watchdog_limit_s=0.5, c3_timeout_s=0.15)
+@@ -120,3 +121,51 @@ def test_no_c2_row(tmp_path):
+     finally:
+         probe.close()
+     assert rows == [PcCheck("C2", "fail", rows[0].detail)] and "no C2 state" in rows[0].detail
++
++
++def _tilted_forward(deg: float, z_m: float) -> list[list[float]]:
++    """The fake PC's pointing-down pose turned about base y: the fingertips (TCP z) tilt `deg` toward forward (+x)."""
++    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
++    return [[c, 0.0, s, 0.45], [0.0, -1.0, 0.0, 0.0], [s, 0.0, -c, z_m], [0.0, 0.0, 0.0, 1.0]]
++
++
++@pytest.mark.parametrize("pose, width_m, height, direction", [
++    (None, 0.04, "z 0.300 m", "base (+0.00, +0.00, -1.00): tilted 0.0 deg from straight down, no horizontal direction"),
++    (_tilted_forward(48.0, 0.16), 0.08, "z 0.160 m",
++     "base (+0.74, +0.00, -0.67): tilted 48.0 deg from straight down, pointing forward (away from the base)"),
++])
++def test_start_pose_lines_from_the_fake_pcs_c2(probe_for, pose, width_m, height, direction):
++    fake, probe, _ = probe_for(start_width_m=width_m, **({"start_pose": pose} if pose is not None else {}))
++    rows = probe.run(0.3, report_every_s=None)
++    assert {r.name: r for r in rows}["hello"].status == "pass"
++    assert set(fake.request_names()) <= {"c3.hello/v1", "c3.heartbeat/v1"}       # read-only
++    lines = start_pose_lines(probe.history.latest())
++    assert lines == [
++        "q_start_rad: [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]   # paste under franka_control: homing: "
++        "in the PC's control_deploy/station.yaml",
++        f"fingertip (TCP) height: {height} in the robot base frame",
++        f"fingertip direction (TCP z axis) -> {direction}",
++        f"gripper width: {width_m * 1000:.1f} mm",
++        "demos start: fingertips tilted ~48 deg from straight down (38-64), ~16 cm above the table (6-27), hand open; "
++        "object ~16 cm ahead horizontally and ~17 cm below the fingertips"]
++
++
++@pytest.mark.parametrize("zx, zy, words", [
++    (0.0, 0.7, "pointing to the robot's left"), (0.0, -0.7, "pointing to the robot's right"),
++    (-0.7, 0.0, "pointing back (toward the base)"),
++    (0.5, 0.5, "pointing between forward (away from the base) and to the robot's left"),
++])
++def test_start_pose_words_and_q(zx, zy, words):
++    from types import SimpleNamespace
++
++    import numpy as np
++    z = np.array([zx, zy, -math.sqrt(1 - zx * zx - zy * zy)])
++    x = np.cross([0.0, 0.0, 1.0], z)
++    x /= np.linalg.norm(x)
++    T = np.eye(4)
++    T[:3, 0], T[:3, 1], T[:3, 2], T[2, 3] = x, np.cross(z, x), z, 0.2
++    q = [0.1, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816]
++    lines = start_pose_lines(SimpleNamespace(q=np.array(q), O_T_TCP=T, gripper_width_m=0.0))
++    assert lines[0].startswith("q_start_rad: [0.1000, -0.7854, 0.0000, -2.3562, 0.0000, 1.5708, 0.7854]   # paste")
++    assert lines[2].endswith(words) and f"tilted {math.degrees(math.acos(-z[2])):.1f} deg" in lines[2]
++    assert lines[3] == "gripper width: 0.0 mm"
+diff --git a/deployment/policy_deploy/tests/manager/test_status_line.py b/deployment/policy_deploy/tests/manager/test_status_line.py
+index 84ae9d5..353879f 100644
+--- a/deployment/policy_deploy/tests/manager/test_status_line.py
++++ b/deployment/policy_deploy/tests/manager/test_status_line.py
+@@ -4,7 +4,7 @@ import pytest
+ 
+ from manager_fakes import health
+ from policy_deploy.manager.episode_loop import Phase
+-from policy_deploy.manager.status_line import HOMING_LINE, StatusLine, StatusSnapshot
++from policy_deploy.manager.status_line import StatusLine, StatusSnapshot
+ 
+ 
+ def snap(**kw):
+@@ -22,7 +22,7 @@ def fmt(**kw):
+ 
+ def test_idle():
+     line = fmt(phase=Phase.IDLE, arm_mode="stopped")
+-    assert line == "[idle] arm stopped | cams ok 30/ok 30 fps | late loops 0 | keys: c start  h home  q quit"
++    assert line == "[idle] arm stopped | cams ok 30/ok 30 fps | late loops 0 | keys: c start  q quit"
+ 
+ 
+ def test_running_line():
+@@ -58,11 +58,6 @@ def test_skipping():
+     assert line == "[ep 3 running 31.0 s] SKIPPING 12.4 s: main camera stale | arm holding | keys: y n s q"
+ 
+ 
+-def test_homing():
+-    assert fmt(phase=Phase.HOMING) == HOMING_LINE
+-    assert "keys inactive; Ctrl-C quits; immediate stop: the robot's external stop button" in HOMING_LINE
+-
+-
+ @pytest.mark.parametrize("kw", [
+     dict(),
+     dict(late=99, anchor_fallbacks=12, skips={"camera_stale": 400}, shortened=12345, pulled_back=9999,
+@@ -79,7 +74,7 @@ def test_never_longer_than_120(kw):
+ 
+ def test_idle_shows_link_clock_pc_mock_and_the_hint():
+     line = fmt(phase=Phase.IDLE, arm_mode="homing", rtt_ms=4.2, c2_hz=99.6, clock_ok=True, pc_mock=True,
+-               hint="c: the PC is homing (its h or g key): wait for idle")
++               hint="c: the PC is homing (its h, g or p key): wait for idle")
+     assert line.startswith("[idle] arm homing (PC mock) | cams ok 30/ok 30 fps | late loops 0 | rtt 4 ms c2 100 Hz "
+                            "clock ok")
+     assert len(line) <= 120

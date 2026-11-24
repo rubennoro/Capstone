@@ -1,0 +1,60 @@
+# W2 step 2: the Pi cameras' image formation, fitted to the real PICK_TEST1 640x480 frames (B1's 15
+# references) against handheld renders of the build named in fitted_against (sim_deploy/look/
+# fit_camera_look.py; results: sim_evals/_pipeline/W2/camera/camera_look.json). Applied by the sim Pi to
+# each 640x480 frame before JPEG when a station's sim_pi.camera_look names this file (camera_look.py).
+# main = IMX519, ultrawide = IMX219. Every block: camera_look.py's module docstring.
+schema: sim_deploy.camera_look/v1
+seed: 0
+fitted_against: {look: sim_rig_look_real, model_sha256: 8909a37fb13054cade88bf161a1e9cbc9410e3ab39a10f2d0330a36a20fbc20f}
+cameras:
+  main:
+    blur_sigma_px: 0.634
+    decode_gamma: 2.2
+    matrix:
+    - [1.0092, 0.0, 0.0]
+    - [0.0, 1.005597, 0.0]
+    - [0.0, 0.0, 1.010752]
+    offset: [-0.000749, -0.001004, 8.6e-05]
+    shading:
+      centre_px: [319.5, 239.5]
+      norm_px: 400.0
+      radial:
+      - [-0.158673, -0.196067]
+      - [-0.127079, -0.216441]
+      - [-0.198246, -0.259964]
+      tilt:
+      - [0.0, 0.0]
+      - [0.0, 0.0]
+      - [0.0, 0.0]
+    tone_gamma: [2.13965, 2.123924, 2.192581]
+    noise:
+      s0: [0.006551, 0.005568, 0.003991]
+      s1: [-0.00221, -0.000876, 0.003162]
+      spatial_sigma_px: 0.75
+      channel_corr: 0.581
+  ultrawide:
+    blur_sigma_px: 0.846
+    decode_gamma: 2.2
+    matrix:
+    - [1.321427, -0.056122, -0.045494]
+    - [0.425155, 0.762684, 0.255122]
+    - [0.03982, -0.122605, 0.433771]
+    offset: [0.040412, 0.081003, -0.006046]
+    shading:
+      centre_px: [319.67932, 229.470135]
+      norm_px: 400.0
+      rho_max: 0.537
+      radial:
+      - [3.09177, -1.77143]
+      - [0.75942, -2.1226]
+      - [6.8362, -4.84646]
+      tilt:
+      - [0.07251, -0.53956]
+      - [0.11883, -0.86276]
+      - [-0.20327, -1.26843]
+    tone_gamma: [1.628675, 1.200001, 2.334786]
+    noise:
+      s0: [0.013887, 0.01099, 0.008676]
+      s1: [-0.01217, -0.010349, -0.005672]
+      spatial_sigma_px: 0.75
+      channel_corr: 0.405

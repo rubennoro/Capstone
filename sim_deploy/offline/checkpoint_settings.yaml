@@ -1,0 +1,313 @@
+# checkpoint_settings.yaml: deploy settings per runnable checkpoint (W1 step 4, sub-agent S4).
+# Made 2026-11-20 20:36 by sim_deploy/offline/make_settings.py from
+#   - the copy's policy.bench per checkpoint (sim_deploy/offline/bench_checkpoints.py; 150 timed calls after 5 warm-up
+#     per (precision, steps), CUDA, RTX 3050 Ti 4 GB, AC power): sim_evals/_pipeline/W1/bench/<TASK>_<run>/
+#   - the real-robot sessions of 2026-11-20 (12 sessions, 1979 sent steps, all bf16 / 8 steps,
+#     run with ~/Capstone-final-deployment): ~/policy_deploy_sessions/2026-11-20_*/manager/steps.jsonl
+# Condition (copy's STRUCTURE.md 7.6): the arm never holds if  L + 2*C' + d_up <= (exec_h - 1) * 50 ms,
+#   C' = frames + overhead + inference + RTT; every term is a p95; d_up = RTT/2; no extra reserve (STRUCTURE.md 11.3
+#   would add 20 ms: the margin field shows what is left).
+#   L (image_age_ms) p95 = 107.58 ms, frames_ms p95 = 9.83 ms, RTT (c3_rtt_ms) p95 = 7.53 ms, d_up = 3.77 ms,
+#   overhead = 2.44 ms (largest of: manager mean policy_ms minus the policy server's own mean inference per episode,
+#   and the in-process to_observation + C4 encode/decode p95; policy_ms minus bench is in terms_ms but not used:
+#   the bench ran thermally throttled, see each entry's bench.gpu_state), inference = the bench p95 of the candidate.
+# Candidates in fidelity order (fp32, S), (bf16, S), (fp32, 8), (bf16, 8), S = the checkpoint's own steps; each with
+#   the smallest exec_h in 1..16 meeting the condition. Provisional choice: the first with exec_h <= 12 (to be
+#   re-picked once the accuracy cost of bf16 / 8 steps is measured, W1 step 3). The other three: `alternatives`.
+# Keys as the station uses them: policy.precision, policy.diffusion_steps, manager.exec_h (nested below).
+# Copy version: `git diff --stat -- deployment | tail -1` = (empty: no diff vs HEAD); HEAD 3633fcb;
+#   policy/gripper_map.py exists: True.
+terms_ms:
+  L_p95_ms: 107.58
+  frames_p95_ms: 9.83
+  overhead_p95_ms: 2.44
+  rtt_p95_ms: 7.53
+  d_up_ms: 3.77
+  overhead_method: max of (b) manager mean policy_ms - policy-server mean inference per episode and (c) c4_overhead.py total
+    p95
+  overhead_b_server_vs_manager:
+  - episode_id: 1
+    server_inferences: 174
+    server_mean_ms: 96.8
+    server_max_ms: 125.1
+    manager_steps_with_policy: 173
+    manager_mean_policy_ms: 99.24
+    manager_max_policy_ms: 128.67
+    overhead_mean_ms: 2.44
+    session: 2026-11-20_17-26-45
+  overhead_c_microbench:
+    p50_ms: 0.904
+    p95_ms: 1.522
+    max_ms: 3.267
+  steps_pooled: 1979
+  L_p50_ms: 87.21
+  frames_p50_ms: 6.91
+  rtt_p50_ms: 2.77
+  cycle_p50_ms: 110.93
+  cycle_p95_ms: 177.08
+  overhead_a_policy_ms_minus_bench:
+  - checkpoint_run: PICK_DOUBLE/run_002_2026-11-19
+    precision: bf16
+    diffusion_steps: 8
+    steps_sent: 1082
+    policy_ms_p50: 97.83
+    policy_ms_p95: 165.95
+    bench_p50: 162.46
+    bench_p95: 167.42
+    overhead_p50: -64.63
+    overhead_p95: -1.47
+  - checkpoint_run: PICK_DOUBLE/run_003_2026-11-19
+    precision: bf16
+    diffusion_steps: 8
+    steps_sent: 43
+    policy_ms_p50: 96.35
+    policy_ms_p95: 101.95
+    bench_p50: 165.58
+    bench_p95: 169.95
+    overhead_p50: -69.23
+    overhead_p95: -68.0
+checkpoints:
+- run_folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19
+  id: PICK_DOUBLE/run_002_2026-11-19
+  kind: plain
+  train_config: umi_policy_dunet
+  checkpoint: top1_epoch=0040-val_action_mse_error_all=0.0004976.ckpt
+  dataset: pick1-double-v2
+  dataset_path: /home/ruben/Capstone/data/PICK_DOUBLE/package/pick1-double-v2/pick1-double-v2.zarr.zip
+  checkpoint_diffusion_steps: 16
+  policy:
+    precision: bf16
+    diffusion_steps: 8
+  manager:
+    exec_h: 11
+  margin_ms: 14.3
+  measured_ms:
+    bf16_16:
+      p50: 274.07
+      p95: 283.33
+      max: 291.11
+      mean: 275.0
+    fp32_16:
+      p50: 318.75
+      p95: 322.44
+      max: 338.61
+      mean: 309.08
+    bf16_8:
+      p50: 162.46
+      p95: 167.42
+      max: 172.59
+      mean: 154.29
+    fp32_8:
+      p50: 204.64
+      p95: 208.11
+      max: 221.17
+      mean: 204.87
+  budget_ms:
+    L: 107.58
+    C_prime: 187.2
+    d_up: 3.77
+    need: 485.7
+    have: 500.0
+  vram_mb:
+    load_allocated_mb: 1073.0
+    load_reserved_mb: 1140.0
+    infer_reserved_mb_max: 1698.0
+    infer_allocated_mb_max: 1662.7
+    nvidia_smi_used_mib_max: 1825.0
+  alternatives:
+  - policy.precision: fp32
+    policy.diffusion_steps: 16
+    manager.exec_h: null
+    margin_ms: null
+    need_ms: 795.8
+    c_prime_ms: 342.2
+    have_ms: null
+  - policy.precision: bf16
+    policy.diffusion_steps: 16
+    manager.exec_h: 16
+    margin_ms: 32.4
+    need_ms: 717.6
+    c_prime_ms: 303.1
+    have_ms: 750.0
+  - policy.precision: fp32
+    policy.diffusion_steps: 8
+    manager.exec_h: 13
+    margin_ms: 32.9
+    need_ms: 567.1
+    c_prime_ms: 227.9
+    have_ms: 600.0
+  bench:
+    folder: /home/ruben/Capstone-main-sim/sim_evals/_pipeline/W1/bench/PICK_DOUBLE_run_002_2026-11-19
+    infers: 150
+    load_1_5_15_at_lock:
+    - 2.35
+    - 1.4
+    - 1.1
+    load_1_5_15_after:
+    - 4.67
+    - 2.4
+    - 1.5
+    other_gpu_process_at_lock: []
+    ac_online: '1'
+    power_profile: performance
+    gpu_at_end:
+      fp32_16:
+        power_w: 24.74
+        sm_mhz: 735.0
+        temp_c: 77.0
+      bf16_16:
+        power_w: 21.13
+        sm_mhz: 735.0
+        temp_c: 75.0
+      fp32_8:
+        power_w: 25.25
+        sm_mhz: 735.0
+        temp_c: 75.0
+      bf16_8:
+        power_w: 24.07
+        sm_mhz: 952.0
+        temp_c: 74.0
+    gpu_state:
+      samples: 0
+      busy_samples: 0
+    attempts:
+    - folder: /home/ruben/Capstone-main-sim/sim_evals/_pipeline/W1/bench/PICK_DOUBLE_run_002_2026-11-19
+      load_1m_at_lock: 2.35
+      fp32_16_p50_p95:
+      - 318.75
+      - 322.44
+      bf16_16_p50_p95:
+      - 274.07
+      - 283.33
+      fp32_8_p50_p95:
+      - 204.64
+      - 208.11
+      bf16_8_p50_p95:
+      - 162.46
+      - 167.42
+- run_folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_003_2026-11-19
+  id: PICK_DOUBLE/run_003_2026-11-19
+  kind: plain
+  train_config: umi_policy_dunet
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0002274.ckpt
+  dataset: pick1-double-ep15-v1
+  dataset_path: /home/ruben/Capstone/data/PICK_DOUBLE/package/pick1-double-ep15-v1/pick1-double-ep15-v1.zarr.zip
+  checkpoint_diffusion_steps: 16
+  policy:
+    precision: bf16
+    diffusion_steps: 8
+  manager:
+    exec_h: 11
+  margin_ms: 9.1
+  measured_ms:
+    bf16_16:
+      p50: 188.16
+      p95: 229.65
+      max: 234.36
+      mean: 200.73
+    fp32_16:
+      p50: 266.98
+      p95: 321.4
+      max: 332.58
+      mean: 285.75
+    bf16_8:
+      p50: 165.58
+      p95: 169.95
+      max: 182.5
+      mean: 165.41
+    fp32_8:
+      p50: 205.04
+      p95: 209.05
+      max: 220.77
+      mean: 205.28
+  budget_ms:
+    L: 107.58
+    C_prime: 189.8
+    d_up: 3.77
+    need: 490.9
+    have: 500.0
+  vram_mb:
+    load_allocated_mb: 1073.0
+    load_reserved_mb: 1140.0
+    infer_reserved_mb_max: 1698.0
+    infer_allocated_mb_max: 1662.7
+    nvidia_smi_used_mib_max: 1825.0
+  alternatives:
+  - policy.precision: fp32
+    policy.diffusion_steps: 16
+    manager.exec_h: null
+    margin_ms: null
+    need_ms: 793.8
+    c_prime_ms: 341.2
+    have_ms: null
+  - policy.precision: bf16
+    policy.diffusion_steps: 16
+    manager.exec_h: 14
+    margin_ms: 39.6
+    need_ms: 610.4
+    c_prime_ms: 249.5
+    have_ms: 650.0
+  - policy.precision: fp32
+    policy.diffusion_steps: 8
+    manager.exec_h: 13
+    margin_ms: 30.9
+    need_ms: 569.1
+    c_prime_ms: 228.9
+    have_ms: 600.0
+  bench:
+    folder: /home/ruben/Capstone-main-sim/sim_evals/_pipeline/W1/bench/PICK_DOUBLE_run_003_2026-11-19
+    infers: 150
+    load_1_5_15_at_lock:
+    - 4.67
+    - 2.4
+    - 1.5
+    load_1_5_15_after:
+    - 3.85
+    - 2.87
+    - 1.81
+    other_gpu_process_at_lock: []
+    ac_online: '1'
+    power_profile: performance
+    gpu_at_end:
+      fp32_16:
+        power_w: 24.47
+        sm_mhz: 735.0
+        temp_c: 73.0
+      bf16_16:
+        power_w: 26.02
+        sm_mhz: 1297.0
+        temp_c: 74.0
+      fp32_8:
+        power_w: 25.28
+        sm_mhz: 877.0
+        temp_c: 75.0
+      bf16_8:
+        power_w: 21.06
+        sm_mhz: 735.0
+        temp_c: 74.0
+    gpu_state:
+      samples: 34
+      busy_samples: 33
+      sm_mhz_p50: 735.0
+      sm_mhz_min_max:
+      - 735.0
+      - 1042.0
+      gpu_temp_c_p50: 75.0
+      cpu_pkg_c_p50: 100.0
+      sw_thermal_slowdown_fraction: 1.0
+      power_w_p50: 23.02
+    attempts:
+    - folder: /home/ruben/Capstone-main-sim/sim_evals/_pipeline/W1/bench/PICK_DOUBLE_run_003_2026-11-19
+      load_1m_at_lock: 4.67
+      fp32_16_p50_p95:
+      - 266.98
+      - 321.4
+      bf16_16_p50_p95:
+      - 188.16
+      - 229.65
+      fp32_8_p50_p95:
+      - 205.04
+      - 209.05
+      bf16_8_p50_p95:
+      - 165.58
+      - 169.95

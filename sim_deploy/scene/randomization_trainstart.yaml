@@ -1,0 +1,15 @@
+# Seeded eraser placement for the training-like home (E7, `run.sh --home trainstart`; sim_deploy/scene/trainstart.py).
+# The same spread as randomization.yaml (the training data's), turned 90 deg and moved out to the robot's front:
+# every training episode started 16 cm behind and 17 cm above its grasp, the fingers 50 deg from vertical (medians).
+# Approached from the robot's right (-y) with the fingers closing along O x, that start is reachable with the arm
+# well inside its joint limits and the start TCP inside the gate's workspace box; approached from the robot side
+# (as the deployment home faces) the start would sit 12 cm from the base axis with the hand folded back (no IK
+# solution). The policy only sees poses relative to its episode start, so the yaw of the whole layout is free.
+# Frame O, metres, degrees.
+schema: sim_deploy.scene_random/v1
+id: pick_eraser_trainstart_v1
+x_m: [0.41, 0.49]
+y_m: [-0.04, 0.04]
+yaw_deg: [82.0, 102.0]         # added to the station's default yaw 0: long axis along O y, the 51 mm width along O x
+settle_s: 0.3
+closing_axis_O: [1.0, 0.0, 0.0]   # trainstart.py: the grasp's closing axis (TCP x) on the table at the region centre

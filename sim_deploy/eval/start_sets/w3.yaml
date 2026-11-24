@@ -1,0 +1,598 @@
+# Start set w3 (sim_deploy/eval/start_set.py; schema sim_deploy.start_set/v1).
+# Written by `python -m sim_deploy.eval starts build`; do not edit by hand (the driver recomputes and compares every start).
+# Rollout k of an eval with `--starts set` uses starts[k]. Frame O = the robot base, metres; yaw = the eraser's long axis from O x, deg.
+schema: sim_deploy.start_set/v1
+name: w3
+built:
+  time: '2026-11-22T15:39:21'
+  command: python -m sim_deploy.eval starts build
+  git: 3633fcb3b23aba2f7eef74ceb0543f5924987720-dirty
+  look: robot
+  model_json: sim_deploy/build/sim_rig_look_robot/model.json
+  model_sha256: 59dd476509d45b0be1f21f0963f4310b43eec8e00f91d9c22ff0ab4bc7b67318
+  start_pose_file: sim_deploy/stations/start_pose.yaml
+  q_start_rad: [-0.5928536, 0.5219462, -0.0897168, -1.5930073, 0.6595725, 1.5068439, -1.5301472]
+  start_tcp_O_m: [0.531, -0.159, 0.16]
+  start_tilt_deg: 48.0
+  start_heading_deg: 90.0
+  start_tip_height_m: 0.16
+  eraser_size_m: [0.127, 0.03, 0.012]
+rule: 'rollout k -> starts[k], the same for every checkpoint: 0-9 = the shared demos 0-9 (the first 10 demos of every training
+  dataset), the eraser at each demo''s replay placement from the start pose, flat on the table; 10-17 = the real-arm trials
+  of 2026-11-20, the sim eraser flat at the fitted centre x, y and yaw (sim_deploy/eval/start_set.py)'
+demo_source:
+  dataset: pick1-ep10-v1
+  path: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-ep10-v1/pick1-ep10-v1.zarr.zip
+  size_bytes: 160271784
+  sha256: 3dfe73b3224947930465bee06c056f31839eddf98c9cee253ccf4e148f3e3628
+  names: [pi-2026-11-18_episode_000138, pi-2026-11-18_episode_000139, pi-2026-11-18_episode_000140, pi-2026-11-18_episode_000141,
+    pi-2026-11-18_episode_000142, pi-2026-11-18_episode_000143, pi-2026-11-18_episode_000144, pi-2026-11-18_episode_000145,
+    pi-2026-11-18_episode_000146, pi-2026-11-18_episode_000147]
+  shared_with:
+  - {dataset: pick1-double-ep15-v1, path: /home/ruben/data/umi/datasets/multi/pick1-double-ep15-v1/pick1-double-ep15-v1.zarr.zip,
+    episodes: 30, same_names: true, same_data: true}
+  - {dataset: pick1-double-ep20-v1, path: /home/ruben/data/umi/datasets/multi/pick1-double-ep20-v1/pick1-double-ep20-v1.zarr.zip,
+    episodes: 40, same_names: true, same_data: true}
+  - {dataset: pick1-double-ep25-v1, path: /home/ruben/data/umi/datasets/multi/pick1-double-ep25-v1/pick1-double-ep25-v1.zarr.zip,
+    episodes: 50, same_names: true, same_data: true}
+  - {dataset: pick1-double-v2, path: /home/ruben/data/umi/datasets/multi/pick1-double-v2/pick1-double-v2.zarr.zip, episodes: 62,
+    same_names: true, same_data: true}
+  - {dataset: pick1-ep10-v1, path: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-ep10-v1/pick1-ep10-v1.zarr.zip, episodes: 10,
+    same_names: true, same_data: true}
+  - {dataset: pick1-ep15-v1, path: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-ep15-v1/pick1-ep15-v1.zarr.zip, episodes: 15,
+    same_names: true, same_data: true}
+  - {dataset: pick1-ep20-v1, path: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-ep20-v1/pick1-ep20-v1.zarr.zip, episodes: 20,
+    same_names: true, same_data: true}
+  - {dataset: pick1-ep25-v1, path: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-ep25-v1/pick1-ep25-v1.zarr.zip, episodes: 25,
+    same_names: true, same_data: true}
+  - {dataset: pick1-v1, path: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-v1/pick1-v1.zarr.zip, episodes: 30, same_names: true,
+    same_data: true}
+real_trial_source:
+  file: sim_evals/_pipeline/W2/sets/robot_trials_fit.json
+  sha256: 38c77be0dc3b80a0aaf1e4caa2c20c11ea766c62a1e76086bc982d6f0fcb90fd
+  schema: w2.robot_trials.fit/v1
+  real_object_mm: [127.0, 51.0, 12.0]
+  note: the real object was the 127 x 51 x 12 mm eraser; the sim places its own eraser (sim_deploy/eraser.py, 30 mm wide)
+    at the fitted centre and yaw, flat
+checkpoints:
+- id: PICK_TEST1/run_006_2026-11-18
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0002007.ckpt
+  dataset: pick1-v1
+  sample_type: task
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  - {index: 23, name: pi-2026-11-18_episode_000161}
+  val_demos_recomputed:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  - {index: 23, name: pi-2026-11-18_episode_000161}
+  agree: true
+  held_out: [2]
+  problems: []
+- id: PICK_TEST1/run_012_2026-11-18
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_012_2026-11-18
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0004078.ckpt
+  dataset: pick1-ep15-v1
+  sample_type: task
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  val_demos_recomputed:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  agree: true
+  held_out: [1]
+  problems: []
+- id: PICK_TEST1/run_014_2026-11-18
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_014_2026-11-18
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0003294.ckpt
+  dataset: pick1-ep20-v1
+  sample_type: task
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  val_demos_recomputed:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  agree: true
+  held_out: [1]
+  problems: []
+- id: PICK_TEST1/run_016_2026-11-18
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_016_2026-11-18
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0002300.ckpt
+  dataset: pick1-ep25-v1
+  sample_type: task
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  val_demos_recomputed:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  agree: true
+  held_out: [2]
+  problems: []
+- id: PICK_TEST1/run_020_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_020_2026-11-19
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0008353.ckpt
+  dataset: pick1-ep10-v1
+  sample_type: task
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 0, name: pi-2026-11-18_episode_000138}
+  val_demos_recomputed:
+  - {index: 0, name: pi-2026-11-18_episode_000138}
+  agree: true
+  held_out: [0]
+  problems: []
+- id: PICK_TEST1/run_022_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19
+  checkpoint: top1_epoch=0050-val_action_mse_error_all=0.0002123.ckpt
+  dataset: pick1-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  - {index: 23, name: pi-2026-11-18_episode_000161}
+  val_demos_recomputed:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  - {index: 23, name: pi-2026-11-18_episode_000161}
+  agree: true
+  held_out: [2]
+  problems: []
+- id: PICK_TEST1/run_024_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_024_2026-11-19
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0002694.ckpt
+  dataset: pick1-ep25-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  val_demos_recomputed:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  agree: true
+  held_out: [2]
+  problems: []
+- id: PICK_TEST1/run_028_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_028_2026-11-19
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0003967.ckpt
+  dataset: pick1-ep15-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  val_demos_recomputed:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  agree: true
+  held_out: [1]
+  problems: []
+- id: PICK_TEST1/run_030_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_030_2026-11-19
+  checkpoint: top1_epoch=0050-val_action_mse_error_all=0.0008616.ckpt
+  dataset: pick1-ep10-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 0, name: pi-2026-11-18_episode_000138}
+  val_demos_recomputed:
+  - {index: 0, name: pi-2026-11-18_episode_000138}
+  agree: true
+  held_out: [0]
+  problems: []
+- id: PICK_TEST1/run_031_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_031_2026-11-19
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0003717.ckpt
+  dataset: pick1-ep20-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  val_demos_recomputed:
+  - {index: 1, name: pi-2026-11-18_episode_000139}
+  agree: true
+  held_out: [1]
+  problems: []
+- id: PICK_DOUBLE/run_002_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19
+  checkpoint: top1_epoch=0040-val_action_mse_error_all=0.0004976.ckpt
+  dataset: pick1-double-v2
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 5, name: pi-2026-11-18_episode_000143}
+  - {index: 40, name: pi-2026-11-19_episode_000192}
+  - {index: 47, name: pi-2026-11-19_episode_000199}
+  val_demos_recomputed:
+  - {index: 5, name: pi-2026-11-18_episode_000143}
+  - {index: 40, name: pi-2026-11-19_episode_000192}
+  - {index: 47, name: pi-2026-11-19_episode_000199}
+  agree: true
+  held_out: [5]
+  problems: []
+- id: PICK_DOUBLE/run_003_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_003_2026-11-19
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0002274.ckpt
+  dataset: pick1-double-ep15-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  - {index: 23, name: pi-2026-11-19_episode_000190}
+  val_demos_recomputed:
+  - {index: 2, name: pi-2026-11-18_episode_000140}
+  - {index: 23, name: pi-2026-11-19_episode_000190}
+  agree: true
+  held_out: [2]
+  problems: []
+- id: PICK_DOUBLE/run_004_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_004_2026-11-19
+  checkpoint: top1_epoch=0059-val_action_mse_error_all=0.0003348.ckpt
+  dataset: pick1-double-ep20-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 3, name: pi-2026-11-18_episode_000141}
+  - {index: 30, name: pi-2026-11-19_episode_000192}
+  val_demos_recomputed:
+  - {index: 3, name: pi-2026-11-18_episode_000141}
+  - {index: 30, name: pi-2026-11-19_episode_000192}
+  agree: true
+  held_out: [3]
+  problems: []
+- id: PICK_DOUBLE/run_005_2026-11-19
+  run_folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_005_2026-11-19
+  checkpoint: top1_epoch=0050-val_action_mse_error_all=0.0005648.ckpt
+  dataset: pick1-double-ep25-v1
+  sample_type: episode
+  val_ratio: 0.05
+  seed: 42
+  split_source: checkpoint state_dicts.model._extra_training_split_info
+  val_demos_checkpoint:
+  - {index: 4, name: pi-2026-11-18_episode_000142}
+  - {index: 38, name: pi-2026-11-19_episode_000195}
+  val_demos_recomputed:
+  - {index: 4, name: pi-2026-11-18_episode_000142}
+  - {index: 38, name: pi-2026-11-19_episode_000195}
+  agree: true
+  held_out: [4]
+  problems: []
+starts:
+- source: demo
+  id: demo 0
+  demo: {index: 0, name: pi-2026-11-18_episode_000138}
+  eraser: {x_m: 0.5502, y_m: -0.0417, yaw_deg: -89.0}
+  pose: [0.550212, -0.041727, 0.006, 0.713223, 0.0, 0.0, -0.700937]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.1173, left_m: -0.0192, yaw_rel_deg: 1.0}
+  height_error_m: 0.0008
+  approach_tilt_deg: 38.6
+  grasp_tip_above_table_m: 0.0021
+  demo_start: {tilt_deg: 45.3, tip_height_m: 0.1657}
+  rollout: 0
+- source: demo
+  id: demo 1
+  demo: {index: 1, name: pi-2026-11-18_episode_000139}
+  eraser: {x_m: 0.5833, y_m: 0.0115, yaw_deg: 89.57}
+  pose: [0.583278, 0.011484, 0.006, 0.709744, 0.0, 0.0, 0.70446]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.1705, left_m: -0.0523, yaw_rel_deg: -0.43}
+  height_error_m: -0.0536
+  approach_tilt_deg: 33.1
+  grasp_tip_above_table_m: -0.0526
+  demo_start: {tilt_deg: 62.2, tip_height_m: 0.1615}
+  rollout: 1
+- source: demo
+  id: demo 2
+  demo: {index: 2, name: pi-2026-11-18_episode_000140}
+  eraser: {x_m: 0.5148, y_m: 0.0442, yaw_deg: 89.11}
+  pose: [0.51482, 0.044226, 0.006, 0.712562, 0.0, 0.0, 0.701609]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.2032, left_m: 0.0162, yaw_rel_deg: -0.89}
+  height_error_m: -0.072
+  approach_tilt_deg: 37.3
+  grasp_tip_above_table_m: -0.0708
+  demo_start: {tilt_deg: 51.2, tip_height_m: 0.2158}
+  rollout: 2
+- source: demo
+  id: demo 3
+  demo: {index: 3, name: pi-2026-11-18_episode_000141}
+  eraser: {x_m: 0.5784, y_m: 0.0262, yaw_deg: 84.63}
+  pose: [0.578371, 0.0262, 0.006, 0.739431, 0.0, 0.0, 0.673233]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.1852, left_m: -0.0474, yaw_rel_deg: -5.37}
+  height_error_m: -0.1071
+  approach_tilt_deg: 34.4
+  grasp_tip_above_table_m: -0.1061
+  demo_start: {tilt_deg: 51.3, tip_height_m: 0.2521}
+  rollout: 3
+- source: demo
+  id: demo 4
+  demo: {index: 4, name: pi-2026-11-18_episode_000142}
+  eraser: {x_m: 0.5364, y_m: 0.0487, yaw_deg: -86.61}
+  pose: [0.536448, 0.048692, 0.006, 0.727739, 0.0, 0.0, -0.685854]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.2077, left_m: -0.0055, yaw_rel_deg: 3.39}
+  height_error_m: -0.1283
+  approach_tilt_deg: 35.6
+  grasp_tip_above_table_m: -0.1272
+  demo_start: {tilt_deg: 50.7, tip_height_m: 0.2714}
+  rollout: 4
+- source: demo
+  id: demo 5
+  demo: {index: 5, name: pi-2026-11-18_episode_000143}
+  eraser: {x_m: 0.5671, y_m: 0.0633, yaw_deg: -89.87}
+  pose: [0.567111, 0.06328, 0.006, 0.707904, 0.0, 0.0, -0.706309]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.2223, left_m: -0.0361, yaw_rel_deg: 0.13}
+  height_error_m: -0.0778
+  approach_tilt_deg: 35.6
+  grasp_tip_above_table_m: -0.0767
+  demo_start: {tilt_deg: 47.1, tip_height_m: 0.2377}
+  rollout: 5
+- source: demo
+  id: demo 6
+  demo: {index: 6, name: pi-2026-11-18_episode_000144}
+  eraser: {x_m: 0.5529, y_m: 0.0485, yaw_deg: 87.55}
+  pose: [0.552891, 0.048454, 0.006, 0.722069, 0.0, 0.0, 0.691822]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.2074, left_m: -0.0219, yaw_rel_deg: -2.45}
+  height_error_m: -0.1191
+  approach_tilt_deg: 30.2
+  grasp_tip_above_table_m: -0.1183
+  demo_start: {tilt_deg: 52.0, tip_height_m: 0.2565}
+  rollout: 6
+- source: demo
+  id: demo 7
+  demo: {index: 7, name: pi-2026-11-18_episode_000145}
+  eraser: {x_m: 0.5501, y_m: 0.0237, yaw_deg: 85.01}
+  pose: [0.550076, 0.023746, 0.006, 0.737229, 0.0, 0.0, 0.675643]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.1827, left_m: -0.0191, yaw_rel_deg: -4.99}
+  height_error_m: -0.0192
+  approach_tilt_deg: 37.9
+  grasp_tip_above_table_m: -0.018
+  demo_start: {tilt_deg: 41.9, tip_height_m: 0.1922}
+  rollout: 7
+- source: demo
+  id: demo 8
+  demo: {index: 8, name: pi-2026-11-18_episode_000146}
+  eraser: {x_m: 0.5122, y_m: 0.0145, yaw_deg: -89.08}
+  pose: [0.512228, 0.014484, 0.006, 0.71278, 0.0, 0.0, -0.701387]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.1735, left_m: 0.0188, yaw_rel_deg: 0.92}
+  height_error_m: -0.0752
+  approach_tilt_deg: 30.3
+  grasp_tip_above_table_m: -0.0744
+  demo_start: {tilt_deg: 49.9, tip_height_m: 0.2359}
+  rollout: 8
+- source: demo
+  id: demo 9
+  demo: {index: 9, name: pi-2026-11-18_episode_000147}
+  eraser: {x_m: 0.5551, y_m: 0.0233, yaw_deg: 86.63}
+  pose: [0.555147, 0.023333, 0.006, 0.727581, 0.0, 0.0, 0.686021]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.1823, left_m: -0.0242, yaw_rel_deg: -3.37}
+  height_error_m: -0.0428
+  approach_tilt_deg: 37.3
+  grasp_tip_above_table_m: -0.0416
+  demo_start: {tilt_deg: 43.4, tip_height_m: 0.2117}
+  rollout: 9
+- source: real_trial
+  id: PICK_DOUBLE_run_002_trial1
+  real_trial:
+    id: PICK_DOUBLE_run_002_trial1
+    task: PICK_DOUBLE
+    run: run_002_2026-11-19
+    trial: trial1
+    folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19/deploy/2026-11-20_17-41_trial1_probe_live
+    x_m: 0.52334
+    y_m: -0.08278
+    yaw_deg: 88.93
+    fit_yaw_from_quat_deg: 88.93
+    fit_box_LWT_mm: [101.4, 50.5, 12.0]
+    fit_rms_px: 0.634
+    fit_centre_max_px: 2.004
+  eraser: {x_m: 0.5233, y_m: -0.0828, yaw_deg: 88.93}
+  pose: [0.52334, -0.08278, 0.006, 0.713678, 0.0, 0.0, 0.700473]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.0762, left_m: 0.0077, yaw_rel_deg: -1.07}
+  rollout: 10
+- source: real_trial
+  id: PICK_DOUBLE_run_002_trial2
+  real_trial:
+    id: PICK_DOUBLE_run_002_trial2
+    task: PICK_DOUBLE
+    run: run_002_2026-11-19
+    trial: trial2
+    folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19/deploy/2026-11-20_17-45_trial2_probe_live
+    x_m: 0.51762
+    y_m: -0.09502
+    yaw_deg: 84.8
+    fit_yaw_from_quat_deg: 84.8
+    fit_box_LWT_mm: [100.6, 48.9, 12.0]
+    fit_rms_px: 0.707
+    fit_centre_max_px: 2.242
+  eraser: {x_m: 0.5176, y_m: -0.095, yaw_deg: 84.8}
+  pose: [0.51762, -0.09502, 0.006, 0.738455, 0.0, 0.0, 0.674302]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.064, left_m: 0.0134, yaw_rel_deg: -5.2}
+  rollout: 11
+- source: real_trial
+  id: PICK_DOUBLE_run_002_trial3
+  real_trial:
+    id: PICK_DOUBLE_run_002_trial3
+    task: PICK_DOUBLE
+    run: run_002_2026-11-19
+    trial: trial3
+    folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19/deploy/2026-11-20_17-52_trial3_probe_live
+    x_m: 0.46942
+    y_m: -0.116
+    yaw_deg: 74.03
+    fit_yaw_from_quat_deg: 74.03
+    fit_box_LWT_mm: [100.5, 46.7, 12.0]
+    fit_rms_px: 0.737
+    fit_centre_max_px: 2.126
+  eraser: {x_m: 0.4694, y_m: -0.116, yaw_deg: 74.03}
+  pose: [0.46942, -0.116, 0.006, 0.798478, 0.0, 0.0, 0.602024]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.043, left_m: 0.0616, yaw_rel_deg: -15.97}
+  rollout: 12
+- source: real_trial
+  id: PICK_DOUBLE_run_003_trial1
+  real_trial:
+    id: PICK_DOUBLE_run_003_trial1
+    task: PICK_DOUBLE
+    run: run_003_2026-11-19
+    trial: trial1
+    folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_003_2026-11-19/deploy/2026-11-20_17-34_trial1_probe_live
+    x_m: 0.52508
+    y_m: -0.10939
+    yaw_deg: -77.56
+    fit_yaw_from_quat_deg: -77.56
+    fit_box_LWT_mm: [103.8, 51.1, 12.0]
+    fit_rms_px: 0.73
+    fit_centre_max_px: 2.283
+  eraser: {x_m: 0.5251, y_m: -0.1094, yaw_deg: -77.56}
+  pose: [0.52508, -0.10939, 0.006, 0.779557, 0.0, 0.0, -0.626332]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.0496, left_m: 0.0059, yaw_rel_deg: 12.44}
+  rollout: 13
+- source: real_trial
+  id: PICK_DOUBLE_run_003_trial2
+  real_trial:
+    id: PICK_DOUBLE_run_003_trial2
+    task: PICK_DOUBLE
+    run: run_003_2026-11-19
+    trial: trial2
+    folder: /home/ruben/Capstone/data/PICK_DOUBLE/policy/run_003_2026-11-19/deploy/2026-11-20_17-38_trial2_probe_live
+    x_m: 0.52228
+    y_m: -0.08758
+    yaw_deg: 89.55
+    fit_yaw_from_quat_deg: 89.55
+    fit_box_LWT_mm: [102.7, 49.8, 12.0]
+    fit_rms_px: 0.693
+    fit_centre_max_px: 2.217
+  eraser: {x_m: 0.5223, y_m: -0.0876, yaw_deg: 89.55}
+  pose: [0.52228, -0.08758, 0.006, 0.709878, 0.0, 0.0, 0.704325]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.0714, left_m: 0.0087, yaw_rel_deg: -0.45}
+  rollout: 14
+- source: real_trial
+  id: PICK_TEST1_run_006_trial1
+  real_trial:
+    id: PICK_TEST1_run_006_trial1
+    task: PICK_TEST1
+    run: run_006_2026-11-18
+    trial: trial1
+    folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_006_2026-11-18/deploy/2026-11-20_17-31_trial1_probe_live
+    x_m: 0.52471
+    y_m: -0.10945
+    yaw_deg: -80.53
+    fit_yaw_from_quat_deg: -80.53
+    fit_box_LWT_mm: [104.7, 50.4, 12.0]
+    fit_rms_px: 0.758
+    fit_centre_max_px: 2.465
+  eraser: {x_m: 0.5247, y_m: -0.1095, yaw_deg: -80.53}
+  pose: [0.52471, -0.10945, 0.006, 0.763063, 0.0, 0.0, -0.646324]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.0495, left_m: 0.0063, yaw_rel_deg: 9.47}
+  rollout: 15
+- source: real_trial
+  id: PICK_TEST1_run_022_trial2
+  real_trial:
+    id: PICK_TEST1_run_022_trial2
+    task: PICK_TEST1
+    run: run_022_2026-11-19
+    trial: trial2
+    folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19/deploy/2026-11-20_17-22_trial2_probe_live
+    x_m: 0.51139
+    y_m: -0.08209
+    yaw_deg: 82.64
+    fit_yaw_from_quat_deg: 82.64
+    fit_box_LWT_mm: [99.9, 49.5, 12.0]
+    fit_rms_px: 0.677
+    fit_centre_max_px: 2.164
+  eraser: {x_m: 0.5114, y_m: -0.0821, yaw_deg: 82.64}
+  pose: [0.51139, -0.08209, 0.006, 0.751034, 0.0, 0.0, 0.660264]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.0769, left_m: 0.0196, yaw_rel_deg: -7.36}
+  rollout: 16
+- source: real_trial
+  id: PICK_TEST1_run_022_trial3
+  real_trial:
+    id: PICK_TEST1_run_022_trial3
+    task: PICK_TEST1
+    run: run_022_2026-11-19
+    trial: trial3
+    folder: /home/ruben/Capstone/data/PICK_TEST1/policy/run_022_2026-11-19/deploy/2026-11-20_17-26_trial3_probe_live
+    x_m: 0.53577
+    y_m: -0.12633
+    yaw_deg: 86.97
+    fit_yaw_from_quat_deg: 86.97
+    fit_box_LWT_mm: [112.2, 45.9, 12.0]
+    fit_rms_px: 1.039
+    fit_centre_max_px: 2.953
+  eraser: {x_m: 0.5358, y_m: -0.1263, yaw_deg: 86.97}
+  pose: [0.53577, -0.12633, 0.006, 0.725555, 0.0, 0.0, 0.688165]
+  checks: {on_table: true, in_box: true, in_view_imx219: true, in_view_imx519: true}
+  usable: true
+  failed: []
+  start_frame: {ahead_m: 0.0327, left_m: -0.0048, yaw_rel_deg: -3.03}
+  rollout: 17

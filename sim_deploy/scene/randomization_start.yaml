@@ -1,0 +1,42 @@
+# The eraser relative to the start pose (P2, PLAN.md section 9; `--home start`). Written by
+# `python -m sim_deploy.scene start-data --write` from /home/ruben/data/umi/datasets/PICK_TEST1/pick1-v1/pick1-v1.zarr.zip
+# (30 episodes); the region keys may be edited by hand (start-data --write overwrites them).
+# Frame (scene/start_pose.py): origin = the start TCP (fingertip point) projected on the table; ahead = the fingertip
+# direction (TCP z) projected on the table; left = up x ahead. yaw_rel_deg = the eraser's long axis relative to ahead
+# (the fingers close across its 51 mm width). Per episode of the demos: the eraser centre (the grasp TCP, half the
+# eraser height back along its approach axis) relative to the episode's first pose.
+# Rollout n of an eval with --seed S draws ahead, left, yaw uniformly in these ranges (the demos' 10th-90th
+# percentiles, around their median) from numpy.random.default_rng([S, n]); the centre is then clipped so the whole
+# eraser stays on the table and inside the sim PC's workspace box (xy). `python -m sim_deploy.scene check` (home start)
+# checks the region's corners at the current start pose (stations/start_pose.yaml).
+# demos: the demos' start (tilt from straight down, fingertip height above the table, the eraser below the fingertips),
+# for start-pose --show. pc_probe's text: "~48 deg (38-64), ~16 cm above the table (6-27), object ~16 cm ahead
+# horizontally and ~17 cm below the fingertips".
+schema: sim_deploy.scene_random_start/v1
+id: pick_eraser_start_v1
+ahead_m: [0.09, 0.217]
+left_m: [-0.035, -0.003]
+yaw_rel_deg: [-6.6, 0.8]
+median: {ahead_m: 0.159, left_m: -0.019, yaw_rel_deg: -2.2}
+settle_s: 0.3
+demos:
+  dataset: /home/ruben/data/umi/datasets/PICK_TEST1/pick1-v1/pick1-v1.zarr.zip
+  episodes: 30
+  tilt_deg:
+    median: 48.2
+    range: [38.1, 64.0]
+  tip_height_m:
+    median: 0.163
+    range: [0.062, 0.271]
+  below_m:
+    median: 0.161
+    range: [0.064, 0.272]
+  ahead_m:
+    median: 0.159
+    range: [0.077, 0.225]
+  left_m:
+    median: -0.019
+    range: [-0.053, 0.02]
+  yaw_rel_deg:
+    median: -2.2
+    range: [-7.9, 3.5]

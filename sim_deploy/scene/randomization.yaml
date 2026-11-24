@@ -1,0 +1,20 @@
+# Seeded eraser placement for the eval driver (sim_deploy/scene/README.md). Frame: robot base O, metres, degrees.
+# Rollout n of an eval with --seed S uses rng = numpy.random.default_rng([S, n]): the same seed gives the same
+# placements for every policy, whatever the rollout count.
+schema: sim_deploy.scene_random/v1
+id: pick_eraser_v1
+# Region of the eraser centre (uniform). The training data: `python -m sim_deploy.scene replay-all
+# ~/data/umi/datasets/PICK_TEST1/pick1-v1/pick1-v1.zarr.zip` carries every recorded grasp to the sim's home TCP
+# (O 0.307, 0.000, 0.355): the eraser sat 0-7 cm behind and up to 6 cm to the right of the start TCP
+# (x 0.238-0.332, y -0.057..+0.016, median 0.284, -0.021; yaw of its long axis -1..+5 deg). By the user's choice
+# (2026-11-20, E7) the region is centred under the home TCP: x 0.27-0.34, y -0.03..+0.03, slightly left of the
+# training median y -0.021. The training motions themselves reach x 0.198-0.238 (after the grasp, moving back toward
+# the robot), so the sim stations lower the gate's workspace_min_m to x 0.20 (control_sim.yaml, E7).
+# `python -m sim_deploy.scene check` checks every corner: the whole eraser on the table, in the box, inside the
+# IMX219's (virtual pinhole) view at home.
+x_m: [0.27, 0.34]
+y_m: [-0.03, 0.03]
+# Yaw of the eraser's long axis about O z, added to the station's default yaw (0 = long axis along O x, so the
+# fingers, closing along O y at home, face its 51 mm side).
+yaw_deg: [-8.0, 12.0]
+settle_s: 0.3            # after set_object, wait this long before pressing c (the eraser drops < 1 mm onto the table)

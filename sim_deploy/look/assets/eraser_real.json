@@ -1,0 +1,19 @@
+{
+ "n_frames": 100,
+ "median_rgb": [
+  159.0,
+  214.0,
+  138.0
+ ],
+ "p10_rgb": [
+  143.0,
+  200.0,
+  121.9
+ ],
+ "p90_rgb": [
+  166.0,
+  219.0,
+  145.2
+ ],
+ "method": "IMX519 1600x1200 frames (PyAV rgb24), eraser_mask eroded 9 px, per-frame median, then the median over frames"
+}

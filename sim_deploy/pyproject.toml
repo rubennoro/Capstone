@@ -1,0 +1,17 @@
+# sim_deploy as one python package: this folder IS the package `sim_deploy` (package-dir maps it).
+# Install (editable) into ~/envs/sim_deploy:  ~/envs/sim_deploy/bin/pip install -e ~/Capstone-main-sim/sim_deploy
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sim_deploy"
+version = "0.1.0"
+description = "MuJoCo stand-in for the Pi and the PC of the final deployment (see PLAN.md, DESIGN.md)"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+package-dir = {"sim_deploy" = "."}
+# Only the top package is listed: the editable install maps `sim_deploy` to this folder, and the subpackages (rig,
+# adapter, model, sim_pi, scene, eval) are found inside it by the normal import system, including ones added later.
+packages = ["sim_deploy"]

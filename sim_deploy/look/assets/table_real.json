@@ -1,0 +1,70 @@
+{
+ "eraser_check_summary": {
+  "n": 100,
+  "length_mm_median": 110.9,
+  "length_mm_p10_p90": [
+   107.7,
+   113.1
+  ],
+  "width_mm_median": 52.1,
+  "width_mm_p10_p90": [
+   51.0,
+   53.8
+  ],
+  "true_mm": [
+   127.0,
+   51.0
+  ]
+ },
+ "registration_shift_mm": {
+  "median": 0.19,
+  "p90": 1.53,
+  "max": 7.53,
+  "n_zeroed": 31
+ },
+ "n_frames_used": 255,
+ "tile": {
+  "file": "table_real.png",
+  "sha256": "76f9b1f0c26e6d40d09ef4191665a61b598ac72d3d5edd9d59a4e1ca005278e7",
+  "px": [
+   1000,
+   400
+  ],
+  "size_m": [
+   0.5,
+   0.2
+  ],
+  "mm_per_px": 0.5,
+  "origin_O_m": [
+   0.23,
+   -0.03
+  ],
+  "O_x_m": [
+   0.23,
+   0.73
+  ],
+  "O_y_m": [
+   -0.03,
+   0.17
+  ],
+  "orientation": "column = O +x (right), row = O -y (down); origin_O_m = O (x, y) of the image's bottom-left corner (column 0, last row); the seam band (cross-faded) is the first SEAM_M of columns and rows",
+  "seam_band_m": 0.04,
+  "min_frames_per_texel": 15,
+  "inpainted_frac": 0.0,
+  "frames_per_texel_min_median": [
+   39,
+   63
+  ],
+  "mean_rgb": [
+   154.28,
+   154.8,
+   149.95
+  ],
+  "std_rgb": [
+   8.75,
+   10.97,
+   13.75
+  ],
+  "colour": "as the IMX519 records the table (PyAV rgb24 of the raw frames, per-frame exposure gain to the median divided out; no vignetting correction)"
+ }
+}
