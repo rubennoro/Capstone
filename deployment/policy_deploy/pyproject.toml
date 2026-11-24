@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "policy-deploy"
+version = "1.0.0"
+description = "The laptop side of the deployment: frames, policy, manager, fake PC and their launcher"
+requires-python = ">=3.10,<3.11"
+# deploy-contracts is NOT listed: it is installed editable from deployment/contracts in the same command
+# (deployment/STRUCTURE.md 1.4); `policy_deploy check` fails without it.
+dependencies = [
+    "numpy>=1.26,<2.3",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+# light env: frames (JPEG decode, image prep), the rig loader and the manager's slerp, the recorded episode for the
+# fake Pi.
+light = [
+    "opencv-python-headless==4.12.0.88",
+    "scipy==1.15.3",
+    "av==17.1.0",
+]
+# torch env only (never together with `light`: opencv-headless would clash with behavior_prompting's opencv-python).
+# Versions come from behavior_prompting/environment.yml (torch 2.7.1, dill 0.3.7, hydra-core 1.2.0, timm 1.0.20,
+# diffusers 0.35.1); behavior_prompting itself is not on PyPI.
+model = ["torch", "dill", "hydra-core", "timm", "diffusers"]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+policy_deploy = "policy_deploy.launcher.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["policy_deploy", "policy_deploy.*"]
+
+[tool.setuptools.package-data]
+"policy_deploy.contracts" = ["c4_limits.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"

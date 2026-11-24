@@ -1,0 +1,29 @@
+# adapted from rnoro/deployment:deployment/contracts/pyproject.toml @ 91b178b
+# changes: renamed to deploy-contracts / deploy_contracts 2.0.0 (deployment/STRUCTURE.md section 1.4); no package data
+# (limits.yaml, frames.yaml, link.yaml and examples/ sit next to the package, found through the editable install).
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deploy-contracts"
+version = "2.0.0"
+description = "Shared laptop <-> PC contracts C2/C3: messages, validators, wire format, examples, ZeroMQ helpers"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "numpy>=1.26,<2.3",
+    "msgpack==1.1.0",
+    "pyzmq==27.1.0",
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[tool.setuptools]
+packages = ["deploy_contracts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--import-mode=importlib"

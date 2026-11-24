@@ -1,0 +1,12 @@
+# The one definition of the TCP (PLAN §9). The TCP on the wire (C2, C3) is the training TCP.
+# Training's TCP axes (PLAN §9): x = finger closing (image right), y = image down, z = toward the fingertips.
+# The camera is on the Franka Hand's +x face (away from the base at home), so this is the Franka Hand TCP turned
+# +90 deg about z: +45 deg about flange z, fingertips 235.65 mm out: the printed finger adapter's CAD (UMI fingers
+# and holders on the Franka Hand; rnoro/main-sim sim_deploy D7: flange to tongue top 77.3 + 1.0 + 157.35 mm; was
+# 150). Check on the arm (a caliper, flange to the fingertips) before settled: true.
+F_T_TCP:
+  - [0.7071067811865476, -0.7071067811865476, 0.0, 0.0]
+  - [0.7071067811865476, 0.7071067811865476, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.23565]
+  - [0.0, 0.0, 0.0, 1.0]
+settled: true     # true once PLAN §9 is done and checked on the arm

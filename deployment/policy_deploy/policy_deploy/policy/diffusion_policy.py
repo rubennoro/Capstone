@@ -1,0 +1,89 @@
+# adapted from rnoro/deployment:deployment/policy/policy/diffusion_policy.py @ 91b178b
+# changes: passes policy.precision to the runner (and reports it in describe()); memory_stats() gives the CUDA
+# allocator's peaks for startup.json; imports; from_settings serves a prompting checkpoint as PromptableDiffusionPolicy
+# (needs policy.prompt_dataset) and refuses prompt_dataset for a plain one (as detached_inference's --dataset-path);
+# policy.gripper_map converts the widths (robot -> model on the way in, model -> robot on the way out)
+"""DiffusionPolicy: a trained diffusion checkpoint (torch; STRUCTURE.md 5.2).
+
+from_settings: a plain checkpoint -> DiffusionPolicy; a prompting one (shape_meta.use_prompting) ->
+PromptableDiffusionPolicy (promptable_diffusion_policy.py, imported only then). Both are kind diffusion.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from typing import TYPE_CHECKING, Any, Callable, Mapping
+
+import torch
+from deploy_contracts import ContractLimits
+
+from policy_deploy.contracts import ActionChunk, Observation
+from policy_deploy.policy.base_policy import Policy
+from policy_deploy.policy.checkpoint_loader import CheckpointLoader
+from policy_deploy.policy.errors import PolicyLoadError
+from policy_deploy.policy.gripper_map import GripperMap
+from policy_deploy.policy.key_map import KeyMap
+from policy_deploy.policy.model_runner import ModelRunner
+
+if TYPE_CHECKING:
+    from policy_deploy.policy.settings import Settings
+
+
+class DiffusionPolicy(Policy):
+    KIND = "diffusion"
+
+    def __init__(self, runner: ModelRunner, model_reset: Callable[[], None], gripper_width_max_m: float,
+                 info: Mapping[str, Any] | None = None, gripper_map: GripperMap | None = None) -> None:
+        super().__init__(gripper_width_max_m)
+        if gripper_map is not None and gripper_map.robot_open_m > gripper_width_max_m:
+            raise PolicyLoadError(f"policy.gripper_map.robot_open_m {gripper_map.robot_open_m} is above "
+                                  f"gripper_width_max_m {gripper_width_max_m}",
+                                  "set robot_open_m to at most contracts/limits.yaml gripper_width_max_m")
+        self._runner = runner
+        self._gripper_map = gripper_map
+        self._model_reset = model_reset
+        self._info = dict(info or {})
+
+    @classmethod
+    def from_settings(cls, settings: "Settings") -> "DiffusionPolicy":
+        loaded = CheckpointLoader(settings.training_timing).load(settings.checkpoint, settings.device,
+                                                                 settings.diffusion_steps)
+        if loaded.uses_prompting:
+            if settings.prompt_dataset is None:
+                raise PolicyLoadError("checkpoint uses prompting (shape_meta.use_prompting: true)",
+                                      "set policy.prompt_dataset (the processed .zarr.zip of the demos)")
+            from policy_deploy.policy.promptable_diffusion_policy import PromptableDiffusionPolicy
+            return PromptableDiffusionPolicy.from_loaded(loaded, settings)
+        if settings.prompt_dataset is not None:
+            raise PolicyLoadError("policy.prompt_dataset is set but the checkpoint does not use prompting "
+                                  "(shape_meta.use_prompting: false)", "remove policy.prompt_dataset from station.yaml")
+        runner = ModelRunner(loaded.model, loaded.shape_meta, KeyMap.from_config(settings.key_map),
+                             torch.device(settings.device), precision=settings.precision)
+        return DiffusionPolicy(runner, loaded.model.reset, ContractLimits.load().gripper_width_max_m,
+                               info=loaded.info, gripper_map=settings.gripper_map)
+
+    def inputs(self) -> tuple[str, ...]:
+        return self._runner.inputs
+
+    def reset(self) -> None:
+        self._model_reset()
+
+    def infer(self, obs: Observation) -> ActionChunk:
+        if self._gripper_map is None:
+            return self.make_chunk(*self._runner.run(obs))
+        obs = dataclasses.replace(obs, gripper_width_m=self._gripper_map.to_model(obs.gripper_width_m))
+        eef_pos, eef_rot6d, width = self._runner.run(obs)
+        return self.make_chunk(eef_pos, eef_rot6d, self._gripper_map.to_robot(width))
+
+    def describe(self) -> dict[str, Any]:
+        return {"kind": self.KIND, **self._info, "device": str(self._runner.device),
+                "precision": self._runner.precision, "key_map": self._runner.key_map.as_dict(),
+                "gripper_map": self._gripper_map.as_dict() if self._gripper_map is not None else None,
+                "inputs": list(self.inputs())}
+
+    def memory_stats(self) -> dict[str, Any]:
+        """The CUDA allocator's peaks since start (after the warm-up: the model's real need), in MB."""
+        if self._runner.device.type != "cuda" or not torch.cuda.is_available():
+            return {}
+        return {"max_memory_allocated_mb": round(torch.cuda.max_memory_allocated() / 2**20, 1),
+                "max_memory_reserved_mb": round(torch.cuda.max_memory_reserved() / 2**20, 1)}

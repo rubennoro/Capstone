@@ -1,0 +1,69 @@
+# manager: every setting, with its default (policy_deploy/STRUCTURE.md 6.6). station.yaml's `manager:` section may
+# override any key here; a key that is not here is refused. Times are in the unit in their name.
+#
+# The link values (heartbeat period, C3 timeout, state stale/lost limits, the clock estimator, the PC's address and
+# ports) come only from deployment/contracts/link.yaml and may not appear here or in station.yaml.
+#
+# Worst heartbeat gap (PLAN 6), checked at start-up against the PC's hello watchdog_limit_s:
+#   heartbeat_period_s + c3_timeout_s + timeouts.health_s + link_jitter_allowance_s
+#   = 0.02 + 0.3 + 0.05 + 0.2 = 0.57 s  <  watchdog_limit_s (1.0 s)
+# Homing: timeouts.home_s must be above the PC's homing_timeout_s (hello; 30 s), so the PC answers first.
+
+exec_h: 8                     # waypoints sent per policy step, 1-16 (PLAN 13 backup: raise it if the policy is slow)
+lookahead_ms: 0               # added to every waypoint time, integer >= 0
+pose_source: target           # target | measured: which C2 pose is the proprio and the anchor
+odd_chunk_max_pos_m: 0.02     # odd-chunk check: step 0's largest distance from the anchor (PLAN 4)
+odd_chunk_max_rot_deg: 5.0    # odd-chunk check: step 0's largest rotation from the anchor
+anchor_fallback_m: 0.02       # with target: use measured for a step when target and measured are farther apart
+status_ms: 250                # status line refresh
+health_poll_ms: 500           # get_health period, in every phase
+history_s: 1.0                # length of the C2 state history
+max_image_age_ms: 250         # newest main image older than this (laptop clock) -> skip
+state_recv_hwm: 1000          # C2 subscriber queue length (every message is needed for the seq check)
+link_jitter_allowance_s: 0.2  # worst gap: allowance for uplink delay variance and local work (PLAN 6)
+listener_poll_s: 0.02         # C2 receive timeout (how fast the listener sees its stop flag)
+timeouts:
+  health_s: 0.05              # C1 get_health on the main thread (localhost); a term of the worst gap
+  frames_s: 1.0               # C1 get_frames (worker)
+  policy_hang_s: 5.0          # C4 infer: the hang limit (PLAN 7)
+  config_s: 5.0               # C4 config
+  reset_s: 1.0                # C4 reset (the policy must answer in < 0.5 s)
+  prompt_s: 60.0              # C4 prompt (never sent to a plain diffusion policy)
+  home_s: 90.0                # C3 home; must be above the PC's homing_timeout_s (hello)
+  startup_s: 20.0             # start-up steps 2-9, not counting the waits while C2 shows homing
+  pc_homing_wait_s: 60.0      # start-up: longest wait without C3 while C2 shows homing (the PC's h, p or g)
+clock:                        # the laptop <-> PC clock map (PLAN 5.6); the estimator is link.yaml clock.estimator
+  hello_period_s: 0.5         # hello rate after start-up
+  startup_hello_period_s: 0.02  # hello rate during start-up step 4 (every cycle)
+  round_trip:
+    window_s: 10.0
+    best_fraction: 0.3
+  one_way:
+    window_s: 5.0
+    best_fraction: 0.3
+  drift_min_span_s: 5.0       # drift fitted once the best samples span this long
+  max_drift_ppm: 200.0        # a larger fitted drift is noise (worst extrapolation 200 ppm x 5 s = 1 ms)
+  min_samples_s: 2.0          # the map is ready only with this span ...
+  min_samples: 10             # ... and this many samples (PLAN 5.6 guard 1)
+  max_sample_age_s: 5.0       # the map is not ready when its newest sample is older (e.g. after a link gap)
+  startup_agree_ms: 5.0       # start-up guard 2: map vs the shortest-RTT hello
+  jump_log_ms: 1.0            # a refit that moves "now" by more than this is logged (guard 3)
+  mismatch_sets: 3            # guard 4: this many counted sets in a row conclude
+  mismatch_min_lead_ms: 100.0 # guard 4: an entirely skipped set counts when the laptop's lead was at least this
+  future_state_ms: 20.0       # guard 4: a set sent while the newest C2 t_ns is this far ahead of mapped "now" counts
+  log_every_s: 10.0           # clock.jsonl period
+link_stats:
+  window_s: 10.0              # RTT percentiles window
+task_name: null               # for prompt; required only if the policy says uses_prompt
+prompt_index: 0               # for prompt
+operator_script: null         # null: the keyboard. A path: a ScriptedOperator script (relative: from the station's folder
+                              # when set there)
+operator_script_wait_s: 30.0  # with a script: the longest a wait, or a key the loop refuses, may take (then exit 1)
+skip_warn_s: 1.0              # steps skipped longer than this -> status line SKIPPING (never a conclude)
+log_steps: true               # write steps.jsonl
+save_tap: false               # save each sent step's observation, chunk and waypoints to tap/ (first real-arm runs)
+tap_images_every: 10          # with save_tap: include the four images every this many steps
+workspace_clamp_m: 0.002      # pull every waypoint's position into the PC's workspace box (control_deploy/franka_control/
+                              # config.yaml safety.workspace_min_m / workspace_max_m), this far inside its faces, before
+                              # sending: the policy aiming past the box (e.g. below the table) moves to its face instead
+                              # of the PC rejecting the waypoint (a fault). null: off (the PC's gate alone)

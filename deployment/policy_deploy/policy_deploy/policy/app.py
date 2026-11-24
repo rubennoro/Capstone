@@ -1,0 +1,156 @@
+# adapted from rnoro/deployment:deployment/policy/policy/app.py @ 91b178b
+# changes: started from ProcessArgs (policy_deploy.contracts.process_args): session folder <session>/policy/ (or the
+# _policy_alone folder), FATAL line through print_fatal; Settings.load(station, mock); startup.json adds precision,
+# the CUDA allocator's peaks after the warm-up (policy.memory_stats(): torch.cuda.max_memory_allocated/reserved) and,
+# for a CUDA policy, nvidia-smi's GPU name, used/total memory and power limit; a PromptablePolicy is prompted with its
+# warm_up_prompt() (the longest demo) before the warm-up inferences (startup.json warmup_prompt).
+"""PolicyApp: start-up order, warm-up, ready file, serving, FATAL line (STRUCTURE.md 5.4)."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import signal
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from policy_deploy.contracts import Observation
+from policy_deploy.contracts.process_args import ProcessArgs, print_fatal
+from policy_deploy.policy.base_policy import Policy
+from policy_deploy.policy.errors import PolicyFatal, PolicyLoadError, SettingsError
+from policy_deploy.policy.neutral_observation import neutral_observation
+from policy_deploy.policy.policy_factory import build_policy
+from policy_deploy.policy.policy_server import PolicyServer
+from policy_deploy.policy.promptable_policy import PromptablePolicy
+from policy_deploy.policy.self_check import gpu_info
+from policy_deploy.policy.settings import Settings
+
+NAME = "policy"
+log = logging.getLogger("policy.app")
+
+
+def run_warm_up(policy: Policy, obs: Observation, count: int,
+                clock: Callable[[], int] = time.monotonic_ns) -> list[float]:
+    """Call policy.infer `count` times on `obs`, timing each (seconds), then policy.reset().
+
+    Every failure is fatal, a contract failure of the chunk included: raises PolicyFatal.
+    """
+    times: list[float] = []
+    for i in range(count):
+        t0 = clock()
+        try:
+            policy.infer(obs)
+        except Exception as e:
+            log.error("warm-up inference %d/%d failed", i + 1, count, exc_info=e)
+            raise PolicyFatal(f"warm-up inference failed: {type(e).__name__}: {e}",
+                              "the model output is invalid or the device failed; check the checkpoint, "
+                              "policy.device and the GPU") from e
+        times.append((clock() - t0) / 1e9)
+    try:
+        policy.reset()
+    except Exception as e:
+        raise PolicyFatal(f"reset after warm-up failed: {type(e).__name__}: {e}", "see the log above") from e
+    return times
+
+
+def run_warm_up_prompt(policy: PromptablePolicy, clock: Callable[[], int] = time.monotonic_ns) -> dict[str, Any]:
+    """Prompt with policy.warm_up_prompt() (before run_warm_up, whose reset clears it): {"task_name",
+    "prompt_index", "prompt_s"}. A torch policy's prompt() returns after a CUDA synchronize, so prompt_s is the real
+    time (this module stays torch-free). Every failure is fatal: raises PolicyFatal."""
+    try:
+        task_name, prompt_index = policy.warm_up_prompt()
+        t0 = clock()
+        policy.prompt(task_name, prompt_index)
+    except Exception as e:
+        log.error("warm-up prompt failed", exc_info=e)
+        raise PolicyFatal(f"warm-up prompt failed: {type(e).__name__}: {e}",
+                          "check policy.prompt_dataset (the demos of this checkpoint's task) and the GPU") from e
+    return {"task_name": task_name, "prompt_index": prompt_index, "prompt_s": (clock() - t0) / 1e9}
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write `<path>.tmp`, then rename it, so a reader never sees half a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+class PolicyApp:
+    def __init__(self, args: ProcessArgs) -> None:
+        self._args = args
+        self._stop = threading.Event()
+
+    def run(self) -> int:
+        """0: stopped normally; 1: FATAL line written."""
+        try:
+            return self._run()
+        except KeyboardInterrupt:
+            log.info("interrupted (Ctrl-C) before serving started")
+            return 0
+        except SettingsError as e:
+            for problem in e.problems:
+                log.error("settings: %s", problem)
+            return print_fatal(NAME, "invalid settings: " + "; ".join(e.problems),
+                               "check station.yaml policy: and config/policy.yaml")
+        except (PolicyLoadError, PolicyFatal) as e:
+            return print_fatal(NAME, e.what, e.check)
+        except Exception as e:
+            log.exception("unexpected error")
+            return print_fatal(NAME, f"unexpected error: {type(e).__name__}: {e}", "see the log above")
+
+    def _run(self) -> int:
+        settings = Settings.load(self._args.station, self._args.mock)
+        out_dir = self._args.out_dir(settings.session_root)
+        log.info("kind %s%s, precision %s; session folder %s", settings.active_kind,
+                 " (--mock)" if settings.mock else "", settings.precision, out_dir)
+
+        t0 = time.monotonic()
+        policy = build_policy(settings)
+        log.info("policy %s built in %.2f s", settings.active_kind, time.monotonic() - t0)
+
+        obs = neutral_observation(settings.warmup_gripper_width_m)
+        warm_prompt = None
+        if isinstance(policy, PromptablePolicy):
+            warm_prompt = run_warm_up_prompt(policy)
+            log.info("warm-up prompt: task %r, index %d in %.3f s", warm_prompt["task_name"],
+                     warm_prompt["prompt_index"], warm_prompt["prompt_s"])
+        times = run_warm_up(policy, obs, settings.warmup_inferences)
+        device = str(policy.describe().get("device", "cpu"))
+        log.info("warm-up " + ", ".join(f"inference {i + 1}/{len(times)}: {t:.3f} s" for i, t in enumerate(times))
+                 + f" on {device}")
+
+        try:
+            server = PolicyServer(policy, settings.endpoint, settings.reset_max_s)
+        except Exception as e:
+            raise PolicyFatal(f"cannot bind the C4 endpoint {settings.endpoint}: {type(e).__name__}: {e}",
+                              "is another policy process running? check ports.policy in station.yaml") from e
+        try:
+            startup: dict[str, Any] = {
+                "kind": settings.active_kind, "mock": settings.mock, "precision": settings.precision,
+                "settings": settings.as_dict(), "policy": policy.describe(), "warmup_s": times,
+                "memory": policy.memory_stats(), "gpu": gpu_info() if device.startswith("cuda") else None,
+                "endpoint": server.endpoint, "pid": os.getpid(),
+            }
+            if warm_prompt is not None:
+                startup["warmup_prompt"] = warm_prompt
+            write_atomic(out_dir / "startup.json", json.dumps(startup, indent=1, default=str))
+            if self._args.ready_file is not None:
+                write_atomic(Path(self._args.ready_file), "")
+            self._install_signal_handlers()
+            log.info("ready: serving C4 on %s", server.endpoint)
+            server.serve(self._stop, settings.poll_s)
+            log.info("stopped by signal")
+            return 0
+        finally:
+            server.close()
+
+    def _install_signal_handlers(self) -> None:
+        def handler(signum: int, frame: object) -> None:
+            self._stop.set()
+
+        signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGTERM, handler)

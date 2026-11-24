@@ -1,0 +1,171 @@
+"""pc_probe against an in-process FakePc (STRUCTURE.md 8.6, 12.2): reads C2, sends only hello/heartbeat, prints both
+estimators, refuses while holding past the H2 limit; --check --json lines; --start-pose lines."""
+from __future__ import annotations
+
+import io
+import json
+import math
+
+import pytest
+from manager_pc_fakepc import make_fake_pc
+from manager_pc_harness import FAST, merge, small_link
+from station_helpers import write_station
+
+from policy_deploy.contracts import Station
+from policy_deploy.manager.pc_probe import PcCheck, PcProbe, emit, start_pose_lines
+from policy_deploy.manager.settings import Settings
+
+FAST_LINK = small_link(watchdog_limit_s=0.5, c3_timeout_s=0.15)
+
+
+@pytest.fixture
+def probe_for(tmp_path):
+    made = []
+
+    def make(link=None, manager=None, **fake_overrides):
+        fake = make_fake_pc(tmp_path / "fake", link=link, **fake_overrides)
+        fake.start()
+        station = Station.load(write_station(tmp_path, manager=merge(FAST, manager or {})), mock=True)
+        settings = Settings.from_station(station, link=link, state_endpoint=fake.state_endpoint,
+                                         commands_endpoint=fake.commands_endpoint)
+        out = io.StringIO()
+        probe = PcProbe(settings, out)
+        made.append((fake, probe))
+        return fake, probe, out
+    yield make
+    for fake, probe in made:
+        probe.close()
+        fake.close()
+
+
+def test_reads_c2_sends_only_hello_and_heartbeat_and_prints_both_estimators(probe_for):
+    fake, probe, out = probe_for()
+    rows = probe.run(2.2, report_every_s=0.5)
+    by = {r.name: r for r in rows}
+    assert by["H2"].status == "pass" and by["hello"].status == "pass" and by["C2 rate"].status == "pass"
+    assert set(fake.request_names()) == {"c3.hello/v1", "c3.heartbeat/v1"}
+    assert set(probe.sent) == {"c3.hello/v1", "c3.heartbeat/v1"} and probe.sent[0] == "c3.hello/v1"
+    lines = out.getvalue().splitlines()
+    assert lines and "round_trip +" in lines[-1] and "one_way +" in lines[-1] and "diff" in lines[-1]
+    import time
+    now = time.monotonic_ns()
+    true_offset_s = (fake.clock.at(now) - now) / 1e9                    # +1000 s and 30 ppm of the laptop clock
+    for name in ("round_trip", "one_way"):
+        printed = float(lines[-1].split(f"{name} ")[1].split(" s")[0])
+        assert printed == pytest.approx(true_offset_s, abs=0.005)
+    assert probe.reply is not None and probe.reply.mock is True
+    assert probe.history.latest() is not None and probe.stats.snapshot().c2_received > 100
+
+
+def test_refuses_while_holding_past_the_h2_limit(probe_for):
+    fake, probe, _ = probe_for(link=FAST_LINK, manager={"link_jitter_allowance_s": 0.05}, start_mode="holding")
+    fake.hold_forever()
+    rows = probe.run(1.0)
+    assert rows[-1].name == "H2" and rows[-1].status == "fail"
+    assert "another C3 client" in rows[-1].detail
+    assert fake.request_names() == [] and probe.sent == []
+
+
+def test_waits_out_an_orphaned_holding(probe_for):
+    fake, probe, _ = probe_for(link=FAST_LINK, manager={"link_jitter_allowance_s": 0.05}, start_mode="holding")
+    rows = probe.run(0.3, report_every_s=None)
+    assert rows[0].name == "H2" and rows[0].status == "pass"
+    assert fake.request_names()[0] == "c3.hello/v1"
+
+
+def test_check_rows_and_json_lines(probe_for):
+    fake, probe, _ = probe_for()
+    rows = probe.check_rows(mock=True)
+    names = [r.name for r in rows]
+    for want in ("H2", "hello", "C2 rate", "hello equality", "worst gap", "home timeout", "waypoint lead",
+                 "clock agreement", "PC commit", "PC mock"):
+        assert want in names, names
+    by = {r.name: r for r in rows}
+    for name in ("hello equality", "worst gap", "home timeout", "waypoint lead", "clock agreement"):
+        assert by[name].status == "pass", by[name]
+    assert set(fake.request_names()) <= {"c3.hello/v1", "c3.heartbeat/v1"}
+    buf = io.StringIO()
+    emit(rows, True, buf)
+    parsed = [json.loads(x) for x in buf.getvalue().splitlines()]
+    assert len(parsed) == len(rows)
+    assert all(set(p) == {"name", "status", "detail"} and p["status"] in ("pass", "warn", "fail", "info")
+               for p in parsed)
+
+
+@pytest.mark.parametrize("estimator, status", [("round_trip", "pass"), ("one_way", "fail")])
+def test_check_judges_clock_agreement_with_the_configured_estimator(probe_for, estimator, status):
+    """Every C2 message 50 ms late: the one_way map (fitted from C2) is 50 ms off the hellos, the round_trip map (fitted
+    from those same hellos) agrees by construction. --check must judge what `run` will use (STRUCTURE.md 8.4)."""
+    fake, probe, _ = probe_for(link=small_link(clock_estimator=estimator))
+    fake.delay_states(lambda: 0.05)
+    by = {r.name: r for r in probe.check_rows(mock=True)}
+    assert by["clock agreement"].status == status, by["clock agreement"]
+    assert by["clock agreement"].detail.startswith(estimator), by["clock agreement"]
+
+
+def test_check_with_mock_false_against_a_mock_pc_fails_equality(probe_for):
+    fake, probe, _ = probe_for()
+    rows = {r.name: r for r in probe.check_rows(mock=False)}
+    assert rows["hello equality"].status == "fail" and "mock" in rows["hello equality"].detail
+
+
+def test_no_c2_row(tmp_path):
+    from station_helpers import free_port
+    station = Station.load(write_station(tmp_path, manager=merge(FAST, {"timeouts": {"startup_s": 0.3}})), mock=True)
+    port = free_port()
+    settings = Settings.from_station(station, state_endpoint=f"tcp://127.0.0.1:{port}",
+                                     commands_endpoint=f"tcp://127.0.0.1:{free_port()}")
+    probe = PcProbe(settings, io.StringIO())
+    try:
+        rows = probe.run(0.5)
+    finally:
+        probe.close()
+    assert rows == [PcCheck("C2", "fail", rows[0].detail)] and "no C2 state" in rows[0].detail
+
+
+def _tilted_forward(deg: float, z_m: float) -> list[list[float]]:
+    """The fake PC's pointing-down pose turned about base y: the fingertips (TCP z) tilt `deg` toward forward (+x)."""
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return [[c, 0.0, s, 0.45], [0.0, -1.0, 0.0, 0.0], [s, 0.0, -c, z_m], [0.0, 0.0, 0.0, 1.0]]
+
+
+@pytest.mark.parametrize("pose, width_m, height, direction", [
+    (None, 0.04, "z 0.300 m", "base (+0.00, +0.00, -1.00): tilted 0.0 deg from straight down, no horizontal direction"),
+    (_tilted_forward(48.0, 0.16), 0.08, "z 0.160 m",
+     "base (+0.74, +0.00, -0.67): tilted 48.0 deg from straight down, pointing forward (away from the base)"),
+])
+def test_start_pose_lines_from_the_fake_pcs_c2(probe_for, pose, width_m, height, direction):
+    fake, probe, _ = probe_for(start_width_m=width_m, **({"start_pose": pose} if pose is not None else {}))
+    rows = probe.run(0.3, report_every_s=None)
+    assert {r.name: r for r in rows}["hello"].status == "pass"
+    assert set(fake.request_names()) <= {"c3.hello/v1", "c3.heartbeat/v1"}       # read-only
+    lines = start_pose_lines(probe.history.latest())
+    assert lines == [
+        "q_start_rad: [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]   # paste under franka_control: homing: "
+        "in the PC's control_deploy/station.yaml",
+        f"fingertip (TCP) height: {height} in the robot base frame",
+        f"fingertip direction (TCP z axis) -> {direction}",
+        f"gripper width: {width_m * 1000:.1f} mm",
+        "demos start: fingertips tilted ~48 deg from straight down (38-64), ~16 cm above the table (6-27), hand open; "
+        "object ~16 cm ahead horizontally and ~17 cm below the fingertips"]
+
+
+@pytest.mark.parametrize("zx, zy, words", [
+    (0.0, 0.7, "pointing to the robot's left"), (0.0, -0.7, "pointing to the robot's right"),
+    (-0.7, 0.0, "pointing back (toward the base)"),
+    (0.5, 0.5, "pointing between forward (away from the base) and to the robot's left"),
+])
+def test_start_pose_words_and_q(zx, zy, words):
+    from types import SimpleNamespace
+
+    import numpy as np
+    z = np.array([zx, zy, -math.sqrt(1 - zx * zx - zy * zy)])
+    x = np.cross([0.0, 0.0, 1.0], z)
+    x /= np.linalg.norm(x)
+    T = np.eye(4)
+    T[:3, 0], T[:3, 1], T[:3, 2], T[2, 3] = x, np.cross(z, x), z, 0.2
+    q = [0.1, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816]
+    lines = start_pose_lines(SimpleNamespace(q=np.array(q), O_T_TCP=T, gripper_width_m=0.0))
+    assert lines[0].startswith("q_start_rad: [0.1000, -0.7854, 0.0000, -2.3562, 0.0000, 1.5708, 0.7854]   # paste")
+    assert lines[2].endswith(words) and f"tilted {math.degrees(math.acos(-z[2])):.1f} deg" in lines[2]
+    assert lines[3] == "gripper width: 0.0 mm"

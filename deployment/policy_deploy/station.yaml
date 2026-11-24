@@ -1,0 +1,26 @@
+# The laptop station file (policy_deploy/STRUCTURE.md 2.4). One file for real and --mock runs. It may not override
+# any key of deployment/contracts/*.yaml: the PC's address, ports and timing come only from link.yaml.
+station_version: 1
+session_root: ~/policy_deploy_sessions
+python:
+  light: ~/envs/policy_deploy/bin/python
+  torch: ~/envs/policy_deploy_torch/bin/python      # used only for policy.kind diffusion (and bench)
+pi:
+  address: 192.168.50.59          # PLACEHOLDER: the Pi's reserved ASUS_5g address (PLAN 15)
+  port: 5555                      # fixed by the Pi (PI_PAYLOAD.md 0.1)
+wifi_ssid: ASUS_5g                # check: the laptop's Wi-Fi network
+ports:                            # all on 127.0.0.1 (TOP 2.2)
+  frames: 5610                    # C1
+  policy: 5640                    # C4
+  mock_pi: 5600                   # --mock: the fake Pi inside frames
+frames: {}                        # overrides of config/frames_process.yaml
+policy:                           # set by `policy_deploy use` (run_002_2026-11-19, 2026-11-20 17:39)
+  kind: diffusion
+  mock_kind: diffusion
+  checkpoint: ~/Capstone/data/PICK_DOUBLE/policy/run_002_2026-11-19/checkpoints/top1_epoch=0040-val_action_mse_error_all=0.0004976.ckpt
+  precision: bf16
+  diffusion_steps: 8
+manager:                          # set by `policy_deploy use` (run_002_2026-11-19, 2026-11-20 17:39)
+  exec_h: 12
+fake_pc: {}
+launcher: {}                      # e.g. fake_pc: false (the cross test, STRUCTURE.md 12.3)

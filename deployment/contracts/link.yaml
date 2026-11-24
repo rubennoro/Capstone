@@ -1,0 +1,16 @@
+# The laptop <-> PC link (PLAN §6). One set of timing values, safe on Wi-Fi, used wired too.
+pc:
+  address: 192.168.50.186         # the PC's reserved ASUS_5g address (PLAN §15). franka_control binds it.
+laptop:
+  addresses: [192.168.50.227]     # the laptop's reserved Wi-Fi address; add its wired one when cabled
+ports:
+  state: 5620                     # C2
+  commands: 5630                  # C3
+timing:
+  heartbeat_period_s: 0.02        # the manager's loop: one keep-alive (hello or heartbeat) per cycle
+  watchdog_limit_s: 1.0           # PC: no C3 request for this long while holding/running -> stopped
+  c3_timeout_s: 0.3               # laptop: no reply within this -> conclude (not for home)
+  state_stale_s: 0.1              # laptop: newest C2 older than this (mapped t_ns) -> skip the step
+  state_lost_s: 2.0               # laptop: no C2 for this long (by arrival) -> conclude
+clock:
+  estimator: round_trip           # laptop's PC clock map: round_trip | one_way (PLAN §5.6)

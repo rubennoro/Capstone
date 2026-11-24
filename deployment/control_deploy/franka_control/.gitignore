@@ -1,0 +1,8 @@
+# copied from rnoro/final-deployment:deployment/control_deploy/franka_control/.gitignore @ f632576
+# changes: + build-sim/ (the --sim build, sim_deploy/sim_pc)
+build/
+build-test/
+build-tsan/
+build-libfranka-check/
+build-nolibfranka/
+build-sim/

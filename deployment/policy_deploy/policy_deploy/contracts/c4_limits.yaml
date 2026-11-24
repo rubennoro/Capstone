@@ -1,0 +1,6 @@
+# The three C4-only tolerances (policy_deploy/STRUCTURE.md 3.3), moved from rnoro/deployment's contracts/limits.yaml.
+# Laptop only: both ends of C4 are in policy_deploy. The shared limits (rotation_tol, gripper_width_max_m,
+# max_waypoints) are deployment/contracts/limits.yaml.
+anchor_row_tol: 1.0e-5      # C4 Observation: last rows equal 0 / identity rot6d within this
+rot6d_norm_tol: 0.1         # C4: rot6d vectors of length 1 +- this (from main-sim's policy_contract.py)
+rot6d_dot_max: 0.1          # C4: rot6d vectors perpendicular within this (|cos angle| <= this)
